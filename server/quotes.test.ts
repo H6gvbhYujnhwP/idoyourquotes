@@ -1,0 +1,352 @@
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { appRouter } from "./routers";
+import type { TrpcContext } from "./_core/context";
+
+// Mock the database functions
+vi.mock("./db", () => ({
+  getQuotesByUserId: vi.fn(),
+  getQuoteById: vi.fn(),
+  createQuote: vi.fn(),
+  updateQuote: vi.fn(),
+  deleteQuote: vi.fn(),
+  getLineItemsByQuoteId: vi.fn(),
+  createLineItem: vi.fn(),
+  updateLineItem: vi.fn(),
+  deleteLineItem: vi.fn(),
+  getInputsByQuoteId: vi.fn(),
+  createInput: vi.fn(),
+  deleteInput: vi.fn(),
+  getTenderContextByQuoteId: vi.fn(),
+  upsertTenderContext: vi.fn(),
+  getInternalEstimateByQuoteId: vi.fn(),
+  upsertInternalEstimate: vi.fn(),
+  getCatalogItemsByUserId: vi.fn(),
+  createCatalogItem: vi.fn(),
+  updateCatalogItem: vi.fn(),
+  deleteCatalogItem: vi.fn(),
+  recalculateQuoteTotals: vi.fn(),
+}));
+
+import * as db from "./db";
+
+type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
+
+function createAuthContext(): TrpcContext {
+  const user: AuthenticatedUser = {
+    id: 1,
+    openId: "test-user-123",
+    email: "test@example.com",
+    name: "Test User",
+    loginMethod: "manus",
+    role: "user",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    lastSignedIn: new Date(),
+  };
+
+  return {
+    user,
+    req: {
+      protocol: "https",
+      headers: {},
+    } as TrpcContext["req"],
+    res: {
+      clearCookie: vi.fn(),
+    } as unknown as TrpcContext["res"],
+  };
+}
+
+describe("quotes router", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe("quotes.list", () => {
+    it("returns quotes for the authenticated user", async () => {
+      const mockQuotes = [
+        { id: 1, userId: 1, title: "Test Quote 1", status: "draft", total: "100.00" },
+        { id: 2, userId: 1, title: "Test Quote 2", status: "sent", total: "250.00" },
+      ];
+      vi.mocked(db.getQuotesByUserId).mockResolvedValue(mockQuotes as any);
+
+      const ctx = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.quotes.list();
+
+      expect(db.getQuotesByUserId).toHaveBeenCalledWith(1);
+      expect(result).toEqual(mockQuotes);
+    });
+  });
+
+  describe("quotes.create", () => {
+    it("creates a new quote with provided data", async () => {
+      const mockQuote = {
+        id: 1,
+        userId: 1,
+        title: "New Quote",
+        clientName: "Test Client",
+        status: "draft",
+        total: "0.00",
+      };
+      vi.mocked(db.createQuote).mockResolvedValue(mockQuote as any);
+
+      const ctx = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.quotes.create({
+        title: "New Quote",
+        clientName: "Test Client",
+      });
+
+      expect(db.createQuote).toHaveBeenCalledWith({
+        userId: 1,
+        title: "New Quote",
+        clientName: "Test Client",
+      });
+      expect(result).toEqual(mockQuote);
+    });
+
+    it("creates a quote with empty input", async () => {
+      const mockQuote = {
+        id: 1,
+        userId: 1,
+        status: "draft",
+        total: "0.00",
+      };
+      vi.mocked(db.createQuote).mockResolvedValue(mockQuote as any);
+
+      const ctx = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.quotes.create({});
+
+      expect(db.createQuote).toHaveBeenCalledWith({ userId: 1 });
+      expect(result).toEqual(mockQuote);
+    });
+  });
+
+  describe("quotes.get", () => {
+    it("returns a quote by id for the authenticated user", async () => {
+      const mockQuote = { id: 1, userId: 1, title: "Test Quote", status: "draft" };
+      vi.mocked(db.getQuoteById).mockResolvedValue(mockQuote as any);
+
+      const ctx = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.quotes.get({ id: 1 });
+
+      expect(db.getQuoteById).toHaveBeenCalledWith(1, 1);
+      expect(result).toEqual(mockQuote);
+    });
+
+    it("throws error when quote not found", async () => {
+      vi.mocked(db.getQuoteById).mockResolvedValue(undefined);
+
+      const ctx = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      await expect(caller.quotes.get({ id: 999 })).rejects.toThrow("Quote not found");
+    });
+  });
+
+  describe("quotes.update", () => {
+    it("updates a quote with provided data", async () => {
+      const mockQuote = { id: 1, userId: 1, title: "Updated Quote", status: "draft" };
+      vi.mocked(db.updateQuote).mockResolvedValue(mockQuote as any);
+
+      const ctx = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.quotes.update({
+        id: 1,
+        title: "Updated Quote",
+      });
+
+      expect(db.updateQuote).toHaveBeenCalledWith(1, 1, { title: "Updated Quote" });
+      expect(result).toEqual(mockQuote);
+    });
+
+    it("recalculates totals when tax rate changes", async () => {
+      const mockQuote = { id: 1, userId: 1, taxRate: "20", total: "120.00" };
+      vi.mocked(db.updateQuote).mockResolvedValue(mockQuote as any);
+      vi.mocked(db.recalculateQuoteTotals).mockResolvedValue(mockQuote as any);
+
+      const ctx = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.quotes.update({
+        id: 1,
+        taxRate: "20",
+      });
+
+      expect(db.updateQuote).toHaveBeenCalled();
+      expect(db.recalculateQuoteTotals).toHaveBeenCalledWith(1, 1);
+    });
+  });
+
+  describe("quotes.delete", () => {
+    it("deletes a quote", async () => {
+      vi.mocked(db.deleteQuote).mockResolvedValue(true);
+
+      const ctx = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.quotes.delete({ id: 1 });
+
+      expect(db.deleteQuote).toHaveBeenCalledWith(1, 1);
+      expect(result).toEqual({ success: true });
+    });
+  });
+});
+
+describe("lineItems router", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe("lineItems.create", () => {
+    it("creates a line item and recalculates quote totals", async () => {
+      const mockQuote = { id: 1, userId: 1 };
+      const mockLineItem = {
+        id: 1,
+        quoteId: 1,
+        description: "Test Item",
+        quantity: "2",
+        unit: "hours",
+        rate: "50.00",
+        total: "100.00",
+      };
+
+      vi.mocked(db.getQuoteById).mockResolvedValue(mockQuote as any);
+      vi.mocked(db.createLineItem).mockResolvedValue(mockLineItem as any);
+      vi.mocked(db.recalculateQuoteTotals).mockResolvedValue(mockQuote as any);
+
+      const ctx = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.lineItems.create({
+        quoteId: 1,
+        description: "Test Item",
+        quantity: "2",
+        unit: "hours",
+        rate: "50.00",
+      });
+
+      expect(db.getQuoteById).toHaveBeenCalledWith(1, 1);
+      expect(db.createLineItem).toHaveBeenCalledWith({
+        quoteId: 1,
+        description: "Test Item",
+        quantity: "2",
+        unit: "hours",
+        rate: "50.00",
+        total: "100.00",
+      });
+      expect(db.recalculateQuoteTotals).toHaveBeenCalledWith(1, 1);
+      expect(result).toEqual(mockLineItem);
+    });
+
+    it("throws error when quote not found", async () => {
+      vi.mocked(db.getQuoteById).mockResolvedValue(undefined);
+
+      const ctx = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      await expect(
+        caller.lineItems.create({
+          quoteId: 999,
+          description: "Test Item",
+        })
+      ).rejects.toThrow("Quote not found");
+    });
+  });
+
+  describe("lineItems.delete", () => {
+    it("deletes a line item and recalculates quote totals", async () => {
+      const mockQuote = { id: 1, userId: 1 };
+      vi.mocked(db.getQuoteById).mockResolvedValue(mockQuote as any);
+      vi.mocked(db.deleteLineItem).mockResolvedValue(true);
+      vi.mocked(db.recalculateQuoteTotals).mockResolvedValue(mockQuote as any);
+
+      const ctx = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.lineItems.delete({ id: 1, quoteId: 1 });
+
+      expect(db.deleteLineItem).toHaveBeenCalledWith(1);
+      expect(db.recalculateQuoteTotals).toHaveBeenCalledWith(1, 1);
+      expect(result).toEqual({ success: true });
+    });
+  });
+});
+
+describe("catalog router", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe("catalog.list", () => {
+    it("returns catalog items for the authenticated user", async () => {
+      const mockItems = [
+        { id: 1, userId: 1, name: "Electrical Work", defaultRate: "75.00" },
+        { id: 2, userId: 1, name: "Plumbing", defaultRate: "65.00" },
+      ];
+      vi.mocked(db.getCatalogItemsByUserId).mockResolvedValue(mockItems as any);
+
+      const ctx = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.catalog.list();
+
+      expect(db.getCatalogItemsByUserId).toHaveBeenCalledWith(1);
+      expect(result).toEqual(mockItems);
+    });
+  });
+
+  describe("catalog.create", () => {
+    it("creates a catalog item", async () => {
+      const mockItem = {
+        id: 1,
+        userId: 1,
+        name: "New Service",
+        description: "Test description",
+        unit: "hour",
+        defaultRate: "100.00",
+      };
+      vi.mocked(db.createCatalogItem).mockResolvedValue(mockItem as any);
+
+      const ctx = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.catalog.create({
+        name: "New Service",
+        description: "Test description",
+        unit: "hour",
+        defaultRate: "100.00",
+      });
+
+      expect(db.createCatalogItem).toHaveBeenCalledWith({
+        userId: 1,
+        name: "New Service",
+        description: "Test description",
+        unit: "hour",
+        defaultRate: "100.00",
+      });
+      expect(result).toEqual(mockItem);
+    });
+  });
+
+  describe("catalog.delete", () => {
+    it("deletes a catalog item", async () => {
+      vi.mocked(db.deleteCatalogItem).mockResolvedValue(true);
+
+      const ctx = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.catalog.delete({ id: 1 });
+
+      expect(db.deleteCatalogItem).toHaveBeenCalledWith(1, 1);
+      expect(result).toEqual({ success: true });
+    });
+  });
+});
