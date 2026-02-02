@@ -1,5 +1,6 @@
 import { eq, desc, and } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import { 
   InsertUser, 
   users, 
@@ -25,12 +26,14 @@ import {
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _client: ReturnType<typeof postgres> | null = null;
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      _client = postgres(process.env.DATABASE_URL, { ssl: 'require' });
+      _db = drizzle(_client);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -53,47 +56,34 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   }
 
   try {
-    const values: InsertUser = {
-      openId: user.openId,
-    };
-    const updateSet: Record<string, unknown> = {};
-
-    const textFields = ["name", "email", "loginMethod"] as const;
-    type TextField = (typeof textFields)[number];
-
-    const assignNullable = (field: TextField) => {
-      const value = user[field];
-      if (value === undefined) return;
-      const normalized = value ?? null;
-      values[field] = normalized;
-      updateSet[field] = normalized;
-    };
-
-    textFields.forEach(assignNullable);
-
-    if (user.lastSignedIn !== undefined) {
-      values.lastSignedIn = user.lastSignedIn;
-      updateSet.lastSignedIn = user.lastSignedIn;
+    // Check if user exists
+    const existing = await db.select().from(users).where(eq(users.openId, user.openId)).limit(1);
+    
+    if (existing.length > 0) {
+      // Update existing user
+      const updateData: Partial<InsertUser> = {
+        lastSignedIn: new Date(),
+      };
+      
+      if (user.name !== undefined) updateData.name = user.name;
+      if (user.email !== undefined) updateData.email = user.email;
+      if (user.loginMethod !== undefined) updateData.loginMethod = user.loginMethod;
+      if (user.role !== undefined) updateData.role = user.role;
+      
+      await db.update(users).set(updateData).where(eq(users.openId, user.openId));
+    } else {
+      // Insert new user
+      const values: InsertUser = {
+        openId: user.openId,
+        name: user.name ?? null,
+        email: user.email ?? null,
+        loginMethod: user.loginMethod ?? null,
+        role: user.openId === ENV.ownerOpenId ? 'admin' : (user.role || 'user'),
+        lastSignedIn: new Date(),
+      };
+      
+      await db.insert(users).values(values);
     }
-    if (user.role !== undefined) {
-      values.role = user.role;
-      updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
-    }
-
-    if (!values.lastSignedIn) {
-      values.lastSignedIn = new Date();
-    }
-
-    if (Object.keys(updateSet).length === 0) {
-      updateSet.lastSignedIn = new Date();
-    }
-
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
-    });
   } catch (error) {
     console.error("[Database] Failed to upsert user:", error);
     throw error;
@@ -152,22 +142,21 @@ export async function createQuote(data: Partial<InsertQuote> & { userId: number 
     taxRate: data.taxRate || "0.00",
     taxAmount: data.taxAmount || "0.00",
     total: data.total || "0.00",
-  });
+  }).returning();
 
-  const quoteId = result.insertId;
-  const quote = await db.select().from(quotes).where(eq(quotes.id, quoteId)).limit(1);
-  return quote[0];
+  return result;
 }
 
 export async function updateQuote(quoteId: number, userId: number, data: Partial<InsertQuote>): Promise<Quote | undefined> {
   const db = await getDb();
   if (!db) return undefined;
 
-  await db.update(quotes)
-    .set(data)
-    .where(and(eq(quotes.id, quoteId), eq(quotes.userId, userId)));
+  const [result] = await db.update(quotes)
+    .set({ ...data, updatedAt: new Date() })
+    .where(and(eq(quotes.id, quoteId), eq(quotes.userId, userId)))
+    .returning();
 
-  return getQuoteById(quoteId, userId);
+  return result;
 }
 
 export async function deleteQuote(quoteId: number, userId: number): Promise<boolean> {
@@ -180,7 +169,7 @@ export async function deleteQuote(quoteId: number, userId: number): Promise<bool
   await db.delete(tenderContexts).where(eq(tenderContexts.quoteId, quoteId));
   await db.delete(internalEstimates).where(eq(internalEstimates.quoteId, quoteId));
 
-  const result = await db.delete(quotes)
+  await db.delete(quotes)
     .where(and(eq(quotes.id, quoteId), eq(quotes.userId, userId)));
 
   return true;
@@ -201,18 +190,19 @@ export async function createLineItem(data: InsertQuoteLineItem): Promise<QuoteLi
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const [result] = await db.insert(quoteLineItems).values(data);
-  const item = await db.select().from(quoteLineItems).where(eq(quoteLineItems.id, result.insertId)).limit(1);
-  return item[0];
+  const [result] = await db.insert(quoteLineItems).values(data).returning();
+  return result;
 }
 
 export async function updateLineItem(itemId: number, data: Partial<InsertQuoteLineItem>): Promise<QuoteLineItem | undefined> {
   const db = await getDb();
   if (!db) return undefined;
 
-  await db.update(quoteLineItems).set(data).where(eq(quoteLineItems.id, itemId));
-  const item = await db.select().from(quoteLineItems).where(eq(quoteLineItems.id, itemId)).limit(1);
-  return item[0];
+  const [result] = await db.update(quoteLineItems)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(quoteLineItems.id, itemId))
+    .returning();
+  return result;
 }
 
 export async function deleteLineItem(itemId: number): Promise<boolean> {
@@ -238,9 +228,8 @@ export async function createInput(data: InsertQuoteInput): Promise<QuoteInput> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const [result] = await db.insert(quoteInputs).values(data);
-  const input = await db.select().from(quoteInputs).where(eq(quoteInputs.id, result.insertId)).limit(1);
-  return input[0];
+  const [result] = await db.insert(quoteInputs).values(data).returning();
+  return result;
 }
 
 export async function deleteInput(inputId: number): Promise<boolean> {
@@ -271,12 +260,15 @@ export async function upsertTenderContext(quoteId: number, data: Partial<InsertT
   const existing = await getTenderContextByQuoteId(quoteId);
   
   if (existing) {
-    await db.update(tenderContexts).set(data).where(eq(tenderContexts.quoteId, quoteId));
+    const [result] = await db.update(tenderContexts)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(tenderContexts.quoteId, quoteId))
+      .returning();
+    return result;
   } else {
-    await db.insert(tenderContexts).values({ quoteId, ...data });
+    const [result] = await db.insert(tenderContexts).values({ quoteId, ...data }).returning();
+    return result;
   }
-
-  return (await getTenderContextByQuoteId(quoteId))!;
 }
 
 // ============ INTERNAL ESTIMATE HELPERS ============
@@ -299,12 +291,15 @@ export async function upsertInternalEstimate(quoteId: number, data: Partial<Inse
   const existing = await getInternalEstimateByQuoteId(quoteId);
   
   if (existing) {
-    await db.update(internalEstimates).set(data).where(eq(internalEstimates.quoteId, quoteId));
+    const [result] = await db.update(internalEstimates)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(internalEstimates.quoteId, quoteId))
+      .returning();
+    return result;
   } else {
-    await db.insert(internalEstimates).values({ quoteId, ...data });
+    const [result] = await db.insert(internalEstimates).values({ quoteId, ...data }).returning();
+    return result;
   }
-
-  return (await getInternalEstimateByQuoteId(quoteId))!;
 }
 
 // ============ CATALOG HELPERS ============
@@ -322,23 +317,20 @@ export async function createCatalogItem(data: InsertCatalogItem): Promise<Catalo
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const [result] = await db.insert(catalogItems).values(data);
-  const item = await db.select().from(catalogItems).where(eq(catalogItems.id, result.insertId)).limit(1);
-  return item[0];
+  const [result] = await db.insert(catalogItems).values(data).returning();
+  return result;
 }
 
 export async function updateCatalogItem(itemId: number, userId: number, data: Partial<InsertCatalogItem>): Promise<CatalogItem | undefined> {
   const db = await getDb();
   if (!db) return undefined;
 
-  await db.update(catalogItems)
-    .set(data)
-    .where(and(eq(catalogItems.id, itemId), eq(catalogItems.userId, userId)));
-
-  const item = await db.select().from(catalogItems)
+  const [result] = await db.update(catalogItems)
+    .set({ ...data, updatedAt: new Date() })
     .where(and(eq(catalogItems.id, itemId), eq(catalogItems.userId, userId)))
-    .limit(1);
-  return item[0];
+    .returning();
+  
+  return result;
 }
 
 export async function deleteCatalogItem(itemId: number, userId: number): Promise<boolean> {
