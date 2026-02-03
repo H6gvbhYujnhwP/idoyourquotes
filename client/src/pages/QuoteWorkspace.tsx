@@ -26,6 +26,7 @@ import {
   Check,
   AlertTriangle,
   ExternalLink,
+  Package,
 } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { useState, useEffect, useRef } from "react";
@@ -120,12 +121,18 @@ export default function QuoteWorkspace() {
   // New text input state
   const [newTextInput, setNewTextInput] = useState("");
 
+  // Catalog picker state
+  const [showCatalogPicker, setShowCatalogPicker] = useState(false);
+
   const { data: fullQuote, isLoading, refetch } = trpc.quotes.getFull.useQuery(
     { id: quoteId },
     { enabled: quoteId > 0 }
   );
 
   const { data: storageStatus } = trpc.inputs.storageStatus.useQuery();
+
+  // Fetch catalog items for quick-add
+  const { data: catalogItems } = trpc.catalog.list.useQuery();
 
   const updateQuote = trpc.quotes.update.useMutation({
     onSuccess: () => {
@@ -970,6 +977,63 @@ export default function QuoteWorkspace() {
                     </Button>
                   </div>
                 </div>
+              </div>
+
+              {/* Add from Catalog */}
+              <div className="relative">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowCatalogPicker(!showCatalogPicker)}
+                  className="w-full justify-start"
+                  disabled={!catalogItems || catalogItems.length === 0}
+                >
+                  <Package className="mr-2 h-4 w-4" />
+                  {catalogItems && catalogItems.length > 0 
+                    ? `Add from Catalog (${catalogItems.length} items)` 
+                    : "No catalog items - add some in Settings"}
+                </Button>
+                
+                {showCatalogPicker && catalogItems && catalogItems.length > 0 && (
+                  <div className="absolute z-50 mt-2 w-full bg-popover border rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                    {catalogItems.map((item: { id: number; name: string; description: string | null; unit: string | null; defaultRate: string | null; category: string | null }, index: number) => (
+                      <div
+                        key={item.id}
+                        className={`p-3 cursor-pointer hover:bg-accent transition-colors ${index % 2 === 1 ? 'bg-muted/30' : ''}`}
+                        onClick={() => {
+                          createLineItem.mutate({
+                            quoteId,
+                            description: item.name + (item.description ? ` - ${item.description}` : ''),
+                            quantity: "1",
+                            unit: item.unit || "each",
+                            rate: item.defaultRate || "0",
+                          });
+                          setShowCatalogPicker(false);
+                          toast.success(`Added "${item.name}" to quote`);
+                        }}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="font-medium">{item.name}</div>
+                            {item.description && (
+                              <div className="text-sm text-muted-foreground truncate max-w-xs">
+                                {item.description}
+                              </div>
+                            )}
+                            {item.category && (
+                              <Badge variant="secondary" className="mt-1 text-xs">
+                                {item.category}
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <div className="font-medium">£{parseFloat(item.defaultRate || "0").toFixed(2)}</div>
+                            <div className="text-xs text-muted-foreground">per {item.unit || "each"}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Totals */}

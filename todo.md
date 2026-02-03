@@ -46,7 +46,7 @@ Based on Formal Build Prompt & Product Roadmap
 
 ### Product Catalog Integration
 - [x] Catalog CRUD
-- [ ] Import catalog items into quote line items
+- [x] Import catalog items into quote line items (Quick-Add)
 
 ### Settings
 - [x] User profile settings
@@ -113,3 +113,9 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] QuoteWorkspace: Add "Mark as Accepted" button for sent quotes
 - [x] QuoteWorkspace: Show status-appropriate action buttons
 - [x] Unit tests for status transitions
+
+## Current Sprint - Catalog Quick-Add
+- [x] Add "Add from Catalog" button to line items section
+- [x] Create catalog picker dropdown
+- [x] Import catalog item as new line item with pre-filled values
+- [x] Unit tests for catalog quick-add
