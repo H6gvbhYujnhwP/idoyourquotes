@@ -25,9 +25,10 @@ import {
   X,
   Check,
   AlertTriangle,
+  ExternalLink,
 } from "lucide-react";
 import { useLocation, useParams } from "wouter";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 
 type QuoteStatus = "draft" | "sent" | "accepted" | "declined";
@@ -45,7 +46,10 @@ interface QuoteInput {
   id: number;
   inputType: string;
   filename: string | null;
+  fileUrl: string | null;
+  fileKey: string | null;
   content: string | null;
+  mimeType: string | null;
   createdAt: Date;
 }
 
@@ -56,12 +60,38 @@ const statusConfig: Record<QuoteStatus, { label: string; className: string }> = 
   declined: { label: "Declined", className: "status-declined" },
 };
 
+// File type configurations
+const fileTypeConfig = {
+  pdf: {
+    accept: ".pdf",
+    mimeTypes: ["application/pdf"],
+    maxSize: 20 * 1024 * 1024, // 20MB
+  },
+  image: {
+    accept: ".jpg,.jpeg,.png,.gif,.webp,.bmp",
+    mimeTypes: ["image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp"],
+    maxSize: 10 * 1024 * 1024, // 10MB
+  },
+  audio: {
+    accept: ".mp3,.wav,.m4a,.ogg,.webm",
+    mimeTypes: ["audio/mpeg", "audio/wav", "audio/mp4", "audio/ogg", "audio/webm"],
+    maxSize: 50 * 1024 * 1024, // 50MB
+  },
+};
+
 export default function QuoteWorkspace() {
   const params = useParams<{ id: string }>();
   const quoteId = parseInt(params.id || "0");
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState("inputs");
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadingType, setUploadingType] = useState<string | null>(null);
+
+  // File input refs
+  const pdfInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
 
   // Form state
   const [title, setTitle] = useState("");
@@ -93,6 +123,8 @@ export default function QuoteWorkspace() {
     { id: quoteId },
     { enabled: quoteId > 0 }
   );
+
+  const { data: storageStatus } = trpc.inputs.storageStatus.useQuery();
 
   const updateQuote = trpc.quotes.update.useMutation({
     onSuccess: () => {
@@ -128,6 +160,16 @@ export default function QuoteWorkspace() {
       refetch();
     },
     onError: (error) => toast.error("Failed to add input: " + error.message),
+  });
+
+  const uploadFile = trpc.inputs.uploadFile.useMutation({
+    onSuccess: () => {
+      toast.success("File uploaded successfully");
+      refetch();
+    },
+    onError: (error) => {
+      toast.error("Upload failed: " + error.message);
+    },
   });
 
   const deleteInput = trpc.inputs.delete.useMutation({
@@ -217,6 +259,70 @@ export default function QuoteWorkspace() {
     });
   };
 
+  const handleFileUpload = async (
+    file: File,
+    inputType: "pdf" | "image" | "audio"
+  ) => {
+    const config = fileTypeConfig[inputType];
+
+    // Validate file size
+    if (file.size > config.maxSize) {
+      toast.error(`File too large. Maximum size is ${config.maxSize / 1024 / 1024}MB`);
+      return;
+    }
+
+    // Validate file type
+    if (!config.mimeTypes.includes(file.type)) {
+      toast.error(`Invalid file type. Accepted types: ${config.accept}`);
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadingType(inputType);
+
+    try {
+      // Convert file to base64
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onload = () => {
+          const result = reader.result as string;
+          // Remove data URL prefix to get pure base64
+          const base64 = result.split(",")[1];
+          resolve(base64);
+        };
+        reader.onerror = reject;
+      });
+      reader.readAsDataURL(file);
+
+      const base64Data = await base64Promise;
+
+      await uploadFile.mutateAsync({
+        quoteId,
+        filename: file.name,
+        contentType: file.type,
+        base64Data,
+        inputType,
+      });
+    } catch (error) {
+      console.error("Upload error:", error);
+    } finally {
+      setIsUploading(false);
+      setUploadingType(null);
+    }
+  };
+
+  const handleFileInputChange = (
+    event: React.ChangeEvent<HTMLInputElement>,
+    inputType: "pdf" | "image" | "audio"
+  ) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      handleFileUpload(file, inputType);
+    }
+    // Reset input so same file can be selected again
+    event.target.value = "";
+  };
+
   const handleSaveTenderContext = () => {
     upsertTenderContext.mutate({
       quoteId,
@@ -257,6 +363,29 @@ export default function QuoteWorkspace() {
 
   return (
     <div className="space-y-6">
+      {/* Hidden file inputs */}
+      <input
+        type="file"
+        ref={pdfInputRef}
+        className="hidden"
+        accept={fileTypeConfig.pdf.accept}
+        onChange={(e) => handleFileInputChange(e, "pdf")}
+      />
+      <input
+        type="file"
+        ref={imageInputRef}
+        className="hidden"
+        accept={fileTypeConfig.image.accept}
+        onChange={(e) => handleFileInputChange(e, "image")}
+      />
+      <input
+        type="file"
+        ref={audioInputRef}
+        className="hidden"
+        accept={fileTypeConfig.audio.accept}
+        onChange={(e) => handleFileInputChange(e, "audio")}
+      />
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div className="flex items-center gap-4">
@@ -329,23 +458,69 @@ export default function QuoteWorkspace() {
               </p>
             </CardHeader>
             <CardContent className="space-y-6">
+              {/* Storage status warning */}
+              {storageStatus && !storageStatus.configured && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-medium text-amber-800">File storage not configured</p>
+                      <p className="text-sm text-amber-700 mt-1">
+                        File uploads are disabled. Contact support to enable file storage.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Upload buttons */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => toast.info("File upload coming soon")}>
-                  <FileText className="h-6 w-6" />
+                <Button
+                  variant="outline"
+                  className="h-20 flex-col gap-2"
+                  onClick={() => pdfInputRef.current?.click()}
+                  disabled={isUploading || !storageStatus?.configured}
+                >
+                  {isUploading && uploadingType === "pdf" ? (
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                  ) : (
+                    <FileText className="h-6 w-6" />
+                  )}
                   <span className="text-xs">PDF Document</span>
                 </Button>
-                <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => toast.info("File upload coming soon")}>
-                  <FileImage className="h-6 w-6" />
+                <Button
+                  variant="outline"
+                  className="h-20 flex-col gap-2"
+                  onClick={() => imageInputRef.current?.click()}
+                  disabled={isUploading || !storageStatus?.configured}
+                >
+                  {isUploading && uploadingType === "image" ? (
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                  ) : (
+                    <FileImage className="h-6 w-6" />
+                  )}
                   <span className="text-xs">Image/Drawing</span>
                 </Button>
-                <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => toast.info("Audio upload coming soon")}>
-                  <Mic className="h-6 w-6" />
+                <Button
+                  variant="outline"
+                  className="h-20 flex-col gap-2"
+                  onClick={() => audioInputRef.current?.click()}
+                  disabled={isUploading || !storageStatus?.configured}
+                >
+                  {isUploading && uploadingType === "audio" ? (
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                  ) : (
+                    <Mic className="h-6 w-6" />
+                  )}
                   <span className="text-xs">Audio Recording</span>
                 </Button>
-                <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => toast.info("Email import coming soon")}>
+                <Button
+                  variant="outline"
+                  className="h-20 flex-col gap-2 opacity-50 cursor-not-allowed"
+                  disabled
+                >
                   <Mail className="h-6 w-6" />
-                  <span className="text-xs">Email/Text</span>
+                  <span className="text-xs">Email Import</span>
                 </Button>
               </div>
 
@@ -367,20 +542,20 @@ export default function QuoteWorkspace() {
               {/* Existing inputs */}
               {inputs && inputs.length > 0 && (
                 <div className="space-y-3">
-                  <Label>Added Inputs</Label>
+                  <Label>Added Inputs ({inputs.length})</Label>
                   <div className="space-y-2">
                     {inputs.map((input: QuoteInput) => (
                       <div
                         key={input.id}
                         className="flex items-start justify-between p-3 rounded-lg border bg-muted/30"
                       >
-                        <div className="flex items-start gap-3 min-w-0">
+                        <div className="flex items-start gap-3 min-w-0 flex-1">
                           {input.inputType === "text" && <FileText className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />}
                           {input.inputType === "pdf" && <FileText className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />}
                           {input.inputType === "image" && <FileImage className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />}
                           {input.inputType === "audio" && <Mic className="h-5 w-5 text-green-500 shrink-0 mt-0.5" />}
                           {input.inputType === "email" && <Mail className="h-5 w-5 text-purple-500 shrink-0 mt-0.5" />}
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium">
                               {input.filename || input.inputType.charAt(0).toUpperCase() + input.inputType.slice(1) + " Input"}
                             </p>
@@ -389,19 +564,36 @@ export default function QuoteWorkspace() {
                                 {input.content}
                               </p>
                             )}
+                            {input.mimeType && (
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {input.mimeType}
+                              </p>
+                            )}
                             <p className="text-xs text-muted-foreground mt-1">
                               Added {new Date(input.createdAt).toLocaleDateString("en-GB")}
                             </p>
                           </div>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                          onClick={() => deleteInput.mutate({ id: input.id, quoteId })}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          {input.fileUrl && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-primary"
+                              onClick={() => window.open(input.fileUrl!, "_blank")}
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                            onClick={() => deleteInput.mutate({ id: input.id, quoteId })}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -448,7 +640,11 @@ export default function QuoteWorkspace() {
               </div>
 
               <Button onClick={handleSaveTenderContext} disabled={upsertTenderContext.isPending}>
-                {upsertTenderContext.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                {upsertTenderContext.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
                 Save Interpretation
               </Button>
             </CardContent>
@@ -464,14 +660,14 @@ export default function QuoteWorkspace() {
                 Internal Estimate
               </CardTitle>
               <p className="text-sm text-muted-foreground">
-                Your private thinking space. Costs, time estimates, and risk notes. Never visible to clients.
+                Private workspace for your reasoning. Nothing here is ever shown to clients.
               </p>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-3">
-                <Label>Internal Notes & Calculations</Label>
+                <Label>Internal Notes</Label>
                 <Textarea
-                  placeholder="Document your cost calculations, time estimates, material costs, labour rates..."
+                  placeholder="Your private notes, cost calculations, time estimates, and reasoning..."
                   value={internalNotes}
                   onChange={(e) => setInternalNotes(e.target.value)}
                   rows={6}
@@ -479,12 +675,9 @@ export default function QuoteWorkspace() {
               </div>
 
               <div className="space-y-3">
-                <Label className="flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-warning" />
-                  Risk Notes
-                </Label>
+                <Label>Risk Notes</Label>
                 <Textarea
-                  placeholder="Document any risks, uncertainties, or assumptions that affect your pricing..."
+                  placeholder="Potential risks, concerns, or issues to consider..."
                   value={riskNotes}
                   onChange={(e) => setRiskNotes(e.target.value)}
                   rows={4}
@@ -493,18 +686,23 @@ export default function QuoteWorkspace() {
 
               <div className="bg-muted/50 rounded-lg p-4 border">
                 <div className="flex items-start gap-3">
-                  <Calculator className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+                  <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
                   <div>
-                    <p className="font-medium">Cost Breakdown & Time Estimates</p>
+                    <p className="font-medium">AI Estimator Prompt</p>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Structured cost breakdown and time estimate tables will be available in a future update.
+                      The "Ask About This Quote" AI feature will be available in a future update.
+                      This will help you identify missed items, risks, and assumptions.
                     </p>
                   </div>
                 </div>
               </div>
 
               <Button onClick={handleSaveInternalEstimate} disabled={upsertInternalEstimate.isPending}>
-                {upsertInternalEstimate.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                {upsertInternalEstimate.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
                 Save Internal Estimate
               </Button>
             </CardContent>
@@ -513,60 +711,20 @@ export default function QuoteWorkspace() {
 
         {/* QUOTE TAB */}
         <TabsContent value="quote" className="space-y-6">
-          <div className="grid lg:grid-cols-3 gap-6">
-            {/* Quote Details */}
-            <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle>Quote Details</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid sm:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="title">Quote Title</Label>
-                    <Input
-                      id="title"
-                      placeholder="e.g., Kitchen Renovation"
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="reference">Reference</Label>
-                    <Input
-                      id="reference"
-                      value={quote.reference || ""}
-                      disabled
-                      className="bg-muted"
-                    />
-                  </div>
-                </div>
-
+          {/* Client Details */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Client Details</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="description">Description</Label>
-                  <Textarea
-                    id="description"
-                    placeholder="Brief description of the work..."
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    rows={3}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Client Details */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Client Details</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="clientName">Name</Label>
+                  <Label htmlFor="clientName">Client Name</Label>
                   <Input
                     id="clientName"
-                    placeholder="Client name"
                     value={clientName}
                     onChange={(e) => setClientName(e.target.value)}
+                    placeholder="Company or individual name"
                   />
                 </div>
                 <div className="space-y-2">
@@ -574,33 +732,60 @@ export default function QuoteWorkspace() {
                   <Input
                     id="clientEmail"
                     type="email"
-                    placeholder="client@example.com"
                     value={clientEmail}
                     onChange={(e) => setClientEmail(e.target.value)}
+                    placeholder="client@example.com"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="clientPhone">Phone</Label>
                   <Input
                     id="clientPhone"
-                    placeholder="+44 123 456 7890"
                     value={clientPhone}
                     onChange={(e) => setClientPhone(e.target.value)}
+                    placeholder="+44 123 456 7890"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="clientAddress">Address</Label>
-                  <Textarea
+                  <Input
                     id="clientAddress"
-                    placeholder="Client address..."
                     value={clientAddress}
                     onChange={(e) => setClientAddress(e.target.value)}
-                    rows={2}
+                    placeholder="Full address"
                   />
                 </div>
-              </CardContent>
-            </Card>
-          </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Quote Details */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Quote Details</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="title">Quote Title</Label>
+                <Input
+                  id="title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Brief description of the work"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Detailed description of the scope of work..."
+                  rows={4}
+                />
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Line Items */}
           <Card>
@@ -608,71 +793,23 @@ export default function QuoteWorkspace() {
               <CardTitle>Line Items</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Add new item */}
-              <div className="grid grid-cols-12 gap-2 items-end">
-                <div className="col-span-12 sm:col-span-5 space-y-1">
-                  <Label className="text-xs">Description</Label>
-                  <Input
-                    placeholder="Item description"
-                    value={newItemDescription}
-                    onChange={(e) => setNewItemDescription(e.target.value)}
-                  />
-                </div>
-                <div className="col-span-4 sm:col-span-2 space-y-1">
-                  <Label className="text-xs">Qty</Label>
-                  <Input
-                    type="number"
-                    placeholder="1"
-                    value={newItemQuantity}
-                    onChange={(e) => setNewItemQuantity(e.target.value)}
-                  />
-                </div>
-                <div className="col-span-4 sm:col-span-2 space-y-1">
-                  <Label className="text-xs">Unit</Label>
-                  <Input
-                    placeholder="each"
-                    value={newItemUnit}
-                    onChange={(e) => setNewItemUnit(e.target.value)}
-                  />
-                </div>
-                <div className="col-span-4 sm:col-span-2 space-y-1">
-                  <Label className="text-xs">Rate (£)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={newItemRate}
-                    onChange={(e) => setNewItemRate(e.target.value)}
-                  />
-                </div>
-                <div className="col-span-12 sm:col-span-1">
-                  <Button
-                    onClick={handleAddLineItem}
-                    disabled={createLineItem.isPending}
-                    className="w-full"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-
-              {/* Existing items */}
-              {lineItems && lineItems.length > 0 ? (
+              {/* Existing line items */}
+              {lineItems && lineItems.length > 0 && (
                 <div className="border rounded-lg overflow-hidden">
-                  <table className="w-full table-zebra">
-                    <thead className="bg-muted">
+                  <table className="w-full">
+                    <thead className="bg-muted/50">
                       <tr>
                         <th className="text-left p-3 font-medium">Description</th>
                         <th className="text-right p-3 font-medium w-20">Qty</th>
                         <th className="text-left p-3 font-medium w-20">Unit</th>
                         <th className="text-right p-3 font-medium w-24">Rate</th>
                         <th className="text-right p-3 font-medium w-24">Total</th>
-                        <th className="w-10"></th>
+                        <th className="w-12"></th>
                       </tr>
                     </thead>
                     <tbody>
-                      {lineItems.map((item: LineItem) => (
-                        <tr key={item.id}>
+                      {lineItems.map((item: LineItem, index: number) => (
+                        <tr key={item.id} className={index % 2 === 0 ? "bg-background" : "bg-muted/20"}>
                           <td className="p-3">{item.description}</td>
                           <td className="p-3 text-right">{item.quantity}</td>
                           <td className="p-3">{item.unit}</td>
@@ -693,37 +830,76 @@ export default function QuoteWorkspace() {
                     </tbody>
                   </table>
                 </div>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground border rounded-lg">
-                  No line items yet. Add your first item above.
-                </div>
               )}
 
+              {/* Add new line item */}
+              <div className="border rounded-lg p-4 bg-muted/20">
+                <div className="grid grid-cols-12 gap-3">
+                  <div className="col-span-12 md:col-span-5">
+                    <Input
+                      placeholder="Description"
+                      value={newItemDescription}
+                      onChange={(e) => setNewItemDescription(e.target.value)}
+                    />
+                  </div>
+                  <div className="col-span-4 md:col-span-2">
+                    <Input
+                      type="number"
+                      placeholder="Qty"
+                      value={newItemQuantity}
+                      onChange={(e) => setNewItemQuantity(e.target.value)}
+                    />
+                  </div>
+                  <div className="col-span-4 md:col-span-2">
+                    <Input
+                      placeholder="Unit"
+                      value={newItemUnit}
+                      onChange={(e) => setNewItemUnit(e.target.value)}
+                    />
+                  </div>
+                  <div className="col-span-4 md:col-span-2">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      placeholder="Rate"
+                      value={newItemRate}
+                      onChange={(e) => setNewItemRate(e.target.value)}
+                    />
+                  </div>
+                  <div className="col-span-12 md:col-span-1">
+                    <Button
+                      onClick={handleAddLineItem}
+                      disabled={createLineItem.isPending}
+                      className="w-full"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
               {/* Totals */}
-              <div className="flex justify-end">
-                <div className="w-full max-w-xs space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>Subtotal</span>
-                    <span>£{parseFloat(quote.subtotal || "0").toFixed(2)}</span>
+              <div className="border-t pt-4 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span>Subtotal</span>
+                  <span>£{parseFloat(quote.subtotal || "0").toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <div className="flex items-center gap-2">
+                    <span>Tax</span>
+                    <Input
+                      type="number"
+                      className="w-16 h-7 text-xs"
+                      value={taxRate}
+                      onChange={(e) => setTaxRate(e.target.value)}
+                    />
+                    <span>%</span>
                   </div>
-                  <div className="flex justify-between text-sm items-center gap-2">
-                    <span>VAT</span>
-                    <div className="flex items-center gap-1">
-                      <Input
-                        type="number"
-                        step="0.1"
-                        className="w-16 h-8 text-right"
-                        value={taxRate}
-                        onChange={(e) => setTaxRate(e.target.value)}
-                      />
-                      <span>%</span>
-                    </div>
-                    <span>£{parseFloat(quote.taxAmount || "0").toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between font-bold text-lg border-t pt-2">
-                    <span>Total</span>
-                    <span>£{parseFloat(quote.total || "0").toFixed(2)}</span>
-                  </div>
+                  <span>£{parseFloat(quote.taxAmount || "0").toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between font-bold text-lg border-t pt-2">
+                  <span>Total</span>
+                  <span>£{parseFloat(quote.total || "0").toFixed(2)}</span>
                 </div>
               </div>
             </CardContent>
@@ -736,10 +912,10 @@ export default function QuoteWorkspace() {
             </CardHeader>
             <CardContent>
               <Textarea
-                placeholder="Enter your terms and conditions..."
                 value={terms}
                 onChange={(e) => setTerms(e.target.value)}
-                rows={4}
+                placeholder="Payment terms, warranty, exclusions, etc..."
+                rows={6}
               />
             </CardContent>
           </Card>

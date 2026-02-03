@@ -3,6 +3,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
+import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured } from "./r2Storage";
 import {
   getQuotesByUserId,
   getQuoteById,
@@ -285,6 +286,64 @@ export const appRouter = router({
         await deleteInput(input.id);
         return { success: true };
       }),
+
+    // File upload via base64
+    uploadFile: protectedProcedure
+      .input(z.object({
+        quoteId: z.number(),
+        filename: z.string(),
+        contentType: z.string(),
+        base64Data: z.string(),
+        inputType: z.enum(["pdf", "image", "audio", "email"]),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+
+        if (!isR2Configured()) {
+          throw new Error("File storage is not configured");
+        }
+
+        // Decode base64 to buffer
+        const buffer = Buffer.from(input.base64Data, "base64");
+
+        // Upload to R2
+        const folder = `quotes/${input.quoteId}`;
+        const { key, url } = await uploadToR2(
+          buffer,
+          input.filename,
+          input.contentType,
+          folder
+        );
+
+        // Create input record
+        const inputRecord = await createInput({
+          quoteId: input.quoteId,
+          inputType: input.inputType,
+          filename: input.filename,
+          fileUrl: url,
+          fileKey: key,
+          mimeType: input.contentType,
+        });
+
+        return inputRecord;
+      }),
+
+    // Get fresh presigned URL for a file
+    getFileUrl: protectedProcedure
+      .input(z.object({ quoteId: z.number(), fileKey: z.string() }))
+      .query(async ({ ctx, input }) => {
+        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+
+        const url = await getPresignedUrl(input.fileKey);
+        return { url };
+      }),
+
+    // Check if storage is configured
+    storageStatus: protectedProcedure.query(() => {
+      return { configured: isR2Configured() };
+    }),
   }),
 
   // ============ TENDER CONTEXT ============

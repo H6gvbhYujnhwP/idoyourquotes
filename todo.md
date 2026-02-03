@@ -1,92 +1,105 @@
 # IdoYourQuotes - Project TODO
 
-## Brand & Design
-- [x] Set up professional color palette (bold primary, neutral dark, light background)
-- [x] Configure typography (legible sans-serif, modern but professional)
-- [x] Apply theme to index.css with OKLCH colors
+Based on Formal Build Prompt & Product Roadmap
 
-## Landing Page
-- [x] Hero section with clear value proposition ("We do your quotes")
-- [x] Feature highlights section
-- [x] How it works section (4-step pipeline visual)
-- [x] Trust signals / testimonials section
-- [x] CTA and pricing section
-- [x] Footer with links
+---
 
-## Authentication
-- [x] Login/logout flow using Manus OAuth
-- [x] Protected routes for authenticated users
-- [x] User profile display in dashboard
+## Phase 1 - MVP Quote Engine (CURRENT)
 
-## Database Schema
-- [x] Quotes table (id, userId, status, clientName, clientEmail, reference, terms, createdAt, updatedAt)
-- [x] Quote line items table (id, quoteId, description, quantity, unit, rate, total)
-- [x] Tender contexts table (id, quoteId, symbolMappings, assumptions, locked fields)
-- [x] Internal estimates table (id, quoteId, notes, riskNotes, assumptions, aiSuggestions)
-- [x] Inputs table (id, quoteId, type, content, filename, uploadedAt)
-- [x] Product catalog table (id, userId, name, description, unit, defaultRate)
+### Core Infrastructure
+- [x] PostgreSQL database with all 7 tables
+- [x] Standalone email/password authentication
+- [x] JWT session management
+- [x] Production deployment on Render
 
-## Quote Workspace (Core Feature)
-- [x] Quote list view with status filters (draft, sent, accepted)
-- [x] Create new quote flow
-- [x] 4-tab workspace layout:
-  - [x] Inputs tab (upload PDFs, images, audio, text)
-  - [x] Interpretation tab (tender context, symbol mapping)
-  - [x] Internal Estimate tab (private notes, costs, risks)
-  - [x] Quote tab (client-facing output)
-- [x] Line items CRUD (add, edit, delete, reorder)
+### Landing Page & Branding
+- [x] Professional landing page with "We do your quotes" messaging
+- [x] 4-step pipeline visual (Inputs → Interpretation → Internal → Quote)
+- [x] Trust signals and CTA sections
+
+### Quote Workspace (4-Tab Pipeline)
+- [x] Tab 1: Inputs - UI for upload areas (PDF, Image, Audio, Email/Text)
+- [x] Tab 2: Interpretation - Symbol mappings, assumptions, locked fields UI
+- [x] Tab 3: Internal Estimate - Private notes, risk notes, cost assumptions UI
+- [x] Tab 4: Quote - Client details, line items, totals, terms UI
+- [x] Line items CRUD with calculations
 - [x] Quote totals calculation
-- [ ] Quote status management (draft → sent → accepted)
 
-## PDF Generation
-- [ ] Generate professional PDF quote
+### File Upload (S3 Storage)
+- [x] Implement S3 file upload for PDF documents
+- [x] Implement S3 file upload for images/drawings
+- [x] Implement S3 file upload for audio recordings
+- [x] Store file references in quote_inputs table
+- [x] Display uploaded files in Inputs tab
+
+### PDF Generation
+- [ ] Generate professional PDF quote output
+- [ ] Include company details, client info, line items, totals, terms
 - [ ] Download PDF functionality
-- [ ] Email quote option (future)
+- [ ] Clean, confident, professional design (no AI language)
 
-## Product/Service Catalog
-- [x] Catalog list view
-- [x] Add/edit/delete catalog items
+### Quote Status Workflow
+- [ ] Draft → Sent → Accepted status flow
+- [ ] Status badges and filters on dashboard
+- [ ] "Send Quote" button functionality
+
+### Product Catalog Integration
+- [x] Catalog CRUD
 - [ ] Import catalog items into quote line items
 
-## Settings
+### Settings
 - [x] User profile settings
-- [x] Default terms and conditions
 - [x] Company details for quotes
+- [x] Default terms and conditions
 
-## AI Features (Future - API Integration)
-- [ ] AI-assisted draft suggestions
-- [ ] Estimator prompt system
-- [ ] Audio transcription for meeting notes
-- [ ] Document parsing for tenders
+---
 
-## Testing
-- [ ] Write vitest tests for quote CRUD operations
-- [ ] Write vitest tests for line item calculations
+## Phase 2 - Estimator AI Prompt (NEXT)
 
-## Deployment
-- [ ] Push to GitHub
-- [ ] Configure for Render deployment
+### "Ask About This Quote" Feature
+- [ ] Controlled prompt interface (not free chat)
+- [ ] Pre-defined question types:
+  - "What might I have missed?"
+  - "What risks should I consider?"
+  - "What assumptions should I state?"
+  - "Does this look under-priced?"
+  - "What usually causes issues on jobs like this?"
+- [ ] AI output categorized as:
+  - Suggested additions
+  - Potential risks
+  - Assumptions to consider
+  - Questions for the user
+- [ ] AI respects locked items as immutable
+- [ ] AI only appends, never rewrites
+- [ ] All AI output is internal-only (never client-visible)
 
-## Testing
+### OpenAI Integration
+- [ ] Configure OpenAI API key
+- [ ] Implement LLM invocation for estimator prompts
+- [ ] Context injection (quote data, tender context, internal estimates)
+
+---
+
+## Phase 3 - Quote History Intelligence (FUTURE)
+
+- [ ] Upload historical quotes & tenders
+- [ ] Index historical data per organisation
+- [ ] Pattern extraction (common line items, exclusions, pricing ranges)
+- [ ] Reference-based suggestions ("On similar past jobs, you usually include X")
+
+---
+
+## Phase 4 - Wholesale & Scale (FUTURE)
+
+- [ ] White-label / partner mode
+- [ ] API / embed into other platforms
+- [ ] "Powered by idoyourquotes"
+
+---
+
+## Technical Debt & Improvements
+- [x] Unit tests for auth
 - [x] Unit tests for quote CRUD
-- [x] Unit tests for line items
-- [x] Unit tests for catalog
-
-## Deployment
-- [ ] Push to GitHub
-- [ ] Configure for Render deployment
-
-## PostgreSQL Migration
-- [x] Convert schema from MySQL to PostgreSQL
-- [x] Update drizzle config for PostgreSQL
-- [x] Update db.ts connection for PostgreSQL
-- [x] Test database operations
-- [ ] Push to GitHub
-
-## Production Deployment Fixes
-- [x] Remove old MySQL migration files causing conflicts
-- [x] Generate fresh PostgreSQL migrations
-- [x] Implement standalone authentication (remove Manus OAuth dependency)
-- [x] Add password hashing with bcrypt
-- [x] Create login/register pages
-- [ ] Push to GitHub and verify deployment
+- [ ] Add more comprehensive test coverage
+- [ ] Error handling improvements
+- [ ] Loading states and optimistic updates
