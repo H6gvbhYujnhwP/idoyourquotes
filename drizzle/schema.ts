@@ -24,6 +24,7 @@ export const users = pgTable("users", {
   companyPhone: varchar("company_phone", { length: 50 }),
   companyEmail: varchar("company_email", { length: 320 }),
   defaultTerms: text("default_terms"),
+  companyLogo: text("company_logo"), // URL to logo stored in R2
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   lastSignedIn: timestamp("last_signed_in").defaultNow().notNull(),

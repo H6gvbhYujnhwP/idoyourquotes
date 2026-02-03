@@ -5,29 +5,110 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Save, User, Building2, FileText, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
+import { trpc } from "@/lib/trpc";
 
 export default function Settings() {
   const { user, logout } = useAuth();
-  const [isSaving, setIsSaving] = useState(false);
-
-  // Company details (would be saved to user profile in a real implementation)
+  const utils = trpc.useUtils();
+  
+  // Form state
   const [companyName, setCompanyName] = useState("");
   const [companyAddress, setCompanyAddress] = useState("");
   const [companyPhone, setCompanyPhone] = useState("");
   const [companyEmail, setCompanyEmail] = useState("");
+  const [companyLogo, setCompanyLogo] = useState<string | null>(null);
   const [defaultTerms, setDefaultTerms] = useState(
     "1. This quote is valid for 30 days from the date of issue.\n2. Payment terms: 50% deposit, 50% on completion.\n3. All prices are exclusive of VAT unless otherwise stated."
   );
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load user data into form
+  useEffect(() => {
+    if (user) {
+      setCompanyName(user.companyName || "");
+      setCompanyAddress(user.companyAddress || "");
+      setCompanyPhone(user.companyPhone || "");
+      setCompanyEmail(user.companyEmail || "");
+      setCompanyLogo(user.companyLogo || null);
+      if (user.defaultTerms) {
+        setDefaultTerms(user.defaultTerms);
+      }
+    }
+  }, [user]);
+
+  // Update profile mutation
+  const updateProfile = trpc.auth.updateProfile.useMutation({
+    onSuccess: () => {
+      utils.auth.me.invalidate();
+      toast.success("Settings saved");
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to save settings");
+    },
+  });
+
+  // Upload logo mutation
+  const uploadLogo = trpc.auth.uploadLogo.useMutation({
+    onSuccess: (data) => {
+      setCompanyLogo(data.url);
+      utils.auth.me.invalidate();
+      toast.success("Logo uploaded");
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to upload logo");
+    },
+  });
 
   const handleSave = async () => {
-    setIsSaving(true);
-    // Simulate save - in real implementation, this would call a tRPC mutation
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    toast.success("Settings saved");
-    setIsSaving(false);
+    updateProfile.mutate({
+      companyName: companyName || undefined,
+      companyAddress: companyAddress || undefined,
+      companyPhone: companyPhone || undefined,
+      companyEmail: companyEmail || undefined,
+      defaultTerms: defaultTerms || undefined,
+    });
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error("Please upload a JPG, PNG, GIF, or WebP image");
+      return;
+    }
+
+    // Validate file size (max 2MB for logos)
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Logo must be less than 2MB");
+      return;
+    }
+
+    // Convert to base64
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = (reader.result as string).split(",")[1];
+      uploadLogo.mutate({
+        filename: file.name,
+        contentType: file.type,
+        base64Data: base64,
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveLogo = () => {
+    updateProfile.mutate({
+      companyLogo: "",
+    });
+    setCompanyLogo(null);
+    toast.success("Logo removed");
   };
 
   return (
@@ -60,9 +141,73 @@ export default function Settings() {
               <Input value={user?.email || ""} disabled className="bg-muted" />
             </div>
           </div>
-          <p className="text-sm text-muted-foreground">
-            Profile information is managed through your Manus account.
-          </p>
+        </CardContent>
+      </Card>
+
+      {/* Company Logo */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ImageIcon className="h-5 w-5" />
+            Company Logo
+          </CardTitle>
+          <CardDescription>
+            Your logo will appear on all quote PDFs
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-start gap-6">
+            {/* Logo Preview */}
+            <div className="w-40 h-24 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted/50 relative overflow-hidden">
+              {companyLogo ? (
+                <>
+                  <img
+                    src={companyLogo}
+                    alt="Company Logo"
+                    className="max-w-full max-h-full object-contain p-2"
+                  />
+                  <button
+                    onClick={handleRemoveLogo}
+                    className="absolute top-1 right-1 p-1 bg-destructive text-destructive-foreground rounded-full hover:bg-destructive/90"
+                    title="Remove logo"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </>
+              ) : (
+                <div className="text-center text-muted-foreground text-sm">
+                  <ImageIcon className="h-8 w-8 mx-auto mb-1 opacity-50" />
+                  No logo
+                </div>
+              )}
+            </div>
+
+            {/* Upload Button */}
+            <div className="space-y-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                onChange={handleLogoUpload}
+                className="hidden"
+              />
+              <Button
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadLogo.isPending}
+              >
+                {uploadLogo.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="mr-2 h-4 w-4" />
+                )}
+                Upload Logo
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                JPG, PNG, GIF, or WebP. Max 2MB.
+              </p>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -144,8 +289,8 @@ export default function Settings() {
 
       {/* Save Button */}
       <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={isSaving}>
-          {isSaving ? (
+        <Button onClick={handleSave} disabled={updateProfile.isPending}>
+          {updateProfile.isPending ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           ) : (
             <Save className="mr-2 h-4 w-4" />

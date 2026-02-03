@@ -33,10 +33,11 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Display uploaded files in Inputs tab
 
 ### PDF Generation
-- [ ] Generate professional PDF quote output
-- [ ] Include company details, client info, line items, totals, terms
-- [ ] Download PDF functionality
-- [ ] Clean, confident, professional design (no AI language)
+- [x] Company logo upload to R2 storage
+- [x] Generate professional PDF quote output
+- [x] Include company logo, details, client info, line items, totals, terms
+- [x] Download PDF functionality
+- [x] Clean, confident, professional design (no AI language)
 
 ### Quote Status Workflow
 - [ ] Draft → Sent → Accepted status flow

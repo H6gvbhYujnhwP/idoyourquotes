@@ -114,6 +114,7 @@ export async function updateUserProfile(userId: number, data: {
   companyPhone?: string;
   companyEmail?: string;
   defaultTerms?: string;
+  companyLogo?: string;
 }): Promise<User | undefined> {
   const db = await getDb();
   if (!db) return undefined;

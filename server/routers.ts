@@ -4,6 +4,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured } from "./r2Storage";
+import { generateQuoteHTML } from "./pdfGenerator";
 import {
   getQuotesByUserId,
   getQuoteById,
@@ -48,9 +49,38 @@ export const appRouter = router({
         companyPhone: z.string().optional(),
         companyEmail: z.string().optional(),
         defaultTerms: z.string().optional(),
+        companyLogo: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         return updateUserProfile(ctx.user.id, input);
+      }),
+    uploadLogo: protectedProcedure
+      .input(z.object({
+        filename: z.string(),
+        contentType: z.string(),
+        base64Data: z.string(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (!isR2Configured()) {
+          throw new Error("File storage is not configured");
+        }
+
+        // Decode base64 to buffer
+        const buffer = Buffer.from(input.base64Data, "base64");
+
+        // Upload to R2 with user-specific folder
+        const folder = `logos/${ctx.user.id}`;
+        const { key, url } = await uploadToR2(
+          buffer,
+          input.filename,
+          input.contentType,
+          folder
+        );
+
+        // Update user profile with logo URL
+        const user = await updateUserProfile(ctx.user.id, { companyLogo: url });
+
+        return { url, key, user };
       }),
     changePassword: protectedProcedure
       .input(z.object({
@@ -152,6 +182,20 @@ export const appRouter = router({
           tenderContext,
           internalEstimate,
         };
+      }),
+
+    // Generate PDF HTML for a quote
+    generatePDF: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const quote = await getQuoteById(input.id, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+
+        const lineItems = await getLineItemsByQuoteId(input.id);
+        const user = ctx.user;
+
+        const html = generateQuoteHTML({ quote, lineItems, user });
+        return { html };
       }),
   }),
 

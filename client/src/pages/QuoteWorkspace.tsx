@@ -87,6 +87,7 @@ export default function QuoteWorkspace() {
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadingType, setUploadingType] = useState<string | null>(null);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
   // File input refs
   const pdfInputRef = useRef<HTMLInputElement>(null);
@@ -230,6 +231,42 @@ export default function QuoteWorkspace() {
       });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleGeneratePDF = async () => {
+    setIsGeneratingPDF(true);
+    try {
+      // Fetch the PDF HTML from the server
+      const response = await fetch(`/api/trpc/quotes.generatePDF?input=${encodeURIComponent(JSON.stringify({ id: quoteId }))}`);
+      const result = await response.json();
+      
+      if (result.error) {
+        throw new Error(result.error.message || "Failed to generate PDF");
+      }
+
+      const html = result.result.data.html;
+
+      // Open in new window for printing/saving as PDF
+      const printWindow = window.open("", "_blank");
+      if (printWindow) {
+        printWindow.document.write(html);
+        printWindow.document.close();
+        
+        // Wait for content to load, then trigger print
+        printWindow.onload = () => {
+          setTimeout(() => {
+            printWindow.print();
+          }, 250);
+        };
+      } else {
+        toast.error("Please allow popups to generate PDF");
+      }
+    } catch (error) {
+      console.error("PDF generation error:", error);
+      toast.error("Failed to generate PDF");
+    } finally {
+      setIsGeneratingPDF(false);
     }
   };
 
@@ -411,8 +448,8 @@ export default function QuoteWorkspace() {
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Save
           </Button>
-          <Button variant="outline" onClick={() => toast.info("PDF generation coming soon")}>
-            <Download className="mr-2 h-4 w-4" />
+          <Button variant="outline" onClick={handleGeneratePDF} disabled={isGeneratingPDF}>
+            {isGeneratingPDF ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
             PDF
           </Button>
           {status === "draft" && (
