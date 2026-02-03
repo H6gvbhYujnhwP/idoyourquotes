@@ -119,3 +119,11 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Create catalog picker dropdown
 - [x] Import catalog item as new line item with pre-filled values
 - [x] Unit tests for catalog quick-add
+
+## Phase 2 - Estimator AI
+- [x] Backend: Create askAboutQuote procedure with LLM integration
+- [x] Build context from quote data (client, line items, totals, terms)
+- [x] Pre-defined prompts: "What might I have missed?", "What risks should I consider?", "What assumptions should I state?", "Does this look under-priced?", "What usually causes issues on jobs like this?"
+- [x] AI Assistant tab UI with question buttons
+- [x] Display AI responses with markdown rendering
+- [x] Unit tests for AI prompt feature

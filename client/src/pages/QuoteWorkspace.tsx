@@ -27,6 +27,13 @@ import {
   AlertTriangle,
   ExternalLink,
   Package,
+  Sparkles,
+  HelpCircle,
+  AlertOctagon,
+  ListChecks,
+  PoundSterling,
+  Wrench,
+  MessageSquare,
 } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { useState, useEffect, useRef } from "react";
@@ -124,6 +131,11 @@ export default function QuoteWorkspace() {
   // Catalog picker state
   const [showCatalogPicker, setShowCatalogPicker] = useState(false);
 
+  // AI Assistant state
+  const [aiResponse, setAiResponse] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState("");
+
   const { data: fullQuote, isLoading, refetch } = trpc.quotes.getFull.useQuery(
     { id: quoteId },
     { enabled: quoteId > 0 }
@@ -208,6 +220,29 @@ export default function QuoteWorkspace() {
     },
     onError: (error) => toast.error("Failed to update status: " + error.message),
   });
+
+  const askAI = trpc.ai.askAboutQuote.useMutation({
+    onMutate: () => {
+      setAiLoading(true);
+      setAiResponse(null);
+    },
+    onSuccess: (data) => {
+      setAiResponse(data.response);
+      setAiLoading(false);
+    },
+    onError: (error) => {
+      toast.error("AI request failed: " + error.message);
+      setAiLoading(false);
+    },
+  });
+
+  const handleAskAI = (promptType: "missed" | "risks" | "assumptions" | "pricing" | "issues" | "custom") => {
+    askAI.mutate({
+      quoteId,
+      promptType,
+      customPrompt: promptType === "custom" ? customPrompt : undefined,
+    });
+  };
 
   // Initialize form state from loaded data
   useEffect(() => {
@@ -527,7 +562,7 @@ export default function QuoteWorkspace() {
 
       {/* Main Content with Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4 max-w-2xl">
+        <TabsList className="grid w-full grid-cols-5 max-w-3xl">
           <TabsTrigger value="inputs" className="flex items-center gap-2">
             <Upload className="h-4 w-4" />
             <span className="hidden sm:inline">Inputs</span>
@@ -539,6 +574,10 @@ export default function QuoteWorkspace() {
           <TabsTrigger value="estimate" className="flex items-center gap-2">
             <Calculator className="h-4 w-4" />
             <span className="hidden sm:inline">Internal</span>
+          </TabsTrigger>
+          <TabsTrigger value="ai" className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4" />
+            <span className="hidden sm:inline">AI Review</span>
           </TabsTrigger>
           <TabsTrigger value="quote" className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
@@ -806,6 +845,148 @@ export default function QuoteWorkspace() {
                 )}
                 Save Internal Estimate
               </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* AI REVIEW TAB */}
+        <TabsContent value="ai" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5" />
+                AI Quote Review
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Get intelligent feedback on your quote. The AI reviews your quote details, line items, and terms to provide actionable insights.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Pre-defined prompt buttons */}
+              <div className="space-y-3">
+                <Label className="text-base font-medium">Ask the AI:</Label>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <Button
+                    variant="outline"
+                    className="h-auto py-4 px-4 justify-start text-left"
+                    onClick={() => handleAskAI("missed")}
+                    disabled={aiLoading}
+                  >
+                    <HelpCircle className="h-5 w-5 mr-3 flex-shrink-0 text-blue-500" />
+                    <div>
+                      <div className="font-medium">What might I have missed?</div>
+                      <div className="text-xs text-muted-foreground">Common oversights and missing items</div>
+                    </div>
+                  </Button>
+                  
+                  <Button
+                    variant="outline"
+                    className="h-auto py-4 px-4 justify-start text-left"
+                    onClick={() => handleAskAI("risks")}
+                    disabled={aiLoading}
+                  >
+                    <AlertOctagon className="h-5 w-5 mr-3 flex-shrink-0 text-orange-500" />
+                    <div>
+                      <div className="font-medium">What risks should I consider?</div>
+                      <div className="text-xs text-muted-foreground">Project and delivery risks</div>
+                    </div>
+                  </Button>
+                  
+                  <Button
+                    variant="outline"
+                    className="h-auto py-4 px-4 justify-start text-left"
+                    onClick={() => handleAskAI("assumptions")}
+                    disabled={aiLoading}
+                  >
+                    <ListChecks className="h-5 w-5 mr-3 flex-shrink-0 text-green-500" />
+                    <div>
+                      <div className="font-medium">What assumptions should I state?</div>
+                      <div className="text-xs text-muted-foreground">Clarify before proceeding</div>
+                    </div>
+                  </Button>
+                  
+                  <Button
+                    variant="outline"
+                    className="h-auto py-4 px-4 justify-start text-left"
+                    onClick={() => handleAskAI("pricing")}
+                    disabled={aiLoading}
+                  >
+                    <PoundSterling className="h-5 w-5 mr-3 flex-shrink-0 text-emerald-500" />
+                    <div>
+                      <div className="font-medium">Does this look under-priced?</div>
+                      <div className="text-xs text-muted-foreground">Pricing analysis and suggestions</div>
+                    </div>
+                  </Button>
+                  
+                  <Button
+                    variant="outline"
+                    className="h-auto py-4 px-4 justify-start text-left"
+                    onClick={() => handleAskAI("issues")}
+                    disabled={aiLoading}
+                  >
+                    <Wrench className="h-5 w-5 mr-3 flex-shrink-0 text-red-500" />
+                    <div>
+                      <div className="font-medium">What usually causes issues?</div>
+                      <div className="text-xs text-muted-foreground">Common problems and delays</div>
+                    </div>
+                  </Button>
+                </div>
+              </div>
+
+              {/* Custom prompt */}
+              <div className="space-y-3 border-t pt-6">
+                <Label className="text-base font-medium">Or ask your own question:</Label>
+                <div className="flex gap-3">
+                  <Textarea
+                    placeholder="Type your question about this quote..."
+                    value={customPrompt}
+                    onChange={(e) => setCustomPrompt(e.target.value)}
+                    className="min-h-[80px]"
+                  />
+                </div>
+                <Button
+                  onClick={() => handleAskAI("custom")}
+                  disabled={aiLoading || !customPrompt.trim()}
+                  className="w-full sm:w-auto"
+                >
+                  {aiLoading ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <MessageSquare className="mr-2 h-4 w-4" />
+                  )}
+                  Ask AI
+                </Button>
+              </div>
+
+              {/* AI Response */}
+              {aiLoading && (
+                <div className="border rounded-lg p-6 bg-muted/30">
+                  <div className="flex items-center gap-3">
+                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                    <span className="text-muted-foreground">AI is analyzing your quote...</span>
+                  </div>
+                </div>
+              )}
+
+              {aiResponse && !aiLoading && (
+                <div className="border rounded-lg p-6 bg-muted/20">
+                  <div className="flex items-start gap-3">
+                    <Sparkles className="h-5 w-5 text-primary flex-shrink-0 mt-1" />
+                    <div className="prose prose-sm max-w-none dark:prose-invert">
+                      <div className="whitespace-pre-wrap">{aiResponse}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!aiResponse && !aiLoading && (
+                <div className="border rounded-lg p-6 bg-muted/10 text-center">
+                  <Sparkles className="h-8 w-8 mx-auto mb-3 text-muted-foreground" />
+                  <p className="text-muted-foreground">
+                    Click one of the questions above to get AI-powered insights about your quote.
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

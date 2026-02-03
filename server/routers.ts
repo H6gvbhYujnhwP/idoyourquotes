@@ -3,6 +3,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
+import { invokeLLM } from "./_core/llm";
 import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured } from "./r2Storage";
 import { generateQuoteHTML } from "./pdfGenerator";
 import {
@@ -540,6 +541,120 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         await deleteCatalogItem(input.id, ctx.user.id);
         return { success: true };
+      }),
+  }),
+
+  // ============ AI ASSISTANT ============
+  ai: router({
+    askAboutQuote: protectedProcedure
+      .input(z.object({
+        quoteId: z.number(),
+        promptType: z.enum([
+          "missed",
+          "risks",
+          "assumptions",
+          "pricing",
+          "issues",
+          "custom"
+        ]),
+        customPrompt: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        // Get quote data
+        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+
+        const lineItems = await getLineItemsByQuoteId(input.quoteId);
+        const tenderContext = await getTenderContextByQuoteId(input.quoteId);
+        const internalEstimate = await getInternalEstimateByQuoteId(input.quoteId);
+
+        // Build context about the quote
+        const lineItemsText = lineItems.length > 0
+          ? lineItems.map(item => 
+              `- ${item.description}: ${item.quantity} ${item.unit} @ £${item.rate} = £${item.total}`
+            ).join("\n")
+          : "No line items added yet";
+
+        const quoteContext = `
+## Quote Details
+- **Title**: ${quote.title || "Untitled Quote"}
+- **Client**: ${quote.clientName || "Not specified"}
+- **Client Email**: ${quote.clientEmail || "Not specified"}
+- **Client Address**: ${quote.clientAddress || "Not specified"}
+- **Description**: ${quote.description || "No description"}
+- **Status**: ${quote.status}
+
+## Line Items
+${lineItemsText}
+
+## Financials
+- **Subtotal**: £${quote.subtotal || "0.00"}
+- **Tax Rate**: ${quote.taxRate || "0"}%
+- **Tax Amount**: £${quote.taxAmount || "0.00"}
+- **Total**: £${quote.total || "0.00"}
+
+## Terms & Conditions
+${quote.terms || "No terms specified"}
+
+${tenderContext ? `## Tender Context
+- **Assumptions**: ${tenderContext.assumptions ? tenderContext.assumptions.map((a: { text: string }) => a.text).join(", ") : "None listed"}
+- **Exclusions**: ${tenderContext.exclusions ? tenderContext.exclusions.map((e: { text: string }) => e.text).join(", ") : "None listed"}
+- **Notes**: ${tenderContext.notes || "None"}` : ""}
+
+${internalEstimate ? `## Internal Estimate Notes
+- **Notes**: ${internalEstimate.notes || "None"}
+- **Risk Notes**: ${internalEstimate.riskNotes || "None"}` : ""}
+`.trim();
+
+        // Define prompts for each type
+        const prompts: Record<string, string> = {
+          missed: "Based on this quote, what items, services, or considerations might I have missed? Think about common oversights in similar projects.",
+          risks: "What risks should I consider for this quote? Think about project risks, delivery risks, scope creep, and client-related risks.",
+          assumptions: "What assumptions am I making in this quote that I should explicitly state to the client? What should be clarified before proceeding?",
+          pricing: "Does this quote look appropriately priced? Consider the scope, market rates, and value delivered. Flag if anything seems under-priced or over-priced.",
+          issues: "What usually causes issues on jobs like this? What are common problems, delays, or disputes that arise in similar projects?",
+          custom: input.customPrompt || "Please review this quote and provide your analysis.",
+        };
+
+        const userPrompt = prompts[input.promptType];
+
+        const systemPrompt = `You are an experienced business consultant and estimator helping review quotes for a professional services business. 
+
+You provide practical, actionable advice based on real-world experience. Your responses should be:
+- Specific and relevant to the quote details provided
+- Practical and actionable
+- Professional but conversational
+- Focused on helping the user create better, more complete quotes
+
+Do NOT use generic advice. Base your response on the specific quote details provided.
+Keep responses concise but thorough - aim for 3-5 key points.
+Use bullet points for clarity.
+Do not start with phrases like "Based on the quote..." - get straight to the insights.`;
+
+        try {
+          const response = await invokeLLM({
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: `Here is the quote I'm working on:\n\n${quoteContext}\n\n${userPrompt}` },
+            ],
+          });
+
+          const content = response.choices[0]?.message?.content;
+          const responseText = typeof content === "string" 
+            ? content 
+            : Array.isArray(content) 
+              ? content.map(c => c.type === "text" ? c.text : "").join("")
+              : "Unable to generate response";
+
+          return {
+            success: true,
+            response: responseText,
+            promptType: input.promptType,
+          };
+        } catch (error) {
+          console.error("AI invocation error:", error);
+          throw new Error("Failed to get AI response. Please try again.");
+        }
       }),
   }),
 });
