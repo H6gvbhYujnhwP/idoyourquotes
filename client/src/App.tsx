@@ -6,6 +6,8 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import DashboardLayout from "./components/DashboardLayout";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import QuoteWorkspace from "./pages/QuoteWorkspace";
 import Catalog from "./pages/Catalog";
@@ -16,6 +18,10 @@ function Router() {
     <Switch>
       {/* Public landing page */}
       <Route path="/" component={Home} />
+      
+      {/* Auth pages */}
+      <Route path="/login" component={Login} />
+      <Route path="/register" component={Register} />
       
       {/* Protected dashboard routes */}
       <Route path="/dashboard">

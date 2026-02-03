@@ -82,3 +82,11 @@
 - [x] Update db.ts connection for PostgreSQL
 - [x] Test database operations
 - [ ] Push to GitHub
+
+## Production Deployment Fixes
+- [x] Remove old MySQL migration files causing conflicts
+- [x] Generate fresh PostgreSQL migrations
+- [x] Implement standalone authentication (remove Manus OAuth dependency)
+- [x] Add password hashing with bcrypt
+- [x] Create login/register pages
+- [ ] Push to GitHub and verify deployment

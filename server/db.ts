@@ -1,6 +1,7 @@
 import { eq, desc, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import bcrypt from "bcryptjs";
 import { 
   InsertUser, 
   users, 
@@ -22,8 +23,8 @@ import {
   InsertInternalEstimate,
   CatalogItem,
   InsertCatalogItem,
+  User,
 } from "../drizzle/schema";
-import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let _client: ReturnType<typeof postgres> | null = null;
@@ -42,64 +43,103 @@ export async function getDb() {
   return _db;
 }
 
-// ============ USER HELPERS ============
+// ============ USER AUTHENTICATION HELPERS ============
 
-export async function upsertUser(user: InsertUser): Promise<void> {
-  if (!user.openId) {
-    throw new Error("User openId is required for upsert");
-  }
+const SALT_ROUNDS = 12;
 
+export async function createUser(email: string, password: string, name?: string): Promise<User | null> {
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
-    return;
+  if (!db) throw new Error("Database not available");
+
+  // Check if user already exists
+  const existing = await db.select().from(users).where(eq(users.email, email.toLowerCase())).limit(1);
+  if (existing.length > 0) {
+    return null; // User already exists
   }
 
-  try {
-    // Check if user exists
-    const existing = await db.select().from(users).where(eq(users.openId, user.openId)).limit(1);
-    
-    if (existing.length > 0) {
-      // Update existing user
-      const updateData: Partial<InsertUser> = {
-        lastSignedIn: new Date(),
-      };
-      
-      if (user.name !== undefined) updateData.name = user.name;
-      if (user.email !== undefined) updateData.email = user.email;
-      if (user.loginMethod !== undefined) updateData.loginMethod = user.loginMethod;
-      if (user.role !== undefined) updateData.role = user.role;
-      
-      await db.update(users).set(updateData).where(eq(users.openId, user.openId));
-    } else {
-      // Insert new user
-      const values: InsertUser = {
-        openId: user.openId,
-        name: user.name ?? null,
-        email: user.email ?? null,
-        loginMethod: user.loginMethod ?? null,
-        role: user.openId === ENV.ownerOpenId ? 'admin' : (user.role || 'user'),
-        lastSignedIn: new Date(),
-      };
-      
-      await db.insert(users).values(values);
-    }
-  } catch (error) {
-    console.error("[Database] Failed to upsert user:", error);
-    throw error;
-  }
+  const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+  
+  const [user] = await db.insert(users).values({
+    email: email.toLowerCase(),
+    passwordHash,
+    name: name || null,
+    role: 'user',
+    isActive: true,
+  }).returning();
+
+  return user;
 }
 
-export async function getUserByOpenId(openId: string) {
+export async function authenticateUser(email: string, password: string): Promise<User | null> {
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
+  if (!db) return null;
+
+  const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase())).limit(1);
+  
+  if (!user || !user.isActive) {
+    return null;
   }
 
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+  const isValid = await bcrypt.compare(password, user.passwordHash);
+  if (!isValid) {
+    return null;
+  }
 
-  return result.length > 0 ? result[0] : undefined;
+  // Update last signed in
+  await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, user.id));
+
+  return user;
+}
+
+export async function getUserById(userId: number): Promise<User | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  return user;
+}
+
+export async function getUserByEmail(email: string): Promise<User | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase())).limit(1);
+  return user;
+}
+
+export async function updateUserProfile(userId: number, data: {
+  name?: string;
+  companyName?: string;
+  companyAddress?: string;
+  companyPhone?: string;
+  companyEmail?: string;
+  defaultTerms?: string;
+}): Promise<User | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const [user] = await db.update(users)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(users.id, userId))
+    .returning();
+
+  return user;
+}
+
+export async function changePassword(userId: number, currentPassword: string, newPassword: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+
+  const user = await getUserById(userId);
+  if (!user) return false;
+
+  const isValid = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!isValid) return false;
+
+  const newHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+  await db.update(users).set({ passwordHash: newHash, updatedAt: new Date() }).where(eq(users.id, userId));
+
+  return true;
 }
 
 // ============ QUOTE HELPERS ============

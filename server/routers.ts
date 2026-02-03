@@ -25,6 +25,8 @@ import {
   updateCatalogItem,
   deleteCatalogItem,
   recalculateQuoteTotals,
+  updateUserProfile,
+  changePassword,
 } from "./db";
 
 export const appRouter = router({
@@ -37,6 +39,30 @@ export const appRouter = router({
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
+    updateProfile: protectedProcedure
+      .input(z.object({
+        name: z.string().optional(),
+        companyName: z.string().optional(),
+        companyAddress: z.string().optional(),
+        companyPhone: z.string().optional(),
+        companyEmail: z.string().optional(),
+        defaultTerms: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return updateUserProfile(ctx.user.id, input);
+      }),
+    changePassword: protectedProcedure
+      .input(z.object({
+        currentPassword: z.string(),
+        newPassword: z.string().min(8),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const success = await changePassword(ctx.user.id, input.currentPassword, input.newPassword);
+        if (!success) {
+          throw new Error("Current password is incorrect");
+        }
+        return { success: true };
+      }),
   }),
 
   // ============ QUOTES ============

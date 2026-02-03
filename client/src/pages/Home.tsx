@@ -26,7 +26,7 @@ export default function Home() {
     if (user) {
       setLocation("/dashboard");
     } else {
-      window.location.href = getLoginUrl();
+      setLocation("/register");
     }
   };
 

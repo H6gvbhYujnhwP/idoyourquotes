@@ -1,4 +1,4 @@
-import { serial, pgEnum, pgTable, text, timestamp, varchar, decimal, json, integer } from "drizzle-orm/pg-core";
+import { serial, pgEnum, pgTable, text, timestamp, varchar, decimal, json, integer, boolean } from "drizzle-orm/pg-core";
 
 /**
  * Enums for PostgreSQL
@@ -9,14 +9,15 @@ export const inputTypeEnum = pgEnum("input_type", ["pdf", "image", "audio", "ema
 
 /**
  * Core user table backing auth flow.
+ * Supports standalone email/password authentication.
  */
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
-  openId: varchar("open_id", { length: 64 }).notNull().unique(),
+  email: varchar("email", { length: 320 }).notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
   name: text("name"),
-  email: varchar("email", { length: 320 }),
-  loginMethod: varchar("login_method", { length: 64 }),
   role: roleEnum("role").default("user").notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
   // Company details for quotes
   companyName: varchar("company_name", { length: 255 }),
   companyAddress: text("company_address"),
