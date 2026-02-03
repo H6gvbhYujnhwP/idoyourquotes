@@ -59,6 +59,9 @@ interface QuoteInput {
   content: string | null;
   mimeType: string | null;
   createdAt: Date;
+  processedContent: string | null;
+  processingStatus: string | null;
+  processingError: string | null;
 }
 
 const statusConfig: Record<QuoteStatus, { label: string; className: string }> = {
@@ -135,6 +138,11 @@ export default function QuoteWorkspace() {
   const [aiResponse, setAiResponse] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
+
+  // Generate Draft state
+  const [userPrompt, setUserPrompt] = useState(""); // For pasting email/instructions
+  const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
+  const [processingInputId, setProcessingInputId] = useState<number | null>(null);
 
   const { data: fullQuote, isLoading, refetch } = trpc.quotes.getFull.useQuery(
     { id: quoteId },
@@ -241,6 +249,85 @@ export default function QuoteWorkspace() {
       quoteId,
       promptType,
       customPrompt: promptType === "custom" ? customPrompt : undefined,
+    });
+  };
+
+  // AI Processing mutations
+  const transcribeAudio = trpc.inputs.transcribeAudio.useMutation({
+    onMutate: ({ inputId }) => {
+      setProcessingInputId(inputId);
+    },
+    onSuccess: (data) => {
+      toast.success("Audio transcribed successfully");
+      setProcessingInputId(null);
+      refetch();
+    },
+    onError: (error) => {
+      toast.error("Transcription failed: " + error.message);
+      setProcessingInputId(null);
+    },
+  });
+
+  const extractPdfText = trpc.inputs.extractPdfText.useMutation({
+    onMutate: ({ inputId }) => {
+      setProcessingInputId(inputId);
+    },
+    onSuccess: () => {
+      toast.success("PDF text extracted successfully");
+      setProcessingInputId(null);
+      refetch();
+    },
+    onError: (error) => {
+      toast.error("PDF extraction failed: " + error.message);
+      setProcessingInputId(null);
+    },
+  });
+
+  const analyzeImage = trpc.inputs.analyzeImage.useMutation({
+    onMutate: ({ inputId }) => {
+      setProcessingInputId(inputId);
+    },
+    onSuccess: () => {
+      toast.success("Image analyzed successfully");
+      setProcessingInputId(null);
+      refetch();
+    },
+    onError: (error) => {
+      toast.error("Image analysis failed: " + error.message);
+      setProcessingInputId(null);
+    },
+  });
+
+  const generateDraft = trpc.ai.generateDraft.useMutation({
+    onMutate: () => {
+      setIsGeneratingDraft(true);
+    },
+    onSuccess: () => {
+      toast.success("Quote draft generated! Review the Quote tab.");
+      setIsGeneratingDraft(false);
+      setActiveTab("quote");
+      refetch();
+    },
+    onError: (error) => {
+      toast.error("Draft generation failed: " + error.message);
+      setIsGeneratingDraft(false);
+    },
+  });
+
+  const handleProcessInput = (input: QuoteInput) => {
+    if (input.inputType === "audio") {
+      transcribeAudio.mutate({ inputId: input.id, quoteId });
+    } else if (input.inputType === "pdf") {
+      extractPdfText.mutate({ inputId: input.id, quoteId });
+    } else if (input.inputType === "image") {
+      analyzeImage.mutate({ inputId: input.id, quoteId });
+    }
+  };
+
+  const handleGenerateDraft = () => {
+    generateDraft.mutate({
+      quoteId,
+      userPrompt: userPrompt || undefined,
     });
   };
 
@@ -494,6 +581,14 @@ export default function QuoteWorkspace() {
           </div>
         </div>
         <div className="flex gap-2">
+          <Button 
+            onClick={handleGenerateDraft} 
+            disabled={isGeneratingDraft || !inputs || inputs.length === 0}
+            className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
+          >
+            {isGeneratingDraft ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+            Generate Draft
+          </Button>
           <Button variant="outline" onClick={handleSaveQuote} disabled={isSaving}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Save
@@ -577,7 +672,7 @@ export default function QuoteWorkspace() {
           </TabsTrigger>
           <TabsTrigger value="ai" className="flex items-center gap-2">
             <Sparkles className="h-4 w-4" />
-            <span className="hidden sm:inline">AI Review</span>
+            <span className="hidden sm:inline">Ask AI</span>
           </TabsTrigger>
           <TabsTrigger value="quote" className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
@@ -664,6 +759,24 @@ export default function QuoteWorkspace() {
                 </Button>
               </div>
 
+              {/* User Prompt - Email/Instructions for AI */}
+              <div className="space-y-3 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200">
+                <div className="flex items-center gap-2">
+                  <Mail className="h-5 w-5 text-purple-600" />
+                  <Label className="text-purple-900 font-medium">Email / Instructions for AI</Label>
+                </div>
+                <p className="text-sm text-purple-700">
+                  Paste the client's email, brief, or any instructions. This will be used when generating the quote draft.
+                </p>
+                <Textarea
+                  placeholder="Paste the client email, project brief, or instructions here...\n\nExample:\n'Hi, I need a quote for painting 3 bedrooms and the hallway. The rooms are roughly 12x12 each. We'd like it done in 2 weeks if possible. Thanks, John'"
+                  value={userPrompt}
+                  onChange={(e) => setUserPrompt(e.target.value)}
+                  rows={5}
+                  className="bg-white"
+                />
+              </div>
+
               {/* Text input */}
               <div className="space-y-3">
                 <Label>Add Text Note</Label>
@@ -712,9 +825,64 @@ export default function QuoteWorkspace() {
                             <p className="text-xs text-muted-foreground mt-1">
                               Added {new Date(input.createdAt).toLocaleDateString("en-GB")}
                             </p>
+                            {/* Processing status */}
+                            {input.processingStatus === "completed" && (
+                              <div className="flex items-center gap-1 mt-2">
+                                <Check className="h-3 w-3 text-green-500" />
+                                <span className="text-xs text-green-600">Processed</span>
+                              </div>
+                            )}
+                            {input.processingStatus === "processing" && (
+                              <div className="flex items-center gap-1 mt-2">
+                                <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />
+                                <span className="text-xs text-blue-600">Processing...</span>
+                              </div>
+                            )}
+                            {input.processingStatus === "failed" && (
+                              <div className="flex items-center gap-1 mt-2">
+                                <AlertTriangle className="h-3 w-3 text-red-500" />
+                                <span className="text-xs text-red-600">{input.processingError || "Failed"}</span>
+                              </div>
+                            )}
+                            {/* Show processed content preview */}
+                            {input.processedContent && (
+                              <div className="mt-2 p-2 bg-green-50 rounded border border-green-200">
+                                <p className="text-xs text-green-800 line-clamp-3">{input.processedContent}</p>
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-1">
+                          {/* Process button for unprocessed files */}
+                          {input.fileUrl && !input.processingStatus && (input.inputType === "audio" || input.inputType === "pdf" || input.inputType === "image") && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs"
+                              onClick={() => handleProcessInput(input)}
+                              disabled={processingInputId === input.id}
+                            >
+                              {processingInputId === input.id ? (
+                                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                              ) : (
+                                <Brain className="mr-1 h-3 w-3" />
+                              )}
+                              {input.inputType === "audio" ? "Transcribe" : input.inputType === "pdf" ? "Extract" : "Analyze"}
+                            </Button>
+                          )}
+                          {/* Retry button for failed processing */}
+                          {input.processingStatus === "failed" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs text-amber-600 border-amber-300"
+                              onClick={() => handleProcessInput(input)}
+                              disabled={processingInputId === input.id}
+                            >
+                              <AlertTriangle className="mr-1 h-3 w-3" />
+                              Retry
+                            </Button>
+                          )}
                           {input.fileUrl && (
                             <Button
                               variant="ghost"

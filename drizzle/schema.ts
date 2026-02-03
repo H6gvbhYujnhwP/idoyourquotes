@@ -98,6 +98,10 @@ export const quoteInputs = pgTable("quote_inputs", {
   fileKey: varchar("file_key", { length: 255 }),
   content: text("content"), // For text/email inputs or transcriptions
   mimeType: varchar("mime_type", { length: 100 }),
+  // AI processing fields
+  processedContent: text("processedContent"), // Transcription, OCR text, or analysis result
+  processingStatus: varchar("processingStatus", { length: 20 }).default("pending"), // pending, processing, completed, failed
+  processingError: text("processingError"), // Error message if processing failed
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

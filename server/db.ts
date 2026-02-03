@@ -309,6 +309,34 @@ export async function deleteInput(inputId: number): Promise<boolean> {
   return true;
 }
 
+export async function updateInputProcessing(
+  inputId: number,
+  data: {
+    processedContent?: string | null;
+    processingStatus?: string;
+    processingError?: string | null;
+  }
+): Promise<QuoteInput | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const [result] = await db.update(quoteInputs)
+    .set(data)
+    .where(eq(quoteInputs.id, inputId))
+    .returning();
+  return result;
+}
+
+export async function getInputById(inputId: number): Promise<QuoteInput | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const [result] = await db.select().from(quoteInputs)
+    .where(eq(quoteInputs.id, inputId))
+    .limit(1);
+  return result;
+}
+
 // ============ TENDER CONTEXT HELPERS ============
 
 export async function getTenderContextByQuoteId(quoteId: number): Promise<TenderContext | undefined> {

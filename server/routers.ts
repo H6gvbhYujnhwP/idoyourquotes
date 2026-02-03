@@ -20,6 +20,8 @@ import {
   getInputsByQuoteId,
   createInput,
   deleteInput,
+  getInputById,
+  updateInputProcessing,
   getTenderContextByQuoteId,
   upsertTenderContext,
   getInternalEstimateByQuoteId,
@@ -32,6 +34,7 @@ import {
   updateUserProfile,
   changePassword,
 } from "./db";
+import { transcribeAudio } from "./_core/voiceTranscription";
 
 export const appRouter = router({
   system: systemRouter,
@@ -419,6 +422,215 @@ export const appRouter = router({
     storageStatus: protectedProcedure.query(() => {
       return { configured: isR2Configured() };
     }),
+
+    // Process an audio input (transcribe)
+    transcribeAudio: protectedProcedure
+      .input(z.object({ inputId: z.number(), quoteId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+
+        const inputRecord = await getInputById(input.inputId);
+        if (!inputRecord || inputRecord.quoteId !== input.quoteId) {
+          throw new Error("Input not found");
+        }
+
+        if (inputRecord.inputType !== "audio") {
+          throw new Error("Input is not an audio file");
+        }
+
+        if (!inputRecord.fileUrl) {
+          throw new Error("No file URL for this input");
+        }
+
+        // Mark as processing
+        await updateInputProcessing(input.inputId, {
+          processingStatus: "processing",
+          processingError: null,
+        });
+
+        try {
+          const result = await transcribeAudio({ audioUrl: inputRecord.fileUrl });
+          
+          if ("error" in result) {
+            await updateInputProcessing(input.inputId, {
+              processingStatus: "failed",
+              processingError: result.error,
+            });
+            throw new Error(result.error);
+          }
+
+          // Save transcription
+          const updated = await updateInputProcessing(input.inputId, {
+            processedContent: result.text,
+            processingStatus: "completed",
+            processingError: null,
+          });
+
+          return { transcription: result.text, input: updated };
+        } catch (error) {
+          await updateInputProcessing(input.inputId, {
+            processingStatus: "failed",
+            processingError: error instanceof Error ? error.message : "Unknown error",
+          });
+          throw error;
+        }
+      }),
+
+    // Process a PDF input (extract text)
+    extractPdfText: protectedProcedure
+      .input(z.object({ inputId: z.number(), quoteId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+
+        const inputRecord = await getInputById(input.inputId);
+        if (!inputRecord || inputRecord.quoteId !== input.quoteId) {
+          throw new Error("Input not found");
+        }
+
+        if (inputRecord.inputType !== "pdf") {
+          throw new Error("Input is not a PDF file");
+        }
+
+        if (!inputRecord.fileUrl) {
+          throw new Error("No file URL for this input");
+        }
+
+        // Mark as processing
+        await updateInputProcessing(input.inputId, {
+          processingStatus: "processing",
+          processingError: null,
+        });
+
+        try {
+          // Use LLM with file_url to extract text from PDF
+          const response = await invokeLLM({
+            messages: [
+              {
+                role: "system",
+                content: "You are a document text extractor. Extract all text content from the provided PDF document. Preserve the structure and formatting as much as possible. Include all text, tables, and any visible content.",
+              },
+              {
+                role: "user",
+                content: [
+                  {
+                    type: "file_url",
+                    file_url: {
+                      url: inputRecord.fileUrl,
+                      mime_type: "application/pdf",
+                    },
+                  },
+                  {
+                    type: "text",
+                    text: "Please extract all text content from this PDF document.",
+                  },
+                ],
+              },
+            ],
+          });
+
+          const extractedText = typeof response.choices[0]?.message?.content === "string"
+            ? response.choices[0].message.content
+            : "";
+
+          const updated = await updateInputProcessing(input.inputId, {
+            processedContent: extractedText,
+            processingStatus: "completed",
+            processingError: null,
+          });
+
+          return { extractedText, input: updated };
+        } catch (error) {
+          await updateInputProcessing(input.inputId, {
+            processingStatus: "failed",
+            processingError: error instanceof Error ? error.message : "Unknown error",
+          });
+          throw error;
+        }
+      }),
+
+    // Process an image input (OCR + vision analysis)
+    analyzeImage: protectedProcedure
+      .input(z.object({ inputId: z.number(), quoteId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+
+        const inputRecord = await getInputById(input.inputId);
+        if (!inputRecord || inputRecord.quoteId !== input.quoteId) {
+          throw new Error("Input not found");
+        }
+
+        if (inputRecord.inputType !== "image") {
+          throw new Error("Input is not an image file");
+        }
+
+        if (!inputRecord.fileUrl) {
+          throw new Error("No file URL for this input");
+        }
+
+        // Mark as processing
+        await updateInputProcessing(input.inputId, {
+          processingStatus: "processing",
+          processingError: null,
+        });
+
+        try {
+          // Use LLM vision to analyze image
+          const response = await invokeLLM({
+            messages: [
+              {
+                role: "system",
+                content: `You are analyzing an image for a quoting/estimation system. This could be a technical drawing, floor plan, specification sheet, or site photo.
+
+Extract and report:
+1. **Text Content**: Any visible text, labels, dimensions, measurements, specifications
+2. **Symbols & Legends**: Any symbols, abbreviations, or legend items with their meanings
+3. **Key Details**: Important features, quantities, materials, or specifications visible
+4. **Measurements**: All dimensions, areas, quantities shown
+5. **Notes & Warnings**: Any notes, warnings, or special instructions
+
+Be thorough - missed details in drawings often lead to costly errors in quotes.`,
+              },
+              {
+                role: "user",
+                content: [
+                  {
+                    type: "image_url",
+                    image_url: {
+                      url: inputRecord.fileUrl,
+                      detail: "high",
+                    },
+                  },
+                  {
+                    type: "text",
+                    text: "Please analyze this image thoroughly for quoting purposes. Extract all text, measurements, symbols, and important details.",
+                  },
+                ],
+              },
+            ],
+          });
+
+          const analysis = typeof response.choices[0]?.message?.content === "string"
+            ? response.choices[0].message.content
+            : "";
+
+          const updated = await updateInputProcessing(input.inputId, {
+            processedContent: analysis,
+            processingStatus: "completed",
+            processingError: null,
+          });
+
+          return { analysis, input: updated };
+        } catch (error) {
+          await updateInputProcessing(input.inputId, {
+            processingStatus: "failed",
+            processingError: error instanceof Error ? error.message : "Unknown error",
+          });
+          throw error;
+        }
+      }),
   }),
 
   // ============ TENDER CONTEXT ============
@@ -654,6 +866,162 @@ Do not start with phrases like "Based on the quote..." - get straight to the ins
         } catch (error) {
           console.error("AI invocation error:", error);
           throw new Error("Failed to get AI response. Please try again.");
+        }
+      }),
+
+    // Generate a draft quote from all processed inputs
+    generateDraft: protectedProcedure
+      .input(z.object({
+        quoteId: z.number(),
+        userPrompt: z.string().optional(), // Additional context from user (pasted email, instructions)
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+
+        // Get all inputs for this quote
+        const inputs = await getInputsByQuoteId(input.quoteId);
+        const tenderContext = await getTenderContextByQuoteId(input.quoteId);
+        const internalEstimate = await getInternalEstimateByQuoteId(input.quoteId);
+        const catalogItems = await getCatalogItemsByUserId(ctx.user.id);
+
+        // Build context from all processed inputs
+        const processedEvidence: string[] = [];
+        
+        for (const inp of inputs) {
+          if (inp.processedContent && inp.processingStatus === "completed") {
+            const typeLabel = inp.inputType === "audio" ? "Audio Transcription"
+              : inp.inputType === "pdf" ? "PDF Content"
+              : inp.inputType === "image" ? "Image Analysis"
+              : inp.inputType === "email" ? "Email Content"
+              : "Text Note";
+            processedEvidence.push(`### ${typeLabel} (${inp.filename || "untitled"}):\n${inp.processedContent}`);
+          } else if (inp.inputType === "text" && inp.content) {
+            processedEvidence.push(`### Text Note:\n${inp.content}`);
+          } else if (inp.inputType === "email" && inp.content) {
+            processedEvidence.push(`### Email Content:\n${inp.content}`);
+          }
+        }
+
+        // Add user prompt if provided
+        if (input.userPrompt) {
+          processedEvidence.push(`### User Instructions/Email:\n${input.userPrompt}`);
+        }
+
+        if (processedEvidence.length === 0) {
+          throw new Error("No processed evidence found. Please process your inputs first (transcribe audio, extract PDF text, analyze images).");
+        }
+
+        // Build catalog context
+        const catalogContext = catalogItems.length > 0
+          ? `\n\nAvailable catalog items for reference:\n${catalogItems.map(c => `- ${c.name}: £${c.defaultRate}/${c.unit} - ${c.description || ""}`).join("\n")}`
+          : "";
+
+        // Generate draft using LLM
+        const response = await invokeLLM({
+          messages: [
+            {
+              role: "system",
+              content: `You are an expert estimator/quoting assistant. Based on the provided evidence (transcriptions, documents, images, emails), generate a structured quote draft.
+
+You MUST respond with valid JSON in this exact format:
+{
+  "clientName": "string or null",
+  "clientEmail": "string or null",
+  "clientPhone": "string or null",
+  "clientAddress": "string or null",
+  "title": "string - brief title for the work",
+  "description": "string - detailed description of scope",
+  "lineItems": [
+    {
+      "description": "string",
+      "quantity": number,
+      "unit": "string (each, sqm, hours, etc.)",
+      "rate": number
+    }
+  ],
+  "assumptions": ["string array of assumptions made"],
+  "exclusions": ["string array of what is NOT included"],
+  "riskNotes": "string - internal notes about risks or concerns",
+  "symbolMappings": { "symbol": { "meaning": "string", "confirmed": false } }
+}
+
+Be thorough but realistic with pricing. Extract all client details mentioned. List specific line items with quantities. Note any assumptions you're making and things that are explicitly excluded.${catalogContext}`,
+            },
+            {
+              role: "user",
+              content: `Please analyze the following evidence and generate a quote draft:\n\n${processedEvidence.join("\n\n")}`,
+            },
+          ],
+          response_format: { type: "json_object" },
+        });
+
+        const content = response.choices[0]?.message?.content;
+        const responseText = typeof content === "string" ? content : "";
+
+        try {
+          const draft = JSON.parse(responseText);
+
+          // Update quote with extracted client details and description
+          const updatedQuote = await updateQuote(input.quoteId, ctx.user.id, {
+            clientName: draft.clientName || quote.clientName,
+            clientEmail: draft.clientEmail || quote.clientEmail,
+            clientPhone: draft.clientPhone || quote.clientPhone,
+            clientAddress: draft.clientAddress || quote.clientAddress,
+            title: draft.title || quote.title,
+            description: draft.description || quote.description,
+          });
+
+          // Create line items
+          const createdLineItems = [];
+          if (draft.lineItems && Array.isArray(draft.lineItems)) {
+            for (let i = 0; i < draft.lineItems.length; i++) {
+              const item = draft.lineItems[i];
+              const quantity = parseFloat(item.quantity) || 1;
+              const rate = parseFloat(item.rate) || 0;
+              const total = quantity * rate;
+              
+              const lineItem = await createLineItem({
+                quoteId: input.quoteId,
+                sortOrder: i,
+                description: item.description,
+                quantity: quantity.toFixed(4),
+                unit: item.unit || "each",
+                rate: rate.toFixed(2),
+                total: total.toFixed(2),
+              });
+              createdLineItems.push(lineItem);
+            }
+          }
+
+          // Update tender context with assumptions/exclusions
+          if (draft.assumptions || draft.exclusions || draft.symbolMappings) {
+            await upsertTenderContext(input.quoteId, {
+              assumptions: draft.assumptions?.map((text: string) => ({ text, confirmed: false })),
+              exclusions: draft.exclusions?.map((text: string) => ({ text, confirmed: false })),
+              symbolMappings: draft.symbolMappings,
+            });
+          }
+
+          // Update internal estimate with risk notes
+          if (draft.riskNotes) {
+            await upsertInternalEstimate(input.quoteId, {
+              riskNotes: draft.riskNotes,
+            });
+          }
+
+          // Recalculate totals
+          await recalculateQuoteTotals(input.quoteId, ctx.user.id);
+
+          return {
+            success: true,
+            quote: updatedQuote,
+            lineItems: createdLineItems,
+            draft,
+          };
+        } catch (parseError) {
+          console.error("Failed to parse AI response:", parseError);
+          throw new Error("Failed to parse AI response. Please try again.");
         }
       }),
   }),

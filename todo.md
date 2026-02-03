@@ -127,3 +127,50 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] AI Assistant tab UI with question buttons
 - [x] Display AI responses with markdown rendering
 - [x] Unit tests for AI prompt feature
+
+## Phase 3 - AI Input Analysis & Quote Generation (CRITICAL - CORE VALUE)
+
+### Audio Transcription
+- [x] Integrate Whisper API for audio transcription
+- [x] Add "Transcribe" button on audio input items
+- [x] Store transcription text linked to input record
+- [x] Display processing status on input items
+
+### PDF Text Extraction
+- [x] Extract text from uploaded PDF documents using LLM vision
+- [x] Store extracted text linked to input record
+- [x] Display processing status on input items
+
+### Image OCR & Vision Analysis
+- [x] Integrate vision AI for image/drawing analysis
+- [x] Extract text from images (OCR)
+- [x] Analyze drawings for specifications, measurements
+- [x] Store analysis linked to input record
+- [x] Display processing status on input items
+
+### Prompt Input Area
+- [x] Add prompt/email paste area in Inputs tab
+- [x] Store prompt text as user prompt state
+- [x] Include prompt in Generate Draft context
+
+### Generate Draft Feature (Primary Action)
+- [x] "Generate Draft" button as top-right primary action
+- [x] Combine all processed evidence (transcriptions, extractions, analyses, prompts)
+- [x] Send to LLM with structured quote generation prompt
+- [x] Auto-populate client details (name, email, phone, address)
+- [x] Auto-populate quote title and description
+- [x] Auto-populate suggested line items with quantities and rates
+- [x] Auto-populate assumptions and exclusions in tender context
+- [x] Auto-populate risk notes in internal estimate
+- [x] Allow user review and edit before saving
+
+### UI Updates
+- [x] Rename "AI Review" tab to "Ask AI"
+- [x] Display processing status on input items
+- [x] Process buttons on each input item
+- [x] Move "Generate Draft" to header as primary action button
+
+### Unit Tests
+- [x] Tests for audio transcription
+- [x] Tests for image analysis
+- [x] Tests for Generate Draft procedure
