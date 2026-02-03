@@ -200,6 +200,34 @@ export async function updateQuote(quoteId: number, userId: number, data: Partial
   return result;
 }
 
+export async function updateQuoteStatus(
+  quoteId: number, 
+  userId: number, 
+  status: "draft" | "sent" | "accepted" | "declined"
+): Promise<Quote | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const updateData: Partial<InsertQuote> & { sentAt?: Date; acceptedAt?: Date } = {
+    status,
+    updatedAt: new Date(),
+  };
+
+  // Set timestamps based on status transition
+  if (status === "sent") {
+    updateData.sentAt = new Date();
+  } else if (status === "accepted") {
+    updateData.acceptedAt = new Date();
+  }
+
+  const [result] = await db.update(quotes)
+    .set(updateData)
+    .where(and(eq(quotes.id, quoteId), eq(quotes.userId, userId)))
+    .returning();
+
+  return result;
+}
+
 export async function deleteQuote(quoteId: number, userId: number): Promise<boolean> {
   const db = await getDb();
   if (!db) return false;

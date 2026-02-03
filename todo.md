@@ -40,9 +40,9 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Clean, confident, professional design (no AI language)
 
 ### Quote Status Workflow
-- [ ] Draft → Sent → Accepted status flow
-- [ ] Status badges and filters on dashboard
-- [ ] "Send Quote" button functionality
+- [x] Draft → Sent → Accepted status flow
+- [x] Status badges and filters on dashboard
+- [x] "Mark as Sent" button functionality
 
 ### Product Catalog Integration
 - [x] Catalog CRUD
@@ -104,3 +104,12 @@ Based on Formal Build Prompt & Product Roadmap
 - [ ] Add more comprehensive test coverage
 - [ ] Error handling improvements
 - [ ] Loading states and optimistic updates
+
+## Current Sprint - Quote Status Workflow
+- [x] Backend: Add updateQuoteStatus procedure
+- [x] Dashboard: Add status filter tabs (All, Draft, Sent, Accepted)
+- [x] Dashboard: Add colored status badges
+- [x] QuoteWorkspace: Implement "Mark as Sent" button with confirmation
+- [x] QuoteWorkspace: Add "Mark as Accepted" button for sent quotes
+- [x] QuoteWorkspace: Show status-appropriate action buttons
+- [x] Unit tests for status transitions

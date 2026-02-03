@@ -10,6 +10,7 @@ import {
   getQuoteById,
   createQuote,
   updateQuote,
+  updateQuoteStatus,
   deleteQuote,
   getLineItemsByQuoteId,
   createLineItem,
@@ -159,6 +160,35 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         await deleteQuote(input.id, ctx.user.id);
         return { success: true };
+      }),
+
+    // Update quote status with validation
+    updateStatus: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        status: z.enum(["draft", "sent", "accepted", "declined"]),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        // Get current quote to validate transition
+        const currentQuote = await getQuoteById(input.id, ctx.user.id);
+        if (!currentQuote) throw new Error("Quote not found");
+
+        // Validate status transitions
+        const validTransitions: Record<string, string[]> = {
+          draft: ["sent"],
+          sent: ["accepted", "declined", "draft"],
+          accepted: ["draft"], // Allow reverting to draft
+          declined: ["draft"], // Allow reverting to draft
+        };
+
+        const currentStatus = currentQuote.status;
+        if (!validTransitions[currentStatus]?.includes(input.status)) {
+          throw new Error(`Cannot change status from ${currentStatus} to ${input.status}`);
+        }
+
+        const quote = await updateQuoteStatus(input.id, ctx.user.id, input.status);
+        if (!quote) throw new Error("Failed to update quote status");
+        return quote;
       }),
 
     // Get full quote with all related data

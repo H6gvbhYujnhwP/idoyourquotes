@@ -194,6 +194,14 @@ export default function QuoteWorkspace() {
     onError: (error) => toast.error("Failed to save: " + error.message),
   });
 
+  const updateStatus = trpc.quotes.updateStatus.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Quote marked as ${data.status}`);
+      refetch();
+    },
+    onError: (error) => toast.error("Failed to update status: " + error.message),
+  });
+
   // Initialize form state from loaded data
   useEffect(() => {
     if (fullQuote?.quote) {
@@ -453,9 +461,58 @@ export default function QuoteWorkspace() {
             PDF
           </Button>
           {status === "draft" && (
-            <Button onClick={() => toast.info("Send quote feature coming soon")}>
-              <Send className="mr-2 h-4 w-4" />
-              Send Quote
+            <Button 
+              onClick={() => {
+                if (window.confirm("Mark this quote as sent? This indicates the quote has been delivered to the client.")) {
+                  updateStatus.mutate({ id: quoteId, status: "sent" });
+                }
+              }}
+              disabled={updateStatus.isPending}
+            >
+              {updateStatus.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+              Mark as Sent
+            </Button>
+          )}
+          {status === "sent" && (
+            <>
+              <Button 
+                onClick={() => {
+                  if (window.confirm("Mark this quote as accepted? This indicates the client has approved the quote.")) {
+                    updateStatus.mutate({ id: quoteId, status: "accepted" });
+                  }
+                }}
+                disabled={updateStatus.isPending}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                {updateStatus.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
+                Mark Accepted
+              </Button>
+              <Button 
+                variant="outline"
+                onClick={() => {
+                  if (window.confirm("Mark this quote as declined?")) {
+                    updateStatus.mutate({ id: quoteId, status: "declined" });
+                  }
+                }}
+                disabled={updateStatus.isPending}
+              >
+                <X className="mr-2 h-4 w-4" />
+                Declined
+              </Button>
+            </>
+          )}
+          {(status === "accepted" || status === "declined") && (
+            <Button 
+              variant="outline"
+              onClick={() => {
+                if (window.confirm("Revert this quote back to draft status?")) {
+                  updateStatus.mutate({ id: quoteId, status: "draft" });
+                }
+              }}
+              disabled={updateStatus.isPending}
+            >
+              {updateStatus.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowLeft className="mr-2 h-4 w-4" />}
+              Revert to Draft
             </Button>
           )}
         </div>
