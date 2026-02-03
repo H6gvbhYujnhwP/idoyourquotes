@@ -231,6 +231,148 @@ export const appRouter = router({
         const html = generateQuoteHTML({ quote, lineItems, user });
         return { html };
       }),
+
+    // Generate email draft for a quote
+    generateEmail: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        tone: z.enum(["neutral", "formal", "friendly"]).optional().default("neutral"),
+        includeSummary: z.boolean().optional().default(true),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const quote = await getQuoteById(input.id, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+
+        const lineItems = await getLineItemsByQuoteId(input.id);
+        const tenderContext = await getTenderContextByQuoteId(input.id);
+        const user = ctx.user;
+
+        // Build context for email generation
+        const clientName = quote.clientName || "[Client Name]";
+        const projectTitle = quote.title || "[Project Name]";
+        const total = quote.total ? `£${parseFloat(quote.total).toLocaleString("en-GB", { minimumFractionDigits: 2 })}` : "[Total]";
+        const vatAmount = quote.taxAmount ? `£${parseFloat(quote.taxAmount).toLocaleString("en-GB", { minimumFractionDigits: 2 })}` : null;
+        const subtotal = quote.subtotal ? `£${parseFloat(quote.subtotal).toLocaleString("en-GB", { minimumFractionDigits: 2 })}` : null;
+
+        // Build line items summary (high-level only)
+        const lineItemsSummary = lineItems.length > 0
+          ? lineItems.slice(0, 5).map(item => `- ${item.description}`).join("\n") + (lineItems.length > 5 ? `\n- ...and ${lineItems.length - 5} more items` : "")
+          : "[No line items specified]";
+
+        // Get client-safe assumptions/exclusions only
+        let assumptions: string[] = [];
+        let exclusions: string[] = [];
+        try {
+          if (tenderContext?.assumptions) {
+            const parsed = typeof tenderContext.assumptions === "string" 
+              ? JSON.parse(tenderContext.assumptions) 
+              : tenderContext.assumptions;
+            if (Array.isArray(parsed)) {
+              assumptions = parsed.slice(0, 3).map((a: { text: string }) => a.text);
+            }
+          }
+          if (tenderContext?.exclusions) {
+            const parsed = typeof tenderContext.exclusions === "string" 
+              ? JSON.parse(tenderContext.exclusions) 
+              : tenderContext.exclusions;
+            if (Array.isArray(parsed)) {
+              exclusions = parsed.slice(0, 3).map((e: { text: string }) => e.text);
+            }
+          }
+        } catch (e) {
+          // Ignore parsing errors
+        }
+
+        // Build key notes from assumptions and exclusions
+        const keyNotes = [
+          ...assumptions.map((a: string) => `Assumption: ${a}`),
+          ...exclusions.map((e: string) => `Exclusion: ${e}`),
+        ];
+
+        // Generate email using LLM
+        const response = await invokeLLM({
+          messages: [
+            {
+              role: "system",
+              content: `You are a professional business email writer. Generate a quotation email that the user will copy/paste into Gmail or Outlook.
+
+STRICT RULES:
+- Tone: ${input.tone}, confident, plain English
+- NO emojis
+- NO AI language ("I've analyzed", "Based on my review", etc.)
+- NO internal notes or confidence scores
+- NO invented details - only use what's provided
+- Use [placeholders] for any missing information
+- Maximum 3 bold headings (use <strong> tags)
+- Keep it SHORT and practical
+- NO long preambles or fluffy language
+
+You MUST respond with valid JSON:
+{
+  "subject": "Quotation – [Project Reference]",
+  "htmlBody": "<html email body with minimal formatting>",
+  "textBody": "plain text version"
+}
+
+Email structure:
+1. Subject: "Quotation – [Project/Reference]"
+2. Greeting: "Hi [Name],"
+3. 1-2 sentence intro referencing the attached quote PDF
+4. ${input.includeSummary ? "Summary section with total and high-level scope" : "Skip summary"}
+5. Key notes section with 3-6 bullet points (only known facts)
+6. Close: invite questions + professional sign-off
+
+HTML formatting rules:
+- Use <p> for paragraphs with margin-bottom: 16px
+- Use <ul><li> for bullet points
+- Use <strong> sparingly for headings only
+- Font: Arial, sans-serif
+- No background colors or complex styling`,
+            },
+            {
+              role: "user",
+              content: `Generate a quotation email with this context:
+
+Client Name: ${clientName}
+Project/Quote Title: ${projectTitle}
+Quote Reference: ${quote.reference || "Q-" + quote.id}
+Total (inc VAT): ${total}${subtotal ? `\nSubtotal: ${subtotal}` : ""}${vatAmount ? `\nVAT: ${vatAmount}` : ""}
+
+Scope Summary:\n${lineItemsSummary}
+
+${keyNotes.length > 0 ? `Key Notes:\n${keyNotes.join("\n")}` : "No specific notes."}
+
+Sender Company: ${user.companyName || "[Your Company]"}
+Sender Name: ${user.name || "[Your Name]"}`,
+            },
+          ],
+          response_format: { type: "json_object" },
+        });
+
+        const content = response.choices[0]?.message?.content;
+        const responseText = typeof content === "string" ? content : "";
+
+        try {
+          const email = JSON.parse(responseText);
+          return {
+            subject: email.subject || `Quotation – ${projectTitle}`,
+            htmlBody: email.htmlBody || "",
+            textBody: email.textBody || "",
+          };
+        } catch (parseError) {
+          console.error("Failed to parse email response:", parseError);
+          // Return a fallback template
+          return {
+            subject: `Quotation – ${projectTitle}`,
+            htmlBody: `<p style="font-family: Arial, sans-serif; margin-bottom: 16px;">Hi ${clientName},</p>
+<p style="font-family: Arial, sans-serif; margin-bottom: 16px;">Please find attached our quotation for ${projectTitle}.</p>
+<p style="font-family: Arial, sans-serif; margin-bottom: 16px;"><strong>Total: ${total}</strong></p>
+<p style="font-family: Arial, sans-serif; margin-bottom: 16px;">Please let me know if you have any questions.</p>
+<p style="font-family: Arial, sans-serif; margin-bottom: 16px;">Kind regards,<br/>${user.name || "[Your Name]"}<br/>${user.companyName || ""}</p>`,
+            textBody: `Hi ${clientName},\n\nPlease find attached our quotation for ${projectTitle}.\n\nTotal: ${total}\n\nPlease let me know if you have any questions.\n\nKind regards,\n${user.name || "[Your Name]"}\n${user.companyName || ""}`,
+          };
+        }
+      }),
   }),
 
   // ============ LINE ITEMS ============

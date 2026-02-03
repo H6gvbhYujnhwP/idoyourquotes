@@ -174,3 +174,28 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Tests for audio transcription
 - [x] Tests for image analysis
 - [x] Tests for Generate Draft procedure
+
+## Generate Email Feature (Scope Change) - COMPLETE
+
+### Requirements
+- [x] Remove "Send Quote" email sending (keep "Mark as Sent" as status toggle only)
+- [x] Add "Generate Email" button on Quote tab (near PDF/Save)
+- [x] Modal with editable subject line and HTML body preview
+- [x] "Copy Subject" and "Copy Email" buttons (HTML clipboard)
+- [x] Backend generateEmail procedure with LLM
+
+### AI Content Rules
+- [x] Use quote context: client name, title, description, line items, totals
+- [x] Use assumptions/exclusions if client-facing
+- [x] Never invent scope or details not in quote
+- [x] Use [placeholders] for missing values
+- [x] No internal notes, risk notes, AI language, confidence scores
+
+### Email Style
+- [x] Professional, confident, plain English
+- [x] No emojis, no hype, no long preambles
+- [x] Minimal formatting: headings only (1-3 max), short bullets
+- [x] Structure: Subject → Greeting → Intro → Summary → Key Notes → Close
+
+### Unit Tests
+- [x] Test generateEmail procedure (20 tests in email.test.ts)

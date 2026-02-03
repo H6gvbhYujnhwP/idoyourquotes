@@ -144,6 +144,13 @@ export default function QuoteWorkspace() {
   const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
   const [processingInputId, setProcessingInputId] = useState<number | null>(null);
 
+  // Generate Email modal state
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [isGeneratingEmail, setIsGeneratingEmail] = useState(false);
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailHtmlBody, setEmailHtmlBody] = useState("");
+  const [emailTextBody, setEmailTextBody] = useState("");
+
   const { data: fullQuote, isLoading, refetch } = trpc.quotes.getFull.useQuery(
     { id: quoteId },
     { enabled: quoteId > 0 }
@@ -314,6 +321,23 @@ export default function QuoteWorkspace() {
     },
   });
 
+  const generateEmail = trpc.quotes.generateEmail.useMutation({
+    onMutate: () => {
+      setIsGeneratingEmail(true);
+    },
+    onSuccess: (data) => {
+      setEmailSubject(data.subject);
+      setEmailHtmlBody(data.htmlBody);
+      setEmailTextBody(data.textBody);
+      setIsGeneratingEmail(false);
+      setShowEmailModal(true);
+    },
+    onError: (error) => {
+      toast.error("Email generation failed: " + error.message);
+      setIsGeneratingEmail(false);
+    },
+  });
+
   const handleProcessInput = (input: QuoteInput) => {
     if (input.inputType === "audio") {
       transcribeAudio.mutate({ inputId: input.id, quoteId });
@@ -329,6 +353,37 @@ export default function QuoteWorkspace() {
       quoteId,
       userPrompt: userPrompt || undefined,
     });
+  };
+
+  const handleGenerateEmail = () => {
+    generateEmail.mutate({ id: quoteId });
+  };
+
+  const copyToClipboard = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(`${label} copied to clipboard`);
+    } catch (err) {
+      toast.error("Failed to copy to clipboard");
+    }
+  };
+
+  const copyHtmlToClipboard = async (html: string, label: string) => {
+    try {
+      // Try to copy as HTML for rich paste in email clients
+      const blob = new Blob([html], { type: "text/html" });
+      const clipboardItem = new ClipboardItem({ "text/html": blob });
+      await navigator.clipboard.write([clipboardItem]);
+      toast.success(`${label} copied (HTML format)`);
+    } catch (err) {
+      // Fallback to plain text
+      try {
+        await navigator.clipboard.writeText(emailTextBody);
+        toast.success(`${label} copied (plain text)`);
+      } catch (e) {
+        toast.error("Failed to copy to clipboard");
+      }
+    }
   };
 
   // Initialize form state from loaded data
@@ -596,6 +651,15 @@ export default function QuoteWorkspace() {
           <Button variant="outline" onClick={handleGeneratePDF} disabled={isGeneratingPDF}>
             {isGeneratingPDF ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
             PDF
+          </Button>
+          <Button 
+            variant="outline" 
+            onClick={handleGenerateEmail} 
+            disabled={isGeneratingEmail || !quote.clientName}
+            title={!quote.clientName ? "Add client details first" : "Generate email to send quote"}
+          >
+            {isGeneratingEmail ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+            Email
           </Button>
           {status === "draft" && (
             <Button 
@@ -1428,6 +1492,99 @@ export default function QuoteWorkspace() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Generate Email Modal */}
+      {showEmailModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 border-b">
+              <div>
+                <h2 className="text-lg font-semibold">Generated Email</h2>
+                <p className="text-sm text-muted-foreground">Copy and paste into your email client</p>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => setShowEmailModal(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Subject Line */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="font-medium">Subject Line</Label>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => copyToClipboard(emailSubject, "Subject")}
+                  >
+                    Copy Subject
+                  </Button>
+                </div>
+                <div className="p-3 bg-muted rounded-md font-medium">
+                  {emailSubject}
+                </div>
+              </div>
+
+              {/* HTML Preview */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="font-medium">Email Body (Rich Format)</Label>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => copyHtmlToClipboard(emailHtmlBody, "Email body")}
+                  >
+                    Copy HTML Body
+                  </Button>
+                </div>
+                <div 
+                  className="p-4 bg-white text-black rounded-md border max-h-80 overflow-y-auto"
+                  dangerouslySetInnerHTML={{ __html: emailHtmlBody }}
+                />
+              </div>
+
+              {/* Plain Text Version */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="font-medium">Plain Text Version</Label>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => copyToClipboard(emailTextBody, "Plain text")}
+                  >
+                    Copy Plain Text
+                  </Button>
+                </div>
+                <pre className="p-4 bg-muted rounded-md text-sm whitespace-pre-wrap font-mono max-h-60 overflow-y-auto">
+                  {emailTextBody}
+                </pre>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-between p-4 border-t bg-muted/30">
+              <p className="text-sm text-muted-foreground">
+                Tip: Use "Copy HTML Body" for rich formatting in Gmail, Outlook, etc.
+              </p>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setShowEmailModal(false)}>
+                  Close
+                </Button>
+                <Button 
+                  onClick={() => {
+                    // Copy both subject and body
+                    copyToClipboard(`Subject: ${emailSubject}\n\n${emailTextBody}`, "Full email");
+                  }}
+                >
+                  Copy All (Plain Text)
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
