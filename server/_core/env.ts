@@ -6,5 +6,8 @@ export const ENV = {
   ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
   isProduction: process.env.NODE_ENV === "production",
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
-  forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  // Support both Manus built-in key and standard OpenAI key for external deployments
+  forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY || process.env.OPENAI_API_KEY || "",
+  // Direct OpenAI API key for external deployments (Render, etc.)
+  openaiApiKey: process.env.OPENAI_API_KEY ?? "",
 };

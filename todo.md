@@ -302,4 +302,11 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Remove manual Extract/Analyze/Transcribe buttons from QuoteWorkspace UI
 - [x] Show processing status indicator while analysis is running ("Analyzing..." with spinner)
 - [x] Keep Retry button for failed processing
-- [ ] Test and deploy
+- [x] Test and deploy
+
+### OpenAI API Key Support for Render Deployment - COMPLETE
+- [x] Updated llm.ts to support OPENAI_API_KEY for external deployments (Render)
+- [x] Updated voiceTranscription.ts to use OpenAI Whisper API directly
+- [x] Updated env.ts to support both BUILT_IN_FORGE_API_KEY and OPENAI_API_KEY
+- [x] Uses gpt-4o model when using OpenAI API directly
+- [x] All 102 tests passing

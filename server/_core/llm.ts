@@ -209,13 +209,31 @@ const normalizeToolChoice = (
   return toolChoice;
 };
 
-const resolveApiUrl = () =>
-  ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
+// Determine which API to use based on available keys
+const isUsingOpenAI = () => {
+  // If we have OPENAI_API_KEY but not BUILT_IN_FORGE_API_KEY, use OpenAI directly
+  return ENV.openaiApiKey && !process.env.BUILT_IN_FORGE_API_KEY;
+};
+
+const resolveApiUrl = () => {
+  if (isUsingOpenAI()) {
+    return "https://api.openai.com/v1/chat/completions";
+  }
+  return ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
     ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
     : "https://forge.manus.im/v1/chat/completions";
+};
+
+const getApiKey = () => {
+  if (isUsingOpenAI()) {
+    return ENV.openaiApiKey;
+  }
+  return ENV.forgeApiKey;
+};
 
 const assertApiKey = () => {
-  if (!ENV.forgeApiKey) {
+  const apiKey = getApiKey();
+  if (!apiKey) {
     throw new Error("OPENAI_API_KEY is not configured");
   }
 };
@@ -279,8 +297,11 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     response_format,
   } = params;
 
+  // Use different model based on API provider
+  const model = isUsingOpenAI() ? "gpt-4o" : "gemini-2.5-flash";
+
   const payload: Record<string, unknown> = {
-    model: "gemini-2.5-flash",
+    model,
     messages: messages.map(normalizeMessage),
   };
 
@@ -296,9 +317,15 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.tool_choice = normalizedToolChoice;
   }
 
-  payload.max_tokens = 32768
-  payload.thinking = {
-    "budget_tokens": 128
+  // Only add thinking parameter for non-OpenAI APIs
+  if (!isUsingOpenAI()) {
+    payload.max_tokens = 32768;
+    payload.thinking = {
+      "budget_tokens": 128
+    };
+  } else {
+    // OpenAI uses max_tokens differently
+    payload.max_tokens = 16384;
   }
 
   const normalizedResponseFormat = normalizeResponseFormat({
@@ -316,7 +343,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
+      authorization: `Bearer ${getApiKey()}`,
     },
     body: JSON.stringify(payload),
   });

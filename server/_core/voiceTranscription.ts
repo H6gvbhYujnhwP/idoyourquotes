@@ -64,6 +64,28 @@ export type TranscriptionError = {
   details?: string;
 };
 
+// Determine which API to use based on available keys
+const isUsingOpenAI = () => {
+  return ENV.openaiApiKey && !process.env.BUILT_IN_FORGE_API_KEY;
+};
+
+const getTranscriptionUrl = () => {
+  if (isUsingOpenAI()) {
+    return "https://api.openai.com/v1/audio/transcriptions";
+  }
+  const baseUrl = ENV.forgeApiUrl.endsWith("/")
+    ? ENV.forgeApiUrl
+    : `${ENV.forgeApiUrl}/`;
+  return new URL("v1/audio/transcriptions", baseUrl).toString();
+};
+
+const getApiKey = () => {
+  if (isUsingOpenAI()) {
+    return ENV.openaiApiKey;
+  }
+  return ENV.forgeApiKey;
+};
+
 /**
  * Transcribe audio to text using the internal Speech-to-Text service
  * 
@@ -75,18 +97,12 @@ export async function transcribeAudio(
 ): Promise<TranscriptionResponse | TranscriptionError> {
   try {
     // Step 1: Validate environment configuration
-    if (!ENV.forgeApiUrl) {
-      return {
-        error: "Voice transcription service is not configured",
-        code: "SERVICE_ERROR",
-        details: "BUILT_IN_FORGE_API_URL is not set"
-      };
-    }
-    if (!ENV.forgeApiKey) {
+    const apiKey = getApiKey();
+    if (!apiKey) {
       return {
         error: "Voice transcription service authentication is missing",
         code: "SERVICE_ERROR",
-        details: "BUILT_IN_FORGE_API_KEY is not set"
+        details: "OPENAI_API_KEY is not configured"
       };
     }
 
@@ -143,19 +159,10 @@ export async function transcribeAudio(
     formData.append("prompt", prompt);
 
     // Step 4: Call the transcription service
-    const baseUrl = ENV.forgeApiUrl.endsWith("/")
-      ? ENV.forgeApiUrl
-      : `${ENV.forgeApiUrl}/`;
-    
-    const fullUrl = new URL(
-      "v1/audio/transcriptions",
-      baseUrl
-    ).toString();
-
-    const response = await fetch(fullUrl, {
+    const response = await fetch(getTranscriptionUrl(), {
       method: "POST",
       headers: {
-        authorization: `Bearer ${ENV.forgeApiKey}`,
+        authorization: `Bearer ${apiKey}`,
         "Accept-Encoding": "identity",
       },
       body: formData,
