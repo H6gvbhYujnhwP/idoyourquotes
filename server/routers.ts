@@ -548,8 +548,8 @@ Sender Name: ${user.name || "[Your Name]"}`,
         // Decode base64 to buffer
         const buffer = Buffer.from(input.base64Data, "base64");
 
-        // Upload to R2
-        const folder = `quotes/${input.quoteId}`;
+        // Upload to R2 with user-scoped folder structure for multi-tenancy
+        const folder = `users/${ctx.user.id}/quotes/${input.quoteId}`;
         const { key, url } = await uploadToR2(
           buffer,
           input.filename,

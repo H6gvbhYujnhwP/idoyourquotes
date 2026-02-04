@@ -95,6 +95,10 @@ export async function getPresignedUrl(key: string, expiresIn: number = 604800): 
  * @param key - The file key to delete
  */
 export async function deleteFromR2(key: string): Promise<void> {
+  console.log(`[R2] Attempting to delete file with key: ${key}`);
+  console.log(`[R2] Using bucket: ${R2_BUCKET_NAME}`);
+  console.log(`[R2] Using endpoint: ${R2_ENDPOINT}`);
+  
   const client = getS3Client();
   
   const command = new DeleteObjectCommand({
@@ -102,7 +106,14 @@ export async function deleteFromR2(key: string): Promise<void> {
     Key: key,
   });
   
-  await client.send(command);
+  try {
+    const response = await client.send(command);
+    console.log(`[R2] Delete response:`, JSON.stringify(response, null, 2));
+    console.log(`[R2] Successfully deleted file: ${key}`);
+  } catch (error) {
+    console.error(`[R2] Delete failed for key ${key}:`, error);
+    throw error;
+  }
 }
 
 /**

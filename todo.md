@@ -210,3 +210,12 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] When user deletes an input from dashboard, also delete the file from R2 storage
 - [x] Extract file key from input record and call deleteFromR2
 - [x] Add unit tests for file cleanup (7 new tests)
+
+### R2 deletion not working - investigation in progress
+- [ ] Investigate why files remain in R2 after dashboard deletion
+- [ ] Check if deleteFromR2 is being called with correct file key
+- [ ] Verify R2 API token has delete permissions
+
+### Improve R2 folder structure for multi-tenancy - COMPLETE
+- [x] Change folder path from quotes/{quoteId}/ to users/{userId}/quotes/{quoteId}/
+- [x] Better defense-in-depth for multi-tenant file isolation
