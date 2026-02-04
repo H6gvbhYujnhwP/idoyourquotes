@@ -8,7 +8,9 @@ import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured } from "./r2S
 import { generateQuoteHTML } from "./pdfGenerator";
 import {
   getQuotesByUserId,
+  getQuotesByOrgId,
   getQuoteById,
+  getQuoteByIdAndOrg,
   createQuote,
   updateQuote,
   updateQuoteStatus,
@@ -27,6 +29,7 @@ import {
   getInternalEstimateByQuoteId,
   upsertInternalEstimate,
   getCatalogItemsByUserId,
+  getCatalogItemsByOrgId,
   createCatalogItem,
   updateCatalogItem,
   deleteCatalogItem,
@@ -34,6 +37,7 @@ import {
   updateUserProfile,
   changePassword,
   getUserPrimaryOrg,
+  getOrganizationById,
   logUsage,
 } from "./db";
 import { transcribeAudio } from "./_core/voiceTranscription";
@@ -106,12 +110,26 @@ export const appRouter = router({
   // ============ QUOTES ============
   quotes: router({
     list: protectedProcedure.query(async ({ ctx }) => {
+      // Get user's primary organization
+      const org = await getUserPrimaryOrg(ctx.user.id);
+      if (org) {
+        // Use org-based access for multi-tenant isolation
+        return getQuotesByOrgId(org.id);
+      }
+      // Fallback to user-based access for users without orgs (legacy)
       return getQuotesByUserId(ctx.user.id);
     }),
 
     get: protectedProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ ctx, input }) => {
+        // Try org-based access first
+        const org = await getUserPrimaryOrg(ctx.user.id);
+        if (org) {
+          const quote = await getQuoteByIdAndOrg(input.id, org.id);
+          if (quote) return quote;
+        }
+        // Fallback to user-based access
         const quote = await getQuoteById(input.id, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
         return quote;
@@ -128,8 +146,11 @@ export const appRouter = router({
         terms: z.string().optional(),
       }).optional())
       .mutation(async ({ ctx, input }) => {
+        // Get user's organization to set orgId
+        const org = await getUserPrimaryOrg(ctx.user.id);
         return createQuote({
           userId: ctx.user.id,
+          orgId: org?.id,
           ...input,
         });
       }),
@@ -356,6 +377,19 @@ Sender Name: ${user.name || "[Your Name]"}`,
 
         try {
           const email = JSON.parse(responseText);
+
+          // Log usage for billing
+          const org = await getUserPrimaryOrg(ctx.user.id);
+          if (org) {
+            await logUsage({
+              orgId: org.id,
+              userId: ctx.user.id,
+              actionType: "generate_email",
+              creditsUsed: 1,
+              metadata: { quoteId: input.id },
+            });
+          }
+
           return {
             subject: email.subject || `Quotation – ${projectTitle}`,
             htmlBody: email.htmlBody || "",
@@ -635,6 +669,18 @@ Sender Name: ${user.name || "[Your Name]"}`,
             processingError: null,
           });
 
+          // Log usage for billing
+          const org = await getUserPrimaryOrg(ctx.user.id);
+          if (org) {
+            await logUsage({
+              orgId: org.id,
+              userId: ctx.user.id,
+              actionType: "transcribe_audio",
+              creditsUsed: 2,
+              metadata: { quoteId: input.quoteId, inputId: input.inputId },
+            });
+          }
+
           return { transcription: result.text, input: updated };
         } catch (error) {
           await updateInputProcessing(input.inputId, {
@@ -707,6 +753,18 @@ Sender Name: ${user.name || "[Your Name]"}`,
             processingStatus: "completed",
             processingError: null,
           });
+
+          // Log usage for billing
+          const org = await getUserPrimaryOrg(ctx.user.id);
+          if (org) {
+            await logUsage({
+              orgId: org.id,
+              userId: ctx.user.id,
+              actionType: "extract_pdf",
+              creditsUsed: 2,
+              metadata: { quoteId: input.quoteId, inputId: input.inputId },
+            });
+          }
 
           return { extractedText, input: updated };
         } catch (error) {
@@ -789,6 +847,18 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
             processingStatus: "completed",
             processingError: null,
           });
+
+          // Log usage for billing
+          const org = await getUserPrimaryOrg(ctx.user.id);
+          if (org) {
+            await logUsage({
+              orgId: org.id,
+              userId: ctx.user.id,
+              actionType: "analyze_image",
+              creditsUsed: 2,
+              metadata: { quoteId: input.quoteId, inputId: input.inputId },
+            });
+          }
 
           return { analysis, input: updated };
         } catch (error) {
@@ -881,6 +951,13 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
   // ============ CATALOG ============
   catalog: router({
     list: protectedProcedure.query(async ({ ctx }) => {
+      // Get user's primary organization
+      const org = await getUserPrimaryOrg(ctx.user.id);
+      if (org) {
+        // Use org-based access for multi-tenant isolation
+        return getCatalogItemsByOrgId(org.id);
+      }
+      // Fallback to user-based access for users without orgs (legacy)
       return getCatalogItemsByUserId(ctx.user.id);
     }),
 
@@ -894,8 +971,11 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
         costPrice: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
+        // Get user's organization to set orgId
+        const org = await getUserPrimaryOrg(ctx.user.id);
         return createCatalogItem({
           userId: ctx.user.id,
+          orgId: org?.id,
           ...input,
         });
       }),
@@ -1025,6 +1105,18 @@ Do not start with phrases like "Based on the quote..." - get straight to the ins
             : Array.isArray(content) 
               ? content.map(c => c.type === "text" ? c.text : "").join("")
               : "Unable to generate response";
+
+          // Log usage for billing
+          const org = await getUserPrimaryOrg(ctx.user.id);
+          if (org) {
+            await logUsage({
+              orgId: org.id,
+              userId: ctx.user.id,
+              actionType: "ask_ai",
+              creditsUsed: 1,
+              metadata: { quoteId: input.quoteId, promptType: input.promptType },
+            });
+          }
 
           return {
             success: true,
@@ -1180,6 +1272,18 @@ Be thorough but realistic with pricing. Extract all client details mentioned. Li
 
           // Recalculate totals
           await recalculateQuoteTotals(input.quoteId, ctx.user.id);
+
+          // Log usage for billing
+          const org = await getUserPrimaryOrg(ctx.user.id);
+          if (org) {
+            await logUsage({
+              orgId: org.id,
+              userId: ctx.user.id,
+              actionType: "generate_draft",
+              creditsUsed: 5, // Draft generation uses more credits
+              metadata: { quoteId: input.quoteId, lineItemsGenerated: createdLineItems.length },
+            });
+          }
 
           return {
             success: true,

@@ -5,14 +5,17 @@ import type { TrpcContext } from "./_core/context";
 // Mock the database functions
 vi.mock("./db", () => ({
   getCatalogItemsByUserId: vi.fn(),
+  getCatalogItemsByOrgId: vi.fn(),
   createCatalogItem: vi.fn(),
   updateCatalogItem: vi.fn(),
   deleteCatalogItem: vi.fn(),
   getQuoteById: vi.fn(),
+  getQuoteByIdAndOrg: vi.fn(),
   createLineItem: vi.fn(),
   recalculateQuoteTotals: vi.fn(),
   // Include other mocked functions to prevent import errors
   getQuotesByUserId: vi.fn(),
+  getQuotesByOrgId: vi.fn(),
   createQuote: vi.fn(),
   updateQuote: vi.fn(),
   updateQuoteStatus: vi.fn(),
@@ -30,6 +33,9 @@ vi.mock("./db", () => ({
   updateUserProfile: vi.fn(),
   changePassword: vi.fn(),
   getUserById: vi.fn(),
+  getUserPrimaryOrg: vi.fn(),
+  getOrganizationById: vi.fn(),
+  logUsage: vi.fn(),
 }));
 
 import * as db from "./db";
@@ -67,11 +73,13 @@ describe("Catalog Quick-Add", () => {
   });
 
   describe("catalog.list", () => {
-    it("should return user's catalog items", async () => {
+    it("should return catalog items via org", async () => {
+      const mockOrg = { id: 10, name: "Test Org", slug: "test-org" };
       const mockCatalogItems = [
         {
           id: 1,
           userId: 1,
+          orgId: 10,
           name: "Web Development",
           description: "Full-stack web development services",
           category: "Development",
@@ -83,6 +91,7 @@ describe("Catalog Quick-Add", () => {
         {
           id: 2,
           userId: 1,
+          orgId: 10,
           name: "Server Setup",
           description: "Linux server configuration",
           category: "Infrastructure",
@@ -93,21 +102,25 @@ describe("Catalog Quick-Add", () => {
         },
       ];
 
-      vi.mocked(db.getCatalogItemsByUserId).mockResolvedValue(mockCatalogItems as any);
+      vi.mocked(db.getUserPrimaryOrg).mockResolvedValue(mockOrg as any);
+      vi.mocked(db.getCatalogItemsByOrgId).mockResolvedValue(mockCatalogItems as any);
 
       const ctx = createAuthContext();
       const caller = appRouter.createCaller(ctx);
 
       const result = await caller.catalog.list();
 
-      expect(db.getCatalogItemsByUserId).toHaveBeenCalledWith(1);
+      expect(db.getUserPrimaryOrg).toHaveBeenCalledWith(1);
+      expect(db.getCatalogItemsByOrgId).toHaveBeenCalledWith(10);
       expect(result).toHaveLength(2);
       expect(result[0].name).toBe("Web Development");
       expect(result[1].name).toBe("Server Setup");
     });
 
     it("should return empty array when user has no catalog items", async () => {
-      vi.mocked(db.getCatalogItemsByUserId).mockResolvedValue([]);
+      const mockOrg = { id: 10, name: "Test Org", slug: "test-org" };
+      vi.mocked(db.getUserPrimaryOrg).mockResolvedValue(mockOrg as any);
+      vi.mocked(db.getCatalogItemsByOrgId).mockResolvedValue([]);
 
       const ctx = createAuthContext();
       const caller = appRouter.createCaller(ctx);
@@ -119,10 +132,12 @@ describe("Catalog Quick-Add", () => {
   });
 
   describe("catalog.create", () => {
-    it("should create a new catalog item", async () => {
+    it("should create a new catalog item with org id", async () => {
+      const mockOrg = { id: 10, name: "Test Org", slug: "test-org" };
       const newItem = {
         id: 1,
         userId: 1,
+        orgId: 10,
         name: "Consulting",
         description: "IT consulting services",
         category: "Services",
@@ -132,6 +147,7 @@ describe("Catalog Quick-Add", () => {
         isActive: 1,
       };
 
+      vi.mocked(db.getUserPrimaryOrg).mockResolvedValue(mockOrg as any);
       vi.mocked(db.createCatalogItem).mockResolvedValue(newItem as any);
 
       const ctx = createAuthContext();
@@ -145,8 +161,10 @@ describe("Catalog Quick-Add", () => {
         defaultRate: "100.00",
       });
 
+      expect(db.getUserPrimaryOrg).toHaveBeenCalledWith(1);
       expect(db.createCatalogItem).toHaveBeenCalledWith({
         userId: 1,
+        orgId: 10,
         name: "Consulting",
         description: "IT consulting services",
         category: "Services",

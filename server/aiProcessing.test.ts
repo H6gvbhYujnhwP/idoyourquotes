@@ -6,7 +6,9 @@ import type { TrpcContext } from "./_core/context";
 vi.mock("./db", () => ({
   upsertTenderContext: vi.fn(),
   getQuotesByUserId: vi.fn(),
+  getQuotesByOrgId: vi.fn(),
   getQuoteById: vi.fn(),
+  getQuoteByIdAndOrg: vi.fn(),
   createQuote: vi.fn(),
   updateQuote: vi.fn(),
   deleteQuote: vi.fn(),
@@ -20,10 +22,10 @@ vi.mock("./db", () => ({
   deleteInput: vi.fn(),
   updateInputProcessing: vi.fn(),
   getTenderContextByQuoteId: vi.fn(),
-  upsertTenderContext: vi.fn(),
   getInternalEstimateByQuoteId: vi.fn(),
   upsertInternalEstimate: vi.fn(),
   getCatalogItemsByUserId: vi.fn(),
+  getCatalogItemsByOrgId: vi.fn(),
   createCatalogItem: vi.fn(),
   updateCatalogItem: vi.fn(),
   deleteCatalogItem: vi.fn(),
@@ -31,6 +33,9 @@ vi.mock("./db", () => ({
   updateQuoteStatus: vi.fn(),
   getUserById: vi.fn(),
   updateUserProfile: vi.fn(),
+  getUserPrimaryOrg: vi.fn(),
+  getOrganizationById: vi.fn(),
+  logUsage: vi.fn(),
 }));
 
 // Mock the voice transcription
@@ -81,6 +86,7 @@ describe("AI Input Processing", () => {
 
   describe("inputs.transcribeAudio", () => {
     it("transcribes audio and updates input with processed content", async () => {
+      const mockOrg = { id: 10, name: "Test Org", slug: "test-org" };
       const mockInput = {
         id: 1,
         quoteId: 1,
@@ -94,10 +100,13 @@ describe("AI Input Processing", () => {
       const mockQuote = {
         id: 1,
         userId: 1,
+        orgId: 10,
         title: "Test Quote",
         status: "draft",
       };
 
+      vi.mocked(db.getUserPrimaryOrg).mockResolvedValue(mockOrg as any);
+      vi.mocked(db.logUsage).mockResolvedValue(undefined);
       vi.mocked(db.getInputById).mockResolvedValue(mockInput as any);
       vi.mocked(db.getQuoteById).mockResolvedValue(mockQuote as any);
       vi.mocked(transcribeAudio).mockResolvedValue({
@@ -177,6 +186,7 @@ describe("AI Input Processing", () => {
 
   describe("inputs.analyzeImage", () => {
     it("analyzes image using vision and updates input", async () => {
+      const mockOrg = { id: 10, name: "Test Org", slug: "test-org" };
       const mockInput = {
         id: 2,
         quoteId: 1,
@@ -190,10 +200,13 @@ describe("AI Input Processing", () => {
       const mockQuote = {
         id: 1,
         userId: 1,
+        orgId: 10,
         title: "Test Quote",
         status: "draft",
       };
 
+      vi.mocked(db.getUserPrimaryOrg).mockResolvedValue(mockOrg as any);
+      vi.mocked(db.logUsage).mockResolvedValue(undefined);
       vi.mocked(db.getInputById).mockResolvedValue(mockInput as any);
       vi.mocked(db.getQuoteById).mockResolvedValue(mockQuote as any);
       vi.mocked(invokeLLM).mockResolvedValue({
@@ -225,9 +238,11 @@ describe("AI Input Processing", () => {
 
   describe("ai.generateDraft", () => {
     it("generates a draft quote from processed inputs", async () => {
+      const mockOrg = { id: 10, name: "Test Org", slug: "test-org" };
       const mockQuote = {
         id: 1,
         userId: 1,
+        orgId: 10,
         title: "",
         clientName: "",
         description: "",
@@ -262,6 +277,8 @@ describe("AI Input Processing", () => {
         riskNotes: "Additional prep work may be needed if walls are damaged.",
       };
 
+      vi.mocked(db.getUserPrimaryOrg).mockResolvedValue(mockOrg as any);
+      vi.mocked(db.logUsage).mockResolvedValue(undefined);
       vi.mocked(db.getQuoteById).mockResolvedValue(mockQuote as any);
       vi.mocked(db.getInputsByQuoteId).mockResolvedValue(mockInputs as any);
       vi.mocked(db.getLineItemsByQuoteId).mockResolvedValue([]);
@@ -294,9 +311,11 @@ describe("AI Input Processing", () => {
     });
 
     it("includes user prompt in the generation", async () => {
+      const mockOrg = { id: 10, name: "Test Org", slug: "test-org" };
       const mockQuote = {
         id: 1,
         userId: 1,
+        orgId: 10,
         title: "",
         status: "draft",
       };
@@ -319,6 +338,8 @@ describe("AI Input Processing", () => {
         riskNotes: "",
       };
 
+      vi.mocked(db.getUserPrimaryOrg).mockResolvedValue(mockOrg as any);
+      vi.mocked(db.logUsage).mockResolvedValue(undefined);
       vi.mocked(db.getQuoteById).mockResolvedValue(mockQuote as any);
       vi.mocked(db.getInputsByQuoteId).mockResolvedValue(mockInputs as any);
       vi.mocked(db.getLineItemsByQuoteId).mockResolvedValue([]);

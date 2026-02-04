@@ -234,13 +234,16 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Add created_by_user_id to quotes table (track who created)
 - [x] Migrate existing data - create org for each existing user
 
-### Backend Changes - IN PROGRESS
+### Backend Changes - COMPLETE
 - [x] Add org helpers to db.ts (getUserPrimaryOrg, logUsage)
 - [x] Update file upload to use org-scoped folder path
-- [ ] Add org context to tRPC context
-- [ ] Update all quote queries to filter by org_id instead of user_id
-- [ ] Auto-create org when user signs up
-- [ ] Add org member management procedures
+- [x] Update quotes.list to filter by org_id (with fallback to user_id)
+- [x] Update quotes.get to use org-based access (with fallback)
+- [x] Update quotes.create to set orgId from user's org
+- [x] Update catalog.list to filter by org_id (with fallback to user_id)
+- [x] Update catalog.create to set orgId from user's org
+- [x] Auto-create org when user signs up (in createUser helper)
+- [x] Add usage logging to AI operations (generateDraft, transcribe, extractPdf, analyzeImage, askAi, generateEmail)
 
 ### Frontend Changes
 - [ ] Add org context provider

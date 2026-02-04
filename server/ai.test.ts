@@ -16,7 +16,9 @@ vi.mock("./_core/llm", () => ({
 // Mock db functions
 vi.mock("./db", () => ({
   getQuotesByUserId: vi.fn(),
+  getQuotesByOrgId: vi.fn(),
   getQuoteById: vi.fn(),
+  getQuoteByIdAndOrg: vi.fn(),
   createQuote: vi.fn(),
   updateQuote: vi.fn(),
   updateQuoteStatus: vi.fn(),
@@ -33,12 +35,16 @@ vi.mock("./db", () => ({
   getInternalEstimateByQuoteId: vi.fn(),
   upsertInternalEstimate: vi.fn(),
   getCatalogItemsByUserId: vi.fn(),
+  getCatalogItemsByOrgId: vi.fn(),
   createCatalogItem: vi.fn(),
   updateCatalogItem: vi.fn(),
   deleteCatalogItem: vi.fn(),
   recalculateQuoteTotals: vi.fn(),
   updateUserProfile: vi.fn(),
   changePassword: vi.fn(),
+  getUserPrimaryOrg: vi.fn(),
+  getOrganizationById: vi.fn(),
+  logUsage: vi.fn(),
 }));
 
 import * as db from "./db";
@@ -107,6 +113,9 @@ describe("AI Quote Review", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Set up org mock for usage logging
+    vi.mocked(db.getUserPrimaryOrg).mockResolvedValue({ id: 10, name: "Test Org", slug: "test-org" } as any);
+    vi.mocked(db.logUsage).mockResolvedValue(undefined);
     vi.mocked(db.getQuoteById).mockResolvedValue(mockQuote as any);
     vi.mocked(db.getLineItemsByQuoteId).mockResolvedValue(mockLineItems as any);
     vi.mocked(db.getTenderContextByQuoteId).mockResolvedValue(null);

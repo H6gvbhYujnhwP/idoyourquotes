@@ -5,7 +5,9 @@ import type { TrpcContext } from "./_core/context";
 // Mock the database functions
 vi.mock("./db", () => ({
   getQuotesByUserId: vi.fn(),
+  getQuotesByOrgId: vi.fn(),
   getQuoteById: vi.fn(),
+  getQuoteByIdAndOrg: vi.fn(),
   createQuote: vi.fn(),
   updateQuote: vi.fn(),
   deleteQuote: vi.fn(),
@@ -21,10 +23,14 @@ vi.mock("./db", () => ({
   getInternalEstimateByQuoteId: vi.fn(),
   upsertInternalEstimate: vi.fn(),
   getCatalogItemsByUserId: vi.fn(),
+  getCatalogItemsByOrgId: vi.fn(),
   createCatalogItem: vi.fn(),
   updateCatalogItem: vi.fn(),
   deleteCatalogItem: vi.fn(),
   recalculateQuoteTotals: vi.fn(),
+  getUserPrimaryOrg: vi.fn(),
+  getOrganizationById: vi.fn(),
+  logUsage: vi.fn(),
 }));
 
 import * as db from "./db";
@@ -62,11 +68,30 @@ describe("quotes router", () => {
   });
 
   describe("quotes.list", () => {
-    it("returns quotes for the authenticated user", async () => {
+    it("returns quotes for the authenticated user via org", async () => {
+      const mockOrg = { id: 10, name: "Test Org", slug: "test-org" };
+      const mockQuotes = [
+        { id: 1, userId: 1, orgId: 10, title: "Test Quote 1", status: "draft", total: "100.00" },
+        { id: 2, userId: 1, orgId: 10, title: "Test Quote 2", status: "sent", total: "250.00" },
+      ];
+      vi.mocked(db.getUserPrimaryOrg).mockResolvedValue(mockOrg as any);
+      vi.mocked(db.getQuotesByOrgId).mockResolvedValue(mockQuotes as any);
+
+      const ctx = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.quotes.list();
+
+      expect(db.getUserPrimaryOrg).toHaveBeenCalledWith(1);
+      expect(db.getQuotesByOrgId).toHaveBeenCalledWith(10);
+      expect(result).toEqual(mockQuotes);
+    });
+
+    it("falls back to user-based access when no org", async () => {
       const mockQuotes = [
         { id: 1, userId: 1, title: "Test Quote 1", status: "draft", total: "100.00" },
-        { id: 2, userId: 1, title: "Test Quote 2", status: "sent", total: "250.00" },
       ];
+      vi.mocked(db.getUserPrimaryOrg).mockResolvedValue(undefined);
       vi.mocked(db.getQuotesByUserId).mockResolvedValue(mockQuotes as any);
 
       const ctx = createAuthContext();
@@ -74,21 +99,25 @@ describe("quotes router", () => {
 
       const result = await caller.quotes.list();
 
+      expect(db.getUserPrimaryOrg).toHaveBeenCalledWith(1);
       expect(db.getQuotesByUserId).toHaveBeenCalledWith(1);
       expect(result).toEqual(mockQuotes);
     });
   });
 
   describe("quotes.create", () => {
-    it("creates a new quote with provided data", async () => {
+    it("creates a new quote with org id", async () => {
+      const mockOrg = { id: 10, name: "Test Org", slug: "test-org" };
       const mockQuote = {
         id: 1,
         userId: 1,
+        orgId: 10,
         title: "New Quote",
         clientName: "Test Client",
         status: "draft",
         total: "0.00",
       };
+      vi.mocked(db.getUserPrimaryOrg).mockResolvedValue(mockOrg as any);
       vi.mocked(db.createQuote).mockResolvedValue(mockQuote as any);
 
       const ctx = createAuthContext();
@@ -99,21 +128,24 @@ describe("quotes router", () => {
         clientName: "Test Client",
       });
 
+      expect(db.getUserPrimaryOrg).toHaveBeenCalledWith(1);
       expect(db.createQuote).toHaveBeenCalledWith({
         userId: 1,
+        orgId: 10,
         title: "New Quote",
         clientName: "Test Client",
       });
       expect(result).toEqual(mockQuote);
     });
 
-    it("creates a quote with empty input", async () => {
+    it("creates a quote without org when user has no org", async () => {
       const mockQuote = {
         id: 1,
         userId: 1,
         status: "draft",
         total: "0.00",
       };
+      vi.mocked(db.getUserPrimaryOrg).mockResolvedValue(undefined);
       vi.mocked(db.createQuote).mockResolvedValue(mockQuote as any);
 
       const ctx = createAuthContext();
@@ -121,14 +153,31 @@ describe("quotes router", () => {
 
       const result = await caller.quotes.create({});
 
-      expect(db.createQuote).toHaveBeenCalledWith({ userId: 1 });
+      expect(db.createQuote).toHaveBeenCalledWith({ userId: 1, orgId: undefined });
       expect(result).toEqual(mockQuote);
     });
   });
 
   describe("quotes.get", () => {
-    it("returns a quote by id for the authenticated user", async () => {
+    it("returns a quote by id via org", async () => {
+      const mockOrg = { id: 10, name: "Test Org", slug: "test-org" };
+      const mockQuote = { id: 1, userId: 1, orgId: 10, title: "Test Quote", status: "draft" };
+      vi.mocked(db.getUserPrimaryOrg).mockResolvedValue(mockOrg as any);
+      vi.mocked(db.getQuoteByIdAndOrg).mockResolvedValue(mockQuote as any);
+
+      const ctx = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.quotes.get({ id: 1 });
+
+      expect(db.getUserPrimaryOrg).toHaveBeenCalledWith(1);
+      expect(db.getQuoteByIdAndOrg).toHaveBeenCalledWith(1, 10);
+      expect(result).toEqual(mockQuote);
+    });
+
+    it("falls back to user-based access when org lookup fails", async () => {
       const mockQuote = { id: 1, userId: 1, title: "Test Quote", status: "draft" };
+      vi.mocked(db.getUserPrimaryOrg).mockResolvedValue(undefined);
       vi.mocked(db.getQuoteById).mockResolvedValue(mockQuote as any);
 
       const ctx = createAuthContext();
@@ -141,6 +190,7 @@ describe("quotes router", () => {
     });
 
     it("throws error when quote not found", async () => {
+      vi.mocked(db.getUserPrimaryOrg).mockResolvedValue(undefined);
       vi.mocked(db.getQuoteById).mockResolvedValue(undefined);
 
       const ctx = createAuthContext();
@@ -286,11 +336,30 @@ describe("catalog router", () => {
   });
 
   describe("catalog.list", () => {
-    it("returns catalog items for the authenticated user", async () => {
+    it("returns catalog items via org", async () => {
+      const mockOrg = { id: 10, name: "Test Org", slug: "test-org" };
+      const mockItems = [
+        { id: 1, userId: 1, orgId: 10, name: "Electrical Work", defaultRate: "75.00" },
+        { id: 2, userId: 1, orgId: 10, name: "Plumbing", defaultRate: "65.00" },
+      ];
+      vi.mocked(db.getUserPrimaryOrg).mockResolvedValue(mockOrg as any);
+      vi.mocked(db.getCatalogItemsByOrgId).mockResolvedValue(mockItems as any);
+
+      const ctx = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.catalog.list();
+
+      expect(db.getUserPrimaryOrg).toHaveBeenCalledWith(1);
+      expect(db.getCatalogItemsByOrgId).toHaveBeenCalledWith(10);
+      expect(result).toEqual(mockItems);
+    });
+
+    it("falls back to user-based access when no org", async () => {
       const mockItems = [
         { id: 1, userId: 1, name: "Electrical Work", defaultRate: "75.00" },
-        { id: 2, userId: 1, name: "Plumbing", defaultRate: "65.00" },
       ];
+      vi.mocked(db.getUserPrimaryOrg).mockResolvedValue(undefined);
       vi.mocked(db.getCatalogItemsByUserId).mockResolvedValue(mockItems as any);
 
       const ctx = createAuthContext();
@@ -304,15 +373,18 @@ describe("catalog router", () => {
   });
 
   describe("catalog.create", () => {
-    it("creates a catalog item", async () => {
+    it("creates a catalog item with org id", async () => {
+      const mockOrg = { id: 10, name: "Test Org", slug: "test-org" };
       const mockItem = {
         id: 1,
         userId: 1,
+        orgId: 10,
         name: "New Service",
         description: "Test description",
         unit: "hour",
         defaultRate: "100.00",
       };
+      vi.mocked(db.getUserPrimaryOrg).mockResolvedValue(mockOrg as any);
       vi.mocked(db.createCatalogItem).mockResolvedValue(mockItem as any);
 
       const ctx = createAuthContext();
@@ -325,8 +397,10 @@ describe("catalog router", () => {
         defaultRate: "100.00",
       });
 
+      expect(db.getUserPrimaryOrg).toHaveBeenCalledWith(1);
       expect(db.createCatalogItem).toHaveBeenCalledWith({
         userId: 1,
+        orgId: 10,
         name: "New Service",
         description: "Test description",
         unit: "hour",
