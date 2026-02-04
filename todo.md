@@ -258,3 +258,13 @@ Based on Formal Build Prompt & Product Roadmap
 - [ ] Test org creation on signup
 - [ ] Test org-based quote access
 - [ ] Test member roles and permissions
+
+## Bug Fixes - Critical
+
+### Login failing due to column name mismatch - FIXED
+- [x] Fix users table: passwordHash -> password_hash, isActive -> is_active, etc.
+- [x] Fix quotes table: clientName -> client_name, taxRate -> tax_rate, etc.
+- [x] Fix quoteLineItems table: quoteId -> quote_id, sortOrder -> sort_order, etc.
+- [x] Fix quoteInputs table: inputType -> input_type, fileUrl -> file_url, etc.
+- [x] Fix catalogItems table: defaultRate -> default_rate, costPrice -> cost_price, etc.
+- [x] Test and deploy

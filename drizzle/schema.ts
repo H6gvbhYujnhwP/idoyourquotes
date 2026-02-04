@@ -4,6 +4,9 @@ import { pgTable, pgEnum, text, timestamp, varchar, decimal, json, integer, bool
  * IMPORTANT: IdoYourQuotes uses PostgreSQL on Render
  * Database: idoyourquotes-db (PostgreSQL 16)
  * DO NOT change to MySQL/TiDB
+ * 
+ * COLUMN NAMING: PostgreSQL uses snake_case column names
+ * The string in column definitions MUST match the actual database column names
  */
 
 // Enums
@@ -71,23 +74,24 @@ export type InsertUsageLog = typeof usageLogs.$inferInsert;
 /**
  * Core user table backing auth flow.
  * Supports standalone email/password authentication.
+ * IMPORTANT: Column names use snake_case to match PostgreSQL
  */
 export const users = pgTable("users", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   email: varchar("email", { length: 320 }).notNull().unique(),
-  passwordHash: text("passwordHash").notNull(),
+  passwordHash: text("password_hash").notNull(),
   name: text("name"),
   role: userRoleEnum("role").default("user").notNull(),
-  isActive: boolean("isActive").default(true).notNull(),
-  companyName: varchar("companyName", { length: 255 }),
-  companyAddress: text("companyAddress"),
-  companyPhone: varchar("companyPhone", { length: 50 }),
-  companyEmail: varchar("companyEmail", { length: 320 }),
-  defaultTerms: text("defaultTerms"),
-  companyLogo: text("companyLogo"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  companyName: varchar("company_name", { length: 255 }),
+  companyAddress: text("company_address"),
+  companyPhone: varchar("company_phone", { length: 50 }),
+  companyEmail: varchar("company_email", { length: 320 }),
+  defaultTerms: text("default_terms"),
+  companyLogo: text("company_logo"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  lastSignedIn: timestamp("last_signed_in").defaultNow().notNull(),
 });
 
 export type User = typeof users.$inferSelect;
@@ -97,30 +101,31 @@ export type InsertUser = typeof users.$inferInsert;
  * Quotes - the main quote entity
  * Status: draft → sent → accepted/declined
  * Now owned by organization, with created_by tracking
+ * IMPORTANT: Column names use snake_case to match PostgreSQL
  */
 export const quotes = pgTable("quotes", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   orgId: bigint("org_id", { mode: "number" }),
-  userId: bigint("userId", { mode: "number" }).notNull(),
+  userId: bigint("user_id", { mode: "number" }).notNull(),
   createdByUserId: bigint("created_by_user_id", { mode: "number" }),
   reference: varchar("reference", { length: 100 }),
   status: quoteStatusEnum("status").default("draft").notNull(),
-  clientName: varchar("clientName", { length: 255 }),
-  clientEmail: varchar("clientEmail", { length: 320 }),
-  clientPhone: varchar("clientPhone", { length: 50 }),
-  clientAddress: text("clientAddress"),
+  clientName: varchar("client_name", { length: 255 }),
+  clientEmail: varchar("client_email", { length: 320 }),
+  clientPhone: varchar("client_phone", { length: 50 }),
+  clientAddress: text("client_address"),
   title: varchar("title", { length: 255 }),
   description: text("description"),
   terms: text("terms"),
-  validUntil: timestamp("validUntil"),
+  validUntil: timestamp("valid_until"),
   subtotal: decimal("subtotal", { precision: 12, scale: 2 }).default("0.00"),
-  taxRate: decimal("taxRate", { precision: 5, scale: 2 }).default("0.00"),
-  taxAmount: decimal("taxAmount", { precision: 12, scale: 2 }).default("0.00"),
+  taxRate: decimal("tax_rate", { precision: 5, scale: 2 }).default("0.00"),
+  taxAmount: decimal("tax_amount", { precision: 12, scale: 2 }).default("0.00"),
   total: decimal("total", { precision: 12, scale: 2 }).default("0.00"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-  sentAt: timestamp("sentAt"),
-  acceptedAt: timestamp("acceptedAt"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  sentAt: timestamp("sent_at"),
+  acceptedAt: timestamp("accepted_at"),
 });
 
 export type Quote = typeof quotes.$inferSelect;
@@ -128,18 +133,19 @@ export type InsertQuote = typeof quotes.$inferInsert;
 
 /**
  * Quote Line Items - individual items on a quote
+ * IMPORTANT: Column names use snake_case to match PostgreSQL
  */
-export const quoteLineItems = pgTable("quoteLineItems", {
+export const quoteLineItems = pgTable("quote_line_items", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
-  quoteId: bigint("quoteId", { mode: "number" }).notNull(),
-  sortOrder: integer("sortOrder").default(0),
+  quoteId: bigint("quote_id", { mode: "number" }).notNull(),
+  sortOrder: integer("sort_order").default(0),
   description: text("description").notNull(),
   quantity: decimal("quantity", { precision: 12, scale: 4 }).default("1.0000"),
   unit: varchar("unit", { length: 50 }).default("each"),
   rate: decimal("rate", { precision: 12, scale: 2 }).default("0.00"),
   total: decimal("total", { precision: 12, scale: 2 }).default("0.00"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export type QuoteLineItem = typeof quoteLineItems.$inferSelect;
@@ -148,20 +154,21 @@ export type InsertQuoteLineItem = typeof quoteLineItems.$inferInsert;
 /**
  * Quote Inputs - raw evidence attached to a quote
  * Types: pdf, image, audio, email, text
+ * IMPORTANT: Column names use snake_case to match PostgreSQL
  */
-export const quoteInputs = pgTable("quoteInputs", {
+export const quoteInputs = pgTable("quote_inputs", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
-  quoteId: bigint("quoteId", { mode: "number" }).notNull(),
-  inputType: inputTypeEnum("inputType").notNull(),
+  quoteId: bigint("quote_id", { mode: "number" }).notNull(),
+  inputType: inputTypeEnum("input_type").notNull(),
   filename: varchar("filename", { length: 255 }),
-  fileUrl: text("fileUrl"),
-  fileKey: varchar("fileKey", { length: 255 }),
+  fileUrl: text("file_url"),
+  fileKey: varchar("file_key", { length: 255 }),
   content: text("content"),
-  mimeType: varchar("mimeType", { length: 100 }),
-  processedContent: text("processedContent"),
-  processingStatus: varchar("processingStatus", { length: 20 }).default("pending"),
-  processingError: text("processingError"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  mimeType: varchar("mime_type", { length: 100 }),
+  processedContent: text("processed_content"),
+  processingStatus: varchar("processing_status", { length: 20 }).default("pending"),
+  processingError: text("processing_error"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export type QuoteInput = typeof quoteInputs.$inferSelect;
@@ -206,20 +213,21 @@ export type InsertInternalEstimate = typeof internalEstimates.$inferInsert;
 /**
  * Product/Service Catalog - reusable items for quotes
  * Now owned by organization
+ * IMPORTANT: Column names use snake_case to match PostgreSQL
  */
-export const catalogItems = pgTable("catalogItems", {
+export const catalogItems = pgTable("catalog_items", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   orgId: bigint("org_id", { mode: "number" }),
-  userId: bigint("userId", { mode: "number" }).notNull(),
+  userId: bigint("user_id", { mode: "number" }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
   category: varchar("category", { length: 100 }),
   unit: varchar("unit", { length: 50 }).default("each"),
-  defaultRate: decimal("defaultRate", { precision: 12, scale: 2 }).default("0.00"),
-  costPrice: decimal("costPrice", { precision: 12, scale: 2 }),
-  isActive: integer("isActive").default(1),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  defaultRate: decimal("default_rate", { precision: 12, scale: 2 }).default("0.00"),
+  costPrice: decimal("cost_price", { precision: 12, scale: 2 }),
+  isActive: integer("is_active").default(1),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export type CatalogItem = typeof catalogItems.$inferSelect;
