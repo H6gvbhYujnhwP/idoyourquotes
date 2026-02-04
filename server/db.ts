@@ -1,6 +1,6 @@
 import { eq, desc, and } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { drizzle } from "drizzle-orm/mysql2";
+import * as mysql from "mysql2/promise";
 import bcrypt from "bcryptjs";
 import { 
   InsertUser, 
@@ -11,6 +11,9 @@ import {
   tenderContexts, 
   internalEstimates,
   catalogItems,
+  organizations,
+  orgMembers,
+  usageLogs,
   Quote,
   InsertQuote,
   QuoteLineItem,
@@ -24,23 +27,195 @@ import {
   CatalogItem,
   InsertCatalogItem,
   User,
+  Organization,
+  InsertOrganization,
+  OrgMember,
+  InsertOrgMember,
+  UsageLog,
+  InsertUsageLog,
 } from "../drizzle/schema";
 
-let _db: ReturnType<typeof drizzle> | null = null;
-let _client: ReturnType<typeof postgres> | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _db: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _pool: any = null;
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _client = postgres(process.env.DATABASE_URL, { ssl: 'require' });
-      _db = drizzle(_client);
+      // Parse the MySQL connection URL
+      const url = new URL(process.env.DATABASE_URL);
+      _pool = mysql.createPool({
+        host: url.hostname,
+        port: parseInt(url.port) || 4000,
+        user: url.username,
+        password: url.password,
+        database: url.pathname.slice(1),
+        ssl: { rejectUnauthorized: true },
+        waitForConnections: true,
+        connectionLimit: 10,
+      });
+      _db = drizzle(_pool);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
     }
   }
   return _db;
+}
+
+// ============ ORGANIZATION HELPERS ============
+
+function generateSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 50) + '-' + Date.now().toString(36);
+}
+
+export async function createOrganization(data: {
+  name: string;
+  billingEmail?: string;
+  companyName?: string;
+  companyAddress?: string;
+  companyPhone?: string;
+  companyEmail?: string;
+}): Promise<Organization> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const slug = generateSlug(data.name);
+  
+  await db.insert(organizations).values({
+    name: data.name,
+    slug,
+    billingEmail: data.billingEmail,
+    companyName: data.companyName,
+    companyAddress: data.companyAddress,
+    companyPhone: data.companyPhone,
+    companyEmail: data.companyEmail,
+  });
+
+  // MySQL doesn't support RETURNING, so we need to fetch the inserted row
+  const [result] = await db.select().from(organizations).where(eq(organizations.slug, slug)).limit(1);
+  return result;
+}
+
+export async function getOrganizationById(orgId: number): Promise<Organization | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const [result] = await db.select().from(organizations).where(eq(organizations.id, orgId)).limit(1);
+  return result;
+}
+
+export async function getOrganizationBySlug(slug: string): Promise<Organization | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const [result] = await db.select().from(organizations).where(eq(organizations.slug, slug)).limit(1);
+  return result;
+}
+
+export async function updateOrganization(orgId: number, data: Partial<InsertOrganization>): Promise<Organization | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  await db.update(organizations)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(organizations.id, orgId));
+
+  return getOrganizationById(orgId);
+}
+
+// ============ ORG MEMBER HELPERS ============
+
+export async function addOrgMember(orgId: number, userId: number, role: "owner" | "admin" | "member" = "member"): Promise<OrgMember> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db.insert(orgMembers).values({
+    orgId,
+    userId,
+    role,
+    acceptedAt: new Date(),
+  });
+
+  const [result] = await db.select().from(orgMembers)
+    .where(and(eq(orgMembers.orgId, orgId), eq(orgMembers.userId, userId)))
+    .limit(1);
+  return result;
+}
+
+export async function getOrgMembersByOrgId(orgId: number): Promise<OrgMember[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select().from(orgMembers).where(eq(orgMembers.orgId, orgId));
+}
+
+export async function getUserOrganizations(userId: number): Promise<Organization[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const memberships = await db.select().from(orgMembers).where(eq(orgMembers.userId, userId));
+  if (memberships.length === 0) return [];
+
+  const orgIds = memberships.map((m: OrgMember) => m.orgId);
+  // Fetch organizations one by one (simple approach for now)
+  const orgs: Organization[] = [];
+  for (const orgId of orgIds) {
+    const org = await getOrganizationById(orgId);
+    if (org) orgs.push(org);
+  }
+  return orgs;
+}
+
+export async function getUserPrimaryOrg(userId: number): Promise<Organization | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  // Get the first org where user is owner, or any org they belong to
+  const [membership] = await db.select().from(orgMembers)
+    .where(eq(orgMembers.userId, userId))
+    .orderBy(orgMembers.createdAt)
+    .limit(1);
+
+  if (!membership) return undefined;
+  return getOrganizationById(membership.orgId);
+}
+
+// ============ USAGE LOG HELPERS ============
+
+export async function logUsage(data: {
+  orgId: number;
+  userId: number;
+  actionType: string;
+  creditsUsed?: number;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  await db.insert(usageLogs).values({
+    orgId: data.orgId,
+    userId: data.userId,
+    actionType: data.actionType,
+    creditsUsed: data.creditsUsed || 1,
+    metadata: data.metadata,
+  });
+}
+
+export async function getUsageByOrgId(orgId: number, limit = 100): Promise<UsageLog[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select().from(usageLogs)
+    .where(eq(usageLogs.orgId, orgId))
+    .orderBy(desc(usageLogs.createdAt))
+    .limit(limit);
 }
 
 // ============ USER AUTHENTICATION HELPERS ============
@@ -59,13 +234,26 @@ export async function createUser(email: string, password: string, name?: string)
 
   const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
   
-  const [user] = await db.insert(users).values({
+  await db.insert(users).values({
     email: email.toLowerCase(),
     passwordHash,
     name: name || null,
     role: 'user',
     isActive: true,
-  }).returning();
+  });
+
+  // MySQL doesn't support RETURNING, fetch the inserted user
+  const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase())).limit(1);
+
+  // Auto-create organization for new user
+  if (user) {
+    const orgName = name || email.split('@')[0];
+    const org = await createOrganization({
+      name: orgName,
+      billingEmail: email.toLowerCase(),
+    });
+    await addOrgMember(org.id, user.id, "owner");
+  }
 
   return user;
 }
@@ -119,12 +307,11 @@ export async function updateUserProfile(userId: number, data: {
   const db = await getDb();
   if (!db) return undefined;
 
-  const [user] = await db.update(users)
+  await db.update(users)
     .set({ ...data, updatedAt: new Date() })
-    .where(eq(users.id, userId))
-    .returning();
+    .where(eq(users.id, userId));
 
-  return user;
+  return getUserById(userId);
 }
 
 export async function changePassword(userId: number, currentPassword: string, newPassword: string): Promise<boolean> {
@@ -152,6 +339,13 @@ export async function getQuotesByUserId(userId: number): Promise<Quote[]> {
   return db.select().from(quotes).where(eq(quotes.userId, userId)).orderBy(desc(quotes.updatedAt));
 }
 
+export async function getQuotesByOrgId(orgId: number): Promise<Quote[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select().from(quotes).where(eq(quotes.orgId, orgId)).orderBy(desc(quotes.updatedAt));
+}
+
 export async function getQuoteById(quoteId: number, userId: number): Promise<Quote | undefined> {
   const db = await getDb();
   if (!db) return undefined;
@@ -163,13 +357,28 @@ export async function getQuoteById(quoteId: number, userId: number): Promise<Quo
   return result[0];
 }
 
-export async function createQuote(data: Partial<InsertQuote> & { userId: number }): Promise<Quote> {
+export async function getQuoteByIdAndOrg(quoteId: number, orgId: number): Promise<Quote | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db.select().from(quotes)
+    .where(and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId)))
+    .limit(1);
+
+  return result[0];
+}
+
+export async function createQuote(data: Partial<InsertQuote> & { userId: number; orgId?: number }): Promise<Quote> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const [result] = await db.insert(quotes).values({
+  const reference = data.reference || `Q-${Date.now()}`;
+
+  await db.insert(quotes).values({
     userId: data.userId,
-    reference: data.reference || `Q-${Date.now()}`,
+    orgId: data.orgId,
+    createdByUserId: data.userId,
+    reference,
     status: data.status || "draft",
     clientName: data.clientName,
     clientEmail: data.clientEmail,
@@ -183,8 +392,10 @@ export async function createQuote(data: Partial<InsertQuote> & { userId: number 
     taxRate: data.taxRate || "0.00",
     taxAmount: data.taxAmount || "0.00",
     total: data.total || "0.00",
-  }).returning();
+  });
 
+  // MySQL doesn't support RETURNING, fetch by reference
+  const [result] = await db.select().from(quotes).where(eq(quotes.reference, reference)).limit(1);
   return result;
 }
 
@@ -192,12 +403,11 @@ export async function updateQuote(quoteId: number, userId: number, data: Partial
   const db = await getDb();
   if (!db) return undefined;
 
-  const [result] = await db.update(quotes)
+  await db.update(quotes)
     .set({ ...data, updatedAt: new Date() })
-    .where(and(eq(quotes.id, quoteId), eq(quotes.userId, userId)))
-    .returning();
+    .where(and(eq(quotes.id, quoteId), eq(quotes.userId, userId)));
 
-  return result;
+  return getQuoteById(quoteId, userId);
 }
 
 export async function updateQuoteStatus(
@@ -208,7 +418,7 @@ export async function updateQuoteStatus(
   const db = await getDb();
   if (!db) return undefined;
 
-  const updateData: Partial<InsertQuote> & { sentAt?: Date; acceptedAt?: Date } = {
+  const updateData: Record<string, unknown> = {
     status,
     updatedAt: new Date(),
   };
@@ -220,12 +430,11 @@ export async function updateQuoteStatus(
     updateData.acceptedAt = new Date();
   }
 
-  const [result] = await db.update(quotes)
+  await db.update(quotes)
     .set(updateData)
-    .where(and(eq(quotes.id, quoteId), eq(quotes.userId, userId)))
-    .returning();
+    .where(and(eq(quotes.id, quoteId), eq(quotes.userId, userId)));
 
-  return result;
+  return getQuoteById(quoteId, userId);
 }
 
 export async function deleteQuote(quoteId: number, userId: number): Promise<boolean> {
@@ -259,7 +468,13 @@ export async function createLineItem(data: InsertQuoteLineItem): Promise<QuoteLi
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const [result] = await db.insert(quoteLineItems).values(data).returning();
+  await db.insert(quoteLineItems).values(data);
+  
+  // Fetch the last inserted item for this quote
+  const [result] = await db.select().from(quoteLineItems)
+    .where(eq(quoteLineItems.quoteId, data.quoteId))
+    .orderBy(desc(quoteLineItems.id))
+    .limit(1);
   return result;
 }
 
@@ -267,10 +482,11 @@ export async function updateLineItem(itemId: number, data: Partial<InsertQuoteLi
   const db = await getDb();
   if (!db) return undefined;
 
-  const [result] = await db.update(quoteLineItems)
+  await db.update(quoteLineItems)
     .set({ ...data, updatedAt: new Date() })
-    .where(eq(quoteLineItems.id, itemId))
-    .returning();
+    .where(eq(quoteLineItems.id, itemId));
+
+  const [result] = await db.select().from(quoteLineItems).where(eq(quoteLineItems.id, itemId)).limit(1);
   return result;
 }
 
@@ -297,7 +513,13 @@ export async function createInput(data: InsertQuoteInput): Promise<QuoteInput> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const [result] = await db.insert(quoteInputs).values(data).returning();
+  await db.insert(quoteInputs).values(data);
+  
+  // Fetch the last inserted input for this quote
+  const [result] = await db.select().from(quoteInputs)
+    .where(eq(quoteInputs.quoteId, data.quoteId))
+    .orderBy(desc(quoteInputs.id))
+    .limit(1);
   return result;
 }
 
@@ -320,10 +542,11 @@ export async function updateInputProcessing(
   const db = await getDb();
   if (!db) return undefined;
 
-  const [result] = await db.update(quoteInputs)
+  await db.update(quoteInputs)
     .set(data)
-    .where(eq(quoteInputs.id, inputId))
-    .returning();
+    .where(eq(quoteInputs.id, inputId));
+
+  const [result] = await db.select().from(quoteInputs).where(eq(quoteInputs.id, inputId)).limit(1);
   return result;
 }
 
@@ -357,15 +580,15 @@ export async function upsertTenderContext(quoteId: number, data: Partial<InsertT
   const existing = await getTenderContextByQuoteId(quoteId);
   
   if (existing) {
-    const [result] = await db.update(tenderContexts)
+    await db.update(tenderContexts)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(tenderContexts.quoteId, quoteId))
-      .returning();
-    return result;
+      .where(eq(tenderContexts.quoteId, quoteId));
   } else {
-    const [result] = await db.insert(tenderContexts).values({ quoteId, ...data }).returning();
-    return result;
+    await db.insert(tenderContexts).values({ quoteId, ...data });
   }
+
+  const result = await getTenderContextByQuoteId(quoteId);
+  return result!;
 }
 
 // ============ INTERNAL ESTIMATE HELPERS ============
@@ -388,15 +611,15 @@ export async function upsertInternalEstimate(quoteId: number, data: Partial<Inse
   const existing = await getInternalEstimateByQuoteId(quoteId);
   
   if (existing) {
-    const [result] = await db.update(internalEstimates)
+    await db.update(internalEstimates)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(internalEstimates.quoteId, quoteId))
-      .returning();
-    return result;
+      .where(eq(internalEstimates.quoteId, quoteId));
   } else {
-    const [result] = await db.insert(internalEstimates).values({ quoteId, ...data }).returning();
-    return result;
+    await db.insert(internalEstimates).values({ quoteId, ...data });
   }
+
+  const result = await getInternalEstimateByQuoteId(quoteId);
+  return result!;
 }
 
 // ============ CATALOG HELPERS ============
@@ -410,11 +633,26 @@ export async function getCatalogItemsByUserId(userId: number): Promise<CatalogIt
     .orderBy(catalogItems.name);
 }
 
+export async function getCatalogItemsByOrgId(orgId: number): Promise<CatalogItem[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select().from(catalogItems)
+    .where(eq(catalogItems.orgId, orgId))
+    .orderBy(catalogItems.name);
+}
+
 export async function createCatalogItem(data: InsertCatalogItem): Promise<CatalogItem> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const [result] = await db.insert(catalogItems).values(data).returning();
+  await db.insert(catalogItems).values(data);
+  
+  // Fetch the last inserted catalog item for this user
+  const [result] = await db.select().from(catalogItems)
+    .where(eq(catalogItems.userId, data.userId))
+    .orderBy(desc(catalogItems.id))
+    .limit(1);
   return result;
 }
 
@@ -422,11 +660,11 @@ export async function updateCatalogItem(itemId: number, userId: number, data: Pa
   const db = await getDb();
   if (!db) return undefined;
 
-  const [result] = await db.update(catalogItems)
+  await db.update(catalogItems)
     .set({ ...data, updatedAt: new Date() })
-    .where(and(eq(catalogItems.id, itemId), eq(catalogItems.userId, userId)))
-    .returning();
+    .where(and(eq(catalogItems.id, itemId), eq(catalogItems.userId, userId)));
   
+  const [result] = await db.select().from(catalogItems).where(eq(catalogItems.id, itemId)).limit(1);
   return result;
 }
 
@@ -460,4 +698,48 @@ export async function recalculateQuoteTotals(quoteId: number, userId: number): P
     taxAmount: taxAmount.toFixed(2),
     total: total.toFixed(2),
   });
+}
+
+// ============ MIGRATION HELPER ============
+
+/**
+ * Migrate existing users to have organizations
+ * Run this once to create orgs for existing users
+ */
+export async function migrateExistingUsersToOrgs(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  // Get all users
+  const allUsers = await db.select().from(users);
+  
+  for (const user of allUsers) {
+    // Check if user already has an org
+    const existingOrgs = await getUserOrganizations(user.id);
+    if (existingOrgs.length > 0) continue;
+
+    // Create org for user
+    const orgName = user.name || user.email.split('@')[0];
+    const org = await createOrganization({
+      name: orgName,
+      billingEmail: user.email,
+      companyName: user.companyName || undefined,
+      companyAddress: user.companyAddress || undefined,
+      companyPhone: user.companyPhone || undefined,
+      companyEmail: user.companyEmail || undefined,
+    });
+    await addOrgMember(org.id, user.id, "owner");
+
+    // Update user's quotes to belong to this org
+    await db.update(quotes)
+      .set({ orgId: org.id })
+      .where(eq(quotes.userId, user.id));
+
+    // Update user's catalog items to belong to this org
+    await db.update(catalogItems)
+      .set({ orgId: org.id })
+      .where(eq(catalogItems.userId, user.id));
+
+    console.log(`[Migration] Created org "${org.name}" for user ${user.email}`);
+  }
 }

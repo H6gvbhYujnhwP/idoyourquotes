@@ -223,3 +223,35 @@ Based on Formal Build Prompt & Product Roadmap
 ### Use quote reference in R2 folder path for traceability - COMPLETE
 - [x] Change folder path from users/{userId}/quotes/{quoteId}/ to users/{userId}/quotes/{quoteReference}/
 - [x] Makes it easier to trace files back to specific quotes in Cloudflare
+
+## Organization Layer Implementation
+
+### Database Schema - COMPLETE
+- [x] Create organizations table (id, name, slug, billing_email, created_at, updated_at)
+- [x] Create org_members table (org_id, user_id, role, invited_at, accepted_at)
+- [x] Create usage_logs table (org_id, user_id, action_type, credits_used, created_at)
+- [x] Add org_id to quotes table (org owns quotes)
+- [x] Add created_by_user_id to quotes table (track who created)
+- [x] Migrate existing data - create org for each existing user
+
+### Backend Changes - IN PROGRESS
+- [x] Add org helpers to db.ts (getUserPrimaryOrg, logUsage)
+- [x] Update file upload to use org-scoped folder path
+- [ ] Add org context to tRPC context
+- [ ] Update all quote queries to filter by org_id instead of user_id
+- [ ] Auto-create org when user signs up
+- [ ] Add org member management procedures
+
+### Frontend Changes
+- [ ] Add org context provider
+- [ ] Update dashboard to show org name
+- [ ] Add team/member management UI (placeholder for now)
+
+### R2 Storage - COMPLETE
+- [x] Update folder structure to use org slug instead of user id
+- [x] Path: orgs/{org_slug}/quotes/{quote_reference}/
+
+### Unit Tests
+- [ ] Test org creation on signup
+- [ ] Test org-based quote access
+- [ ] Test member roles and permissions

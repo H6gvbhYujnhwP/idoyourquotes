@@ -33,6 +33,8 @@ import {
   recalculateQuoteTotals,
   updateUserProfile,
   changePassword,
+  getUserPrimaryOrg,
+  logUsage,
 } from "./db";
 import { transcribeAudio } from "./_core/voiceTranscription";
 
@@ -548,9 +550,11 @@ Sender Name: ${user.name || "[Your Name]"}`,
         // Decode base64 to buffer
         const buffer = Buffer.from(input.base64Data, "base64");
 
-        // Upload to R2 with user-scoped folder structure for multi-tenancy
-        // Use quote reference (e.g., Q-1770124860742) for better traceability in Cloudflare
-        const folder = `users/${ctx.user.id}/quotes/${quote.reference || input.quoteId}`;
+        // Upload to R2 with org-scoped folder structure for multi-tenancy
+        // Use org slug and quote reference for better traceability in Cloudflare
+        const org = await getUserPrimaryOrg(ctx.user.id);
+        const orgFolder = org ? org.slug : `user-${ctx.user.id}`;
+        const folder = `orgs/${orgFolder}/quotes/${quote.reference || input.quoteId}`;
         const { key, url } = await uploadToR2(
           buffer,
           input.filename,
