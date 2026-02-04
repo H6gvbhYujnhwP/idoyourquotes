@@ -945,7 +945,7 @@ export default function QuoteWorkspace() {
                         </div>
                         <div className="flex items-center gap-1">
                           {/* Process button for unprocessed files */}
-                          {input.fileUrl && !input.processingStatus && (input.inputType === "audio" || input.inputType === "pdf" || input.inputType === "image") && (
+                          {input.fileUrl && (!input.processingStatus || input.processingStatus === "pending") && (input.inputType === "audio" || input.inputType === "pdf" || input.inputType === "image") && (
                             <Button
                               variant="outline"
                               size="sm"

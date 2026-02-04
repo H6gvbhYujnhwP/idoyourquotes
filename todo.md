@@ -289,3 +289,9 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Fix quote creation flow - auto-navigate already exists in Dashboard.tsx
 - [x] Add error UI to QuoteWorkspace with loading state, error state, retry button
 - [x] All 102 tests passing
+
+
+### File upload failing - column name mismatch in quote_inputs - FIXED
+- [x] Fixed quote_inputs table columns (processedContent, processingStatus, processingError renamed to snake_case)
+- [x] Fixed Extract/Analyze/Transcribe button visibility (now shows for pending status)
+- [x] Test and deploy
