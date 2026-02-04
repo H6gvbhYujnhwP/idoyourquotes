@@ -216,7 +216,7 @@ export async function getUsageByOrgId(orgId: number, limit = 100): Promise<Usage
 
 const SALT_ROUNDS = 12;
 
-export async function createUser(email: string, password: string, name?: string): Promise<User | null> {
+export async function createUser(email: string, password: string, name?: string, companyName?: string): Promise<User | null> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -232,16 +232,19 @@ export async function createUser(email: string, password: string, name?: string)
     email: email.toLowerCase(),
     passwordHash,
     name: name || null,
+    companyName: companyName || null,
     role: 'user',
     isActive: true,
   }).returning();
 
   // Auto-create organization for new user
+  // Priority: companyName > name > email prefix
   if (user) {
-    const orgName = name || email.split('@')[0];
+    const orgName = companyName || name || email.split('@')[0];
     const org = await createOrganization({
       name: orgName,
       billingEmail: email.toLowerCase(),
+      companyName: companyName || undefined,
     });
     await addOrgMember(org.id, user.id, "owner");
   }

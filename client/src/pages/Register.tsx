@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function Register() {
   const [name, setName] = useState("");
+  const [companyName, setCompanyName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -22,6 +23,11 @@ export default function Register() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    if (!companyName.trim()) {
+      setError("Company/Organization name is required");
+      return;
+    }
 
     if (password !== confirmPassword) {
       setError("Passwords do not match");
@@ -39,7 +45,7 @@ export default function Register() {
       const response = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name }),
+        body: JSON.stringify({ email, password, name, companyName: companyName.trim() }),
       });
 
       const data = await response.json();
@@ -101,7 +107,22 @@ export default function Register() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="companyName">Company / Organization Name <span className="text-red-500">*</span></Label>
+                <Input
+                  id="companyName"
+                  type="text"
+                  placeholder="Acme Construction Ltd"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  required
+                  autoComplete="organization"
+                />
+                <p className="text-xs text-muted-foreground">
+                  This will be used as your organization name for team collaboration
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">Email <span className="text-red-500">*</span></Label>
                 <Input
                   id="email"
                   type="email"
@@ -113,7 +134,7 @@ export default function Register() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">Password <span className="text-red-500">*</span></Label>
                 <Input
                   id="password"
                   type="password"
@@ -139,7 +160,7 @@ export default function Register() {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="confirmPassword">Confirm Password</Label>
+                <Label htmlFor="confirmPassword">Confirm Password <span className="text-red-500">*</span></Label>
                 <Input
                   id="confirmPassword"
                   type="password"

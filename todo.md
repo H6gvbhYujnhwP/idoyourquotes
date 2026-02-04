@@ -310,3 +310,15 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Updated env.ts to support both BUILT_IN_FORGE_API_KEY and OPENAI_API_KEY
 - [x] Uses gpt-4o model when using OpenAI API directly
 - [x] All 102 tests passing
+
+
+### Company Name in Registration - COMPLETE
+- [x] Update createUser() in server/db.ts to accept companyName parameter
+- [x] Use companyName for org creation: const orgName = companyName || name || email.split('@')[0]
+- [x] Update register endpoint to require companyName in input schema
+- [x] Pass companyName through to createUser()
+- [x] Add "Company/Organization Name" field to Register.tsx
+- [x] Make it required with placeholder "Acme Construction Ltd"
+- [x] Add to form state and pass to registration mutation
+- [x] Add validation that company name is not empty
+- [x] Test and deploy

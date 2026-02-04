@@ -41,10 +41,16 @@ export function registerOAuthRoutes(app: Express) {
 
   // Register endpoint
   app.post("/api/auth/register", async (req: Request, res: Response) => {
-    const { email, password, name } = req.body;
+    const { email, password, name, companyName } = req.body;
 
     if (!email || !password) {
       res.status(400).json({ error: "Email and password are required" });
+      return;
+    }
+
+    // Company name is required for new registrations
+    if (!companyName || companyName.trim().length === 0) {
+      res.status(400).json({ error: "Company/Organization name is required" });
       return;
     }
 
@@ -62,7 +68,7 @@ export function registerOAuthRoutes(app: Express) {
     }
 
     try {
-      const result = await sdk.register(email, password, name);
+      const result = await sdk.register(email, password, name, companyName.trim());
       
       if (!result) {
         res.status(409).json({ error: "An account with this email already exists" });
