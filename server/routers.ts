@@ -1045,13 +1045,13 @@ Do not start with phrases like "Based on the quote..." - get straight to the ins
           }
         }
 
-        // Add user prompt if provided
-        if (input.userPrompt) {
+        // Add user prompt if provided (this is valid evidence on its own)
+        if (input.userPrompt && input.userPrompt.trim()) {
           processedEvidence.push(`### User Instructions/Email:\n${input.userPrompt}`);
         }
 
         if (processedEvidence.length === 0) {
-          throw new Error("No processed evidence found. Please process your inputs first (transcribe audio, extract PDF text, analyze images).");
+          throw new Error("No evidence found. Please add text in the 'Email/Instructions for AI' field, or upload and process files (transcribe audio, extract PDF text, analyze images).");
         }
 
         // Build catalog context

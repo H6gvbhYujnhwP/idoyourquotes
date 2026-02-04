@@ -199,3 +199,9 @@ Based on Formal Build Prompt & Product Roadmap
 
 ### Unit Tests
 - [x] Test generateEmail procedure (20 tests in email.test.ts)
+
+## Bug Fixes
+
+### Generate Draft fails when user prompt is provided but audio not processed - FIXED
+- [x] Fix: User prompt should count as valid evidence even if audio files are not processed
+- [x] The error "No processed evidence found" should not appear when userPrompt is provided
