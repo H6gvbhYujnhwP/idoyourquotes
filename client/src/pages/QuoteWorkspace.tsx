@@ -944,22 +944,12 @@ export default function QuoteWorkspace() {
                           </div>
                         </div>
                         <div className="flex items-center gap-1">
-                          {/* Process button for unprocessed files */}
-                          {input.fileUrl && (!input.processingStatus || input.processingStatus === "pending") && (input.inputType === "audio" || input.inputType === "pdf" || input.inputType === "image") && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-8 text-xs"
-                              onClick={() => handleProcessInput(input)}
-                              disabled={processingInputId === input.id}
-                            >
-                              {processingInputId === input.id ? (
-                                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                              ) : (
-                                <Brain className="mr-1 h-3 w-3" />
-                              )}
-                              {input.inputType === "audio" ? "Transcribe" : input.inputType === "pdf" ? "Extract" : "Analyze"}
-                            </Button>
+                          {/* Processing status indicator */}
+                          {input.processingStatus === "processing" && (
+                            <span className="flex items-center text-xs text-blue-600">
+                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                              Analyzing...
+                            </span>
                           )}
                           {/* Retry button for failed processing */}
                           {input.processingStatus === "failed" && (

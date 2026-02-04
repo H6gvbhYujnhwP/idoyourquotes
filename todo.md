@@ -295,3 +295,11 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Fixed quote_inputs table columns (processedContent, processingStatus, processingError renamed to snake_case)
 - [x] Fixed Extract/Analyze/Transcribe button visibility (now shows for pending status)
 - [x] Test and deploy
+
+
+### Auto-analyze uploaded files - COMPLETE
+- [x] Update uploadFile procedure to auto-trigger analysis after successful upload
+- [x] Remove manual Extract/Analyze/Transcribe buttons from QuoteWorkspace UI
+- [x] Show processing status indicator while analysis is running ("Analyzing..." with spinner)
+- [x] Keep Retry button for failed processing
+- [ ] Test and deploy

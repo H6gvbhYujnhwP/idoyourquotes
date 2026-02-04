@@ -731,6 +731,131 @@ Sender Name: ${user.name || "[Your Name]"}`,
           mimeType: input.contentType,
         });
 
+        // Auto-analyze the uploaded file in the background
+        // Don't await - let it process asynchronously
+        if (input.inputType === "pdf" || input.inputType === "image" || input.inputType === "audio") {
+          (async () => {
+            try {
+              // Mark as processing
+              await updateInputProcessing(inputRecord.id, {
+                processingStatus: "processing",
+                processingError: null,
+              });
+
+              let processedContent = "";
+
+              if (input.inputType === "pdf") {
+                // Extract text from PDF using LLM
+                const response = await invokeLLM({
+                  messages: [
+                    {
+                      role: "system",
+                      content: "You are a document text extractor. Extract all text content from the provided PDF document. Preserve the structure and formatting as much as possible. Include all text, tables, and any visible content.",
+                    },
+                    {
+                      role: "user",
+                      content: [
+                        {
+                          type: "file_url",
+                          file_url: {
+                            url: url,
+                            mime_type: "application/pdf",
+                          },
+                        },
+                        {
+                          type: "text",
+                          text: "Please extract all text content from this PDF document.",
+                        },
+                      ],
+                    },
+                  ],
+                });
+                processedContent = typeof response.choices[0]?.message?.content === "string"
+                  ? response.choices[0].message.content
+                  : "";
+              } else if (input.inputType === "image") {
+                // Analyze image using LLM vision
+                const response = await invokeLLM({
+                  messages: [
+                    {
+                      role: "system",
+                      content: `You are analyzing an image for a quoting/estimation system. This could be a technical drawing, floor plan, specification sheet, or site photo.
+
+Extract and report:
+1. **Text Content**: Any visible text, labels, dimensions, measurements, specifications
+2. **Symbols & Legends**: Any symbols, abbreviations, or legend items with their meanings
+3. **Key Details**: Important features, quantities, materials, or specifications visible
+4. **Measurements**: All dimensions, areas, quantities shown
+5. **Notes & Warnings**: Any notes, warnings, or special instructions
+
+Be thorough - missed details in drawings often lead to costly errors in quotes.`,
+                    },
+                    {
+                      role: "user",
+                      content: [
+                        {
+                          type: "image_url",
+                          image_url: {
+                            url: url,
+                            detail: "high",
+                          },
+                        },
+                        {
+                          type: "text",
+                          text: "Please analyze this image thoroughly for quoting purposes. Extract all text, measurements, symbols, and important details.",
+                        },
+                      ],
+                    },
+                  ],
+                });
+                processedContent = typeof response.choices[0]?.message?.content === "string"
+                  ? response.choices[0].message.content
+                  : "";
+              } else if (input.inputType === "audio") {
+                // Transcribe audio
+                const result = await transcribeAudio({
+                  audioUrl: url,
+                });
+                if ("error" in result) {
+                  throw new Error(result.error);
+                }
+                processedContent = result.text || "";
+              }
+
+              // Save processed content
+              await updateInputProcessing(inputRecord.id, {
+                processedContent,
+                processingStatus: "completed",
+                processingError: null,
+              });
+
+              // Log usage for billing
+              const userOrg = await getUserPrimaryOrg(ctx.user.id);
+              if (userOrg) {
+                const actionType = input.inputType === "pdf" ? "extract_pdf" 
+                  : input.inputType === "image" ? "analyze_image" 
+                  : "transcribe_audio";
+                const credits = input.inputType === "audio" ? 2 : 2;
+                await logUsage({
+                  orgId: userOrg.id,
+                  userId: ctx.user.id,
+                  actionType,
+                  creditsUsed: credits,
+                  metadata: { quoteId: input.quoteId, inputId: inputRecord.id },
+                });
+              }
+
+              console.log(`[Auto-analyze] Successfully processed ${input.inputType} input ${inputRecord.id}`);
+            } catch (error) {
+              console.error(`[Auto-analyze] Failed to process ${input.inputType} input ${inputRecord.id}:`, error);
+              await updateInputProcessing(inputRecord.id, {
+                processingStatus: "failed",
+                processingError: error instanceof Error ? error.message : "Unknown error",
+              });
+            }
+          })();
+        }
+
         return inputRecord;
       }),
 
