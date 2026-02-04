@@ -1,0 +1,34 @@
+{
+  "query": "SELECT * FROM quotes LIMIT 1;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2RUrRz5SLeyapWk.2338944f899a --database 3Dxxg2wmCU5MZJouft3HN4 --execute SELECT * FROM quotes LIMIT 1;",
+  "rows": [
+    {
+      "id": "1",
+      "userId": "1",
+      "reference": "Q-1770120702119",
+      "status": "draft",
+      "clientName": "NULL",
+      "clientEmail": "NULL",
+      "clientPhone": "NULL",
+      "clientAddress": "NULL",
+      "title": "NULL",
+      "description": "NULL",
+      "terms": "NULL",
+      "validUntil": "NULL",
+      "subtotal": "0.00",
+      "taxRate": "0.00",
+      "taxAmount": "0.00",
+      "total": "0.00",
+      "createdAt": "2026-02-03 12:11:42",
+      "updatedAt": "2026-02-04 12:53:25",
+      "sentAt": "NULL",
+      "acceptedAt": "NULL",
+      "org_id": "1",
+      "created_by_user_id": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tuserId\treference\tstatus\tclientName\tclientEmail\tclientPhone\tclientAddress\ttitle\tdescription\tterms\tvalidUntil\tsubtotal\ttaxRate\ttaxAmount\ttotal\tcreatedAt\tupdatedAt\tsentAt\tacceptedAt\torg_id\tcreated_by_user_id\n1\t1\tQ-1770120702119\tdraft\tNULL\tNULL\tNULL\tNULL\tNULL\tNULL\tNULL\tNULL\t0.00\t0.00\t0.00\t0.00\t2026-02-03 12:11:42\t2026-02-04 12:53:25\tNULL\tNULL\t1\t1\n",
+  "stderr": "",
+  "execution_time_ms": 343
+}

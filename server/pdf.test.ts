@@ -5,6 +5,7 @@ import type { TrpcContext } from "./_core/context";
 // Mock the database functions
 vi.mock("./db", () => ({
   getQuoteById: vi.fn(),
+  getQuoteByIdAndOrg: vi.fn(),
   getLineItemsByQuoteId: vi.fn(),
   getUserById: vi.fn(),
   updateUser: vi.fn(),
@@ -12,6 +13,7 @@ vi.mock("./db", () => ({
   changePassword: vi.fn(),
   // Include other mocked functions to prevent import errors
   getQuotesByUserId: vi.fn(),
+  getQuotesByOrgId: vi.fn(),
   createQuote: vi.fn(),
   updateQuote: vi.fn(),
   deleteQuote: vi.fn(),
@@ -26,10 +28,14 @@ vi.mock("./db", () => ({
   getInternalEstimateByQuoteId: vi.fn(),
   upsertInternalEstimate: vi.fn(),
   getCatalogItemsByUserId: vi.fn(),
+  getCatalogItemsByOrgId: vi.fn(),
   createCatalogItem: vi.fn(),
   updateCatalogItem: vi.fn(),
   deleteCatalogItem: vi.fn(),
   recalculateQuoteTotals: vi.fn(),
+  getUserPrimaryOrg: vi.fn(),
+  getOrganizationById: vi.fn(),
+  logUsage: vi.fn(),
 }));
 
 import * as db from "./db";
@@ -123,6 +129,9 @@ function createAuthContext(user: AuthenticatedUser = mockUser): TrpcContext {
 describe("PDF Generation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Set up org mock for org-first access pattern
+    vi.mocked(db.getUserPrimaryOrg).mockResolvedValue({ id: 1, name: "Test Org", slug: "test-org" } as any);
+    vi.mocked(db.getQuoteByIdAndOrg).mockResolvedValue(null); // Default to fallback to user-based access
   });
 
   describe("quotes.generatePDF", () => {

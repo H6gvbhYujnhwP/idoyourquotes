@@ -268,3 +268,17 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Fix quoteInputs table: inputType -> input_type, fileUrl -> file_url, etc.
 - [x] Fix catalogItems table: defaultRate -> default_rate, costPrice -> cost_price, etc.
 - [x] Test and deploy
+
+### Quote viewing/editing broken - org migration incomplete - FIXED
+- [x] Created getQuoteWithOrgAccess() helper function for org-first pattern
+- [x] Updated quotes.getFull to use org-first pattern with fallback
+- [x] Updated quotes.update to use org-first pattern with fallback
+- [x] Updated quotes.delete to use org-first pattern with fallback
+- [x] Updated quotes.updateStatus to use org-first pattern with fallback
+- [x] Updated generatePDF and generateEmail to use org-first pattern
+- [x] Updated all lineItems procedures (list, create, update, delete)
+- [x] Updated all inputs procedures (list, create, delete, uploadFile, getFileUrl, transcribe, extractPdf, analyzeImage)
+- [x] Updated tenderContext and internalEstimate procedures
+- [x] Updated AI procedures (askAboutQuote, generateDraft)
+- [x] All 102 tests passing
+- [ ] SQL backfill to set org_id on existing quotes (user must run on Render PostgreSQL)

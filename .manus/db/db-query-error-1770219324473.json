@@ -1,0 +1,8 @@
+{
+  "query": "UPDATE quotes SET org_id = (SELECT org_id FROM org_members WHERE user_id = quotes.user_id LIMIT 1) WHERE org_id IS NULL;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2RUrRz5SLeyapWk.2338944f899a --database 3Dxxg2wmCU5MZJouft3HN4 --execute UPDATE quotes SET org_id = (SELECT org_id FROM org_members WHERE user_id = quotes.user_id LIMIT 1) WHERE org_id IS NULL;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 'quotes.user_id' in 'where clause'"
+  ]
+}

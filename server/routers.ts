@@ -42,6 +42,20 @@ import {
 } from "./db";
 import { transcribeAudio } from "./_core/voiceTranscription";
 
+/**
+ * Helper function to get a quote with org-first access pattern.
+ * Tries org-based access first, then falls back to user-based access for legacy data.
+ */
+async function getQuoteWithOrgAccess(quoteId: number, userId: number): Promise<Awaited<ReturnType<typeof getQuoteById>> | null> {
+  const org = await getUserPrimaryOrg(userId);
+  if (org) {
+    const quote = await getQuoteByIdAndOrg(quoteId, org.id);
+    if (quote) return quote;
+  }
+  // Fallback to user-based access for legacy data
+  return getQuoteById(quoteId, userId);
+}
+
 export const appRouter = router({
   system: systemRouter,
   
@@ -172,8 +186,19 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
+        // Try org-based access first to verify ownership
+        const org = await getUserPrimaryOrg(ctx.user.id);
+        let existingQuote = null;
+        if (org) {
+          existingQuote = await getQuoteByIdAndOrg(id, org.id);
+        }
+        if (!existingQuote) {
+          existingQuote = await getQuoteById(id, ctx.user.id);
+        }
+        if (!existingQuote) throw new Error("Quote not found");
+        
         const quote = await updateQuote(id, ctx.user.id, data);
-        if (!quote) throw new Error("Quote not found");
+        if (!quote) throw new Error("Failed to update quote");
         
         // Recalculate totals if tax rate changed
         if (data.taxRate !== undefined) {
@@ -185,6 +210,17 @@ export const appRouter = router({
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
+        // Try org-based access first to verify ownership
+        const org = await getUserPrimaryOrg(ctx.user.id);
+        let existingQuote = null;
+        if (org) {
+          existingQuote = await getQuoteByIdAndOrg(input.id, org.id);
+        }
+        if (!existingQuote) {
+          existingQuote = await getQuoteById(input.id, ctx.user.id);
+        }
+        if (!existingQuote) throw new Error("Quote not found");
+        
         await deleteQuote(input.id, ctx.user.id);
         return { success: true };
       }),
@@ -196,8 +232,15 @@ export const appRouter = router({
         status: z.enum(["draft", "sent", "accepted", "declined"]),
       }))
       .mutation(async ({ ctx, input }) => {
-        // Get current quote to validate transition
-        const currentQuote = await getQuoteById(input.id, ctx.user.id);
+        // Try org-based access first
+        const org = await getUserPrimaryOrg(ctx.user.id);
+        let currentQuote = null;
+        if (org) {
+          currentQuote = await getQuoteByIdAndOrg(input.id, org.id);
+        }
+        if (!currentQuote) {
+          currentQuote = await getQuoteById(input.id, ctx.user.id);
+        }
         if (!currentQuote) throw new Error("Quote not found");
 
         // Validate status transitions
@@ -222,7 +265,16 @@ export const appRouter = router({
     getFull: protectedProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ ctx, input }) => {
-        const quote = await getQuoteById(input.id, ctx.user.id);
+        // Try org-based access first
+        const org = await getUserPrimaryOrg(ctx.user.id);
+        let quote = null;
+        if (org) {
+          quote = await getQuoteByIdAndOrg(input.id, org.id);
+        }
+        // Fallback to user-based access for legacy data
+        if (!quote) {
+          quote = await getQuoteById(input.id, ctx.user.id);
+        }
         if (!quote) throw new Error("Quote not found");
 
         const [lineItems, inputs, tenderContext, internalEstimate] = await Promise.all([
@@ -245,7 +297,15 @@ export const appRouter = router({
     generatePDF: protectedProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ ctx, input }) => {
-        const quote = await getQuoteById(input.id, ctx.user.id);
+        // Try org-based access first
+        const org = await getUserPrimaryOrg(ctx.user.id);
+        let quote = null;
+        if (org) {
+          quote = await getQuoteByIdAndOrg(input.id, org.id);
+        }
+        if (!quote) {
+          quote = await getQuoteById(input.id, ctx.user.id);
+        }
         if (!quote) throw new Error("Quote not found");
 
         const lineItems = await getLineItemsByQuoteId(input.id);
@@ -263,7 +323,15 @@ export const appRouter = router({
         includeSummary: z.boolean().optional().default(true),
       }))
       .mutation(async ({ ctx, input }) => {
-        const quote = await getQuoteById(input.id, ctx.user.id);
+        // Try org-based access first
+        const org = await getUserPrimaryOrg(ctx.user.id);
+        let quote = null;
+        if (org) {
+          quote = await getQuoteByIdAndOrg(input.id, org.id);
+        }
+        if (!quote) {
+          quote = await getQuoteById(input.id, ctx.user.id);
+        }
         if (!quote) throw new Error("Quote not found");
 
         const lineItems = await getLineItemsByQuoteId(input.id);
@@ -416,8 +484,8 @@ Sender Name: ${user.name || "[Your Name]"}`,
     list: protectedProcedure
       .input(z.object({ quoteId: z.number() }))
       .query(async ({ ctx, input }) => {
-        // Verify quote ownership
-        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        // Verify quote ownership with org-first access
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
         return getLineItemsByQuoteId(input.quoteId);
       }),
@@ -431,8 +499,8 @@ Sender Name: ${user.name || "[Your Name]"}`,
         rate: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        // Verify quote ownership
-        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        // Verify quote ownership with org-first access
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
         const quantity = parseFloat(input.quantity || "1");
@@ -465,8 +533,8 @@ Sender Name: ${user.name || "[Your Name]"}`,
         sortOrder: z.number().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        // Verify quote ownership
-        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        // Verify quote ownership with org-first access
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
         const { id, quoteId, ...data } = input;
@@ -493,8 +561,8 @@ Sender Name: ${user.name || "[Your Name]"}`,
     delete: protectedProcedure
       .input(z.object({ id: z.number(), quoteId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        // Verify quote ownership
-        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        // Verify quote ownership with org-first access
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
         await deleteLineItem(input.id);
@@ -511,7 +579,7 @@ Sender Name: ${user.name || "[Your Name]"}`,
     list: protectedProcedure
       .input(z.object({ quoteId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
         return getInputsByQuoteId(input.quoteId);
       }),
@@ -527,7 +595,7 @@ Sender Name: ${user.name || "[Your Name]"}`,
         mimeType: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
         return createInput(input);
@@ -536,7 +604,7 @@ Sender Name: ${user.name || "[Your Name]"}`,
     delete: protectedProcedure
       .input(z.object({ id: z.number(), quoteId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
         // Get the input record to find the file key before deleting
@@ -574,7 +642,7 @@ Sender Name: ${user.name || "[Your Name]"}`,
         inputType: z.enum(["pdf", "image", "audio", "email"]),
       }))
       .mutation(async ({ ctx, input }) => {
-        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
         if (!isR2Configured()) {
@@ -613,7 +681,7 @@ Sender Name: ${user.name || "[Your Name]"}`,
     getFileUrl: protectedProcedure
       .input(z.object({ quoteId: z.number(), fileKey: z.string() }))
       .query(async ({ ctx, input }) => {
-        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
         const url = await getPresignedUrl(input.fileKey);
@@ -629,7 +697,7 @@ Sender Name: ${user.name || "[Your Name]"}`,
     transcribeAudio: protectedProcedure
       .input(z.object({ inputId: z.number(), quoteId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
         const inputRecord = await getInputById(input.inputId);
@@ -695,7 +763,7 @@ Sender Name: ${user.name || "[Your Name]"}`,
     extractPdfText: protectedProcedure
       .input(z.object({ inputId: z.number(), quoteId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
         const inputRecord = await getInputById(input.inputId);
@@ -780,7 +848,7 @@ Sender Name: ${user.name || "[Your Name]"}`,
     analyzeImage: protectedProcedure
       .input(z.object({ inputId: z.number(), quoteId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
         const inputRecord = await getInputById(input.inputId);
@@ -876,7 +944,7 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
     get: protectedProcedure
       .input(z.object({ quoteId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
         return getTenderContextByQuoteId(input.quoteId);
       }),
@@ -900,7 +968,7 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
         notes: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
         const { quoteId, ...data } = input;
@@ -913,7 +981,7 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
     get: protectedProcedure
       .input(z.object({ quoteId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
         return getInternalEstimateByQuoteId(input.quoteId);
       }),
@@ -940,7 +1008,7 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
         })).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
         const { quoteId, ...data } = input;
@@ -1020,8 +1088,8 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
         customPrompt: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        // Get quote data
-        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        // Get quote data with org-first access
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
         const lineItems = await getLineItemsByQuoteId(input.quoteId);
@@ -1136,7 +1204,7 @@ Do not start with phrases like "Based on the quote..." - get straight to the ins
         userPrompt: z.string().optional(), // Additional context from user (pasted email, instructions)
       }))
       .mutation(async ({ ctx, input }) => {
-        const quote = await getQuoteById(input.quoteId, ctx.user.id);
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
         // Get all inputs for this quote

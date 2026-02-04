@@ -65,6 +65,9 @@ function createAuthContext(): TrpcContext {
 describe("quotes router", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Set up org mock for org-first access pattern
+    vi.mocked(db.getUserPrimaryOrg).mockResolvedValue({ id: 1, name: "Test Org", slug: "test-org" } as any);
+    vi.mocked(db.getQuoteByIdAndOrg).mockResolvedValue(null); // Default to fallback to user-based access
   });
 
   describe("quotes.list", () => {
@@ -202,7 +205,9 @@ describe("quotes router", () => {
 
   describe("quotes.update", () => {
     it("updates a quote with provided data", async () => {
+      const existingQuote = { id: 1, userId: 1, title: "Original Quote", status: "draft" };
       const mockQuote = { id: 1, userId: 1, title: "Updated Quote", status: "draft" };
+      vi.mocked(db.getQuoteById).mockResolvedValue(existingQuote as any);
       vi.mocked(db.updateQuote).mockResolvedValue(mockQuote as any);
 
       const ctx = createAuthContext();
@@ -218,7 +223,9 @@ describe("quotes router", () => {
     });
 
     it("recalculates totals when tax rate changes", async () => {
+      const existingQuote = { id: 1, userId: 1, taxRate: "0", total: "100.00" };
       const mockQuote = { id: 1, userId: 1, taxRate: "20", total: "120.00" };
+      vi.mocked(db.getQuoteById).mockResolvedValue(existingQuote as any);
       vi.mocked(db.updateQuote).mockResolvedValue(mockQuote as any);
       vi.mocked(db.recalculateQuoteTotals).mockResolvedValue(mockQuote as any);
 
@@ -237,6 +244,8 @@ describe("quotes router", () => {
 
   describe("quotes.delete", () => {
     it("deletes a quote", async () => {
+      const existingQuote = { id: 1, userId: 1, title: "Test Quote", status: "draft" };
+      vi.mocked(db.getQuoteById).mockResolvedValue(existingQuote as any);
       vi.mocked(db.deleteQuote).mockResolvedValue(true);
 
       const ctx = createAuthContext();
@@ -253,6 +262,9 @@ describe("quotes router", () => {
 describe("lineItems router", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Set up org mock for org-first access pattern
+    vi.mocked(db.getUserPrimaryOrg).mockResolvedValue({ id: 1, name: "Test Org", slug: "test-org" } as any);
+    vi.mocked(db.getQuoteByIdAndOrg).mockResolvedValue(null); // Default to fallback to user-based access
   });
 
   describe("lineItems.create", () => {

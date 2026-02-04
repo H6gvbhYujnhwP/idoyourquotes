@@ -1,0 +1,76 @@
+{
+  "query": "SELECT column_name FROM information_schema.columns WHERE table_name = 'quotes' ORDER BY ordinal_position;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2RUrRz5SLeyapWk.2338944f899a --database 3Dxxg2wmCU5MZJouft3HN4 --execute SELECT column_name FROM information_schema.columns WHERE table_name = 'quotes' ORDER BY ordinal_position;",
+  "rows": [
+    {
+      "column_name": "id"
+    },
+    {
+      "column_name": "userId"
+    },
+    {
+      "column_name": "reference"
+    },
+    {
+      "column_name": "status"
+    },
+    {
+      "column_name": "clientName"
+    },
+    {
+      "column_name": "clientEmail"
+    },
+    {
+      "column_name": "clientPhone"
+    },
+    {
+      "column_name": "clientAddress"
+    },
+    {
+      "column_name": "title"
+    },
+    {
+      "column_name": "description"
+    },
+    {
+      "column_name": "terms"
+    },
+    {
+      "column_name": "validUntil"
+    },
+    {
+      "column_name": "subtotal"
+    },
+    {
+      "column_name": "taxRate"
+    },
+    {
+      "column_name": "taxAmount"
+    },
+    {
+      "column_name": "total"
+    },
+    {
+      "column_name": "createdAt"
+    },
+    {
+      "column_name": "updatedAt"
+    },
+    {
+      "column_name": "sentAt"
+    },
+    {
+      "column_name": "acceptedAt"
+    },
+    {
+      "column_name": "org_id"
+    },
+    {
+      "column_name": "created_by_user_id"
+    }
+  ],
+  "messages": [],
+  "stdout": "column_name\nid\nuserId\nreference\nstatus\nclientName\nclientEmail\nclientPhone\nclientAddress\ntitle\ndescription\nterms\nvalidUntil\nsubtotal\ntaxRate\ntaxAmount\ntotal\ncreatedAt\nupdatedAt\nsentAt\nacceptedAt\norg_id\ncreated_by_user_id\n",
+  "stderr": "",
+  "execution_time_ms": 490
+}
