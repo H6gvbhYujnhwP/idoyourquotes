@@ -219,3 +219,7 @@ Based on Formal Build Prompt & Product Roadmap
 ### Improve R2 folder structure for multi-tenancy - COMPLETE
 - [x] Change folder path from quotes/{quoteId}/ to users/{userId}/quotes/{quoteId}/
 - [x] Better defense-in-depth for multi-tenant file isolation
+
+### Use quote reference in R2 folder path for traceability - COMPLETE
+- [x] Change folder path from users/{userId}/quotes/{quoteId}/ to users/{userId}/quotes/{quoteReference}/
+- [x] Makes it easier to trace files back to specific quotes in Cloudflare

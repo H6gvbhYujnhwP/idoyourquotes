@@ -549,7 +549,8 @@ Sender Name: ${user.name || "[Your Name]"}`,
         const buffer = Buffer.from(input.base64Data, "base64");
 
         // Upload to R2 with user-scoped folder structure for multi-tenancy
-        const folder = `users/${ctx.user.id}/quotes/${input.quoteId}`;
+        // Use quote reference (e.g., Q-1770124860742) for better traceability in Cloudflare
+        const folder = `users/${ctx.user.id}/quotes/${quote.reference || input.quoteId}`;
         const { key, url } = await uploadToR2(
           buffer,
           input.filename,
