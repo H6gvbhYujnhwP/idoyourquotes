@@ -1,0 +1,1370 @@
+{
+  "query": "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT \nFROM INFORMATION_SCHEMA.COLUMNS \nWHERE TABLE_SCHEMA = DATABASE() \nORDER BY TABLE_NAME, ORDINAL_POSITION;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2RUrRz5SLeyapWk.2338944f899a --database 3Dxxg2wmCU5MZJouft3HN4 --execute SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT \nFROM INFORMATION_SCHEMA.COLUMNS \nWHERE TABLE_SCHEMA = DATABASE() \nORDER BY TABLE_NAME, ORDINAL_POSITION;",
+  "rows": [
+    {
+      "TABLE_NAME": "__drizzle_migrations",
+      "COLUMN_NAME": "id",
+      "COLUMN_TYPE": "bigint(20) unsigned",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "PRI",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "__drizzle_migrations",
+      "COLUMN_NAME": "hash",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "__drizzle_migrations",
+      "COLUMN_NAME": "created_at",
+      "COLUMN_TYPE": "bigint(20)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "catalogItems",
+      "COLUMN_NAME": "id",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "PRI",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "catalogItems",
+      "COLUMN_NAME": "userId",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "catalogItems",
+      "COLUMN_NAME": "name",
+      "COLUMN_TYPE": "varchar(255)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "catalogItems",
+      "COLUMN_NAME": "description",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "catalogItems",
+      "COLUMN_NAME": "category",
+      "COLUMN_TYPE": "varchar(100)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "catalogItems",
+      "COLUMN_NAME": "unit",
+      "COLUMN_TYPE": "varchar(50)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "each"
+    },
+    {
+      "TABLE_NAME": "catalogItems",
+      "COLUMN_NAME": "defaultRate",
+      "COLUMN_TYPE": "decimal(12,2)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "0.00"
+    },
+    {
+      "TABLE_NAME": "catalogItems",
+      "COLUMN_NAME": "costPrice",
+      "COLUMN_TYPE": "decimal(12,2)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "catalogItems",
+      "COLUMN_NAME": "isActive",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "1"
+    },
+    {
+      "TABLE_NAME": "catalogItems",
+      "COLUMN_NAME": "createdAt",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "catalogItems",
+      "COLUMN_NAME": "updatedAt",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "catalogItems",
+      "COLUMN_NAME": "org_id",
+      "COLUMN_TYPE": "bigint(20) unsigned",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "catalog_items",
+      "COLUMN_NAME": "id",
+      "COLUMN_TYPE": "bigint(20) unsigned",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "PRI",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "catalog_items",
+      "COLUMN_NAME": "org_id",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "catalog_items",
+      "COLUMN_NAME": "user_id",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "catalog_items",
+      "COLUMN_NAME": "name",
+      "COLUMN_TYPE": "varchar(255)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "catalog_items",
+      "COLUMN_NAME": "description",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "catalog_items",
+      "COLUMN_NAME": "category",
+      "COLUMN_TYPE": "varchar(100)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "catalog_items",
+      "COLUMN_NAME": "unit",
+      "COLUMN_TYPE": "varchar(50)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "each"
+    },
+    {
+      "TABLE_NAME": "catalog_items",
+      "COLUMN_NAME": "default_rate",
+      "COLUMN_TYPE": "decimal(12,2)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "0.00"
+    },
+    {
+      "TABLE_NAME": "catalog_items",
+      "COLUMN_NAME": "cost_price",
+      "COLUMN_TYPE": "decimal(12,2)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "catalog_items",
+      "COLUMN_NAME": "is_active",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "1"
+    },
+    {
+      "TABLE_NAME": "catalog_items",
+      "COLUMN_NAME": "created_at",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "catalog_items",
+      "COLUMN_NAME": "updated_at",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "internalEstimates",
+      "COLUMN_NAME": "id",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "PRI",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "internalEstimates",
+      "COLUMN_NAME": "quoteId",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "UNI",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "internalEstimates",
+      "COLUMN_NAME": "notes",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "internalEstimates",
+      "COLUMN_NAME": "costBreakdown",
+      "COLUMN_TYPE": "json",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "internalEstimates",
+      "COLUMN_NAME": "timeEstimates",
+      "COLUMN_TYPE": "json",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "internalEstimates",
+      "COLUMN_NAME": "riskNotes",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "internalEstimates",
+      "COLUMN_NAME": "aiSuggestions",
+      "COLUMN_TYPE": "json",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "internalEstimates",
+      "COLUMN_NAME": "createdAt",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "internalEstimates",
+      "COLUMN_NAME": "updatedAt",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "internal_estimates",
+      "COLUMN_NAME": "id",
+      "COLUMN_TYPE": "bigint(20) unsigned",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "PRI",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "internal_estimates",
+      "COLUMN_NAME": "quote_id",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "UNI",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "internal_estimates",
+      "COLUMN_NAME": "notes",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "internal_estimates",
+      "COLUMN_NAME": "cost_breakdown",
+      "COLUMN_TYPE": "json",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "internal_estimates",
+      "COLUMN_NAME": "time_estimates",
+      "COLUMN_TYPE": "json",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "internal_estimates",
+      "COLUMN_NAME": "risk_notes",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "internal_estimates",
+      "COLUMN_NAME": "ai_suggestions",
+      "COLUMN_TYPE": "json",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "internal_estimates",
+      "COLUMN_NAME": "created_at",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "internal_estimates",
+      "COLUMN_NAME": "updated_at",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "org_members",
+      "COLUMN_NAME": "id",
+      "COLUMN_TYPE": "bigint(20) unsigned",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "PRI",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "org_members",
+      "COLUMN_NAME": "org_id",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "org_members",
+      "COLUMN_NAME": "user_id",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "org_members",
+      "COLUMN_NAME": "role",
+      "COLUMN_TYPE": "enum('owner','admin','member')",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "member"
+    },
+    {
+      "TABLE_NAME": "org_members",
+      "COLUMN_NAME": "invited_at",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "org_members",
+      "COLUMN_NAME": "accepted_at",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "org_members",
+      "COLUMN_NAME": "created_at",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "organizations",
+      "COLUMN_NAME": "id",
+      "COLUMN_TYPE": "bigint(20) unsigned",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "PRI",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "organizations",
+      "COLUMN_NAME": "name",
+      "COLUMN_TYPE": "varchar(255)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "organizations",
+      "COLUMN_NAME": "slug",
+      "COLUMN_TYPE": "varchar(100)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "UNI",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "organizations",
+      "COLUMN_NAME": "company_name",
+      "COLUMN_TYPE": "varchar(255)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "organizations",
+      "COLUMN_NAME": "company_address",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "organizations",
+      "COLUMN_NAME": "company_phone",
+      "COLUMN_TYPE": "varchar(50)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "organizations",
+      "COLUMN_NAME": "company_email",
+      "COLUMN_TYPE": "varchar(320)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "organizations",
+      "COLUMN_NAME": "company_logo",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "organizations",
+      "COLUMN_NAME": "default_terms",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "organizations",
+      "COLUMN_NAME": "billing_email",
+      "COLUMN_TYPE": "varchar(320)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "organizations",
+      "COLUMN_NAME": "stripe_customer_id",
+      "COLUMN_TYPE": "varchar(255)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "organizations",
+      "COLUMN_NAME": "ai_credits_remaining",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "0"
+    },
+    {
+      "TABLE_NAME": "organizations",
+      "COLUMN_NAME": "created_at",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "organizations",
+      "COLUMN_NAME": "updated_at",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "quoteInputs",
+      "COLUMN_NAME": "id",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "PRI",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quoteInputs",
+      "COLUMN_NAME": "quoteId",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quoteInputs",
+      "COLUMN_NAME": "inputType",
+      "COLUMN_TYPE": "enum('pdf','image','audio','email','text')",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quoteInputs",
+      "COLUMN_NAME": "filename",
+      "COLUMN_TYPE": "varchar(255)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quoteInputs",
+      "COLUMN_NAME": "fileUrl",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quoteInputs",
+      "COLUMN_NAME": "fileKey",
+      "COLUMN_TYPE": "varchar(255)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quoteInputs",
+      "COLUMN_NAME": "content",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quoteInputs",
+      "COLUMN_NAME": "mimeType",
+      "COLUMN_TYPE": "varchar(100)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quoteInputs",
+      "COLUMN_NAME": "createdAt",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "quoteInputs",
+      "COLUMN_NAME": "processedContent",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quoteInputs",
+      "COLUMN_NAME": "processingStatus",
+      "COLUMN_TYPE": "varchar(20)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "pending"
+    },
+    {
+      "TABLE_NAME": "quoteInputs",
+      "COLUMN_NAME": "processingError",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quoteLineItems",
+      "COLUMN_NAME": "id",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "PRI",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quoteLineItems",
+      "COLUMN_NAME": "quoteId",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quoteLineItems",
+      "COLUMN_NAME": "sortOrder",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "0"
+    },
+    {
+      "TABLE_NAME": "quoteLineItems",
+      "COLUMN_NAME": "description",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quoteLineItems",
+      "COLUMN_NAME": "quantity",
+      "COLUMN_TYPE": "decimal(12,4)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "1.0000"
+    },
+    {
+      "TABLE_NAME": "quoteLineItems",
+      "COLUMN_NAME": "unit",
+      "COLUMN_TYPE": "varchar(50)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "each"
+    },
+    {
+      "TABLE_NAME": "quoteLineItems",
+      "COLUMN_NAME": "rate",
+      "COLUMN_TYPE": "decimal(12,2)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "0.00"
+    },
+    {
+      "TABLE_NAME": "quoteLineItems",
+      "COLUMN_NAME": "total",
+      "COLUMN_TYPE": "decimal(12,2)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "0.00"
+    },
+    {
+      "TABLE_NAME": "quoteLineItems",
+      "COLUMN_NAME": "createdAt",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "quoteLineItems",
+      "COLUMN_NAME": "updatedAt",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "quote_inputs",
+      "COLUMN_NAME": "id",
+      "COLUMN_TYPE": "bigint(20) unsigned",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "PRI",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quote_inputs",
+      "COLUMN_NAME": "quote_id",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quote_inputs",
+      "COLUMN_NAME": "input_type",
+      "COLUMN_TYPE": "enum('pdf','image','audio','email','text')",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quote_inputs",
+      "COLUMN_NAME": "filename",
+      "COLUMN_TYPE": "varchar(255)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quote_inputs",
+      "COLUMN_NAME": "file_url",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quote_inputs",
+      "COLUMN_NAME": "file_key",
+      "COLUMN_TYPE": "varchar(255)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quote_inputs",
+      "COLUMN_NAME": "content",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quote_inputs",
+      "COLUMN_NAME": "mime_type",
+      "COLUMN_TYPE": "varchar(100)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quote_inputs",
+      "COLUMN_NAME": "processed_content",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quote_inputs",
+      "COLUMN_NAME": "processing_status",
+      "COLUMN_TYPE": "varchar(20)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "pending"
+    },
+    {
+      "TABLE_NAME": "quote_inputs",
+      "COLUMN_NAME": "processing_error",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quote_inputs",
+      "COLUMN_NAME": "created_at",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "quote_line_items",
+      "COLUMN_NAME": "id",
+      "COLUMN_TYPE": "bigint(20) unsigned",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "PRI",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quote_line_items",
+      "COLUMN_NAME": "quote_id",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quote_line_items",
+      "COLUMN_NAME": "sort_order",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "0"
+    },
+    {
+      "TABLE_NAME": "quote_line_items",
+      "COLUMN_NAME": "description",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quote_line_items",
+      "COLUMN_NAME": "quantity",
+      "COLUMN_TYPE": "decimal(12,4)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "1.0000"
+    },
+    {
+      "TABLE_NAME": "quote_line_items",
+      "COLUMN_NAME": "unit",
+      "COLUMN_TYPE": "varchar(50)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "each"
+    },
+    {
+      "TABLE_NAME": "quote_line_items",
+      "COLUMN_NAME": "rate",
+      "COLUMN_TYPE": "decimal(12,2)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "0.00"
+    },
+    {
+      "TABLE_NAME": "quote_line_items",
+      "COLUMN_NAME": "total",
+      "COLUMN_TYPE": "decimal(12,2)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "0.00"
+    },
+    {
+      "TABLE_NAME": "quote_line_items",
+      "COLUMN_NAME": "created_at",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "quote_line_items",
+      "COLUMN_NAME": "updated_at",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "quotes",
+      "COLUMN_NAME": "id",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "PRI",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quotes",
+      "COLUMN_NAME": "userId",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quotes",
+      "COLUMN_NAME": "reference",
+      "COLUMN_TYPE": "varchar(100)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quotes",
+      "COLUMN_NAME": "status",
+      "COLUMN_TYPE": "enum('draft','sent','accepted','declined')",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "draft"
+    },
+    {
+      "TABLE_NAME": "quotes",
+      "COLUMN_NAME": "clientName",
+      "COLUMN_TYPE": "varchar(255)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quotes",
+      "COLUMN_NAME": "clientEmail",
+      "COLUMN_TYPE": "varchar(320)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quotes",
+      "COLUMN_NAME": "clientPhone",
+      "COLUMN_TYPE": "varchar(50)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quotes",
+      "COLUMN_NAME": "clientAddress",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quotes",
+      "COLUMN_NAME": "title",
+      "COLUMN_TYPE": "varchar(255)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quotes",
+      "COLUMN_NAME": "description",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quotes",
+      "COLUMN_NAME": "terms",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quotes",
+      "COLUMN_NAME": "validUntil",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quotes",
+      "COLUMN_NAME": "subtotal",
+      "COLUMN_TYPE": "decimal(12,2)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "0.00"
+    },
+    {
+      "TABLE_NAME": "quotes",
+      "COLUMN_NAME": "taxRate",
+      "COLUMN_TYPE": "decimal(5,2)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "0.00"
+    },
+    {
+      "TABLE_NAME": "quotes",
+      "COLUMN_NAME": "taxAmount",
+      "COLUMN_TYPE": "decimal(12,2)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "0.00"
+    },
+    {
+      "TABLE_NAME": "quotes",
+      "COLUMN_NAME": "total",
+      "COLUMN_TYPE": "decimal(12,2)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "0.00"
+    },
+    {
+      "TABLE_NAME": "quotes",
+      "COLUMN_NAME": "createdAt",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "quotes",
+      "COLUMN_NAME": "updatedAt",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "quotes",
+      "COLUMN_NAME": "sentAt",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quotes",
+      "COLUMN_NAME": "acceptedAt",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quotes",
+      "COLUMN_NAME": "org_id",
+      "COLUMN_TYPE": "bigint(20) unsigned",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "quotes",
+      "COLUMN_NAME": "created_by_user_id",
+      "COLUMN_TYPE": "bigint(20) unsigned",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "tenderContexts",
+      "COLUMN_NAME": "id",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "PRI",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "tenderContexts",
+      "COLUMN_NAME": "quoteId",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "UNI",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "tenderContexts",
+      "COLUMN_NAME": "symbolMappings",
+      "COLUMN_TYPE": "json",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "tenderContexts",
+      "COLUMN_NAME": "assumptions",
+      "COLUMN_TYPE": "json",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "tenderContexts",
+      "COLUMN_NAME": "exclusions",
+      "COLUMN_TYPE": "json",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "tenderContexts",
+      "COLUMN_NAME": "notes",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "tenderContexts",
+      "COLUMN_NAME": "createdAt",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "tenderContexts",
+      "COLUMN_NAME": "updatedAt",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "tender_contexts",
+      "COLUMN_NAME": "id",
+      "COLUMN_TYPE": "bigint(20) unsigned",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "PRI",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "tender_contexts",
+      "COLUMN_NAME": "quote_id",
+      "COLUMN_TYPE": "bigint(20) unsigned",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "UNI",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "tender_contexts",
+      "COLUMN_NAME": "symbol_mappings",
+      "COLUMN_TYPE": "json",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "tender_contexts",
+      "COLUMN_NAME": "assumptions",
+      "COLUMN_TYPE": "json",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "tender_contexts",
+      "COLUMN_NAME": "exclusions",
+      "COLUMN_TYPE": "json",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "tender_contexts",
+      "COLUMN_NAME": "notes",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "tender_contexts",
+      "COLUMN_NAME": "created_at",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "tender_contexts",
+      "COLUMN_NAME": "updated_at",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "usage_logs",
+      "COLUMN_NAME": "id",
+      "COLUMN_TYPE": "bigint(20) unsigned",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "PRI",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "usage_logs",
+      "COLUMN_NAME": "org_id",
+      "COLUMN_TYPE": "bigint(20) unsigned",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "usage_logs",
+      "COLUMN_NAME": "user_id",
+      "COLUMN_TYPE": "bigint(20) unsigned",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "usage_logs",
+      "COLUMN_NAME": "action_type",
+      "COLUMN_TYPE": "varchar(50)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "usage_logs",
+      "COLUMN_NAME": "credits_used",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "1"
+    },
+    {
+      "TABLE_NAME": "usage_logs",
+      "COLUMN_NAME": "metadata",
+      "COLUMN_TYPE": "json",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "usage_logs",
+      "COLUMN_NAME": "created_at",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "users",
+      "COLUMN_NAME": "id",
+      "COLUMN_TYPE": "int(11)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "PRI",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "users",
+      "COLUMN_NAME": "openId",
+      "COLUMN_TYPE": "varchar(64)",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "UNI",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "users",
+      "COLUMN_NAME": "name",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "users",
+      "COLUMN_NAME": "email",
+      "COLUMN_TYPE": "varchar(320)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "users",
+      "COLUMN_NAME": "loginMethod",
+      "COLUMN_TYPE": "varchar(64)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "users",
+      "COLUMN_NAME": "role",
+      "COLUMN_TYPE": "enum('user','admin')",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "user"
+    },
+    {
+      "TABLE_NAME": "users",
+      "COLUMN_NAME": "createdAt",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "users",
+      "COLUMN_NAME": "updatedAt",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "users",
+      "COLUMN_NAME": "lastSignedIn",
+      "COLUMN_TYPE": "timestamp",
+      "IS_NULLABLE": "NO",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "CURRENT_TIMESTAMP"
+    },
+    {
+      "TABLE_NAME": "users",
+      "COLUMN_NAME": "companyName",
+      "COLUMN_TYPE": "varchar(255)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "users",
+      "COLUMN_NAME": "companyAddress",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "users",
+      "COLUMN_NAME": "companyPhone",
+      "COLUMN_TYPE": "varchar(50)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "users",
+      "COLUMN_NAME": "companyEmail",
+      "COLUMN_TYPE": "varchar(320)",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "users",
+      "COLUMN_NAME": "defaultTerms",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    },
+    {
+      "TABLE_NAME": "users",
+      "COLUMN_NAME": "company_logo",
+      "COLUMN_TYPE": "text",
+      "IS_NULLABLE": "YES",
+      "COLUMN_KEY": "",
+      "COLUMN_DEFAULT": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "TABLE_NAME\tCOLUMN_NAME\tCOLUMN_TYPE\tIS_NULLABLE\tCOLUMN_KEY\tCOLUMN_DEFAULT\n__drizzle_migrations\tid\tbigint(20) unsigned\tNO\tPRI\tNULL\n__drizzle_migrations\thash\ttext\tNO\t\tNULL\n__drizzle_migrations\tcreated_at\tbigint(20)\tYES\t\tNULL\ncatalogItems\tid\tint(11)\tNO\tPRI\tNULL\ncatalogItems\tuserId\tint(11)\tNO\t\tNULL\ncatalogItems\tname\tvarchar(255)\tNO\t\tNULL\ncatalogItems\tdescription\ttext\tYES\t\tNULL\ncatalogItems\tcategory\tvarchar(100)\tYES\t\tNULL\ncatalogItems\tunit\tvarchar(50)\tYES\t\teach\ncatalogItems\tdefaultRate\tdecimal(12,2)\tYES\t\t0.00\ncatalogItems\tcostPrice\tdecimal(12,2)\tYES\t\tNULL\ncatalogItems\tisActive\tint(11)\tYES\t\t1\ncatalogItems\tcreatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\ncatalogItems\tupdatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\ncatalogItems\torg_id\tbigint(20) unsigned\tYES\t\tNULL\ncatalog_items\tid\tbigint(20) unsigned\tNO\tPRI\tNULL\ncatalog_items\torg_id\tint(11)\tYES\t\tNULL\ncatalog_items\tuser_id\tint(11)\tNO\t\tNULL\ncatalog_items\tname\tvarchar(255)\tNO\t\tNULL\ncatalog_items\tdescription\ttext\tYES\t\tNULL\ncatalog_items\tcategory\tvarchar(100)\tYES\t\tNULL\ncatalog_items\tunit\tvarchar(50)\tYES\t\teach\ncatalog_items\tdefault_rate\tdecimal(12,2)\tYES\t\t0.00\ncatalog_items\tcost_price\tdecimal(12,2)\tYES\t\tNULL\ncatalog_items\tis_active\tint(11)\tYES\t\t1\ncatalog_items\tcreated_at\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\ncatalog_items\tupdated_at\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\ninternalEstimates\tid\tint(11)\tNO\tPRI\tNULL\ninternalEstimates\tquoteId\tint(11)\tNO\tUNI\tNULL\ninternalEstimates\tnotes\ttext\tYES\t\tNULL\ninternalEstimates\tcostBreakdown\tjson\tYES\t\tNULL\ninternalEstimates\ttimeEstimates\tjson\tYES\t\tNULL\ninternalEstimates\triskNotes\ttext\tYES\t\tNULL\ninternalEstimates\taiSuggestions\tjson\tYES\t\tNULL\ninternalEstimates\tcreatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\ninternalEstimates\tupdatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\ninternal_estimates\tid\tbigint(20) unsigned\tNO\tPRI\tNULL\ninternal_estimates\tquote_id\tint(11)\tNO\tUNI\tNULL\ninternal_estimates\tnotes\ttext\tYES\t\tNULL\ninternal_estimates\tcost_breakdown\tjson\tYES\t\tNULL\ninternal_estimates\ttime_estimates\tjson\tYES\t\tNULL\ninternal_estimates\trisk_notes\ttext\tYES\t\tNULL\ninternal_estimates\tai_suggestions\tjson\tYES\t\tNULL\ninternal_estimates\tcreated_at\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\ninternal_estimates\tupdated_at\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\norg_members\tid\tbigint(20) unsigned\tNO\tPRI\tNULL\norg_members\torg_id\tint(11)\tNO\t\tNULL\norg_members\tuser_id\tint(11)\tNO\t\tNULL\norg_members\trole\tenum('owner','admin','member')\tNO\t\tmember\norg_members\tinvited_at\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\norg_members\taccepted_at\ttimestamp\tYES\t\tNULL\norg_members\tcreated_at\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\norganizations\tid\tbigint(20) unsigned\tNO\tPRI\tNULL\norganizations\tname\tvarchar(255)\tNO\t\tNULL\norganizations\tslug\tvarchar(100)\tNO\tUNI\tNULL\norganizations\tcompany_name\tvarchar(255)\tYES\t\tNULL\norganizations\tcompany_address\ttext\tYES\t\tNULL\norganizations\tcompany_phone\tvarchar(50)\tYES\t\tNULL\norganizations\tcompany_email\tvarchar(320)\tYES\t\tNULL\norganizations\tcompany_logo\ttext\tYES\t\tNULL\norganizations\tdefault_terms\ttext\tYES\t\tNULL\norganizations\tbilling_email\tvarchar(320)\tYES\t\tNULL\norganizations\tstripe_customer_id\tvarchar(255)\tYES\t\tNULL\norganizations\tai_credits_remaining\tint(11)\tYES\t\t0\norganizations\tcreated_at\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\norganizations\tupdated_at\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\nquoteInputs\tid\tint(11)\tNO\tPRI\tNULL\nquoteInputs\tquoteId\tint(11)\tNO\t\tNULL\nquoteInputs\tinputType\tenum('pdf','image','audio','email','text')\tNO\t\tNULL\nquoteInputs\tfilename\tvarchar(255)\tYES\t\tNULL\nquoteInputs\tfileUrl\ttext\tYES\t\tNULL\nquoteInputs\tfileKey\tvarchar(255)\tYES\t\tNULL\nquoteInputs\tcontent\ttext\tYES\t\tNULL\nquoteInputs\tmimeType\tvarchar(100)\tYES\t\tNULL\nquoteInputs\tcreatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\nquoteInputs\tprocessedContent\ttext\tYES\t\tNULL\nquoteInputs\tprocessingStatus\tvarchar(20)\tYES\t\tpending\nquoteInputs\tprocessingError\ttext\tYES\t\tNULL\nquoteLineItems\tid\tint(11)\tNO\tPRI\tNULL\nquoteLineItems\tquoteId\tint(11)\tNO\t\tNULL\nquoteLineItems\tsortOrder\tint(11)\tYES\t\t0\nquoteLineItems\tdescription\ttext\tNO\t\tNULL\nquoteLineItems\tquantity\tdecimal(12,4)\tYES\t\t1.0000\nquoteLineItems\tunit\tvarchar(50)\tYES\t\teach\nquoteLineItems\trate\tdecimal(12,2)\tYES\t\t0.00\nquoteLineItems\ttotal\tdecimal(12,2)\tYES\t\t0.00\nquoteLineItems\tcreatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\nquoteLineItems\tupdatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\nquote_inputs\tid\tbigint(20) unsigned\tNO\tPRI\tNULL\nquote_inputs\tquote_id\tint(11)\tNO\t\tNULL\nquote_inputs\tinput_type\tenum('pdf','image','audio','email','text')\tNO\t\tNULL\nquote_inputs\tfilename\tvarchar(255)\tYES\t\tNULL\nquote_inputs\tfile_url\ttext\tYES\t\tNULL\nquote_inputs\tfile_key\tvarchar(255)\tYES\t\tNULL\nquote_inputs\tcontent\ttext\tYES\t\tNULL\nquote_inputs\tmime_type\tvarchar(100)\tYES\t\tNULL\nquote_inputs\tprocessed_content\ttext\tYES\t\tNULL\nquote_inputs\tprocessing_status\tvarchar(20)\tYES\t\tpending\nquote_inputs\tprocessing_error\ttext\tYES\t\tNULL\nquote_inputs\tcreated_at\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\nquote_line_items\tid\tbigint(20) unsigned\tNO\tPRI\tNULL\nquote_line_items\tquote_id\tint(11)\tNO\t\tNULL\nquote_line_items\tsort_order\tint(11)\tYES\t\t0\nquote_line_items\tdescription\ttext\tNO\t\tNULL\nquote_line_items\tquantity\tdecimal(12,4)\tYES\t\t1.0000\nquote_line_items\tunit\tvarchar(50)\tYES\t\teach\nquote_line_items\trate\tdecimal(12,2)\tYES\t\t0.00\nquote_line_items\ttotal\tdecimal(12,2)\tYES\t\t0.00\nquote_line_items\tcreated_at\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\nquote_line_items\tupdated_at\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\nquotes\tid\tint(11)\tNO\tPRI\tNULL\nquotes\tuserId\tint(11)\tNO\t\tNULL\nquotes\treference\tvarchar(100)\tYES\t\tNULL\nquotes\tstatus\tenum('draft','sent','accepted','declined')\tNO\t\tdraft\nquotes\tclientName\tvarchar(255)\tYES\t\tNULL\nquotes\tclientEmail\tvarchar(320)\tYES\t\tNULL\nquotes\tclientPhone\tvarchar(50)\tYES\t\tNULL\nquotes\tclientAddress\ttext\tYES\t\tNULL\nquotes\ttitle\tvarchar(255)\tYES\t\tNULL\nquotes\tdescription\ttext\tYES\t\tNULL\nquotes\tterms\ttext\tYES\t\tNULL\nquotes\tvalidUntil\ttimestamp\tYES\t\tNULL\nquotes\tsubtotal\tdecimal(12,2)\tYES\t\t0.00\nquotes\ttaxRate\tdecimal(5,2)\tYES\t\t0.00\nquotes\ttaxAmount\tdecimal(12,2)\tYES\t\t0.00\nquotes\ttotal\tdecimal(12,2)\tYES\t\t0.00\nquotes\tcreatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\nquotes\tupdatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\nquotes\tsentAt\ttimestamp\tYES\t\tNULL\nquotes\tacceptedAt\ttimestamp\tYES\t\tNULL\nquotes\torg_id\tbigint(20) unsigned\tYES\t\tNULL\nquotes\tcreated_by_user_id\tbigint(20) unsigned\tYES\t\tNULL\ntenderContexts\tid\tint(11)\tNO\tPRI\tNULL\ntenderContexts\tquoteId\tint(11)\tNO\tUNI\tNULL\ntenderContexts\tsymbolMappings\tjson\tYES\t\tNULL\ntenderContexts\tassumptions\tjson\tYES\t\tNULL\ntenderContexts\texclusions\tjson\tYES\t\tNULL\ntenderContexts\tnotes\ttext\tYES\t\tNULL\ntenderContexts\tcreatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\ntenderContexts\tupdatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\ntender_contexts\tid\tbigint(20) unsigned\tNO\tPRI\tNULL\ntender_contexts\tquote_id\tbigint(20) unsigned\tNO\tUNI\tNULL\ntender_contexts\tsymbol_mappings\tjson\tYES\t\tNULL\ntender_contexts\tassumptions\tjson\tYES\t\tNULL\ntender_contexts\texclusions\tjson\tYES\t\tNULL\ntender_contexts\tnotes\ttext\tYES\t\tNULL\ntender_contexts\tcreated_at\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\ntender_contexts\tupdated_at\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\nusage_logs\tid\tbigint(20) unsigned\tNO\tPRI\tNULL\nusage_logs\torg_id\tbigint(20) unsigned\tNO\t\tNULL\nusage_logs\tuser_id\tbigint(20) unsigned\tNO\t\tNULL\nusage_logs\taction_type\tvarchar(50)\tNO\t\tNULL\nusage_logs\tcredits_used\tint(11)\tNO\t\t1\nusage_logs\tmetadata\tjson\tYES\t\tNULL\nusage_logs\tcreated_at\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\nusers\tid\tint(11)\tNO\tPRI\tNULL\nusers\topenId\tvarchar(64)\tNO\tUNI\tNULL\nusers\tname\ttext\tYES\t\tNULL\nusers\temail\tvarchar(320)\tYES\t\tNULL\nusers\tloginMethod\tvarchar(64)\tYES\t\tNULL\nusers\trole\tenum('user','admin')\tNO\t\tuser\nusers\tcreatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\nusers\tupdatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\nusers\tlastSignedIn\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\nusers\tcompanyName\tvarchar(255)\tYES\t\tNULL\nusers\tcompanyAddress\ttext\tYES\t\tNULL\nusers\tcompanyPhone\tvarchar(50)\tYES\t\tNULL\nusers\tcompanyEmail\tvarchar(320)\tYES\t\tNULL\nusers\tdefaultTerms\ttext\tYES\t\tNULL\nusers\tcompany_logo\ttext\tYES\t\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 1749
+}

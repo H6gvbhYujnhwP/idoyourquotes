@@ -1,11 +1,23 @@
-import { serial, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, json, int, boolean, bigint } from "drizzle-orm/mysql-core";
+import { pgTable, pgEnum, text, timestamp, varchar, decimal, json, integer, boolean, bigserial, bigint } from "drizzle-orm/pg-core";
+
+/**
+ * IMPORTANT: IdoYourQuotes uses PostgreSQL on Render
+ * Database: idoyourquotes-db (PostgreSQL 16)
+ * DO NOT change to MySQL/TiDB
+ */
+
+// Enums
+export const userRoleEnum = pgEnum("user_role", ["user", "admin"]);
+export const orgMemberRoleEnum = pgEnum("org_member_role", ["owner", "admin", "member"]);
+export const quoteStatusEnum = pgEnum("quote_status", ["draft", "sent", "accepted", "declined"]);
+export const inputTypeEnum = pgEnum("input_type", ["pdf", "image", "audio", "email", "text"]);
 
 /**
  * Organizations - multi-tenant container for all data
  * Each user belongs to an organization (auto-created on signup for solo users)
  */
-export const organizations = mysqlTable("organizations", {
-  id: bigint("id", { mode: "number", unsigned: true }).primaryKey().autoincrement(),
+export const organizations = pgTable("organizations", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
   slug: varchar("slug", { length: 100 }).notNull().unique(),
   companyName: varchar("company_name", { length: 255 }),
@@ -16,7 +28,7 @@ export const organizations = mysqlTable("organizations", {
   defaultTerms: text("default_terms"),
   billingEmail: varchar("billing_email", { length: 320 }),
   stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
-  aiCreditsRemaining: int("ai_credits_remaining").default(0),
+  aiCreditsRemaining: integer("ai_credits_remaining").default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -27,11 +39,11 @@ export type InsertOrganization = typeof organizations.$inferInsert;
 /**
  * Organization Members - links users to organizations with roles
  */
-export const orgMembers = mysqlTable("org_members", {
-  id: bigint("id", { mode: "number", unsigned: true }).primaryKey().autoincrement(),
-  orgId: bigint("org_id", { mode: "number", unsigned: true }).notNull(),
-  userId: bigint("user_id", { mode: "number", unsigned: true }).notNull(),
-  role: mysqlEnum("role", ["owner", "admin", "member"]).default("member").notNull(),
+export const orgMembers = pgTable("org_members", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  orgId: bigint("org_id", { mode: "number" }).notNull(),
+  userId: bigint("user_id", { mode: "number" }).notNull(),
+  role: orgMemberRoleEnum("role").default("member").notNull(),
   invitedAt: timestamp("invited_at").defaultNow().notNull(),
   acceptedAt: timestamp("accepted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -43,12 +55,12 @@ export type InsertOrgMember = typeof orgMembers.$inferInsert;
 /**
  * Usage Logs - track AI usage for billing and analytics
  */
-export const usageLogs = mysqlTable("usage_logs", {
-  id: bigint("id", { mode: "number", unsigned: true }).primaryKey().autoincrement(),
-  orgId: bigint("org_id", { mode: "number", unsigned: true }).notNull(),
-  userId: bigint("user_id", { mode: "number", unsigned: true }).notNull(),
+export const usageLogs = pgTable("usage_logs", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  orgId: bigint("org_id", { mode: "number" }).notNull(),
+  userId: bigint("user_id", { mode: "number" }).notNull(),
   actionType: varchar("action_type", { length: 50 }).notNull(),
-  creditsUsed: int("credits_used").default(1).notNull(),
+  creditsUsed: integer("credits_used").default(1).notNull(),
   metadata: json("metadata").$type<Record<string, unknown>>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -60,12 +72,12 @@ export type InsertUsageLog = typeof usageLogs.$inferInsert;
  * Core user table backing auth flow.
  * Supports standalone email/password authentication.
  */
-export const users = mysqlTable("users", {
-  id: bigint("id", { mode: "number", unsigned: true }).primaryKey().autoincrement(),
+export const users = pgTable("users", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
   email: varchar("email", { length: 320 }).notNull().unique(),
   passwordHash: text("passwordHash").notNull(),
   name: text("name"),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  role: userRoleEnum("role").default("user").notNull(),
   isActive: boolean("isActive").default(true).notNull(),
   companyName: varchar("companyName", { length: 255 }),
   companyAddress: text("companyAddress"),
@@ -86,13 +98,13 @@ export type InsertUser = typeof users.$inferInsert;
  * Status: draft → sent → accepted/declined
  * Now owned by organization, with created_by tracking
  */
-export const quotes = mysqlTable("quotes", {
-  id: bigint("id", { mode: "number", unsigned: true }).primaryKey().autoincrement(),
-  orgId: bigint("org_id", { mode: "number", unsigned: true }),
-  userId: bigint("userId", { mode: "number", unsigned: true }).notNull(),
-  createdByUserId: bigint("created_by_user_id", { mode: "number", unsigned: true }),
+export const quotes = pgTable("quotes", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  orgId: bigint("org_id", { mode: "number" }),
+  userId: bigint("userId", { mode: "number" }).notNull(),
+  createdByUserId: bigint("created_by_user_id", { mode: "number" }),
   reference: varchar("reference", { length: 100 }),
-  status: mysqlEnum("status", ["draft", "sent", "accepted", "declined"]).default("draft").notNull(),
+  status: quoteStatusEnum("status").default("draft").notNull(),
   clientName: varchar("clientName", { length: 255 }),
   clientEmail: varchar("clientEmail", { length: 320 }),
   clientPhone: varchar("clientPhone", { length: 50 }),
@@ -117,10 +129,10 @@ export type InsertQuote = typeof quotes.$inferInsert;
 /**
  * Quote Line Items - individual items on a quote
  */
-export const quoteLineItems = mysqlTable("quoteLineItems", {
-  id: bigint("id", { mode: "number", unsigned: true }).primaryKey().autoincrement(),
-  quoteId: bigint("quoteId", { mode: "number", unsigned: true }).notNull(),
-  sortOrder: int("sortOrder").default(0),
+export const quoteLineItems = pgTable("quoteLineItems", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  quoteId: bigint("quoteId", { mode: "number" }).notNull(),
+  sortOrder: integer("sortOrder").default(0),
   description: text("description").notNull(),
   quantity: decimal("quantity", { precision: 12, scale: 4 }).default("1.0000"),
   unit: varchar("unit", { length: 50 }).default("each"),
@@ -137,10 +149,10 @@ export type InsertQuoteLineItem = typeof quoteLineItems.$inferInsert;
  * Quote Inputs - raw evidence attached to a quote
  * Types: pdf, image, audio, email, text
  */
-export const quoteInputs = mysqlTable("quoteInputs", {
-  id: bigint("id", { mode: "number", unsigned: true }).primaryKey().autoincrement(),
-  quoteId: bigint("quoteId", { mode: "number", unsigned: true }).notNull(),
-  inputType: mysqlEnum("inputType", ["pdf", "image", "audio", "email", "text"]).notNull(),
+export const quoteInputs = pgTable("quoteInputs", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  quoteId: bigint("quoteId", { mode: "number" }).notNull(),
+  inputType: inputTypeEnum("inputType").notNull(),
   filename: varchar("filename", { length: 255 }),
   fileUrl: text("fileUrl"),
   fileKey: varchar("fileKey", { length: 255 }),
@@ -159,9 +171,9 @@ export type InsertQuoteInput = typeof quoteInputs.$inferInsert;
  * Tender Context - interpretation layer for a quote
  * Stores symbol mappings, abbreviations, and confirmed meanings
  */
-export const tenderContexts = mysqlTable("tender_contexts", {
-  id: bigint("id", { mode: "number", unsigned: true }).primaryKey().autoincrement(),
-  quoteId: bigint("quote_id", { mode: "number", unsigned: true }).notNull().unique(),
+export const tenderContexts = pgTable("tender_contexts", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  quoteId: bigint("quote_id", { mode: "number" }).notNull().unique(),
   symbolMappings: json("symbol_mappings").$type<Record<string, { meaning: string; confirmed: boolean; confidence?: number }>>(),
   assumptions: json("assumptions").$type<Array<{ text: string; confirmed: boolean }>>(),
   exclusions: json("exclusions").$type<Array<{ text: string; confirmed: boolean }>>(),
@@ -176,9 +188,9 @@ export type InsertTenderContext = typeof tenderContexts.$inferInsert;
 /**
  * Internal Estimates - private thinking space (never client-visible)
  */
-export const internalEstimates = mysqlTable("internal_estimates", {
-  id: bigint("id", { mode: "number", unsigned: true }).primaryKey().autoincrement(),
-  quoteId: bigint("quote_id", { mode: "number", unsigned: true }).notNull().unique(),
+export const internalEstimates = pgTable("internal_estimates", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  quoteId: bigint("quote_id", { mode: "number" }).notNull().unique(),
   notes: text("notes"),
   costBreakdown: json("cost_breakdown").$type<Array<{ item: string; cost: number; notes?: string }>>(),
   timeEstimates: json("time_estimates").$type<Array<{ task: string; hours: number; rate?: number }>>(),
@@ -195,17 +207,17 @@ export type InsertInternalEstimate = typeof internalEstimates.$inferInsert;
  * Product/Service Catalog - reusable items for quotes
  * Now owned by organization
  */
-export const catalogItems = mysqlTable("catalogItems", {
-  id: bigint("id", { mode: "number", unsigned: true }).primaryKey().autoincrement(),
-  orgId: bigint("org_id", { mode: "number", unsigned: true }),
-  userId: bigint("userId", { mode: "number", unsigned: true }).notNull(),
+export const catalogItems = pgTable("catalogItems", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  orgId: bigint("org_id", { mode: "number" }),
+  userId: bigint("userId", { mode: "number" }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
   category: varchar("category", { length: 100 }),
   unit: varchar("unit", { length: 50 }).default("each"),
   defaultRate: decimal("defaultRate", { precision: 12, scale: 2 }).default("0.00"),
   costPrice: decimal("costPrice", { precision: 12, scale: 2 }),
-  isActive: int("isActive").default(1),
+  isActive: integer("isActive").default(1),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
