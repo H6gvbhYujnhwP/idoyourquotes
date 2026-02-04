@@ -265,32 +265,89 @@ export const appRouter = router({
     getFull: protectedProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ ctx, input }) => {
-        // Try org-based access first
-        const org = await getUserPrimaryOrg(ctx.user.id);
-        let quote = null;
-        if (org) {
-          quote = await getQuoteByIdAndOrg(input.id, org.id);
+        console.log(`[getFull] Starting for quoteId=${input.id}, userId=${ctx.user.id}`);
+        
+        try {
+          // Try org-based access first
+          console.log(`[getFull] Looking up user's primary org...`);
+          const org = await getUserPrimaryOrg(ctx.user.id);
+          console.log(`[getFull] Org lookup result:`, org ? `orgId=${org.id}, name=${org.name}` : 'no org found');
+          
+          let quote = null;
+          if (org) {
+            console.log(`[getFull] Trying org-based access with orgId=${org.id}...`);
+            quote = await getQuoteByIdAndOrg(input.id, org.id);
+            console.log(`[getFull] Org-based quote lookup:`, quote ? `found quote ${quote.id}` : 'not found');
+          }
+          
+          // Fallback to user-based access for legacy data
+          if (!quote) {
+            console.log(`[getFull] Falling back to user-based access with userId=${ctx.user.id}...`);
+            quote = await getQuoteById(input.id, ctx.user.id);
+            console.log(`[getFull] User-based quote lookup:`, quote ? `found quote ${quote.id}` : 'not found');
+          }
+          
+          if (!quote) {
+            console.log(`[getFull] ERROR: Quote not found for id=${input.id}`);
+            throw new Error("Quote not found");
+          }
+          
+          console.log(`[getFull] Quote found, fetching related data...`);
+          
+          // Fetch related data with individual error handling
+          let lineItems: Awaited<ReturnType<typeof getLineItemsByQuoteId>> = [];
+          let inputs: Awaited<ReturnType<typeof getInputsByQuoteId>> = [];
+          let tenderContext: Awaited<ReturnType<typeof getTenderContextByQuoteId>> = undefined;
+          let internalEstimate: Awaited<ReturnType<typeof getInternalEstimateByQuoteId>> = undefined;
+          
+          try {
+            console.log(`[getFull] Fetching line items...`);
+            lineItems = await getLineItemsByQuoteId(input.id);
+            console.log(`[getFull] Line items: ${lineItems?.length || 0} found`);
+          } catch (err) {
+            console.error(`[getFull] ERROR fetching line items:`, err);
+            lineItems = [];
+          }
+          
+          try {
+            console.log(`[getFull] Fetching inputs...`);
+            inputs = await getInputsByQuoteId(input.id);
+            console.log(`[getFull] Inputs: ${inputs?.length || 0} found`);
+          } catch (err) {
+            console.error(`[getFull] ERROR fetching inputs:`, err);
+            inputs = [];
+          }
+          
+          try {
+            console.log(`[getFull] Fetching tender context...`);
+            tenderContext = await getTenderContextByQuoteId(input.id);
+            console.log(`[getFull] Tender context:`, tenderContext ? 'found' : 'not found');
+          } catch (err) {
+            console.error(`[getFull] ERROR fetching tender context:`, err);
+            tenderContext = undefined;
+          }
+          
+          try {
+            console.log(`[getFull] Fetching internal estimate...`);
+            internalEstimate = await getInternalEstimateByQuoteId(input.id);
+            console.log(`[getFull] Internal estimate:`, internalEstimate ? 'found' : 'not found');
+          } catch (err) {
+            console.error(`[getFull] ERROR fetching internal estimate:`, err);
+            internalEstimate = undefined;
+          }
+          
+          console.log(`[getFull] SUCCESS: Returning full quote data`);
+          return {
+            quote,
+            lineItems: lineItems || [],
+            inputs: inputs || [],
+            tenderContext,
+            internalEstimate,
+          };
+        } catch (error) {
+          console.error(`[getFull] FATAL ERROR:`, error);
+          throw error;
         }
-        // Fallback to user-based access for legacy data
-        if (!quote) {
-          quote = await getQuoteById(input.id, ctx.user.id);
-        }
-        if (!quote) throw new Error("Quote not found");
-
-        const [lineItems, inputs, tenderContext, internalEstimate] = await Promise.all([
-          getLineItemsByQuoteId(input.id),
-          getInputsByQuoteId(input.id),
-          getTenderContextByQuoteId(input.id),
-          getInternalEstimateByQuoteId(input.id),
-        ]);
-
-        return {
-          quote,
-          lineItems,
-          inputs,
-          tenderContext,
-          internalEstimate,
-        };
       }),
 
     // Generate PDF HTML for a quote

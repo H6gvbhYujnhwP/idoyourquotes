@@ -151,9 +151,12 @@ export default function QuoteWorkspace() {
   const [emailHtmlBody, setEmailHtmlBody] = useState("");
   const [emailTextBody, setEmailTextBody] = useState("");
 
-  const { data: fullQuote, isLoading, refetch } = trpc.quotes.getFull.useQuery(
+  const { data: fullQuote, isLoading, error, refetch } = trpc.quotes.getFull.useQuery(
     { id: quoteId },
-    { enabled: quoteId > 0 }
+    { 
+      enabled: quoteId > 0,
+      retry: 1,
+    }
   );
 
   const { data: storageStatus } = trpc.inputs.storageStatus.useQuery();
@@ -569,16 +572,40 @@ export default function QuoteWorkspace() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-muted-foreground">Loading quote...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+        <AlertTriangle className="h-12 w-12 text-destructive" />
+        <h2 className="text-xl font-semibold">Error loading quote</h2>
+        <p className="text-muted-foreground text-center max-w-md">
+          {error.message || "An unexpected error occurred while loading the quote."}
+        </p>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => refetch()}>
+            Try Again
+          </Button>
+          <Button variant="outline" onClick={() => setLocation("/dashboard")}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to Dashboard
+          </Button>
+        </div>
       </div>
     );
   }
 
   if (!fullQuote?.quote) {
     return (
-      <div className="text-center py-12">
-        <h2 className="text-xl font-semibold mb-2">Quote not found</h2>
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+        <FileText className="h-12 w-12 text-muted-foreground" />
+        <h2 className="text-xl font-semibold">Quote not found</h2>
+        <p className="text-muted-foreground">The quote you're looking for doesn't exist or you don't have access to it.</p>
         <Button variant="outline" onClick={() => setLocation("/dashboard")}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Dashboard

@@ -282,3 +282,10 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Updated AI procedures (askAboutQuote, generateDraft)
 - [x] All 102 tests passing
 - [ ] SQL backfill to set org_id on existing quotes (user must run on Render PostgreSQL)
+
+
+### Quote viewing/creation broken - needs three fixes - FIXED
+- [x] Add detailed error logging to quotes.getFull in server/routers.ts
+- [x] Fix quote creation flow - auto-navigate already exists in Dashboard.tsx
+- [x] Add error UI to QuoteWorkspace with loading state, error state, retry button
+- [x] All 102 tests passing
