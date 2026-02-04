@@ -322,3 +322,11 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Add to form state and pass to registration mutation
 - [x] Add validation that company name is not empty
 - [x] Test and deploy
+
+
+### PDF Processing Fix - OpenAI file_url Not Supported - COMPLETE
+- [x] Install pdf-parse library
+- [x] Add getFileBuffer function to r2Storage.ts
+- [x] Update PDF processing in routers.ts to extract text locally
+- [x] Use LLM to clean/structure extracted text
+- [x] Test and deploy

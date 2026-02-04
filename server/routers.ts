@@ -4,7 +4,8 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { invokeLLM } from "./_core/llm";
-import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured } from "./r2Storage";
+import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured, getFileBuffer } from "./r2Storage";
+import { PDFParse } from "pdf-parse";
 import { generateQuoteHTML } from "./pdfGenerator";
 import {
   getQuotesByUserId,
@@ -745,34 +746,34 @@ Sender Name: ${user.name || "[Your Name]"}`,
               let processedContent = "";
 
               if (input.inputType === "pdf") {
-                // Extract text from PDF using LLM
+                // Download PDF from R2 storage and extract text locally using pdf-parse
+                const pdfBuffer = await getFileBuffer(key);
+                const pdfParser = new PDFParse({ data: pdfBuffer });
+                const textResult = await pdfParser.getText();
+                const extractedText = textResult.text || "";
+                await pdfParser.destroy();
+
+                if (!extractedText || extractedText.trim().length === 0) {
+                  throw new Error("No text content found in PDF");
+                }
+
+                // Use LLM to clean and structure the extracted text
                 const response = await invokeLLM({
                   messages: [
                     {
                       role: "system",
-                      content: "You are a document text extractor. Extract all text content from the provided PDF document. Preserve the structure and formatting as much as possible. Include all text, tables, and any visible content.",
+                      content: "You are a document analyzer. The user has uploaded a PDF for a construction/service quote. Clean up the extracted text, preserve structure, identify key details (measurements, specifications, requirements), and format it clearly. Keep all numbers, dates, and technical details exactly as they appear.",
                     },
                     {
                       role: "user",
-                      content: [
-                        {
-                          type: "file_url",
-                          file_url: {
-                            url: url,
-                            mime_type: "application/pdf",
-                          },
-                        },
-                        {
-                          type: "text",
-                          text: "Please extract all text content from this PDF document.",
-                        },
-                      ],
+                      content: `Clean and structure this PDF content for quoting purposes:\n\n${extractedText}`,
                     },
                   ],
                 });
+
                 processedContent = typeof response.choices[0]?.message?.content === "string"
                   ? response.choices[0].message.content
-                  : "";
+                  : extractedText; // Fallback to raw text if LLM fails
               } else if (input.inputType === "image") {
                 // Analyze image using LLM vision
                 const response = await invokeLLM({
@@ -957,8 +958,8 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
           throw new Error("Input is not a PDF file");
         }
 
-        if (!inputRecord.fileUrl) {
-          throw new Error("No file URL for this input");
+        if (!inputRecord.fileKey) {
+          throw new Error("No file key for this input");
         }
 
         // Mark as processing
@@ -968,35 +969,34 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
         });
 
         try {
-          // Use LLM with file_url to extract text from PDF
+          // Download PDF from R2 storage and extract text locally using pdf-parse
+          const pdfBuffer = await getFileBuffer(inputRecord.fileKey);
+          const pdfParser = new PDFParse({ data: pdfBuffer });
+          const textResult = await pdfParser.getText();
+          const rawExtractedText = textResult.text || "";
+          await pdfParser.destroy();
+
+          if (!rawExtractedText || rawExtractedText.trim().length === 0) {
+            throw new Error("No text content found in PDF");
+          }
+
+          // Use LLM to clean and structure the extracted text
           const response = await invokeLLM({
             messages: [
               {
                 role: "system",
-                content: "You are a document text extractor. Extract all text content from the provided PDF document. Preserve the structure and formatting as much as possible. Include all text, tables, and any visible content.",
+                content: "You are a document analyzer. The user has uploaded a PDF for a construction/service quote. Clean up the extracted text, preserve structure, identify key details (measurements, specifications, requirements), and format it clearly. Keep all numbers, dates, and technical details exactly as they appear.",
               },
               {
                 role: "user",
-                content: [
-                  {
-                    type: "file_url",
-                    file_url: {
-                      url: inputRecord.fileUrl,
-                      mime_type: "application/pdf",
-                    },
-                  },
-                  {
-                    type: "text",
-                    text: "Please extract all text content from this PDF document.",
-                  },
-                ],
+                content: `Clean and structure this PDF content for quoting purposes:\n\n${rawExtractedText}`,
               },
             ],
           });
 
           const extractedText = typeof response.choices[0]?.message?.content === "string"
             ? response.choices[0].message.content
-            : "";
+            : rawExtractedText; // Fallback to raw text if LLM fails
 
           const updated = await updateInputProcessing(input.inputId, {
             processedContent: extractedText,

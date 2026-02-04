@@ -117,6 +117,30 @@ export async function deleteFromR2(key: string): Promise<void> {
 }
 
 /**
+ * Get a file as a Buffer from R2 storage
+ * @param key - The file key in R2
+ * @returns File content as Buffer
+ */
+export async function getFileBuffer(key: string): Promise<Buffer> {
+  const client = getS3Client();
+  
+  const command = new GetObjectCommand({
+    Bucket: R2_BUCKET_NAME,
+    Key: key,
+  });
+  
+  const response = await client.send(command);
+  
+  // Convert stream to buffer
+  const chunks: Uint8Array[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for await (const chunk of response.Body as any) {
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
+/**
  * Check if R2 storage is configured
  */
 export function isR2Configured(): boolean {
