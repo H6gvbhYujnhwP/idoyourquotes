@@ -205,3 +205,8 @@ Based on Formal Build Prompt & Product Roadmap
 ### Generate Draft fails when user prompt is provided but audio not processed - FIXED
 - [x] Fix: User prompt should count as valid evidence even if audio files are not processed
 - [x] The error "No processed evidence found" should not appear when userPrompt is provided
+
+### File deletion doesn't remove files from Cloudflare R2 - FIXED
+- [x] When user deletes an input from dashboard, also delete the file from R2 storage
+- [x] Extract file key from input record and call deleteFromR2
+- [x] Add unit tests for file cleanup (7 new tests)

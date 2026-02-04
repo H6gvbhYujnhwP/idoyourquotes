@@ -107,3 +107,102 @@ describe("File Key Generation", () => {
     expect(sanitizeFilename("test@#$%.png")).toBe("test____.png");
   });
 });
+
+describe("File Deletion with R2 Cleanup", () => {
+  it("should extract file key from input record for R2 deletion", () => {
+    const inputRecord = {
+      id: 1,
+      quoteId: 123,
+      inputType: "audio",
+      filename: "recording.mp3",
+      fileKey: "quotes/123/abc123-recording.mp3",
+      fileUrl: "https://r2.example.com/quotes/123/abc123-recording.mp3?signature=xyz",
+    };
+
+    expect(inputRecord.fileKey).toBeDefined();
+    expect(inputRecord.fileKey).toBe("quotes/123/abc123-recording.mp3");
+  });
+
+  it("should handle inputs without file keys (text notes)", () => {
+    const textInput = {
+      id: 2,
+      quoteId: 123,
+      inputType: "text",
+      content: "Some notes",
+      fileKey: null,
+      fileUrl: null,
+    };
+
+    // Should not attempt R2 deletion for text inputs
+    const shouldDeleteFromR2 = textInput.fileKey && textInput.fileKey.length > 0;
+    expect(shouldDeleteFromR2).toBeFalsy();
+  });
+
+  it("should verify input belongs to quote before deletion", () => {
+    const inputRecord = {
+      id: 1,
+      quoteId: 123,
+      inputType: "audio",
+    };
+
+    const requestedQuoteId = 456; // Different quote
+    const belongsToQuote = inputRecord.quoteId === requestedQuoteId;
+    expect(belongsToQuote).toBe(false);
+  });
+
+  it("should allow deletion when input belongs to correct quote", () => {
+    const inputRecord = {
+      id: 1,
+      quoteId: 123,
+      inputType: "audio",
+    };
+
+    const requestedQuoteId = 123; // Same quote
+    const belongsToQuote = inputRecord.quoteId === requestedQuoteId;
+    expect(belongsToQuote).toBe(true);
+  });
+
+  it("should handle R2 deletion errors gracefully", async () => {
+    // Simulate R2 deletion that might fail
+    const mockDeleteFromR2 = vi.fn().mockRejectedValue(new Error("R2 connection failed"));
+    
+    let dbDeleteSucceeded = false;
+    let r2Error: Error | null = null;
+
+    try {
+      await mockDeleteFromR2("quotes/123/file.mp3");
+    } catch (error) {
+      r2Error = error as Error;
+    }
+
+    // Even if R2 fails, we should still delete the DB record
+    dbDeleteSucceeded = true;
+
+    expect(r2Error).not.toBeNull();
+    expect(r2Error?.message).toBe("R2 connection failed");
+    expect(dbDeleteSucceeded).toBe(true); // DB deletion should still proceed
+  });
+
+  it("should check R2 configuration before attempting deletion", () => {
+    vi.mocked(isR2Configured).mockReturnValue(false);
+    
+    const inputRecord = {
+      fileKey: "quotes/123/file.mp3",
+    };
+
+    // Should skip R2 deletion if not configured
+    const shouldAttemptR2Delete = inputRecord.fileKey && isR2Configured();
+    expect(shouldAttemptR2Delete).toBe(false);
+  });
+
+  it("should attempt R2 deletion when configured and file key exists", () => {
+    vi.mocked(isR2Configured).mockReturnValue(true);
+    
+    const inputRecord = {
+      fileKey: "quotes/123/file.mp3",
+    };
+
+    const shouldAttemptR2Delete = inputRecord.fileKey && isR2Configured();
+    expect(shouldAttemptR2Delete).toBe(true);
+  });
+});

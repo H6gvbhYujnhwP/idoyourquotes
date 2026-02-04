@@ -503,6 +503,27 @@ Sender Name: ${user.name || "[Your Name]"}`,
         const quote = await getQuoteById(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
+        // Get the input record to find the file key before deleting
+        const inputRecord = await getInputById(input.id);
+        if (!inputRecord) throw new Error("Input not found");
+
+        // Verify the input belongs to this quote
+        if (inputRecord.quoteId !== input.quoteId) {
+          throw new Error("Input does not belong to this quote");
+        }
+
+        // Delete the file from R2 storage if it exists
+        if (inputRecord.fileKey && isR2Configured()) {
+          try {
+            await deleteFromR2(inputRecord.fileKey);
+            console.log(`[R2] Deleted file: ${inputRecord.fileKey}`);
+          } catch (r2Error) {
+            // Log but don't fail the deletion if R2 delete fails
+            console.error(`[R2] Failed to delete file ${inputRecord.fileKey}:`, r2Error);
+          }
+        }
+
+        // Delete the database record
         await deleteInput(input.id);
         return { success: true };
       }),
