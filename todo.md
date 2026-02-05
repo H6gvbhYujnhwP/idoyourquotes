@@ -419,3 +419,11 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Registration already saves companyName to user profile (verified in createUser)
 - [x] All 102 tests passing
 - [x] Test and deploy
+
+
+### Replace Logo and Add Favicon - COMPLETE
+- [x] Upload new IdoYourQuotes logo to S3 for permanent URL
+- [x] Create favicon from logo (Q icon with checkmark)
+- [x] Update all logo references across website (Home, Login, Register, Dashboard)
+- [x] All 102 tests passing
+- [x] Test and deploy

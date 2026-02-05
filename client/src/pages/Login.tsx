@@ -48,10 +48,11 @@ export default function Login() {
       <header className="border-b bg-white">
         <div className="container flex h-16 items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-              <FileText className="w-6 h-6 text-white" />
-            </div>
-            <span className="font-bold text-xl">IdoYourQuotes</span>
+            <img 
+              src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png" 
+              alt="IdoYourQuotes" 
+              className="h-10 object-contain"
+            />
           </Link>
         </div>
       </header>

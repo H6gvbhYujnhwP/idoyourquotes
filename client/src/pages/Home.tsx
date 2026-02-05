@@ -36,10 +36,11 @@ export default function Home() {
       <nav className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="container flex h-16 items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="h-9 w-9 rounded-lg bg-primary flex items-center justify-center">
-              <FileText className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <span className="text-xl font-bold tracking-tight">IdoYourQuotes</span>
+            <img 
+              src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png" 
+              alt="IdoYourQuotes" 
+              className="h-10 object-contain"
+            />
           </div>
           <div className="flex items-center gap-4">
             {loading ? null : user ? (
@@ -249,10 +250,11 @@ export default function Home() {
         <div className="container">
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
             <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-                <FileText className="h-4 w-4 text-primary-foreground" />
-              </div>
-              <span className="font-bold">IdoYourQuotes</span>
+              <img 
+                src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png" 
+                alt="IdoYourQuotes" 
+                className="h-8 object-contain"
+              />
             </div>
             <p className="text-sm text-muted-foreground">
               © {new Date().getFullYear()} IdoYourQuotes. All rights reserved.

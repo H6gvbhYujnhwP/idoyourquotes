@@ -171,9 +171,11 @@ function DashboardLayoutContent({
               </button>
               {!isCollapsed ? (
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-semibold tracking-tight truncate">
-                    IdoYourQuotes
-                  </span>
+                  <img 
+                    src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png" 
+                    alt="IdoYourQuotes" 
+                    className="h-8 object-contain"
+                  />
                 </div>
               ) : null}
             </div>
