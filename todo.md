@@ -330,3 +330,13 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Update PDF processing in routers.ts to extract text locally
 - [x] Use LLM to clean/structure extracted text
 - [x] Test and deploy
+
+
+### Claude API for PDF/Image Visual Analysis - COMPLETE
+- [x] Create server/_core/claude.ts with invokeClaude function
+- [x] Support PDF documents via base64 encoding
+- [x] Support image analysis via base64 encoding
+- [x] Update PDF processing in routers.ts to use Claude
+- [x] Update image processing in routers.ts to use Claude
+- [ ] Add ANTHROPIC_API_KEY to Render environment (user action required)
+- [ ] Test and deploy (pending API key)

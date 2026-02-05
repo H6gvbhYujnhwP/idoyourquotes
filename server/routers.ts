@@ -5,7 +5,7 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { invokeLLM } from "./_core/llm";
 import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured, getFileBuffer } from "./r2Storage";
-import { PDFParse } from "pdf-parse";
+import { analyzePdfWithClaude, analyzeImageWithClaude, isClaudeConfigured } from "./_core/claude";
 import { generateQuoteHTML } from "./pdfGenerator";
 import {
   getQuotesByUserId,
@@ -746,72 +746,67 @@ Sender Name: ${user.name || "[Your Name]"}`,
               let processedContent = "";
 
               if (input.inputType === "pdf") {
-                // Download PDF from R2 storage and extract text locally using pdf-parse
-                const pdfBuffer = await getFileBuffer(key);
-                const pdfParser = new PDFParse({ data: pdfBuffer });
-                const textResult = await pdfParser.getText();
-                const extractedText = textResult.text || "";
-                await pdfParser.destroy();
-
-                if (!extractedText || extractedText.trim().length === 0) {
-                  throw new Error("No text content found in PDF");
+                // Check if Claude API is configured
+                if (!isClaudeConfigured()) {
+                  throw new Error("ANTHROPIC_API_KEY is not configured. Claude API is required for PDF analysis.");
                 }
 
-                // Use LLM to clean and structure the extracted text
-                const response = await invokeLLM({
-                  messages: [
-                    {
-                      role: "system",
-                      content: "You are a document analyzer. The user has uploaded a PDF for a construction/service quote. Clean up the extracted text, preserve structure, identify key details (measurements, specifications, requirements), and format it clearly. Keep all numbers, dates, and technical details exactly as they appear.",
-                    },
-                    {
-                      role: "user",
-                      content: `Clean and structure this PDF content for quoting purposes:\n\n${extractedText}`,
-                    },
-                  ],
-                });
-
-                processedContent = typeof response.choices[0]?.message?.content === "string"
-                  ? response.choices[0].message.content
-                  : extractedText; // Fallback to raw text if LLM fails
-              } else if (input.inputType === "image") {
-                // Analyze image using LLM vision
-                const response = await invokeLLM({
-                  messages: [
-                    {
-                      role: "system",
-                      content: `You are analyzing an image for a quoting/estimation system. This could be a technical drawing, floor plan, specification sheet, or site photo.
+                // Download PDF from R2 storage and analyze with Claude
+                const pdfBuffer = await getFileBuffer(key);
+                
+                processedContent = await analyzePdfWithClaude(
+                  pdfBuffer,
+                  `Analyze this document for quoting/estimation purposes. This could be a technical drawing, floor plan, specification sheet, architectural plan, or project documentation.
 
 Extract and report:
-1. **Text Content**: Any visible text, labels, dimensions, measurements, specifications
-2. **Symbols & Legends**: Any symbols, abbreviations, or legend items with their meanings
-3. **Key Details**: Important features, quantities, materials, or specifications visible
-4. **Measurements**: All dimensions, areas, quantities shown
-5. **Notes & Warnings**: Any notes, warnings, or special instructions
+1. **Document Overview**: What type of document is this? What project does it relate to?
+2. **Text Content**: All visible text, labels, annotations, and notes
+3. **Measurements & Dimensions**: All dimensions, areas, quantities, and measurements shown
+4. **Technical Specifications**: Materials, equipment, standards, or specifications mentioned
+5. **Layout & Structure**: Room layouts, floor plans, cable routes, equipment positions if applicable
+6. **Symbols & Legends**: Any symbols, abbreviations, or legend items with their meanings
+7. **Key Details for Quoting**: Quantities, scope of work, deliverables, or requirements
+8. **Notes & Warnings**: Any special instructions, warnings, or conditions
+
+Be thorough and precise - missed details in technical drawings often lead to costly errors in quotes. Include all numbers, dates, and technical details exactly as they appear.`,
+                  "You are a document analyzer specializing in construction, engineering, IT infrastructure, and technical documents. Your role is to extract all relevant information from technical drawings, floor plans, specifications, and project documents to support accurate quote generation. Be meticulous about measurements, quantities, and specifications."
+                );
+              } else if (input.inputType === "image") {
+                // Check if Claude API is configured
+                if (!isClaudeConfigured()) {
+                  throw new Error("ANTHROPIC_API_KEY is not configured. Claude API is required for image analysis.");
+                }
+
+                // Download image from R2 storage and analyze with Claude
+                const imageBuffer = await getFileBuffer(key);
+                
+                // Determine the image MIME type
+                let imageMimeType: "image/jpeg" | "image/png" | "image/gif" | "image/webp" = "image/jpeg";
+                if (input.contentType === "image/png") {
+                  imageMimeType = "image/png";
+                } else if (input.contentType === "image/gif") {
+                  imageMimeType = "image/gif";
+                } else if (input.contentType === "image/webp") {
+                  imageMimeType = "image/webp";
+                }
+
+                processedContent = await analyzeImageWithClaude(
+                  imageBuffer,
+                  imageMimeType,
+                  `Analyze this image for quoting/estimation purposes. This could be a technical drawing, floor plan, specification sheet, site photo, or architectural plan.
+
+Extract and report:
+1. **Image Overview**: What type of image is this? What does it show?
+2. **Text Content**: Any visible text, labels, dimensions, measurements, specifications
+3. **Symbols & Legends**: Any symbols, abbreviations, or legend items with their meanings
+4. **Key Details**: Important features, quantities, materials, or specifications visible
+5. **Measurements**: All dimensions, areas, quantities shown
+6. **Layout Information**: Room layouts, equipment positions, cable routes if applicable
+7. **Notes & Warnings**: Any notes, warnings, or special instructions
 
 Be thorough - missed details in drawings often lead to costly errors in quotes.`,
-                    },
-                    {
-                      role: "user",
-                      content: [
-                        {
-                          type: "image_url",
-                          image_url: {
-                            url: url,
-                            detail: "high",
-                          },
-                        },
-                        {
-                          type: "text",
-                          text: "Please analyze this image thoroughly for quoting purposes. Extract all text, measurements, symbols, and important details.",
-                        },
-                      ],
-                    },
-                  ],
-                });
-                processedContent = typeof response.choices[0]?.message?.content === "string"
-                  ? response.choices[0].message.content
-                  : "";
+                  "You are an image analyzer specializing in construction, engineering, IT infrastructure, and technical drawings. Your role is to extract all relevant information from technical drawings, floor plans, site photos, and specifications to support accurate quote generation. Be meticulous about measurements, quantities, and visual details."
+                );
               } else if (input.inputType === "audio") {
                 // Transcribe audio
                 const result = await transcribeAudio({
@@ -969,34 +964,31 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
         });
 
         try {
-          // Download PDF from R2 storage and extract text locally using pdf-parse
-          const pdfBuffer = await getFileBuffer(inputRecord.fileKey);
-          const pdfParser = new PDFParse({ data: pdfBuffer });
-          const textResult = await pdfParser.getText();
-          const rawExtractedText = textResult.text || "";
-          await pdfParser.destroy();
-
-          if (!rawExtractedText || rawExtractedText.trim().length === 0) {
-            throw new Error("No text content found in PDF");
+          // Check if Claude API is configured
+          if (!isClaudeConfigured()) {
+            throw new Error("ANTHROPIC_API_KEY is not configured. Claude API is required for PDF analysis.");
           }
 
-          // Use LLM to clean and structure the extracted text
-          const response = await invokeLLM({
-            messages: [
-              {
-                role: "system",
-                content: "You are a document analyzer. The user has uploaded a PDF for a construction/service quote. Clean up the extracted text, preserve structure, identify key details (measurements, specifications, requirements), and format it clearly. Keep all numbers, dates, and technical details exactly as they appear.",
-              },
-              {
-                role: "user",
-                content: `Clean and structure this PDF content for quoting purposes:\n\n${rawExtractedText}`,
-              },
-            ],
-          });
+          // Download PDF from R2 storage and analyze with Claude
+          const pdfBuffer = await getFileBuffer(inputRecord.fileKey);
+          
+          const extractedText = await analyzePdfWithClaude(
+            pdfBuffer,
+            `Analyze this document for quoting/estimation purposes. This could be a technical drawing, floor plan, specification sheet, architectural plan, or project documentation.
 
-          const extractedText = typeof response.choices[0]?.message?.content === "string"
-            ? response.choices[0].message.content
-            : rawExtractedText; // Fallback to raw text if LLM fails
+Extract and report:
+1. **Document Overview**: What type of document is this? What project does it relate to?
+2. **Text Content**: All visible text, labels, annotations, and notes
+3. **Measurements & Dimensions**: All dimensions, areas, quantities, and measurements shown
+4. **Technical Specifications**: Materials, equipment, standards, or specifications mentioned
+5. **Layout & Structure**: Room layouts, floor plans, cable routes, equipment positions if applicable
+6. **Symbols & Legends**: Any symbols, abbreviations, or legend items with their meanings
+7. **Key Details for Quoting**: Quantities, scope of work, deliverables, or requirements
+8. **Notes & Warnings**: Any special instructions, warnings, or conditions
+
+Be thorough and precise - missed details in technical drawings often lead to costly errors in quotes. Include all numbers, dates, and technical details exactly as they appear.`,
+            "You are a document analyzer specializing in construction, engineering, IT infrastructure, and technical documents. Your role is to extract all relevant information from technical drawings, floor plans, specifications, and project documents to support accurate quote generation. Be meticulous about measurements, quantities, and specifications."
+          );
 
           const updated = await updateInputProcessing(input.inputId, {
             processedContent: extractedText,
