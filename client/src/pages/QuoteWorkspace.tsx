@@ -800,7 +800,7 @@ export default function QuoteWorkspace() {
               )}
 
               {/* Upload buttons */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <Button
                   variant="outline"
                   className="h-20 flex-col gap-2"
@@ -840,47 +840,24 @@ export default function QuoteWorkspace() {
                   )}
                   <span className="text-xs">Audio Recording</span>
                 </Button>
-                <Button
-                  variant="outline"
-                  className="h-20 flex-col gap-2 opacity-50 cursor-not-allowed"
-                  disabled
-                >
-                  <Mail className="h-6 w-6" />
-                  <span className="text-xs">Email Import</span>
-                </Button>
               </div>
 
-              {/* User Prompt - Email/Instructions for AI */}
+              {/* Instructions / Notes for AI */}
               <div className="space-y-3 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200">
                 <div className="flex items-center gap-2">
                   <Mail className="h-5 w-5 text-purple-600" />
-                  <Label className="text-purple-900 font-medium">Email / Instructions for AI</Label>
+                  <Label className="text-purple-900 font-medium">Instructions / Notes for AI</Label>
                 </div>
                 <p className="text-sm text-purple-700">
-                  Paste the client's email, brief, or any instructions. This will be used when generating the quote draft.
+                  Copy and paste client emails, project briefs, specifications, or any notes here. This will be used when generating the quote draft.
                 </p>
                 <Textarea
-                  placeholder="Paste the client email, project brief, or instructions here...\n\nExample:\n'Hi, I need a quote for painting 3 bedrooms and the hallway. The rooms are roughly 12x12 each. We'd like it done in 2 weeks if possible. Thanks, John'"
+                  placeholder="Paste client emails, project briefs, or instructions here...\n\nExample:\n'Hi, I need a quote for painting 3 bedrooms and the hallway. The rooms are roughly 12x12 each. We'd like it done in 2 weeks if possible. Thanks, John'"
                   value={userPrompt}
                   onChange={(e) => setUserPrompt(e.target.value)}
-                  rows={5}
+                  rows={6}
                   className="bg-white"
                 />
-              </div>
-
-              {/* Text input */}
-              <div className="space-y-3">
-                <Label>Add Text Note</Label>
-                <Textarea
-                  placeholder="Paste or type notes, requirements, or specifications..."
-                  value={newTextInput}
-                  onChange={(e) => setNewTextInput(e.target.value)}
-                  rows={4}
-                />
-                <Button onClick={handleAddTextInput} disabled={createInput.isPending}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Note
-                </Button>
               </div>
 
               {/* Existing inputs */}

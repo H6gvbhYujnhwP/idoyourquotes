@@ -347,3 +347,11 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Change completed status to show success message instead of raw analysis content
 - [x] Success message: "Document analysed. Upload more evidence or use the prompt field above to generate your quote."
 - [x] Test and deploy
+
+
+### Clean Up Inputs Tab - COMPLETE
+- [x] Remove "Add Text Note" section entirely
+- [x] Remove greyed-out "Email Import" button
+- [x] Rename pink box to "Instructions / Notes for AI"
+- [x] Update description to mention copy/paste emails, briefs, specs
+- [x] Test and deploy
