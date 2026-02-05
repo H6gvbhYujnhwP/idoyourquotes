@@ -455,3 +455,17 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Rename "Upload PDF" button to "Document" with subtitle "PDF, Word, Excel"
 - [x] Write tests for new file types (11 new tests)
 - [x] All 113 tests passing
+
+
+### Fix Document Input Type Database Enum - IN PROGRESS
+- [ ] Add 'document' to inputTypeEnum in schema.ts
+- [ ] Run database migration to update the enum
+- [ ] Test Word document upload
+- [ ] Deploy
+
+
+### Enhanced Quote Descriptions - COMPLETE
+- [x] Update AI prompt to generate more detailed descriptions (3-5 sentences minimum)
+- [x] Include project scope, key deliverables, client objectives
+- [x] All 113 tests passing
+- [x] Deploy

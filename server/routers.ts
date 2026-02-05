@@ -1506,11 +1506,11 @@ You MUST respond with valid JSON in this exact format:
   "clientEmail": "string or null",
   "clientPhone": "string or null",
   "clientAddress": "string or null",
-  "title": "string - brief title for the work",
-  "description": "string - detailed description of scope",
+  "title": "string - brief but descriptive title for the work (e.g., 'Website Redesign and Marketing Strategy for EDP Handles')",
+  "description": "string - COMPREHENSIVE description (3-5 sentences minimum) that includes: 1) Project overview and scope, 2) Key deliverables being quoted, 3) Client objectives or goals mentioned, 4) Any phases or timeline if discussed. This appears on the quote PDF so make it professional and informative.",
   "lineItems": [
     {
-      "description": "string",
+      "description": "string - detailed description of the line item",
       "quantity": number,
       "unit": "string (each, sqm, hours, etc.)",
       "rate": number
@@ -1521,6 +1521,13 @@ You MUST respond with valid JSON in this exact format:
   "riskNotes": "string - internal notes about risks or concerns",
   "symbolMappings": { "symbol": { "meaning": "string", "confirmed": false } }
 }
+
+IMPORTANT for description field:
+- Write a professional, detailed paragraph (not bullet points)
+- Explain what the project involves and what the client will receive
+- Mention specific deliverables from the evidence
+- Include any context about the client's business or goals
+- This description appears on the final quote PDF sent to clients, so make it comprehensive and professional
 
 Be thorough but realistic with pricing. Extract all client details mentioned. List specific line items with quantities. Note any assumptions you're making and things that are explicitly excluded.${catalogContext}`,
             },
