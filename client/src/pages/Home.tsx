@@ -34,12 +34,12 @@ export default function Home() {
     <div className="min-h-screen bg-background">
       {/* Navigation */}
       <nav className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container flex h-16 items-center justify-between">
+        <div className="container flex h-20 items-center justify-between">
           <div className="flex items-center gap-2">
             <img 
               src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png" 
               alt="IdoYourQuotes" 
-              className="h-12 object-contain"
+              className="h-16 object-contain"
             />
           </div>
           <div className="flex items-center gap-4">

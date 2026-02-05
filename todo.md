@@ -437,3 +437,9 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Make logo bigger on Dashboard sidebar (h-8 to h-10)
 - [x] Create clean favicon with transparent background (no grey)
 - [x] All 102 tests passing
+
+
+### Increase Header Height for Bigger Logo - COMPLETE
+- [x] Increase Home page header height from h-16 to h-20 (64px to 80px)
+- [x] Increase logo size from h-12 to h-16 (48px to 64px)
+- [x] All 102 tests passing
