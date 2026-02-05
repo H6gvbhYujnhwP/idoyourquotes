@@ -192,6 +192,48 @@ export default function QuoteWorkspace() {
     onError: (error) => toast.error("Failed to delete: " + error.message),
   });
 
+  const updateLineItem = trpc.lineItems.update.useMutation({
+    onSuccess: () => refetch(),
+    onError: (error) => toast.error("Failed to update: " + error.message),
+  });
+
+  // State for inline editing
+  const [editingItemId, setEditingItemId] = useState<number | null>(null);
+  const [editingField, setEditingField] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState<string>("");
+
+  const handleStartEdit = (itemId: number, field: string, currentValue: string) => {
+    setEditingItemId(itemId);
+    setEditingField(field);
+    setEditValue(currentValue || "");
+  };
+
+  const handleSaveEdit = (itemId: number, field: string) => {
+    const updateData: any = {
+      id: itemId,
+      quoteId,
+    };
+    updateData[field] = editValue;
+    updateLineItem.mutate(updateData);
+    setEditingItemId(null);
+    setEditingField(null);
+    setEditValue("");
+  };
+
+  const handleCancelEdit = () => {
+    setEditingItemId(null);
+    setEditingField(null);
+    setEditValue("");
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent, itemId: number, field: string) => {
+    if (e.key === "Enter") {
+      handleSaveEdit(itemId, field);
+    } else if (e.key === "Escape") {
+      handleCancelEdit();
+    }
+  };
+
   const createInput = trpc.inputs.create.useMutation({
     onSuccess: () => {
       setNewTextInput("");
@@ -352,6 +394,12 @@ export default function QuoteWorkspace() {
   };
 
   const handleGenerateDraft = () => {
+    // Check if line items already exist - show confirmation dialog
+    if (lineItems && lineItems.length > 0) {
+      if (!window.confirm("This will replace all existing line items. Continue?")) {
+        return;
+      }
+    }
     generateDraft.mutate({
       quoteId,
       userPrompt: userPrompt || undefined,
@@ -665,11 +713,11 @@ export default function QuoteWorkspace() {
         <div className="flex gap-2">
           <Button 
             onClick={handleGenerateDraft} 
-            disabled={isGeneratingDraft || !inputs || inputs.length === 0}
+            disabled={isGeneratingDraft}
             className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
           >
             {isGeneratingDraft ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-            Generate Draft
+            {lineItems && lineItems.length > 0 ? "Regenerate Draft" : "Generate Draft"}
           </Button>
           <Button variant="outline" onClick={handleSaveQuote} disabled={isSaving}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
@@ -1320,10 +1368,90 @@ export default function QuoteWorkspace() {
                     <tbody>
                       {lineItems.map((item: LineItem, index: number) => (
                         <tr key={item.id} className={index % 2 === 0 ? "bg-background" : "bg-muted/20"}>
-                          <td className="p-3">{item.description}</td>
-                          <td className="p-3 text-right">{item.quantity}</td>
-                          <td className="p-3">{item.unit}</td>
-                          <td className="p-3 text-right">£{parseFloat(item.rate || "0").toFixed(2)}</td>
+                          {/* Description - editable */}
+                          <td className="p-3">
+                            {editingItemId === item.id && editingField === "description" ? (
+                              <Input
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                onBlur={() => handleSaveEdit(item.id, "description")}
+                                onKeyDown={(e) => handleKeyDown(e, item.id, "description")}
+                                autoFocus
+                                className="h-8"
+                              />
+                            ) : (
+                              <span
+                                className="cursor-pointer hover:bg-muted/50 px-2 py-1 rounded block"
+                                onClick={() => handleStartEdit(item.id, "description", item.description)}
+                              >
+                                {item.description || "Click to edit"}
+                              </span>
+                            )}
+                          </td>
+                          {/* Quantity - editable */}
+                          <td className="p-3 text-right">
+                            {editingItemId === item.id && editingField === "quantity" ? (
+                              <Input
+                                type="number"
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                onBlur={() => handleSaveEdit(item.id, "quantity")}
+                                onKeyDown={(e) => handleKeyDown(e, item.id, "quantity")}
+                                autoFocus
+                                className="h-8 w-20 text-right"
+                              />
+                            ) : (
+                              <span
+                                className="cursor-pointer hover:bg-muted/50 px-2 py-1 rounded inline-block"
+                                onClick={() => handleStartEdit(item.id, "quantity", item.quantity || "1")}
+                              >
+                                {item.quantity || "1"}
+                              </span>
+                            )}
+                          </td>
+                          {/* Unit - editable */}
+                          <td className="p-3">
+                            {editingItemId === item.id && editingField === "unit" ? (
+                              <Input
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                onBlur={() => handleSaveEdit(item.id, "unit")}
+                                onKeyDown={(e) => handleKeyDown(e, item.id, "unit")}
+                                autoFocus
+                                className="h-8 w-20"
+                              />
+                            ) : (
+                              <span
+                                className="cursor-pointer hover:bg-muted/50 px-2 py-1 rounded inline-block"
+                                onClick={() => handleStartEdit(item.id, "unit", item.unit || "each")}
+                              >
+                                {item.unit || "each"}
+                              </span>
+                            )}
+                          </td>
+                          {/* Rate - editable */}
+                          <td className="p-3 text-right">
+                            {editingItemId === item.id && editingField === "rate" ? (
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                onBlur={() => handleSaveEdit(item.id, "rate")}
+                                onKeyDown={(e) => handleKeyDown(e, item.id, "rate")}
+                                autoFocus
+                                className="h-8 w-24 text-right"
+                              />
+                            ) : (
+                              <span
+                                className="cursor-pointer hover:bg-muted/50 px-2 py-1 rounded inline-block"
+                                onClick={() => handleStartEdit(item.id, "rate", item.rate || "0")}
+                              >
+                                £{parseFloat(item.rate || "0").toFixed(2)}
+                              </span>
+                            )}
+                          </td>
+                          {/* Total - calculated, not editable */}
                           <td className="p-3 text-right font-medium">£{parseFloat(item.total || "0").toFixed(2)}</td>
                           <td className="p-3">
                             <Button

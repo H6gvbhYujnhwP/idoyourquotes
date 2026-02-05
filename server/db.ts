@@ -487,6 +487,13 @@ export async function deleteLineItem(itemId: number): Promise<boolean> {
   return true;
 }
 
+export async function deleteLineItemsByQuoteId(quoteId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  await db.delete(quoteLineItems).where(eq(quoteLineItems.quoteId, quoteId));
+}
+
 // ============ QUOTE INPUT HELPERS ============
 
 export async function getInputsByQuoteId(quoteId: number): Promise<QuoteInput[]> {

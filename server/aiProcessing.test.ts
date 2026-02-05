@@ -16,6 +16,7 @@ vi.mock("./db", () => ({
   createLineItem: vi.fn(),
   updateLineItem: vi.fn(),
   deleteLineItem: vi.fn(),
+  deleteLineItemsByQuoteId: vi.fn(),
   getInputsByQuoteId: vi.fn(),
   getInputById: vi.fn(),
   createInput: vi.fn(),

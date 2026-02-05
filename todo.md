@@ -363,3 +363,20 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Detect URLs in instructions field during quote generation
 - [x] Fetch and include website content in AI analysis
 - [x] Test and deploy
+
+
+### Fix Duplicate Line Items on Regenerate - COMPLETE
+- [x] Add deleteLineItemsByQuoteId function to db.ts
+- [x] Update generateDraft procedure to delete existing items before creating new
+- [x] Change button label: "Generate Draft" vs "Regenerate Draft" based on existing items
+- [x] Add confirmation dialog when regenerating
+- [x] Test and deploy
+
+### Inline Editing for Line Item Fields - COMPLETE
+- [x] Make Description field editable inline
+- [x] Make Quantity field editable inline
+- [x] Make Unit field editable inline
+- [x] Make Rate field editable inline
+- [x] Auto-calculate Total when Qty or Rate changes (server-side)
+- [x] Save changes on blur or Enter key
+- [x] Test and deploy

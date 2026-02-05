@@ -21,6 +21,7 @@ import {
   createLineItem,
   updateLineItem,
   deleteLineItem,
+  deleteLineItemsByQuoteId,
   getInputsByQuoteId,
   createInput,
   deleteInput,
@@ -1489,6 +1490,9 @@ Be thorough but realistic with pricing. Extract all client details mentioned. Li
             title: draft.title || quote.title,
             description: draft.description || quote.description,
           });
+
+          // Delete existing line items before creating new ones (prevents duplicates on regenerate)
+          await deleteLineItemsByQuoteId(input.quoteId);
 
           // Create line items
           const createdLineItems = [];
