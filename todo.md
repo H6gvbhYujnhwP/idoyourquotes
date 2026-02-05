@@ -427,3 +427,13 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Update all logo references across website (Home, Login, Register, Dashboard)
 - [x] All 102 tests passing
 - [x] Test and deploy
+
+
+### Logo Size and Favicon Cleanup - COMPLETE
+- [x] Make logo bigger on Home page header (h-10 to h-12)
+- [x] Make logo bigger on Home page footer (h-8 to h-10)
+- [x] Make logo bigger on Login page (h-10 to h-12)
+- [x] Make logo bigger on Register page (h-10 to h-12)
+- [x] Make logo bigger on Dashboard sidebar (h-8 to h-10)
+- [x] Create clean favicon with transparent background (no grey)
+- [x] All 102 tests passing
