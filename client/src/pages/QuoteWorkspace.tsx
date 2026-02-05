@@ -107,11 +107,14 @@ export default function QuoteWorkspace() {
   const params = useParams<{ id: string }>();
   const quoteId = parseInt(params.id || "0");
   const [, setLocation] = useLocation();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("inputs");
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadingType, setUploadingType] = useState<string | null>(null);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [termsModified, setTermsModified] = useState(false);
+  const [originalTerms, setOriginalTerms] = useState("");
 
   // File input refs
   const pdfInputRef = useRef<HTMLInputElement>(null);
@@ -209,6 +212,15 @@ export default function QuoteWorkspace() {
   const updateLineItem = trpc.lineItems.update.useMutation({
     onSuccess: () => refetch(),
     onError: (error) => toast.error("Failed to update: " + error.message),
+  });
+
+  const updateProfile = trpc.auth.updateProfile.useMutation({
+    onSuccess: () => {
+      toast.success("Default T&C saved to your profile");
+      setTermsModified(false);
+      setOriginalTerms(terms);
+    },
+    onError: (error) => toast.error("Failed to save default T&C: " + error.message),
   });
 
   // State for inline editing
@@ -464,6 +476,8 @@ export default function QuoteWorkspace() {
       setClientAddress(fullQuote.quote.clientAddress || "");
       setDescription(fullQuote.quote.description || "");
       setTerms(fullQuote.quote.terms || "");
+      setOriginalTerms(fullQuote.quote.terms || "");
+      setTermsModified(false);
       setTaxRate(fullQuote.quote.taxRate || "0");
     }
     if (fullQuote?.tenderContext) {
@@ -1626,15 +1640,56 @@ export default function QuoteWorkspace() {
           {/* Terms */}
           <Card>
             <CardHeader>
-              <CardTitle>Terms & Conditions</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>Terms & Conditions</CardTitle>
+                {termsModified && terms !== user?.defaultTerms && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => updateProfile.mutate({ defaultTerms: terms })}
+                    disabled={updateProfile.isPending}
+                  >
+                    {updateProfile.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <Save className="h-4 w-4 mr-2" />
+                    )}
+                    Save as Default
+                  </Button>
+                )}
+              </div>
+              {!terms && user?.defaultTerms && (
+                <p className="text-sm text-muted-foreground mt-1">
+                  You have default T&C saved.{" "}
+                  <button
+                    className="text-primary hover:underline"
+                    onClick={() => {
+                      setTerms(user.defaultTerms || "");
+                      setOriginalTerms(user.defaultTerms || "");
+                    }}
+                  >
+                    Click to use your default
+                  </button>
+                </p>
+              )}
             </CardHeader>
             <CardContent>
               <Textarea
                 value={terms}
-                onChange={(e) => setTerms(e.target.value)}
+                onChange={(e) => {
+                  setTerms(e.target.value);
+                  if (e.target.value !== originalTerms) {
+                    setTermsModified(true);
+                  }
+                }}
                 placeholder="Payment terms, warranty, exclusions, etc..."
                 rows={6}
               />
+              {termsModified && terms !== originalTerms && (
+                <p className="text-sm text-muted-foreground mt-2">
+                  T&C modified. Save the quote to apply changes, or click "Save as Default" to use these terms on all future quotes.
+                </p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

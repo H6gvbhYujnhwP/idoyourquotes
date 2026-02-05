@@ -185,10 +185,15 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         // Get user's organization to set orgId
         const org = await getUserPrimaryOrg(ctx.user.id);
+        
+        // Auto-populate T&C from user's default if not provided
+        const terms = input?.terms || ctx.user.defaultTerms || undefined;
+        
         return createQuote({
           userId: ctx.user.id,
           orgId: org?.id,
           ...input,
+          terms,
         });
       }),
 

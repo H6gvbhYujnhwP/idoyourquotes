@@ -469,3 +469,10 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Include project scope, key deliverables, client objectives
 - [x] All 113 tests passing
 - [x] Deploy
+
+
+### Terms & Conditions Improvements - COMPLETE
+- [x] Auto-populate T&C from user's default Settings when creating new quote
+- [x] Add "Save as default" button when T&C is edited on a quote
+- [x] Show hint to use default T&C if quote has no terms but user has default saved
+- [x] All 113 tests passing
