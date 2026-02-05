@@ -443,3 +443,15 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Increase Home page header height from h-16 to h-20 (64px to 80px)
 - [x] Increase logo size from h-12 to h-16 (48px to 64px)
 - [x] All 102 tests passing
+
+
+### Unified Document Upload (PDF, Word, Excel) - COMPLETE
+- [x] Install mammoth.js for Word document parsing
+- [x] Install xlsx for Excel/CSV parsing
+- [x] Create Word document parser utility
+- [x] Create Excel/CSV parser utility
+- [x] Update backend upload endpoint with file type detection
+- [x] Update frontend to accept .pdf, .doc, .docx, .xls, .xlsx, .csv
+- [x] Rename "Upload PDF" button to "Document" with subtitle "PDF, Word, Excel"
+- [x] Write tests for new file types (11 new tests)
+- [x] All 113 tests passing

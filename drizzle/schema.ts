@@ -13,7 +13,7 @@ import { pgTable, pgEnum, text, timestamp, varchar, decimal, json, integer, bool
 export const userRoleEnum = pgEnum("user_role", ["user", "admin"]);
 export const orgMemberRoleEnum = pgEnum("org_member_role", ["owner", "admin", "member"]);
 export const quoteStatusEnum = pgEnum("quote_status", ["draft", "sent", "accepted", "declined"]);
-export const inputTypeEnum = pgEnum("input_type", ["pdf", "image", "audio", "email", "text"]);
+export const inputTypeEnum = pgEnum("input_type", ["pdf", "image", "audio", "email", "text", "document"]);
 
 /**
  * Organizations - multi-tenant container for all data

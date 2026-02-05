@@ -8,6 +8,8 @@ import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured, getFileBuffe
 import { analyzePdfWithClaude, analyzeImageWithClaude, isClaudeConfigured } from "./_core/claude";
 import { extractUrls, scrapeUrls, formatScrapedContentForAI } from "./_core/webScraper";
 import { extractBrandColors } from "./services/colorExtractor";
+import { parseWordDocument, isWordDocument } from "./services/wordParser";
+import { parseSpreadsheet, isSpreadsheet, formatSpreadsheetForAI } from "./services/excelParser";
 import { generateQuoteHTML } from "./pdfGenerator";
 import {
   getQuotesByUserId,
@@ -735,7 +737,7 @@ Sender Name: ${user.name || "[Your Name]"}`,
         filename: z.string(),
         contentType: z.string(),
         base64Data: z.string(),
-        inputType: z.enum(["pdf", "image", "audio", "email"]),
+        inputType: z.enum(["pdf", "image", "audio", "email", "document"]),
       }))
       .mutation(async ({ ctx, input }) => {
         const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
@@ -772,7 +774,7 @@ Sender Name: ${user.name || "[Your Name]"}`,
 
         // Auto-analyze the uploaded file in the background
         // Don't await - let it process asynchronously
-        if (input.inputType === "pdf" || input.inputType === "image" || input.inputType === "audio") {
+        if (input.inputType === "pdf" || input.inputType === "image" || input.inputType === "audio" || input.inputType === "document") {
           (async () => {
             try {
               // Mark as processing
@@ -854,6 +856,24 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
                   throw new Error(result.error);
                 }
                 processedContent = result.text || "";
+              } else if (input.inputType === "document") {
+                // Handle Word and Excel documents
+                const docBuffer = await getFileBuffer(key);
+                
+                if (isWordDocument(input.contentType, input.filename)) {
+                  // Parse Word document
+                  const wordResult = await parseWordDocument(docBuffer);
+                  processedContent = `## Word Document Content\n\n${wordResult.text}`;
+                  if (wordResult.messages.length > 0) {
+                    console.log(`[Auto-analyze] Word parsing messages:`, wordResult.messages);
+                  }
+                } else if (isSpreadsheet(input.contentType, input.filename)) {
+                  // Parse Excel/CSV spreadsheet
+                  const spreadsheetResult = await parseSpreadsheet(docBuffer, input.filename);
+                  processedContent = formatSpreadsheetForAI(spreadsheetResult);
+                } else {
+                  throw new Error(`Unsupported document type: ${input.contentType}`);
+                }
               }
 
               // Save processed content
@@ -868,8 +888,9 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
               if (userOrg) {
                 const actionType = input.inputType === "pdf" ? "extract_pdf" 
                   : input.inputType === "image" ? "analyze_image" 
+                  : input.inputType === "document" ? "parse_document"
                   : "transcribe_audio";
-                const credits = input.inputType === "audio" ? 2 : 2;
+                const credits = input.inputType === "document" ? 1 : 2; // Documents are cheaper to parse
                 await logUsage({
                   orgId: userOrg.id,
                   userId: ctx.user.id,

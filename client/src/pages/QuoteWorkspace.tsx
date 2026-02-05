@@ -88,6 +88,19 @@ const fileTypeConfig = {
     mimeTypes: ["audio/mpeg", "audio/wav", "audio/mp4", "audio/ogg", "audio/webm"],
     maxSize: 50 * 1024 * 1024, // 50MB
   },
+  document: {
+    accept: ".pdf,.doc,.docx,.xls,.xlsx,.csv",
+    mimeTypes: [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "text/csv",
+      "application/csv"
+    ],
+    maxSize: 20 * 1024 * 1024, // 20MB
+  },
 };
 
 export default function QuoteWorkspace() {
@@ -104,6 +117,7 @@ export default function QuoteWorkspace() {
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
+  const documentInputRef = useRef<HTMLInputElement>(null);
 
   // Form state
   const [title, setTitle] = useState("");
@@ -388,7 +402,8 @@ export default function QuoteWorkspace() {
   const handleProcessInput = (input: QuoteInput) => {
     if (input.inputType === "audio") {
       transcribeAudio.mutate({ inputId: input.id, quoteId });
-    } else if (input.inputType === "pdf") {
+    } else if (input.inputType === "pdf" || input.inputType === "document") {
+      // Documents (Word, Excel) are auto-processed on upload, but PDF needs Claude
       extractPdfText.mutate({ inputId: input.id, quoteId });
     } else if (input.inputType === "image") {
       analyzeImage.mutate({ inputId: input.id, quoteId });
@@ -540,7 +555,7 @@ export default function QuoteWorkspace() {
 
   const handleFileUpload = async (
     file: File,
-    inputType: "pdf" | "image" | "audio"
+    inputType: "pdf" | "image" | "audio" | "document"
   ) => {
     const config = fileTypeConfig[inputType];
 
@@ -592,7 +607,7 @@ export default function QuoteWorkspace() {
 
   const handleFileInputChange = (
     event: React.ChangeEvent<HTMLInputElement>,
-    inputType: "pdf" | "image" | "audio"
+    inputType: "pdf" | "image" | "audio" | "document"
   ) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -687,6 +702,13 @@ export default function QuoteWorkspace() {
         className="hidden"
         accept={fileTypeConfig.audio.accept}
         onChange={(e) => handleFileInputChange(e, "audio")}
+      />
+      <input
+        type="file"
+        ref={documentInputRef}
+        className="hidden"
+        accept={fileTypeConfig.document.accept}
+        onChange={(e) => handleFileInputChange(e, "document")}
       />
 
       {/* Header */}
@@ -851,15 +873,16 @@ export default function QuoteWorkspace() {
                 <Button
                   variant="outline"
                   className="h-20 flex-col gap-2"
-                  onClick={() => pdfInputRef.current?.click()}
+                  onClick={() => documentInputRef.current?.click()}
                   disabled={isUploading || !storageStatus?.configured}
                 >
-                  {isUploading && uploadingType === "pdf" ? (
+                  {isUploading && uploadingType === "document" ? (
                     <Loader2 className="h-6 w-6 animate-spin" />
                   ) : (
                     <FileText className="h-6 w-6" />
                   )}
-                  <span className="text-xs">PDF Document</span>
+                  <span className="text-xs">Document</span>
+                  <span className="text-[10px] text-muted-foreground">PDF, Word, Excel</span>
                 </Button>
                 <Button
                   variant="outline"
@@ -923,6 +946,7 @@ export default function QuoteWorkspace() {
                           {input.inputType === "image" && <FileImage className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />}
                           {input.inputType === "audio" && <Mic className="h-5 w-5 text-green-500 shrink-0 mt-0.5" />}
                           {input.inputType === "email" && <Mail className="h-5 w-5 text-purple-500 shrink-0 mt-0.5" />}
+                          {input.inputType === "document" && <FileText className="h-5 w-5 text-orange-500 shrink-0 mt-0.5" />}
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium">
                               {input.filename || input.inputType.charAt(0).toUpperCase() + input.inputType.slice(1) + " Input"}
