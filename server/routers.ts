@@ -20,6 +20,7 @@ import {
   updateQuote,
   updateQuoteStatus,
   deleteQuote,
+  duplicateQuote,
   getLineItemsByQuoteId,
   createLineItem,
   updateLineItem,
@@ -270,6 +271,29 @@ export const appRouter = router({
         }
         
         return { success: result?.success ?? true, deletedFilesCount: deletedFiles.length };
+      }),
+
+    // Duplicate a quote with all related data
+    duplicate: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        // Try org-based access first to verify ownership
+        const org = await getUserPrimaryOrg(ctx.user.id);
+        let existingQuote = null;
+        if (org) {
+          existingQuote = await getQuoteByIdAndOrg(input.id, org.id);
+        }
+        if (!existingQuote) {
+          existingQuote = await getQuoteById(input.id, ctx.user.id);
+        }
+        if (!existingQuote) throw new Error("Quote not found");
+
+        // Duplicate the quote
+        const newQuote = await duplicateQuote(input.id, ctx.user.id, org?.id);
+        
+        console.log(`[duplicateQuote] Created duplicate quote ${newQuote.id} (${newQuote.reference}) from original ${input.id}`);
+        
+        return newQuote;
       }),
 
     // Update quote status with validation

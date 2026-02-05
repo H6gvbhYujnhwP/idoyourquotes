@@ -457,6 +457,109 @@ export async function deleteQuote(quoteId: number, userId: number): Promise<{ su
   return { success: true, deletedFiles: fileKeys };
 }
 
+/**
+ * Duplicate a quote with all its related data (line items, tender context, internal estimate)
+ * Does NOT copy input files - they are tied to the original tender documents
+ * @param quoteId - The ID of the quote to duplicate
+ * @param userId - The user ID performing the duplication
+ * @param orgId - Optional organization ID for the new quote
+ * @returns The newly created quote
+ */
+export async function duplicateQuote(
+  quoteId: number,
+  userId: number,
+  orgId?: number
+): Promise<Quote> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Get the original quote
+  const [originalQuote] = await db.select().from(quotes)
+    .where(eq(quotes.id, quoteId))
+    .limit(1);
+
+  if (!originalQuote) {
+    throw new Error("Quote not found");
+  }
+
+  // Generate new reference number
+  const newReference = `Q-${Date.now()}`;
+
+  // Create the new quote with copied data
+  const [newQuote] = await db.insert(quotes).values({
+    userId,
+    orgId: orgId || originalQuote.orgId,
+    createdByUserId: userId,
+    reference: newReference,
+    status: "draft", // Always reset to draft
+    clientName: originalQuote.clientName,
+    clientEmail: originalQuote.clientEmail,
+    clientPhone: originalQuote.clientPhone,
+    clientAddress: originalQuote.clientAddress,
+    title: originalQuote.title ? `${originalQuote.title} (Copy)` : null,
+    description: originalQuote.description,
+    terms: originalQuote.terms,
+    validUntil: null, // Don't copy validity date
+    subtotal: originalQuote.subtotal,
+    taxRate: originalQuote.taxRate,
+    taxAmount: originalQuote.taxAmount,
+    total: originalQuote.total,
+  }).returning();
+
+  // Copy line items
+  const lineItems = await db.select().from(quoteLineItems)
+    .where(eq(quoteLineItems.quoteId, quoteId))
+    .orderBy(quoteLineItems.sortOrder);
+
+  if (lineItems.length > 0) {
+    const newLineItems = lineItems.map((item: QuoteLineItem) => ({
+      quoteId: newQuote.id,
+      sortOrder: item.sortOrder,
+      description: item.description,
+      quantity: item.quantity,
+      unit: item.unit,
+      rate: item.rate,
+      total: item.total,
+    }));
+    await db.insert(quoteLineItems).values(newLineItems);
+  }
+
+  // Copy tender context if exists
+  const [tenderContext] = await db.select().from(tenderContexts)
+    .where(eq(tenderContexts.quoteId, quoteId))
+    .limit(1);
+
+  if (tenderContext) {
+    await db.insert(tenderContexts).values({
+      quoteId: newQuote.id,
+      symbolMappings: tenderContext.symbolMappings,
+      assumptions: tenderContext.assumptions,
+      exclusions: tenderContext.exclusions,
+      notes: tenderContext.notes,
+    });
+  }
+
+  // Copy internal estimate if exists
+  const [internalEstimate] = await db.select().from(internalEstimates)
+    .where(eq(internalEstimates.quoteId, quoteId))
+    .limit(1);
+
+  if (internalEstimate) {
+    await db.insert(internalEstimates).values({
+      quoteId: newQuote.id,
+      notes: internalEstimate.notes,
+      costBreakdown: internalEstimate.costBreakdown,
+      timeEstimates: internalEstimate.timeEstimates,
+      riskNotes: internalEstimate.riskNotes,
+      aiSuggestions: internalEstimate.aiSuggestions,
+    });
+  }
+
+  // NOTE: Input files are NOT copied - they are tied to the original tender documents
+
+  return newQuote;
+}
+
 // ============ LINE ITEM HELPERS ============
 
 export async function getLineItemsByQuoteId(quoteId: number): Promise<QuoteLineItem[]> {

@@ -83,6 +83,21 @@ export default function Dashboard() {
     },
   });
 
+  const duplicateQuote = trpc.quotes.duplicate.useMutation({
+    onSuccess: (data) => {
+      toast.success("Quote duplicated successfully");
+      setLocation(`/quotes/${data.id}`);
+    },
+    onError: (error) => {
+      toast.error("Failed to duplicate quote: " + error.message);
+    },
+  });
+
+  const handleDuplicateClick = (e: React.MouseEvent, quoteId: number) => {
+    e.stopPropagation();
+    duplicateQuote.mutate({ id: quoteId });
+  };
+
   const handleCreateQuote = () => {
     createQuote.mutate({});
   };
@@ -263,8 +278,11 @@ export default function Dashboard() {
                           <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setLocation(`/quotes/${quote.id}`); }}>
                             Open
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); toast.info("Duplicate feature coming soon"); }}>
-                            Duplicate
+                          <DropdownMenuItem 
+                            onClick={(e) => handleDuplicateClick(e, quote.id)}
+                            disabled={duplicateQuote.isPending}
+                          >
+                            {duplicateQuote.isPending ? "Duplicating..." : "Duplicate"}
                           </DropdownMenuItem>
                           <DropdownMenuItem 
                             className="text-destructive"

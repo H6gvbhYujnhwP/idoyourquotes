@@ -11,6 +11,7 @@ vi.mock("./db", () => ({
   createQuote: vi.fn(),
   updateQuote: vi.fn(),
   deleteQuote: vi.fn(),
+  duplicateQuote: vi.fn(),
   getLineItemsByQuoteId: vi.fn(),
   createLineItem: vi.fn(),
   updateLineItem: vi.fn(),
@@ -272,6 +273,88 @@ describe("quotes router", () => {
 
       expect(db.deleteQuote).toHaveBeenCalledWith(1, 1);
       expect(result).toEqual({ success: true, deletedFilesCount: 2 });
+    });
+  });
+
+  describe("quotes.duplicate", () => {
+    it("duplicates a quote with new reference and draft status", async () => {
+      const existingQuote = { 
+        id: 1, 
+        userId: 1, 
+        orgId: 10,
+        title: "Original Quote", 
+        status: "sent",
+        clientName: "Test Client",
+        total: "500.00"
+      };
+      const duplicatedQuote = {
+        id: 2,
+        userId: 1,
+        orgId: 10,
+        reference: "Q-1234567890",
+        title: "Original Quote (Copy)",
+        status: "draft",
+        clientName: "Test Client",
+        total: "500.00"
+      };
+      const mockOrg = { id: 10, name: "Test Org", slug: "test-org" };
+      
+      vi.mocked(db.getUserPrimaryOrg).mockResolvedValue(mockOrg as any);
+      vi.mocked(db.getQuoteByIdAndOrg).mockResolvedValue(existingQuote as any);
+      vi.mocked(db.duplicateQuote).mockResolvedValue(duplicatedQuote as any);
+
+      const ctx = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.quotes.duplicate({ id: 1 });
+
+      expect(db.getUserPrimaryOrg).toHaveBeenCalledWith(1);
+      expect(db.getQuoteByIdAndOrg).toHaveBeenCalledWith(1, 10);
+      expect(db.duplicateQuote).toHaveBeenCalledWith(1, 1, 10);
+      expect(result).toEqual(duplicatedQuote);
+      expect(result.status).toBe("draft");
+      expect(result.id).not.toBe(existingQuote.id);
+    });
+
+    it("duplicates a quote using user-based access when no org", async () => {
+      const existingQuote = { 
+        id: 1, 
+        userId: 1, 
+        title: "Original Quote", 
+        status: "accepted"
+      };
+      const duplicatedQuote = {
+        id: 2,
+        userId: 1,
+        reference: "Q-1234567890",
+        title: "Original Quote (Copy)",
+        status: "draft"
+      };
+      
+      vi.mocked(db.getUserPrimaryOrg).mockResolvedValue(undefined);
+      vi.mocked(db.getQuoteByIdAndOrg).mockResolvedValue(null);
+      vi.mocked(db.getQuoteById).mockResolvedValue(existingQuote as any);
+      vi.mocked(db.duplicateQuote).mockResolvedValue(duplicatedQuote as any);
+
+      const ctx = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.quotes.duplicate({ id: 1 });
+
+      expect(db.getQuoteById).toHaveBeenCalledWith(1, 1);
+      expect(db.duplicateQuote).toHaveBeenCalledWith(1, 1, undefined);
+      expect(result.status).toBe("draft");
+    });
+
+    it("throws error when quote not found", async () => {
+      vi.mocked(db.getUserPrimaryOrg).mockResolvedValue(undefined);
+      vi.mocked(db.getQuoteByIdAndOrg).mockResolvedValue(null);
+      vi.mocked(db.getQuoteById).mockResolvedValue(undefined);
+
+      const ctx = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      await expect(caller.quotes.duplicate({ id: 999 })).rejects.toThrow("Quote not found");
     });
   });
 });
