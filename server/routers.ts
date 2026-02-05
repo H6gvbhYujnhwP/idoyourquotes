@@ -6,6 +6,7 @@ import { z } from "zod";
 import { invokeLLM } from "./_core/llm";
 import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured, getFileBuffer } from "./r2Storage";
 import { analyzePdfWithClaude, analyzeImageWithClaude, isClaudeConfigured } from "./_core/claude";
+import { extractUrls, scrapeUrls, formatScrapedContentForAI } from "./_core/webScraper";
 import { generateQuoteHTML } from "./pdfGenerator";
 import {
   getQuotesByUserId,
@@ -1408,6 +1409,21 @@ Do not start with phrases like "Based on the quote..." - get straight to the ins
         // Add user prompt if provided (this is valid evidence on its own)
         if (input.userPrompt && input.userPrompt.trim()) {
           processedEvidence.push(`### User Instructions/Email:\n${input.userPrompt}`);
+          
+          // Detect and scrape URLs from user prompt
+          const urls = extractUrls(input.userPrompt);
+          if (urls.length > 0) {
+            try {
+              const scrapedContent = await scrapeUrls(urls);
+              const formattedWebContent = formatScrapedContentForAI(scrapedContent);
+              if (formattedWebContent) {
+                processedEvidence.push(`### Website Content (auto-scraped from URLs in instructions):\n${formattedWebContent}`);
+              }
+            } catch (error) {
+              // Silently ignore scraping errors - the URLs are still in the user prompt
+              console.error("URL scraping error:", error);
+            }
+          }
         }
 
         if (processedEvidence.length === 0) {

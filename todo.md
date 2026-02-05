@@ -355,3 +355,11 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Rename pink box to "Instructions / Notes for AI"
 - [x] Update description to mention copy/paste emails, briefs, specs
 - [x] Test and deploy
+
+
+### URL/Website Scraping for Quote Analysis - COMPLETE
+- [x] Create server-side web scraping utility using cheerio
+- [x] Add tRPC procedure to scrape URLs
+- [x] Detect URLs in instructions field during quote generation
+- [x] Fetch and include website content in AI analysis
+- [x] Test and deploy
