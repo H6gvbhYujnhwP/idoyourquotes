@@ -162,8 +162,8 @@ describe("PDF Generation", () => {
       const result = await caller.quotes.generatePDF({ id: 1 });
 
       expect(result).toHaveProperty("html");
-      // Organization name takes precedence over user's company name
-      expect(result.html).toContain("Test Org");
+      // User's company name from Settings takes precedence over org name
+      expect(result.html).toContain("Test Company Ltd");
       expect(result.html).toContain("John Doe");
       // Title is used in the HTML title tag, description is in the body
       expect(result.html).toContain("Full website redesign"); // Description
@@ -187,10 +187,12 @@ describe("PDF Generation", () => {
 
       const result = await caller.quotes.generatePDF({ id: 1 });
 
-      expect(result).toHaveProperty("html");
-      // Organization name takes precedence over user's company name
-      expect(result.html).toContain("Test Org");
-      // Check that there's no img tag in the logo section
+           expect(result).toHaveProperty("html");
+      // User's company name from Settings takes precedence over org name
+      // mockUserNoLogo still has companyName: null inherited from mockUser spread, but mockUser has companyName
+      // Actually mockUserNoLogo spreads mockUser so it has companyName: "Test Company Ltd"
+      expect(result.html).toContain("Test Company Ltd");
+      // Check that there's no img tag in the logo section section
       expect(result.html).not.toContain('src="https://example.com/logo.png"');
     });
 

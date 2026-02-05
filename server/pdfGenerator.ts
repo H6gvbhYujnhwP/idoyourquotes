@@ -78,8 +78,9 @@ export function generateQuoteHTML(data: PDFQuoteData): string {
     ? `<img src="${logoUrl}" alt="Company Logo" style="max-height: 80px; max-width: 200px; object-fit: contain;" />`
     : "";
 
-  // Use organization name if available, otherwise fall back to user's company name
-  const companyName = organization?.name || user.companyName || user.name || "Your Company";
+  // Priority: user's company name from Settings > organization name > user's name
+  // This ensures changes in Settings are reflected on PDFs
+  const companyName = user.companyName || organization?.name || user.name || "Your Company";
 
   const html = `
 <!DOCTYPE html>

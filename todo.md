@@ -411,3 +411,11 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Update PDF generator to use organization brand colors instead of hardcoded teal
 - [x] All 102 tests passing
 - [x] Test and deploy
+
+
+### Fix Company Name on PDF - Settings Priority - COMPLETE
+- [x] Update PDF generator to use user.companyName (Settings) as primary source
+- [x] Fall back to organization.name only if user.companyName is empty
+- [x] Registration already saves companyName to user profile (verified in createUser)
+- [x] All 102 tests passing
+- [x] Test and deploy
