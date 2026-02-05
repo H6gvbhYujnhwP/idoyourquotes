@@ -517,3 +517,10 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] "See How It Works" button scrolls to video section
 - [x] All 114 tests passing
 - [ ] Test and deploy
+
+
+### Homepage Logo Size Fix - COMPLETE
+- [x] Make the logo in the homepage header twice as big (h-16 → h-32)
+- [x] Increased nav height to accommodate larger logo (h-20 → h-36)
+- [x] All 114 tests passing
+- [ ] Deploy to production
