@@ -168,13 +168,28 @@ export default function QuoteWorkspace() {
   const [emailHtmlBody, setEmailHtmlBody] = useState("");
   const [emailTextBody, setEmailTextBody] = useState("");
 
+  // Track if any inputs are currently processing for auto-refresh
+  const [hasProcessingInputs, setHasProcessingInputs] = useState(false);
+
   const { data: fullQuote, isLoading, error, refetch } = trpc.quotes.getFull.useQuery(
     { id: quoteId },
     { 
       enabled: quoteId > 0,
       retry: 1,
+      // Poll every 3 seconds when there are inputs being processed
+      refetchInterval: hasProcessingInputs ? 3000 : false,
     }
   );
+
+  // Update processing state whenever fullQuote changes
+  useEffect(() => {
+    if (fullQuote?.inputs) {
+      const isProcessing = fullQuote.inputs.some(
+        (input: QuoteInput) => input.processingStatus === "processing"
+      );
+      setHasProcessingInputs(isProcessing);
+    }
+  }, [fullQuote?.inputs]);
 
   const { data: storageStatus } = trpc.inputs.storageStatus.useQuery();
 
