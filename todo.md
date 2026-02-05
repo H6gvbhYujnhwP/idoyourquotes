@@ -509,3 +509,11 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Add spacing between password field and Sign In button on login form (pt-6)
 - [x] All 114 tests passing
 - [ ] Test and deploy
+
+
+### Add YouTube Video to Homepage - COMPLETE
+- [x] Embed YouTube video (https://youtu.be/4Ssays6_iDs) on homepage
+- [x] Position video prominently below hero section
+- [x] "See How It Works" button scrolls to video section
+- [x] All 114 tests passing
+- [ ] Test and deploy

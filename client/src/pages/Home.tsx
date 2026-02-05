@@ -74,9 +74,39 @@ export default function Home() {
                 Start Quoting
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
-              <Button size="lg" variant="outline" className="text-lg px-8 py-6">
+              <Button 
+                size="lg" 
+                variant="outline" 
+                className="text-lg px-8 py-6"
+                onClick={() => document.getElementById('demo-video')?.scrollIntoView({ behavior: 'smooth' })}
+              >
                 See How It Works
               </Button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Video Demo Section */}
+      <section id="demo-video" className="py-16 md:py-20 bg-muted/30">
+        <div className="container">
+          <div className="max-w-4xl mx-auto">
+            <div className="text-center mb-10">
+              <h2 className="text-3xl md:text-4xl font-bold mb-4">
+                See IdoYourQuotes in Action
+              </h2>
+              <p className="text-lg text-muted-foreground">
+                Watch how easy it is to turn a tender into a professional quote
+              </p>
+            </div>
+            <div className="relative aspect-video rounded-2xl overflow-hidden shadow-2xl border-4 border-card">
+              <iframe
+                className="absolute inset-0 w-full h-full"
+                src="https://www.youtube.com/embed/4Ssays6_iDs?rel=0&modestbranding=1"
+                title="IdoYourQuotes Demo"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
             </div>
           </div>
         </div>
