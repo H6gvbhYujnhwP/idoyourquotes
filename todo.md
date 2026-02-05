@@ -396,3 +396,9 @@ Based on Formal Build Prompt & Product Roadmap
 ### Fix PDF Generation 400 Error - COMPLETE
 - [x] Change from raw fetch to tRPC useUtils().fetch for PDF generation
 - [x] Test and deploy
+
+
+### Fix React Hooks Error #321 - COMPLETE
+- [x] Change generatePDF from query to mutation in routers.ts
+- [x] Update frontend to use useMutation pattern at component level
+- [x] Test and deploy

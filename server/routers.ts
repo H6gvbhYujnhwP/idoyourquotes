@@ -356,7 +356,7 @@ export const appRouter = router({
     // Generate PDF HTML for a quote
     generatePDF: protectedProcedure
       .input(z.object({ id: z.number() }))
-      .query(async ({ ctx, input }) => {
+      .mutation(async ({ ctx, input }) => {
         console.log("[generatePDF] Starting for quoteId:", input.id, "userId:", ctx.user.id);
         try {
           // Try org-based access first

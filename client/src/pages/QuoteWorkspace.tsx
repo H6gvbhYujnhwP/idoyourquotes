@@ -366,6 +366,8 @@ export default function QuoteWorkspace() {
     },
   });
 
+  const generatePDF = trpc.quotes.generatePDF.useMutation();
+
   const generateEmail = trpc.quotes.generateEmail.useMutation({
     onMutate: () => {
       setIsGeneratingEmail(true);
@@ -480,9 +482,8 @@ export default function QuoteWorkspace() {
   const handleGeneratePDF = async () => {
     setIsGeneratingPDF(true);
     try {
-      // Use tRPC client to fetch PDF HTML
-      const utils = trpc.useUtils();
-      const result = await utils.quotes.generatePDF.fetch({ id: quoteId });
+      // Use tRPC mutation to generate PDF HTML
+      const result = await generatePDF.mutateAsync({ id: quoteId });
       
       if (!result?.html) {
         throw new Error("No HTML content received from server");
