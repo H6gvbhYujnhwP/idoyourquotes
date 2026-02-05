@@ -7,6 +7,7 @@ import { invokeLLM } from "./_core/llm";
 import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured, getFileBuffer } from "./r2Storage";
 import { analyzePdfWithClaude, analyzeImageWithClaude, isClaudeConfigured } from "./_core/claude";
 import { extractUrls, scrapeUrls, formatScrapedContentForAI } from "./_core/webScraper";
+import { extractBrandColors } from "./services/colorExtractor";
 import { generateQuoteHTML } from "./pdfGenerator";
 import {
   getQuotesByUserId,
@@ -41,6 +42,7 @@ import {
   changePassword,
   getUserPrimaryOrg,
   getOrganizationById,
+  updateOrganization,
   logUsage,
 } from "./db";
 import { transcribeAudio } from "./_core/voiceTranscription";
@@ -105,10 +107,26 @@ export const appRouter = router({
           folder
         );
 
+        // Extract brand colors from logo
+        console.log('[uploadLogo] Extracting brand colors from logo...');
+        const brandColors = await extractBrandColors(buffer);
+        console.log('[uploadLogo] Extracted colors:', brandColors);
+
         // Update user profile with logo URL
         const user = await updateUserProfile(ctx.user.id, { companyLogo: url });
 
-        return { url, key, user };
+        // Update organization with logo URL and brand colors
+        const org = await getUserPrimaryOrg(ctx.user.id);
+        if (org) {
+          await updateOrganization(org.id, {
+            companyLogo: url,
+            brandPrimaryColor: brandColors.primaryColor,
+            brandSecondaryColor: brandColors.secondaryColor,
+          });
+          console.log('[uploadLogo] Updated org', org.id, 'with brand colors');
+        }
+
+        return { url, key, user, brandColors };
       }),
     changePassword: protectedProcedure
       .input(z.object({
@@ -381,8 +399,9 @@ export const appRouter = router({
           
           const user = ctx.user;
           console.log("[generatePDF] Generating HTML...");
+          console.log("[generatePDF] Org brand colors:", org?.brandPrimaryColor, org?.brandSecondaryColor);
 
-          const html = generateQuoteHTML({ quote, lineItems, user });
+          const html = generateQuoteHTML({ quote, lineItems, user, organization: org });
           console.log("[generatePDF] HTML generated, length:", html.length);
           
           return { html };

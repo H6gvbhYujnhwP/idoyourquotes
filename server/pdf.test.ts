@@ -130,7 +130,14 @@ describe("PDF Generation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Set up org mock for org-first access pattern
-    vi.mocked(db.getUserPrimaryOrg).mockResolvedValue({ id: 1, name: "Test Org", slug: "test-org" } as any);
+    vi.mocked(db.getUserPrimaryOrg).mockResolvedValue({ 
+      id: 1, 
+      name: "Test Org", 
+      slug: "test-org",
+      companyLogo: null,
+      brandPrimaryColor: null,
+      brandSecondaryColor: null,
+    } as any);
     vi.mocked(db.getQuoteByIdAndOrg).mockResolvedValue(null); // Default to fallback to user-based access
   });
 
@@ -139,6 +146,15 @@ describe("PDF Generation", () => {
       vi.mocked(db.getQuoteById).mockResolvedValue(mockQuote as any);
       vi.mocked(db.getLineItemsByQuoteId).mockResolvedValue(mockLineItems as any);
       vi.mocked(db.getUserById).mockResolvedValue(mockUser as any);
+      // Set org with logo for this test
+      vi.mocked(db.getUserPrimaryOrg).mockResolvedValue({ 
+        id: 1, 
+        name: "Test Org", 
+        slug: "test-org",
+        companyLogo: "https://example.com/logo.png",
+        brandPrimaryColor: "#ff5500",
+        brandSecondaryColor: "#cc4400",
+      } as any);
 
       const ctx = createAuthContext(mockUser);
       const caller = appRouter.createCaller(ctx);
@@ -146,7 +162,8 @@ describe("PDF Generation", () => {
       const result = await caller.quotes.generatePDF({ id: 1 });
 
       expect(result).toHaveProperty("html");
-      expect(result.html).toContain("Test Company Ltd");
+      // Organization name takes precedence over user's company name
+      expect(result.html).toContain("Test Org");
       expect(result.html).toContain("John Doe");
       // Title is used in the HTML title tag, description is in the body
       expect(result.html).toContain("Full website redesign"); // Description
@@ -155,7 +172,9 @@ describe("PDF Generation", () => {
       expect(result.html).toContain("£1,500.00"); // Subtotal
       expect(result.html).toContain("£150.00"); // Tax
       expect(result.html).toContain("£1,650.00"); // Total
-      expect(result.html).toContain("https://example.com/logo.png"); // Logo URL
+      expect(result.html).toContain("https://example.com/logo.png"); // Logo URL from org
+      // Check brand colors are used
+      expect(result.html).toContain("#ff5500"); // Primary brand color
     });
 
     it("should generate PDF HTML without logo when user has no logo", async () => {
@@ -169,7 +188,8 @@ describe("PDF Generation", () => {
       const result = await caller.quotes.generatePDF({ id: 1 });
 
       expect(result).toHaveProperty("html");
-      expect(result.html).toContain("Test Company Ltd");
+      // Organization name takes precedence over user's company name
+      expect(result.html).toContain("Test Org");
       // Check that there's no img tag in the logo section
       expect(result.html).not.toContain('src="https://example.com/logo.png"');
     });

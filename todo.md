@@ -402,3 +402,12 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Change generatePDF from query to mutation in routers.ts
 - [x] Update frontend to use useMutation pattern at component level
 - [x] Test and deploy
+
+
+### Brand Color Extraction from Logo - COMPLETE
+- [x] Create pure JS color extraction utility using sharp (no native deps)
+- [x] Add brandPrimaryColor and brandSecondaryColor fields to organizations table
+- [x] Update logo upload procedure to extract and save brand colors
+- [x] Update PDF generator to use organization brand colors instead of hardcoded teal
+- [x] All 102 tests passing
+- [x] Test and deploy

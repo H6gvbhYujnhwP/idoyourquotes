@@ -1,12 +1,35 @@
 // PDF Generation for Quotes
 // Uses PDFKit-style HTML generation for clean, professional quotes
 
-import { Quote, QuoteLineItem, User } from "../drizzle/schema";
+import { Quote, QuoteLineItem, User, Organization } from "../drizzle/schema";
 
 interface PDFQuoteData {
   quote: Quote;
   lineItems: QuoteLineItem[];
   user: User;
+  organization?: Organization | null;
+}
+
+interface BrandColors {
+  primary: string;
+  secondary: string;
+}
+
+/**
+ * Get brand colors from organization or use defaults
+ */
+function getBrandColors(organization?: Organization | null): BrandColors {
+  const defaultPrimary = '#0d6a6a'; // Teal
+  const defaultSecondary = '#0a5454'; // Darker teal
+  
+  if (!organization) {
+    return { primary: defaultPrimary, secondary: defaultSecondary };
+  }
+  
+  return {
+    primary: organization.brandPrimaryColor || defaultPrimary,
+    secondary: organization.brandSecondaryColor || defaultSecondary,
+  };
 }
 
 /**
@@ -14,7 +37,8 @@ interface PDFQuoteData {
  * This HTML can be converted to PDF using a headless browser or PDF library
  */
 export function generateQuoteHTML(data: PDFQuoteData): string {
-  const { quote, lineItems, user } = data;
+  const { quote, lineItems, user, organization } = data;
+  const colors = getBrandColors(organization);
 
   const formatCurrency = (value: string | null | undefined): string => {
     const num = parseFloat(value || "0");
@@ -48,9 +72,14 @@ export function generateQuoteHTML(data: PDFQuoteData): string {
     )
     .join("");
 
-  const logoHTML = user.companyLogo
-    ? `<img src="${user.companyLogo}" alt="Company Logo" style="max-height: 80px; max-width: 200px; object-fit: contain;" />`
+  // Use organization logo if available, otherwise fall back to user logo
+  const logoUrl = organization?.companyLogo || user.companyLogo;
+  const logoHTML = logoUrl
+    ? `<img src="${logoUrl}" alt="Company Logo" style="max-height: 80px; max-width: 200px; object-fit: contain;" />`
     : "";
+
+  // Use organization name if available, otherwise fall back to user's company name
+  const companyName = organization?.name || user.companyName || user.name || "Your Company";
 
   const html = `
 <!DOCTYPE html>
@@ -83,7 +112,7 @@ export function generateQuoteHTML(data: PDFQuoteData): string {
       align-items: flex-start;
       margin-bottom: 40px;
       padding-bottom: 20px;
-      border-bottom: 2px solid #0d6a6a;
+      border-bottom: 2px solid ${colors.primary};
     }
     .company-info {
       flex: 1;
@@ -91,7 +120,7 @@ export function generateQuoteHTML(data: PDFQuoteData): string {
     .company-name {
       font-size: 24px;
       font-weight: 700;
-      color: #0d6a6a;
+      color: ${colors.primary};
       margin-bottom: 8px;
     }
     .company-details {
@@ -107,7 +136,7 @@ export function generateQuoteHTML(data: PDFQuoteData): string {
     .quote-label {
       font-size: 32px;
       font-weight: 700;
-      color: #0d6a6a;
+      color: ${colors.primary};
       text-transform: uppercase;
       letter-spacing: 2px;
     }
@@ -167,7 +196,7 @@ export function generateQuoteHTML(data: PDFQuoteData): string {
       margin-bottom: 30px;
     }
     .items-table th {
-      background: #0d6a6a;
+      background: ${colors.primary};
       color: white;
       padding: 12px;
       text-align: left;
@@ -200,7 +229,7 @@ export function generateQuoteHTML(data: PDFQuoteData): string {
     }
     .totals-row.total {
       border-bottom: none;
-      border-top: 2px solid #0d6a6a;
+      border-top: 2px solid ${colors.primary};
       padding-top: 12px;
       margin-top: 8px;
     }
@@ -214,7 +243,7 @@ export function generateQuoteHTML(data: PDFQuoteData): string {
     .totals-row.total .totals-value {
       font-size: 18px;
       font-weight: 700;
-      color: #0d6a6a;
+      color: ${colors.primary};
     }
     .terms {
       background: #f9fafb;
@@ -266,7 +295,7 @@ export function generateQuoteHTML(data: PDFQuoteData): string {
     <div class="header">
       <div class="company-info">
         ${logoHTML ? `<div class="logo-container" style="margin-bottom: 12px;">${logoHTML}</div>` : ""}
-        <div class="company-name">${user.companyName || user.name || "Your Company"}</div>
+        <div class="company-name">${companyName}</div>
         <div class="company-details">
           ${user.companyAddress ? `${user.companyAddress}<br>` : ""}
           ${user.companyPhone ? `Tel: ${user.companyPhone}<br>` : ""}

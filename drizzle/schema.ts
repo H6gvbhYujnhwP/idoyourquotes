@@ -28,6 +28,8 @@ export const organizations = pgTable("organizations", {
   companyPhone: varchar("company_phone", { length: 50 }),
   companyEmail: varchar("company_email", { length: 320 }),
   companyLogo: text("company_logo"),
+  brandPrimaryColor: varchar("brand_primary_color", { length: 7 }),
+  brandSecondaryColor: varchar("brand_secondary_color", { length: 7 }),
   defaultTerms: text("default_terms"),
   billingEmail: varchar("billing_email", { length: 320 }),
   stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
