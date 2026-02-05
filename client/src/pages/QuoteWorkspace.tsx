@@ -918,27 +918,30 @@ export default function QuoteWorkspace() {
                             </p>
                             {/* Processing status */}
                             {input.processingStatus === "completed" && (
-                              <div className="flex items-center gap-1 mt-2">
-                                <Check className="h-3 w-3 text-green-500" />
-                                <span className="text-xs text-green-600">Processed</span>
+                              <div className="mt-2 p-2 bg-green-50 rounded border border-green-200">
+                                <div className="flex items-center gap-1">
+                                  <Check className="h-3 w-3 text-green-500" />
+                                  <span className="text-xs text-green-700 font-medium">Document analysed</span>
+                                </div>
+                                <p className="text-xs text-green-600 mt-1">
+                                  Upload more evidence or use the prompt field above to generate your quote.
+                                </p>
                               </div>
                             )}
                             {input.processingStatus === "processing" && (
-                              <div className="flex items-center gap-1 mt-2">
-                                <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />
-                                <span className="text-xs text-blue-600">Processing...</span>
+                              <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200">
+                                <div className="flex items-center gap-1">
+                                  <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />
+                                  <span className="text-xs text-blue-700 font-medium">Please wait whilst analysing your document...</span>
+                                </div>
                               </div>
                             )}
                             {input.processingStatus === "failed" && (
-                              <div className="flex items-center gap-1 mt-2">
-                                <AlertTriangle className="h-3 w-3 text-red-500" />
-                                <span className="text-xs text-red-600">{input.processingError || "Failed"}</span>
-                              </div>
-                            )}
-                            {/* Show processed content preview */}
-                            {input.processedContent && (
-                              <div className="mt-2 p-2 bg-green-50 rounded border border-green-200">
-                                <p className="text-xs text-green-800 line-clamp-3">{input.processedContent}</p>
+                              <div className="mt-2 p-2 bg-red-50 rounded border border-red-200">
+                                <div className="flex items-center gap-1">
+                                  <AlertTriangle className="h-3 w-3 text-red-500" />
+                                  <span className="text-xs text-red-600">{input.processingError || "Analysis failed"}</span>
+                                </div>
                               </div>
                             )}
                           </div>
@@ -948,7 +951,6 @@ export default function QuoteWorkspace() {
                           {input.processingStatus === "processing" && (
                             <span className="flex items-center text-xs text-blue-600">
                               <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                              Analyzing...
                             </span>
                           )}
                           {/* Retry button for failed processing */}

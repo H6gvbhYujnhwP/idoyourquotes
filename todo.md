@@ -340,3 +340,10 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Update image processing in routers.ts to use Claude
 - [ ] Add ANTHROPIC_API_KEY to Render environment (user action required)
 - [ ] Test and deploy (pending API key)
+
+
+### Cleaner File Processing Status Messages - COMPLETE
+- [x] Change "Processing..." / "Analyzing..." to "Please wait whilst analysing your document"
+- [x] Change completed status to show success message instead of raw analysis content
+- [x] Success message: "Document analysed. Upload more evidence or use the prompt field above to generate your quote."
+- [x] Test and deploy
