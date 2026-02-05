@@ -380,3 +380,14 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Auto-calculate Total when Qty or Rate changes (server-side)
 - [x] Save changes on blur or Enter key
 - [x] Test and deploy
+
+
+### Update Analysis Wait Message - COMPLETE
+- [x] Change message to "Please wait whilst analysing your document, this can take up to a minute..."
+- [x] Test and deploy
+
+### PDF Generation Debugging - COMPLETE
+- [x] Added detailed logging to frontend PDF generation
+- [x] Added detailed logging to backend generatePDF procedure
+- [x] Added better error handling and null checks
+- [x] Test and deploy

@@ -357,22 +357,39 @@ export const appRouter = router({
     generatePDF: protectedProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ ctx, input }) => {
-        // Try org-based access first
-        const org = await getUserPrimaryOrg(ctx.user.id);
-        let quote = null;
-        if (org) {
-          quote = await getQuoteByIdAndOrg(input.id, org.id);
-        }
-        if (!quote) {
-          quote = await getQuoteById(input.id, ctx.user.id);
-        }
-        if (!quote) throw new Error("Quote not found");
+        console.log("[generatePDF] Starting for quoteId:", input.id, "userId:", ctx.user.id);
+        try {
+          // Try org-based access first
+          const org = await getUserPrimaryOrg(ctx.user.id);
+          let quote = null;
+          if (org) {
+            console.log("[generatePDF] Trying org-based access, orgId:", org.id);
+            quote = await getQuoteByIdAndOrg(input.id, org.id);
+          }
+          if (!quote) {
+            console.log("[generatePDF] Trying user-based access");
+            quote = await getQuoteById(input.id, ctx.user.id);
+          }
+          if (!quote) {
+            console.log("[generatePDF] Quote not found");
+            throw new Error("Quote not found");
+          }
+          console.log("[generatePDF] Quote found:", quote.id, quote.title);
 
-        const lineItems = await getLineItemsByQuoteId(input.id);
-        const user = ctx.user;
+          const lineItems = await getLineItemsByQuoteId(input.id);
+          console.log("[generatePDF] Line items:", lineItems.length);
+          
+          const user = ctx.user;
+          console.log("[generatePDF] Generating HTML...");
 
-        const html = generateQuoteHTML({ quote, lineItems, user });
-        return { html };
+          const html = generateQuoteHTML({ quote, lineItems, user });
+          console.log("[generatePDF] HTML generated, length:", html.length);
+          
+          return { html };
+        } catch (error) {
+          console.error("[generatePDF] Error:", error);
+          throw error;
+        }
       }),
 
     // Generate email draft for a quote
