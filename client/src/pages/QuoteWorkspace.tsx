@@ -480,39 +480,18 @@ export default function QuoteWorkspace() {
   const handleGeneratePDF = async () => {
     setIsGeneratingPDF(true);
     try {
-      // Fetch the PDF HTML from the server
-      const url = `/api/trpc/quotes.generatePDF?input=${encodeURIComponent(JSON.stringify({ id: quoteId }))}`;
-      console.log("[PDF] Fetching from:", url);
-      const response = await fetch(url);
-      console.log("[PDF] Response status:", response.status);
+      // Use tRPC client to fetch PDF HTML
+      const utils = trpc.useUtils();
+      const result = await utils.quotes.generatePDF.fetch({ id: quoteId });
       
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("[PDF] Error response:", errorText);
-        throw new Error(`Server error: ${response.status}`);
-      }
-      
-      const result = await response.json();
-      console.log("[PDF] Result:", result);
-      
-      if (result.error) {
-        console.error("[PDF] API error:", result.error);
-        throw new Error(result.error.message || "Failed to generate PDF");
-      }
-
-      const html = result?.result?.data?.html;
-      
-      if (!html) {
-        console.error("[PDF] No HTML in response:", result);
+      if (!result?.html) {
         throw new Error("No HTML content received from server");
       }
-      
-      console.log("[PDF] HTML length:", html.length);
 
       // Open in new window for printing/saving as PDF
       const printWindow = window.open("", "_blank");
       if (printWindow) {
-        printWindow.document.write(html);
+        printWindow.document.write(result.html);
         printWindow.document.close();
         
         // Wait for content to load, then trigger print

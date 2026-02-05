@@ -391,3 +391,8 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Added detailed logging to backend generatePDF procedure
 - [x] Added better error handling and null checks
 - [x] Test and deploy
+
+
+### Fix PDF Generation 400 Error - COMPLETE
+- [x] Change from raw fetch to tRPC useUtils().fetch for PDF generation
+- [x] Test and deploy
