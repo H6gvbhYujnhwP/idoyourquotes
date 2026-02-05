@@ -246,7 +246,7 @@ describe("quotes router", () => {
     it("deletes a quote", async () => {
       const existingQuote = { id: 1, userId: 1, title: "Test Quote", status: "draft" };
       vi.mocked(db.getQuoteById).mockResolvedValue(existingQuote as any);
-      vi.mocked(db.deleteQuote).mockResolvedValue(true);
+      vi.mocked(db.deleteQuote).mockResolvedValue({ success: true, deletedFiles: [] });
 
       const ctx = createAuthContext();
       const caller = appRouter.createCaller(ctx);
@@ -254,7 +254,24 @@ describe("quotes router", () => {
       const result = await caller.quotes.delete({ id: 1 });
 
       expect(db.deleteQuote).toHaveBeenCalledWith(1, 1);
-      expect(result).toEqual({ success: true });
+      expect(result).toEqual({ success: true, deletedFilesCount: 0 });
+    });
+
+    it("deletes a quote with attached files", async () => {
+      const existingQuote = { id: 1, userId: 1, title: "Test Quote", status: "draft" };
+      vi.mocked(db.getQuoteById).mockResolvedValue(existingQuote as any);
+      vi.mocked(db.deleteQuote).mockResolvedValue({ 
+        success: true, 
+        deletedFiles: ["file1.pdf", "file2.docx"] 
+      });
+
+      const ctx = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.quotes.delete({ id: 1 });
+
+      expect(db.deleteQuote).toHaveBeenCalledWith(1, 1);
+      expect(result).toEqual({ success: true, deletedFilesCount: 2 });
     });
   });
 });

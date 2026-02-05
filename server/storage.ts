@@ -100,3 +100,35 @@ export async function storageGet(relKey: string): Promise<{ key: string; url: st
     url: await buildDownloadUrl(baseUrl, key, apiKey),
   };
 }
+
+/**
+ * Delete a file from S3/Cloudflare storage
+ * @param relKey - The relative key/path of the file to delete
+ * @returns true if deleted successfully, false if file not found
+ */
+export async function storageDelete(relKey: string): Promise<boolean> {
+  const { baseUrl, apiKey } = getStorageConfig();
+  const key = normalizeKey(relKey);
+  
+  const deleteUrl = new URL("v1/storage/delete", ensureTrailingSlash(baseUrl));
+  deleteUrl.searchParams.set("path", key);
+  
+  const response = await fetch(deleteUrl, {
+    method: "DELETE",
+    headers: buildAuthHeaders(apiKey),
+  });
+  
+  if (response.status === 404) {
+    // File not found - consider it already deleted
+    return false;
+  }
+  
+  if (!response.ok) {
+    const message = await response.text().catch(() => response.statusText);
+    console.error(`Storage delete failed for ${key}: ${response.status} ${message}`);
+    // Don't throw - we don't want delete failures to block quote deletion
+    return false;
+  }
+  
+  return true;
+}

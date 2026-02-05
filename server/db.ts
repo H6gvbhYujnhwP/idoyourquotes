@@ -432,9 +432,18 @@ export async function updateQuoteStatus(
   return result;
 }
 
-export async function deleteQuote(quoteId: number, userId: number): Promise<boolean> {
+export async function deleteQuote(quoteId: number, userId: number): Promise<{ success: boolean; deletedFiles: string[] }> {
   const db = await getDb();
-  if (!db) return false;
+  if (!db) return { success: false, deletedFiles: [] };
+
+  // Get all inputs with file keys before deleting
+  const inputs = await db.select().from(quoteInputs)
+    .where(eq(quoteInputs.quoteId, quoteId));
+  
+  // Collect file keys to delete from storage
+  const fileKeys: string[] = inputs
+    .filter((input: QuoteInput) => input.fileKey)
+    .map((input: QuoteInput) => input.fileKey as string);
 
   // Delete related records first
   await db.delete(quoteLineItems).where(eq(quoteLineItems.quoteId, quoteId));
@@ -445,7 +454,7 @@ export async function deleteQuote(quoteId: number, userId: number): Promise<bool
   await db.delete(quotes)
     .where(and(eq(quotes.id, quoteId), eq(quotes.userId, userId)));
 
-  return true;
+  return { success: true, deletedFiles: fileKeys };
 }
 
 // ============ LINE ITEM HELPERS ============

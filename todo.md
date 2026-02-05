@@ -476,3 +476,12 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Add "Save as default" button when T&C is edited on a quote
 - [x] Show hint to use default T&C if quote has no terms but user has default saved
 - [x] All 113 tests passing
+
+
+### Quote Deletion with File Cleanup - COMPLETE
+- [x] Create storage delete utility for removing files from S3/Cloudflare (storageDelete in storage.ts)
+- [x] Update backend delete quote procedure to delete associated inputs and files
+- [x] Update frontend to call actual delete instead of showing "coming soon"
+- [x] Add confirmation dialog before deleting (AlertDialog component)
+- [x] All 114 tests passing
+- [ ] Test and deploy

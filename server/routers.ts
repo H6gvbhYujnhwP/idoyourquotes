@@ -5,6 +5,7 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { invokeLLM } from "./_core/llm";
 import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured, getFileBuffer } from "./r2Storage";
+import { storageDelete } from "./storage";
 import { analyzePdfWithClaude, analyzeImageWithClaude, isClaudeConfigured } from "./_core/claude";
 import { extractUrls, scrapeUrls, formatScrapedContentForAI } from "./_core/webScraper";
 import { extractBrandColors } from "./services/colorExtractor";
@@ -249,8 +250,25 @@ export const appRouter = router({
         }
         if (!existingQuote) throw new Error("Quote not found");
         
-        await deleteQuote(input.id, ctx.user.id);
-        return { success: true };
+        // Delete quote and get list of file keys to clean up
+        const result = await deleteQuote(input.id, ctx.user.id);
+        const deletedFiles = result?.deletedFiles || [];
+        
+        // Clean up files from storage (don't block on failures)
+        if (deletedFiles.length > 0) {
+          console.log(`[deleteQuote] Cleaning up ${deletedFiles.length} files from storage`);
+          for (const fileKey of deletedFiles) {
+            try {
+              await storageDelete(fileKey);
+              console.log(`[deleteQuote] Deleted file: ${fileKey}`);
+            } catch (err) {
+              console.error(`[deleteQuote] Failed to delete file ${fileKey}:`, err);
+              // Continue with other files even if one fails
+            }
+          }
+        }
+        
+        return { success: result?.success ?? true, deletedFilesCount: deletedFiles.length };
       }),
 
     // Update quote status with validation

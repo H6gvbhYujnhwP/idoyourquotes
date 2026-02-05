@@ -21,6 +21,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -49,7 +59,10 @@ export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<QuoteStatus | "all">("all");
 
-  const { data: quotes, isLoading } = trpc.quotes.list.useQuery();
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [deleteConfirmTitle, setDeleteConfirmTitle] = useState<string>("");
+
+  const { data: quotes, isLoading, refetch } = trpc.quotes.list.useQuery();
   const createQuote = trpc.quotes.create.useMutation({
     onSuccess: (data) => {
       setLocation(`/quotes/${data.id}`);
@@ -59,8 +72,31 @@ export default function Dashboard() {
     },
   });
 
+  const deleteQuote = trpc.quotes.delete.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Quote deleted${data.deletedFilesCount > 0 ? ` (${data.deletedFilesCount} files removed)` : ""}`);
+      refetch();
+      setDeleteConfirmId(null);
+    },
+    onError: (error) => {
+      toast.error("Failed to delete quote: " + error.message);
+    },
+  });
+
   const handleCreateQuote = () => {
     createQuote.mutate({});
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent, quote: QuoteData) => {
+    e.stopPropagation();
+    setDeleteConfirmId(quote.id);
+    setDeleteConfirmTitle(quote.title || quote.reference || `Quote #${quote.id}`);
+  };
+
+  const handleConfirmDelete = () => {
+    if (deleteConfirmId) {
+      deleteQuote.mutate({ id: deleteConfirmId });
+    }
   };
 
   const filteredQuotes = quotes?.filter((quote: QuoteData) => {
@@ -232,7 +268,7 @@ export default function Dashboard() {
                           </DropdownMenuItem>
                           <DropdownMenuItem 
                             className="text-destructive"
-                            onClick={(e) => { e.stopPropagation(); toast.info("Delete feature coming soon"); }}
+                            onClick={(e) => handleDeleteClick(e, quote)}
                           >
                             Delete
                           </DropdownMenuItem>
@@ -246,6 +282,28 @@ export default function Dashboard() {
           )}
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteConfirmId !== null} onOpenChange={(open) => !open && setDeleteConfirmId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Quote</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{deleteConfirmTitle}"? This will permanently remove the quote and all associated files. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteQuote.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              disabled={deleteQuote.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteQuote.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
