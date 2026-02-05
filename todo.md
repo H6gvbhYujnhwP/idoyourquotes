@@ -485,3 +485,11 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Add confirmation dialog before deleting (AlertDialog component)
 - [x] All 114 tests passing
 - [ ] Test and deploy
+
+
+### Fix R2 File Deletion on Render - COMPLETE
+- [x] Change delete procedure to use deleteFromR2 instead of storageDelete
+- [x] storageDelete uses Manus built-in API (BUILT_IN_FORGE_API_URL) which isn't available on Render
+- [x] deleteFromR2 uses direct Cloudflare R2 API with R2_ACCESS_KEY_ID credentials
+- [x] All 114 tests passing
+- [ ] Test and deploy
