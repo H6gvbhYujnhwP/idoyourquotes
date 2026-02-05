@@ -502,3 +502,10 @@ Based on Formal Build Prompt & Product Roadmap
 - [x] Polling automatically stops when no inputs are processing
 - [x] All 114 tests passing
 - [ ] Test and deploy
+
+
+### Sign Out and Login Form Fixes - COMPLETE
+- [x] Fix sign out to redirect to homepage instead of showing "Sign in to continue" page
+- [x] Add spacing between password field and Sign In button on login form (pt-6)
+- [x] All 114 tests passing
+- [ ] Test and deploy
