@@ -50,7 +50,7 @@ import {
 } from "./db";
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { TRADE_PRESETS, TradePresetKey } from "./tradePresets";
-import type { ComprehensiveConfig } from "../drizzle/schema";
+import type { ComprehensiveConfig, InsertQuote } from "../drizzle/schema";
 
 /**
  * Helper function to get a quote with org-first access pattern.
@@ -811,11 +811,22 @@ Respond with valid JSON:
           const lineItems = await getLineItemsByQuoteId(input.id);
           console.log("[generatePDF] Line items:", lineItems.length);
           
+          // Fetch tender context for assumptions/exclusions in comprehensive PDFs
+          let tenderContext = null;
+          if ((quote as any).quoteMode === "comprehensive") {
+            try {
+              tenderContext = await getTenderContextByQuoteId(input.id);
+              console.log("[generatePDF] Tender context:", tenderContext ? 'found' : 'not found');
+            } catch (e) {
+              console.log("[generatePDF] Tender context fetch failed, continuing without");
+            }
+          }
+
           const user = ctx.user;
           console.log("[generatePDF] Generating HTML...");
           console.log("[generatePDF] Org brand colors:", org?.brandPrimaryColor, org?.brandSecondaryColor);
 
-          const html = generateQuoteHTML({ quote, lineItems, user, organization: org });
+          const html = generateQuoteHTML({ quote, lineItems, user, organization: org, tenderContext });
           console.log("[generatePDF] HTML generated, length:", html.length);
           
           return { html };
@@ -1904,12 +1915,109 @@ Rules:
           ? `\n\nAvailable catalog items for reference:\n${catalogItems.map(c => `- ${c.name}: £${c.defaultRate}/${c.unit} - ${c.description || ""}`).join("\n")}`
           : "";
 
-        // Generate draft using LLM
-        const response = await invokeLLM({
-          messages: [
-            {
-              role: "system",
-              content: `You are a senior estimator preparing a quote from tender evidence. Extract facts from the documents provided and produce a structured draft.
+        // Determine if this is a comprehensive quote
+        const isComprehensive = (quote as any).quoteMode === "comprehensive";
+        const tradePresetKey = (quote as any).tradePreset as string | null;
+        const tradePreset = tradePresetKey && tradePresetKey in TRADE_PRESETS
+          ? TRADE_PRESETS[tradePresetKey as keyof typeof TRADE_PRESETS]
+          : null;
+
+        // Build trade-specific prompt additions for comprehensive mode
+        let tradePromptAdditions = "";
+        if (isComprehensive && tradePreset) {
+          tradePromptAdditions = `\n\nTRADE-SPECIFIC GUIDANCE:\n- Line Item Extraction: ${tradePreset.aiPrompts.lineItemExtraction}\n- Timeline Analysis: ${tradePreset.aiPrompts.timelineAnalysis}`;
+        }
+
+        // Build the system prompt based on quote mode
+        let systemPrompt: string;
+
+        if (isComprehensive) {
+          systemPrompt = `You are a senior consultant preparing a comprehensive multi-page proposal document. This is NOT a simple invoice - it is a detailed professional proposal that justifies the investment to the client.
+
+You must produce a thorough, detailed proposal with ALL of the following sections populated. The output will be rendered as a multi-page PDF document.
+
+Rules:
+- Extract client details from the evidence. If the user has provided specific requirements, follow them precisely.
+- Every line item must have a clear, specific description that a non-technical person can understand.
+- Group line items by phase/category. Each phase should have multiple granular line items, not one lump sum.
+- Rates must be realistic for the UK market.
+- The description field is the EXECUTIVE SUMMARY - it must be 2-3 full paragraphs explaining the project scope, business case, and expected outcomes.
+- The coverLetterContent is a formal introduction letter to the client.
+- Timeline phases must be detailed with realistic durations, dependencies, and resource requirements.
+- Include site requirements, quality/compliance standards, and technical review data relevant to the trade.
+- Be thorough - if the user asks for a 5+ page document, generate enough content to fill it.
+- Add security measures, best practices, and industry standards that strengthen the proposal.
+- Do NOT use filler phrases like "We are pleased to" or "This comprehensive proposal". Write directly and professionally.
+
+You MUST respond with valid JSON in this exact format:
+{
+  "clientName": "string or null",
+  "clientEmail": "string or null",
+  "clientPhone": "string or null",
+  "clientAddress": "string or null",
+  "title": "string - professional proposal title",
+  "description": "string - EXECUTIVE SUMMARY: 2-3 full paragraphs. Paragraph 1: Project background and business case (why this work is needed, reference any incidents or risks). Paragraph 2: Scope overview covering all major workstreams. Paragraph 3: Expected outcomes and benefits to the client. Write in plain professional English. No bullet points in this field.",
+  "coverLetterContent": "string - A formal cover letter (3-4 paragraphs) addressed to the client. Introduce your company, summarise the proposal, highlight key benefits, and include a call to action. Professional but not stuffy.",
+  "lineItems": [
+    {
+      "description": "string - detailed description of the specific deliverable",
+      "quantity": number,
+      "unit": "string (each, hours, days, licences, per user, etc.)",
+      "rate": number,
+      "phase": "string - which project phase this belongs to (e.g., 'Phase 1: Discovery & Audit')",
+      "category": "string - grouping category (e.g., 'Hardware', 'Professional Services', 'Software & Licensing')"
+    }
+  ],
+  "timeline": {
+    "estimatedDuration": { "value": number, "unit": "days or weeks or months" },
+    "phases": [
+      {
+        "name": "string - phase name",
+        "description": "string - 2-4 sentences describing what happens in this phase, what the client should expect, and what will be delivered",
+        "duration": { "value": number, "unit": "days or weeks" },
+        "dependencies": ["string array - what must be completed or provided before this phase can start"],
+        "resources": {
+          "manpower": "string - e.g., '1 Senior Engineer, 1 Technician'",
+          "equipment": ["string array of equipment needed"],
+          "materials": ["string array of materials needed"]
+        },
+        "costBreakdown": {
+          "labour": number,
+          "materials": number,
+          "equipment": number,
+          "total": number
+        },
+        "riskFactors": ["string array of risks specific to this phase"],
+        "deliverables": ["string array of what the client receives at end of this phase"]
+      }
+    ]
+  },
+  "siteRequirements": {
+    "workingHours": { "start": "09:00", "end": "17:30", "days": "Monday to Friday" },
+    "accessRestrictions": ["string array"],
+    "safetyRequirements": ["string array"],
+    "parkingStorage": "string",
+    "permitNeeds": ["string array"],
+    "constraints": ["string array"]
+  },
+  "qualityCompliance": {
+    "requiredStandards": ["string array - e.g., 'Cyber Essentials Plus', 'ISO 27001', 'GDPR'"],
+    "certifications": [{ "name": "string", "required": true, "providedBy": "string" }],
+    "inspectionPoints": [{ "phase": "string", "description": "string" }],
+    "testingSchedule": [{ "test": "string", "timing": "string", "responsibility": "string" }]
+  },
+  "technicalReview": {
+    "specialRequirements": ["string array of technical requirements and standards"],
+    "inspectionRequirements": ["string array of inspection/audit points"],
+    "checklist": [{ "item": "string", "status": "yes", "notes": "string" }]
+  },
+  "assumptions": ["string array of assumptions made - be thorough"],
+  "exclusions": ["string array of what is NOT included - be explicit"],
+  "riskNotes": "string - internal notes about risks or concerns (not shown to client)",
+  "terms": "string - payment terms, warranty, and conditions. Include: payment schedule, warranty period, what happens if scope changes, cancellation terms. Write as numbered clauses."
+}${tradePromptAdditions}${catalogContext}`;
+        } else {
+          systemPrompt = `You are a senior estimator preparing a quote from tender evidence. Extract facts from the documents provided and produce a structured draft.
 
 Rules:
 - Extract client details, scope, and quantities directly from the evidence. Do not invent information.
@@ -1924,7 +2032,7 @@ You MUST respond with valid JSON in this exact format:
   "clientEmail": "string or null",
   "clientPhone": "string or null",
   "clientAddress": "string or null",
-  "title": "string - brief but descriptive title for the work (e.g., 'Website Redesign and Marketing Strategy for EDP Handles')",
+  "title": "string - brief but descriptive title for the work",
   "description": "string - COMPREHENSIVE description (3-5 sentences minimum) that includes: 1) Project overview and scope, 2) Key deliverables being quoted, 3) Client objectives or goals mentioned, 4) Any phases or timeline if discussed. This appears on the quote PDF so make it professional and informative.",
   "lineItems": [
     {
@@ -1947,11 +2055,19 @@ IMPORTANT for description field:
 - Do not use phrases like "This comprehensive quote covers" or "We are pleased to offer".
 - Write as if a tradesperson is explaining the scope to the client directly.
 
-Be thorough but realistic with pricing. Extract all client details mentioned. List specific line items with quantities. Note any assumptions you're making and things that are explicitly excluded.${catalogContext}`,
+Be thorough but realistic with pricing. Extract all client details mentioned. List specific line items with quantities. Note any assumptions you're making and things that are explicitly excluded.${catalogContext}`;
+        }
+
+        // Generate draft using LLM
+        const response = await invokeLLM({
+          messages: [
+            {
+              role: "system",
+              content: systemPrompt,
             },
             {
               role: "user",
-              content: `Please analyze the following evidence and generate a quote draft:\n\n${processedEvidence.join("\n\n")}`,
+              content: `Please analyze the following evidence and generate a ${isComprehensive ? "comprehensive multi-page proposal" : "quote draft"}:\n\n${processedEvidence.join("\n\n")}`,
             },
           ],
           response_format: { type: "json_object" },
@@ -1964,14 +2080,66 @@ Be thorough but realistic with pricing. Extract all client details mentioned. Li
           const draft = JSON.parse(responseText);
 
           // Update quote with extracted client details and description
-          const updatedQuote = await updateQuote(input.quoteId, ctx.user.id, {
+          const quoteUpdateData: Partial<InsertQuote> = {
             clientName: draft.clientName || quote.clientName,
             clientEmail: draft.clientEmail || quote.clientEmail,
             clientPhone: draft.clientPhone || quote.clientPhone,
             clientAddress: draft.clientAddress || quote.clientAddress,
             title: draft.title || quote.title,
             description: draft.description || quote.description,
-          });
+          };
+
+          // For comprehensive quotes, populate the comprehensiveConfig with AI-generated data
+          if (isComprehensive) {
+            const existingConfig = ((quote as any).comprehensiveConfig || {}) as ComprehensiveConfig;
+            const updatedConfig: ComprehensiveConfig = {
+              ...existingConfig,
+              sections: {
+                ...existingConfig.sections,
+                coverLetter: {
+                  ...existingConfig.sections?.coverLetter,
+                  enabled: true,
+                  content: draft.coverLetterContent || existingConfig.sections?.coverLetter?.content,
+                },
+                siteRequirements: {
+                  ...existingConfig.sections?.siteRequirements,
+                  enabled: true,
+                  data: draft.siteRequirements || existingConfig.sections?.siteRequirements?.data,
+                },
+                qualityCompliance: {
+                  ...existingConfig.sections?.qualityCompliance,
+                  enabled: true,
+                  data: draft.qualityCompliance || existingConfig.sections?.qualityCompliance?.data,
+                },
+                technicalReview: {
+                  ...existingConfig.sections?.technicalReview,
+                  enabled: true,
+                  data: draft.technicalReview || existingConfig.sections?.technicalReview?.data,
+                },
+              },
+              timeline: draft.timeline ? {
+                enabled: true,
+                estimatedDuration: draft.timeline.estimatedDuration,
+                phases: draft.timeline.phases?.map((p: any, idx: number) => ({
+                  id: `phase-${idx + 1}`,
+                  name: p.name,
+                  description: p.description,
+                  duration: p.duration,
+                  dependencies: p.dependencies,
+                  resources: p.resources,
+                  costBreakdown: p.costBreakdown,
+                  riskFactors: p.riskFactors,
+                  status: "pending" as const,
+                })),
+              } : existingConfig.timeline,
+            };
+            quoteUpdateData.comprehensiveConfig = updatedConfig as any;
+            if (draft.terms) {
+              quoteUpdateData.terms = draft.terms;
+            }
+          }
+
+          const updatedQuote = await updateQuote(input.quoteId, ctx.user.id, quoteUpdateData);
 
           // Delete existing line items before creating new ones (prevents duplicates on regenerate)
           await deleteLineItemsByQuoteId(input.quoteId);
@@ -1993,6 +2161,8 @@ Be thorough but realistic with pricing. Extract all client details mentioned. Li
                 unit: item.unit || "each",
                 rate: rate.toFixed(2),
                 total: total.toFixed(2),
+                phaseId: isComprehensive && item.phase ? item.phase : undefined,
+                category: isComprehensive && item.category ? item.category : undefined,
               });
               createdLineItems.push(lineItem);
             }
