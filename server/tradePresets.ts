@@ -74,17 +74,17 @@ From Specifications:
       timelineAnalysis: `Analyze construction/engineering project timeline:
 
 PHASES TO SUGGEST:
-1. **Pre-Construction** (design review, approvals, procurement)
+1. Pre-Construction (design review, approvals, procurement)
    - Duration: 2-4 weeks typical
-2. **Fabrication** (workshop production)
+2. Fabrication (workshop production)
    - Calculate based on tonnage: ~5-10 tonnes per week
    - Complex connections add 20-30% time
-3. **Surface Treatment** (painting, galvanizing)
+3. Surface Treatment (painting, galvanizing)
    - Duration: 1-2 weeks after fabrication
-4. **Delivery & Erection** (site installation)
+4. Delivery & Erection (site installation)
    - Calculate based on tonnage: ~10-20 tonnes per day with crane
    - Weather contingency: add 10-15%
-5. **Completion** (snagging, documentation, handover)
+5. Completion (snagging, documentation, handover)
    - Duration: 1-2 weeks
 
 FACTORS TO CONSIDER:
@@ -150,26 +150,26 @@ EQUIPMENT:
       timelineAnalysis: `Analyze electrical installation timeline:
 
 PHASES TO SUGGEST:
-1. **First Fix** (rough-in before plaster)
+1. First Fix (rough-in before plaster)
    - Cable routes, conduits, back boxes, containment
    - Rate: 50-100m² per day per electrician (standard work)
    - Rate: 30-50m² per day for complex work
-   - Duration: Floor area ÷ daily rate
+   - Duration: Floor area / daily rate
 
-2. **Second Fix** (final installation)
+2. Second Fix (final installation)
    - Sockets, switches, light fittings, accessories
    - Rate: 15-25 devices per day per electrician
-   - Duration: Device count ÷ daily rate
+   - Duration: Device count / daily rate
 
-3. **Distribution Equipment**
+3. Distribution Equipment
    - DB installation, terminations
    - Rate: 1-2 boards per day
-   - Duration: Board count ÷ daily rate
+   - Duration: Board count / daily rate
 
-4. **Testing & Commissioning**
+4. Testing & Commissioning
    - Testing, certification, documentation
    - Rate: 10-15 circuits per day
-   - Duration: Circuit count ÷ daily rate + 2 days documentation
+   - Duration: Circuit count / daily rate + 2 days documentation
 
 PHASING BY AREA:
 - If multi-floor: suggest floor-by-floor approach
@@ -240,18 +240,18 @@ QUANTITIES:
       timelineAnalysis: `Analyze metalwork fabrication timeline:
 
 PHASES TO SUGGEST:
-1. **Design & Approval**
+1. Design & Approval
    - Fabrication drawing preparation
    - Client approval
    - Duration: 1-2 weeks standard, 3-4 weeks complex/bespoke
 
-2. **Material Procurement**
+2. Material Procurement
    - Standard stock: 1 week
    - Special sections: 2-4 weeks
    - Glass/infill panels: 2-3 weeks
    - Custom finishes: add 1-2 weeks
 
-3. **Fabrication**
+3. Fabrication
    Calculate based on item complexity:
    - Straight staircases: 2-3 weeks each
    - Curved/spiral stairs: 4-6 weeks each
@@ -260,13 +260,13 @@ PHASES TO SUGGEST:
    - Gates (standard): 1-2 weeks each
    - Gates (complex/automated): 3-4 weeks each
 
-4. **Finishing**
+4. Finishing
    - Powder coating: 1-2 weeks (includes prep)
    - Polishing: add 3-5 days
    - Galvanizing: 1-2 weeks
    - Special finishes: 2-3 weeks
 
-5. **Installation**
+5. Installation
    - Calculate based on site complexity
    - Multi-floor work: add hoisting time
    - Complex fixing: add structural work time`,
@@ -291,6 +291,1231 @@ PHASES TO SUGGEST:
       documentCategorization: "Categorize documents based on their content and purpose.",
       lineItemExtraction: "Extract line items from documents including descriptions, quantities, units, and rates.",
       timelineAnalysis: "Analyze the project scope and suggest a realistic timeline with phases.",
+    },
+  },
+
+  // ─── NEW TRADE SECTORS ───────────────────────────────────────────
+
+  building_maintenance: {
+    name: "Building Maintenance / Facilities Management (FM)",
+    description: "For reactive and planned maintenance works",
+    sections: {
+      coverLetter: { enabled: true, template: "fm_contract", templates: [] },
+      tradeBill: { enabled: true, format: "table" as const, templates: [] },
+      reviewForms: {
+        enabled: true,
+        templates: ["service_overview", "sla_response_times", "scope_definition"],
+      },
+      technicalReview: { enabled: false },
+      drawings: { enabled: false },
+      supportingDocs: {
+        enabled: true,
+        categories: ["Service Schedule", "Compliance Certificates", "Method Statements", "Risk Assessments"],
+      },
+      siteRequirements: { enabled: true },
+      qualityCompliance: { enabled: false },
+    },
+    timeline: { enabled: false },
+    aiPrompts: {
+      documentCategorization: `Categorize FM documents into:
+- Service Schedules (PPM frequencies, checklists)
+- SLA Documents (response times, escalation procedures)
+- Compliance Requirements (H&S, insurance, certifications)
+- Site Information (floor plans, asset registers)
+- Pricing Schedules (call-out rates, materials markup)`,
+      lineItemExtraction: `Extract FM service line items:
+
+PLANNED MAINTENANCE (PPM):
+- Monthly/quarterly/annual visits
+- Scope per visit (inspections, testing, servicing)
+- Materials included/excluded
+
+REACTIVE MAINTENANCE:
+- Response time categories (emergency, urgent, routine)
+- Call-out charges
+- Hourly rates (normal/out of hours)
+- Materials pricing (cost + markup %)
+
+COMPLIANCE:
+- Statutory testing (PAT, emergency lighting, fire alarms)
+- Certificates and documentation
+
+GROUP BY:
+- Planned Preventative Maintenance
+- Reactive Maintenance
+- Statutory Compliance
+- Out of Scope Works`,
+      timelineAnalysis: `FM contracts are ongoing service agreements. Focus on:
+
+SERVICE STRUCTURE:
+- Contract duration (typically 1-3 years)
+- PPM visit schedule
+- Response time commitments
+- Reporting frequency
+
+Do not create project timeline - instead summarize:
+- Monthly/quarterly service visits
+- Annual compliance testing schedule
+- Reporting and review meetings`,
+    },
+  },
+
+  commercial_cleaning: {
+    name: "Commercial Cleaning",
+    description: "For regular cleaning contracts and one-off deep cleans",
+    sections: {
+      coverLetter: { enabled: true, template: "cleaning_contract", templates: [] },
+      tradeBill: { enabled: true, format: "table" as const, templates: [] },
+      reviewForms: {
+        enabled: true,
+        templates: ["site_areas", "schedule", "staffing"],
+      },
+      technicalReview: { enabled: false },
+      drawings: { enabled: false },
+      supportingDocs: {
+        enabled: true,
+        categories: ["Site Plans", "COSHH Assessments", "Insurance Certificates", "Staff DBS"],
+      },
+      siteRequirements: { enabled: true },
+      qualityCompliance: { enabled: false },
+    },
+    timeline: { enabled: false },
+    aiPrompts: {
+      documentCategorization: `Categorize cleaning documents into:
+- Site Floor Plans (areas to be cleaned, access routes)
+- Cleaning Specifications (scope, frequencies, standards)
+- COSHH Assessments (chemicals and safety)
+- Insurance and Compliance (public liability, staff checks)`,
+      lineItemExtraction: `Extract cleaning service line items:
+
+REGULAR CLEANING:
+- Area coverage (m² or rooms)
+- Frequency (daily, weekly, monthly)
+- Scope per visit (tasks included)
+- Consumables included/excluded
+
+DEEP CLEANING:
+- One-off deep clean scope
+- Specialized tasks (carpet cleaning, window cleaning)
+- Equipment hire
+
+STAFFING:
+- Hours per visit
+- Number of operatives
+- Supervision requirements
+- DBS/security clearance if needed
+
+GROUP BY:
+- Daily Cleaning
+- Weekly Deep Clean
+- Monthly Tasks
+- Consumables`,
+      timelineAnalysis: `Cleaning contracts are ongoing. Focus on:
+
+SERVICE PATTERN:
+- Daily visits (times and duration)
+- Weekly/monthly tasks schedule
+- Holiday cover arrangements
+- Notice period
+
+Do not create project timeline.`,
+    },
+  },
+
+  general_construction: {
+    name: "General Construction / Building",
+    description: "For general building works, extensions, and refurbishments",
+    sections: {
+      coverLetter: { enabled: true, template: "construction_general", templates: [] },
+      tradeBill: { enabled: true, format: "table" as const, templates: [] },
+      reviewForms: {
+        enabled: true,
+        templates: ["scope_by_package", "materials_labour"],
+      },
+      technicalReview: { enabled: true },
+      drawings: {
+        enabled: true,
+        categories: ["Architectural Drawings", "Structural Plans", "Building Control", "Planning Permission"],
+      },
+      supportingDocs: { enabled: false },
+      siteRequirements: { enabled: true },
+      qualityCompliance: { enabled: true },
+    },
+    timeline: { enabled: true },
+    aiPrompts: {
+      documentCategorization: `Categorize construction documents into:
+- Architectural Drawings (floor plans, elevations, sections)
+- Structural Details (foundation, beam, lintel schedules)
+- Building Control Applications
+- Planning Permission
+- Specifications (materials, finishes, standards)`,
+      lineItemExtraction: `Extract construction line items by work package:
+
+GROUNDWORKS:
+- Excavation (volume in m³)
+- Foundations (linear meters or m²)
+- Drainage (linear meters by diameter)
+
+STRUCTURE:
+- Brickwork/blockwork (m²)
+- Steelwork (tonnage or linear meters)
+- Concrete (m³)
+
+ROOFING:
+- Roof structure (m² of roof area)
+- Coverings (tiles, slate, felt)
+- Rainwater goods
+
+FINISHES:
+- Plastering (m²)
+- Flooring (m² by type)
+- Decoration (m²)
+
+GROUP BY work package or trade.`,
+      timelineAnalysis: `Analyze construction project timeline:
+
+PHASES:
+1. Groundworks (1-3 weeks)
+   - Excavation and foundations
+   - Drainage installation
+   - Rate: 50-100m² foundations per week
+
+2. Structure (4-8 weeks)
+   - Brickwork/blockwork
+   - Structural frame
+   - Roof structure
+   - Rate: 20-30m² brickwork per day per bricklayer
+
+3. Weathertight (1-2 weeks)
+   - Roof covering
+   - Windows and doors
+   - External waterproofing
+
+4. First Fix (2-3 weeks)
+   - Electrics, plumbing, heating
+   - Insulation
+   - Plastering prep
+
+5. Second Fix (3-4 weeks)
+   - Plastering
+   - Kitchen/bathroom installation
+   - Flooring and decoration
+
+DEPENDENCIES:
+- Planning permission approval
+- Building control inspections
+- Weather (roof works)
+- Client selections (finishes)`,
+    },
+  },
+
+  bathrooms_kitchens: {
+    name: "Bathrooms & Kitchens",
+    description: "For bathroom and kitchen installation projects",
+    sections: {
+      coverLetter: { enabled: true, template: "domestic_install", templates: [] },
+      tradeBill: { enabled: true, format: "table" as const, templates: [] },
+      reviewForms: { enabled: false, templates: [] },
+      technicalReview: { enabled: false },
+      drawings: {
+        enabled: true,
+        categories: ["Design Layouts", "Plumbing Schematics", "Electrical Plans"],
+      },
+      supportingDocs: { enabled: false },
+      siteRequirements: { enabled: true },
+      qualityCompliance: { enabled: false },
+    },
+    timeline: { enabled: true },
+    aiPrompts: {
+      documentCategorization: `Categorize bathroom/kitchen documents into:
+- Design Layouts (floor plans, elevations, 3D renders)
+- Product Specifications (units, worktops, appliances, sanitaryware)
+- Plumbing Schematics (pipe runs, waste, water supply)
+- Electrical Plans (socket positions, lighting, appliance connections)`,
+      lineItemExtraction: `Extract bathroom/kitchen line items:
+
+STRIP-OUT:
+- Remove existing units/sanitaryware
+- Waste disposal
+- Making good
+
+FIRST FIX:
+- Plumbing (pipe work, waste runs)
+- Electrical (circuits, sockets)
+- Any building work (stud walls, doorways)
+
+SUPPLY & INSTALL:
+- Units and carcasses
+- Worktops
+- Appliances
+- Sanitaryware and taps
+
+FINISHES:
+- Tiling (m² by area)
+- Flooring
+- Decoration
+- Accessories
+
+GROUP BY:
+- Strip-out
+- Building Works
+- Plumbing & Electrical
+- Supply & Install
+- Finishes`,
+      timelineAnalysis: `Analyze kitchen/bathroom installation timeline:
+
+PHASES:
+1. Strip-out (1-2 days)
+   - Remove existing installation
+   - Waste disposal
+
+2. First Fix (2-3 days)
+   - Plumbing rough-in
+   - Electrical rough-in
+   - Any building work
+
+3. Installation (3-5 days kitchen, 2-3 days bathroom)
+   - Fit units and worktops
+   - Install appliances/sanitaryware
+   - Rate: Standard kitchen 3-5 days, bathroom 2-3 days
+
+4. Finishes (2-4 days)
+   - Tiling
+   - Flooring
+   - Decoration
+   - Snagging
+
+TOTAL: Kitchen 8-14 days, Bathroom 6-10 days
+
+DEPENDENCIES:
+- Access to water and waste
+- Product delivery (worktops often 2-3 weeks)
+- Customer selections finalized`,
+    },
+  },
+
+  windows_doors: {
+    name: "Windows / Doors / Conservatories",
+    description: "For window, door, and conservatory installations",
+    sections: {
+      coverLetter: { enabled: true, template: "fenestration_standard", templates: [] },
+      tradeBill: { enabled: true, format: "table" as const, templates: [] },
+      reviewForms: {
+        enabled: true,
+        templates: ["survey_assumptions", "product_schedule"],
+      },
+      technicalReview: { enabled: false },
+      drawings: { enabled: false },
+      supportingDocs: {
+        enabled: true,
+        categories: ["Survey Reports", "Product Brochures", "FENSA Certificates", "Warranty Documents"],
+      },
+      siteRequirements: { enabled: true },
+      qualityCompliance: { enabled: false },
+    },
+    timeline: { enabled: true },
+    aiPrompts: {
+      documentCategorization: `Categorize windows/doors documents into:
+- Survey Reports (measurements, opening types, existing conditions)
+- Product Specifications (materials, glazing, colors, hardware)
+- Building Control/FENSA requirements
+- Warranty Information`,
+      lineItemExtraction: `Extract windows/doors line items:
+
+PRODUCT SCHEDULE:
+- Windows (by size, type, opening style, glazing)
+- Doors (external, internal, bi-fold, sliding)
+- Conservatories (size, roof type, base)
+
+INSTALLATION:
+- Remove existing frames
+- Install new units
+- Making good (plaster, decoration)
+- Waste disposal
+
+COMPLIANCE:
+- FENSA/Building Control certification
+- Warranty registration
+
+GROUP BY room or elevation.`,
+      timelineAnalysis: `Analyze fenestration installation timeline:
+
+PHASES:
+1. Survey & Design (1 visit)
+   - Measure and assess
+   - Product selection
+
+2. Manufacturing (3-6 weeks)
+   - Standard UPVC: 3-4 weeks
+   - Timber/aluminum: 4-6 weeks
+   - Bespoke: 6-8 weeks
+
+3. Installation (varies by scope)
+   - Rate: 2-4 windows per day
+   - Rate: 1-2 doors per day
+   - Conservatory: 3-5 days
+
+4. Making Good & Certification (1 day)
+   - Internal finishing
+   - FENSA certificate
+
+DEPENDENCIES:
+- Manufacturing lead time
+- Weather (external work)
+- Access and scaffolding`,
+    },
+  },
+
+  pest_control: {
+    name: "Pest Control",
+    description: "For pest control inspections and treatments",
+    sections: {
+      coverLetter: { enabled: true, template: "pest_control", templates: [] },
+      tradeBill: { enabled: true, format: "table" as const, templates: [] },
+      reviewForms: {
+        enabled: true,
+        templates: ["inspection_findings", "treatment_plan"],
+      },
+      technicalReview: { enabled: false },
+      drawings: { enabled: false },
+      supportingDocs: {
+        enabled: true,
+        categories: ["Inspection Reports", "Treatment Records", "COSHH Data", "Guarantee Certificates"],
+      },
+      siteRequirements: { enabled: true },
+      qualityCompliance: { enabled: false },
+    },
+    timeline: { enabled: true },
+    aiPrompts: {
+      documentCategorization: `Categorize pest control documents into:
+- Inspection Reports (pest identification, extent, entry points)
+- Treatment Plans (methods, chemicals, safety measures)
+- COSHH Assessments (chemical safety data)
+- Guarantee Certificates`,
+      lineItemExtraction: `Extract pest control line items:
+
+INSPECTION:
+- Initial survey and report
+- Pest identification
+- Extent of infestation
+
+TREATMENT:
+- Chemical treatments (type, area)
+- Baiting programs (number of stations)
+- Proofing works (sealing entry points)
+- Follow-up visits
+
+MONITORING:
+- Ongoing monitoring visits
+- Reporting and documentation
+
+WARRANTY:
+- Guarantee period
+- Warranty conditions`,
+      timelineAnalysis: `Analyze pest control treatment timeline:
+
+PHASES:
+1. Inspection (1 visit, same day or next day)
+   - Site survey
+   - Pest identification
+   - Treatment plan
+
+2. Initial Treatment (1-2 visits)
+   - Chemical application or baiting
+   - Proofing works if required
+
+3. Follow-up Treatments (varies by pest)
+   - Rodents: 3 visits over 3-4 weeks typical
+   - Insects: 2-3 visits over 2-6 weeks
+   - Birds: Ongoing deterrent maintenance
+
+4. Guarantee Period (varies)
+   - 6-12 months typical
+   - Monitoring visits included
+
+DEPENDENCIES:
+- Pest species and extent
+- Site cooperation (access, hygiene)
+- Weather (some treatments weather-dependent)`,
+    },
+  },
+
+  scaffolding: {
+    name: "Scaffolding / Access Equipment",
+    description: "For scaffolding hire and access equipment",
+    sections: {
+      coverLetter: { enabled: true, template: "scaffold_hire", templates: [] },
+      tradeBill: { enabled: true, format: "table" as const, templates: [] },
+      reviewForms: {
+        enabled: true,
+        templates: ["scope_specification", "compliance_certification"],
+      },
+      technicalReview: { enabled: false },
+      drawings: { enabled: false },
+      supportingDocs: { enabled: false },
+      siteRequirements: { enabled: true },
+      qualityCompliance: { enabled: true },
+    },
+    timeline: { enabled: true },
+    aiPrompts: {
+      documentCategorization: `Categorize scaffolding documents into:
+- Site Plans (elevations, locations, access routes)
+- Scaffold Designs (TG20 compliance, bespoke designs)
+- Method Statements and Risk Assessments
+- Handover Certificates`,
+      lineItemExtraction: `Extract scaffolding line items:
+
+SCAFFOLD STRUCTURE:
+- Linear runs (meters)
+- Lifts (number of levels)
+- Width (boards wide)
+- Ties and fixings
+
+HIRE PERIOD:
+- Erection charge
+- Weekly/monthly hire
+- Adaptations (if required)
+- Dismantle charge
+
+COMPLIANCE:
+- Inspections (weekly)
+- Handover certificate
+- Loading calculations
+
+ADDITIONAL:
+- Sheeting/netting
+- Covered walkways
+- Alarm systems
+- Lighting`,
+      timelineAnalysis: `Analyze scaffolding hire timeline:
+
+PHASES:
+1. Design & Notifications (1-2 days)
+   - Site survey
+   - Design (TG20 or bespoke)
+   - Licensing/notifications if required
+
+2. Erection (varies by size)
+   - Rate: 30-50 linear meters per day
+   - Rate: Add 1 day per 3-4 lifts
+   - Complexity factors (confined access, height)
+
+3. Hire Period (as required)
+   - Weekly inspections
+   - Adaptations as needed
+
+4. Dismantle (typically 60% of erection time)
+
+WEATHER DEPENDENCIES:
+- High winds delay erection/dismantle
+- Allow contingency for weather delays`,
+    },
+  },
+
+  mechanical_fabrication: {
+    name: "Mechanical Engineering / Fabrication",
+    description: "For mechanical fabrication, pipework, and ductwork",
+    sections: {
+      coverLetter: { enabled: true, template: "engineering_formal", templates: [] },
+      tradeBill: { enabled: true, format: "table" as const, templates: [] },
+      reviewForms: {
+        enabled: true,
+        templates: ["technical_requirements", "quality_standards"],
+      },
+      technicalReview: { enabled: true },
+      drawings: {
+        enabled: true,
+        categories: ["GA Drawings", "Fabrication Details", "Isometrics", "Weld Procedures"],
+      },
+      supportingDocs: { enabled: false },
+      siteRequirements: { enabled: true },
+      qualityCompliance: { enabled: true },
+    },
+    timeline: { enabled: true },
+    aiPrompts: {
+      documentCategorization: `Categorize mechanical fabrication documents into:
+- General Arrangement Drawings (layouts, elevations)
+- Fabrication Details (weld details, material specs)
+- Isometric Drawings (pipework routes)
+- Specifications (materials, standards, testing)
+- Quality Requirements (NDT, pressure testing)`,
+      lineItemExtraction: `Extract mechanical fabrication line items:
+
+MATERIALS:
+- Pipework (diameter, schedule, material grade, length)
+- Ductwork (size, gauge, linear meters)
+- Fittings and flanges
+- Support steelwork
+
+FABRICATION:
+- Welding (linear meters, joint count)
+- Bending and forming
+- Surface treatment
+
+INSTALLATION:
+- Site installation and fixing
+- Testing and commissioning
+- Insulation
+
+COMPLIANCE:
+- NDT requirements
+- Pressure testing
+- Certification`,
+      timelineAnalysis: `Analyze mechanical fabrication timeline:
+
+PHASES:
+1. Design & Approval (2-4 weeks)
+   - Detailed design
+   - Material procurement
+   - Client/engineer approval
+
+2. Workshop Fabrication (varies)
+   - Rate: Depends on complexity
+   - Allow for NDT and rework
+   - Surface treatment
+
+3. Site Installation (varies)
+   - Rate: Depends on size and access
+   - Testing and commissioning
+
+4. Handover (1 week)
+   - Documentation
+   - Training
+   - O&M manuals`,
+    },
+  },
+
+  fire_protection: {
+    name: "Fire Stopping / Passive Fire Protection",
+    description: "For fire stopping, cavity barriers, and passive fire protection",
+    sections: {
+      coverLetter: { enabled: true, template: "fire_protection", templates: [] },
+      tradeBill: { enabled: true, format: "table" as const, templates: [] },
+      reviewForms: {
+        enabled: true,
+        templates: ["fire_strategy_compliance", "third_party_certification"],
+      },
+      technicalReview: { enabled: true },
+      drawings: {
+        enabled: true,
+        categories: ["Fire Strategy Drawings", "Penetration Schedules", "Detail Drawings", "Test Certificates"],
+      },
+      supportingDocs: { enabled: false },
+      siteRequirements: { enabled: true },
+      qualityCompliance: { enabled: true },
+    },
+    timeline: { enabled: true },
+    aiPrompts: {
+      documentCategorization: `Categorize fire protection documents into:
+- Fire Strategy Documents (compartmentation, escape routes)
+- Penetration Schedules (locations, sizes, services)
+- Detail Drawings (fire stopping specifications)
+- Test Certificates (third-party certification requirements)
+- Product Data Sheets`,
+      lineItemExtraction: `Extract fire protection line items:
+
+FIRE STOPPING:
+- Service penetrations (by size and type)
+- Linear joint seals (linear meters)
+- Cavity barriers
+- Door and shutter upgrades
+
+MATERIALS:
+- Intumescent materials
+- Fire-rated boards and batts
+- Sealants and mastics
+
+TESTING & CERTIFICATION:
+- Third-party certification
+- Test certificates
+- Documentation and labeling
+
+GROUP BY:
+- Fire compartment or floor`,
+      timelineAnalysis: `Analyze fire protection installation timeline:
+
+PHASES:
+1. Survey & Schedule (1-2 weeks)
+   - Penetration survey
+   - Detail design
+   - Product selection
+
+2. Installation (varies by scope)
+   - Rate: 20-40 penetrations per day (varies by size/complexity)
+   - Rate: 10-20 linear meters joint seals per day
+   - Sequential by floor or area
+
+3. Certification (1-2 weeks)
+   - Third-party inspection
+   - Certificate issue
+   - Labeling complete
+
+DEPENDENCIES:
+- Services installation complete
+- Building structure complete
+- Access to all areas
+- Sequential sign-off by compartment`,
+    },
+  },
+
+  lifts_access: {
+    name: "Lifts / Access Systems",
+    description: "For lift installation and access equipment",
+    sections: {
+      coverLetter: { enabled: true, template: "lift_installation", templates: [] },
+      tradeBill: { enabled: true, format: "table" as const, templates: [] },
+      reviewForms: {
+        enabled: true,
+        templates: ["system_specification", "compliance_requirements"],
+      },
+      technicalReview: { enabled: true },
+      drawings: {
+        enabled: true,
+        categories: ["Lift Shaft Drawings", "Equipment Layouts", "Electrical Schematics", "LOLER Certificates"],
+      },
+      supportingDocs: { enabled: false },
+      siteRequirements: { enabled: true },
+      qualityCompliance: { enabled: true },
+    },
+    timeline: { enabled: true },
+    aiPrompts: {
+      documentCategorization: `Categorize lift/access documents into:
+- Lift Shaft Drawings (dimensions, pit, headroom)
+- Equipment Specifications (capacity, speed, finishes)
+- Electrical Requirements (power, controls)
+- Compliance Certificates (LOLER, insurance inspections)`,
+      lineItemExtraction: `Extract lift/access line items:
+
+EQUIPMENT:
+- Lift car and controls
+- Machine room equipment
+- Doors and landing equipment
+- Finishes and fixtures
+
+INSTALLATION:
+- Shaft preparation
+- Equipment installation
+- Testing and commissioning
+
+COMPLIANCE:
+- LOLER examination
+- Insurance inspection
+- CE marking
+
+WARRANTY & MAINTENANCE:
+- Warranty period
+- Maintenance contract (optional)`,
+      timelineAnalysis: `Analyze lift installation timeline:
+
+PHASES:
+1. Design & Approvals (4-8 weeks)
+   - Detailed design
+   - Building control approval
+   - Equipment procurement
+
+2. Shaft Preparation (1-2 weeks)
+   - Shaft checks and corrections
+   - Electrical installation
+
+3. Equipment Installation (2-4 weeks)
+   - Machine room equipment
+   - Car and doors installation
+   - Rate: 2-4 weeks per lift (standard passenger)
+
+4. Testing & Commissioning (1-2 weeks)
+   - Factory testing
+   - LOLER examination
+   - Insurance inspection
+   - Handover
+
+DEPENDENCIES:
+- Shaft construction complete
+- Power supply available
+- Access for delivery`,
+    },
+  },
+
+  insulation_retrofit: {
+    name: "Air Tightness / Insulation / Retrofit",
+    description: "For insulation, air tightness, and retrofit energy efficiency projects",
+    sections: {
+      coverLetter: { enabled: true, template: "retrofit_standard", templates: [] },
+      tradeBill: { enabled: true, format: "table" as const, templates: [] },
+      reviewForms: {
+        enabled: true,
+        templates: ["survey_findings", "performance_targets"],
+      },
+      technicalReview: { enabled: false },
+      drawings: { enabled: false },
+      supportingDocs: {
+        enabled: true,
+        categories: ["Air Tightness Reports", "Thermal Images", "Compliance Certificates", "EPC Ratings"],
+      },
+      siteRequirements: { enabled: true },
+      qualityCompliance: { enabled: true },
+    },
+    timeline: { enabled: true },
+    aiPrompts: {
+      documentCategorization: `Categorize insulation/retrofit documents into:
+- Survey Reports (thermal imaging, air leakage testing)
+- Energy Performance Certificates (existing and predicted)
+- Product Specifications (insulation types, U-values)
+- Compliance Documents (Building Regulations Part L)`,
+      lineItemExtraction: `Extract insulation/retrofit line items:
+
+INSULATION:
+- Loft insulation (m², depth, material)
+- Cavity wall insulation (m²)
+- Internal/external wall insulation (m²)
+- Floor insulation (m²)
+
+AIR TIGHTNESS:
+- Sealing works (linear meters or per item)
+- Ventilation upgrades
+- Air tightness testing
+
+GLAZING/DOORS:
+- Secondary glazing
+- Door upgrades
+
+TESTING:
+- Air tightness testing
+- Thermal imaging
+- Post-works EPC`,
+      timelineAnalysis: `Analyze retrofit installation timeline:
+
+PHASES:
+1. Survey & Assessment (1 week)
+   - Air tightness test (pre-works)
+   - Thermal imaging
+   - Design and specification
+
+2. Installation (varies)
+   - Loft insulation: 1-2 days typical house
+   - Cavity wall: 1 day injection
+   - Internal wall insulation: 1-2 weeks
+   - External wall insulation: 2-4 weeks
+
+3. Testing & Certification (1-2 days)
+   - Air tightness test (post-works)
+   - EPC rating
+   - Handover documentation
+
+DEPENDENCIES:
+- Weather (external works)
+- Occupancy (working around residents)
+- Asbestos surveys (older properties)`,
+    },
+  },
+
+  plumbing: {
+    name: "Plumbing & Drainage",
+    description: "For plumbing installations and drainage works",
+    sections: {
+      coverLetter: { enabled: true, template: "plumbing_standard", templates: [] },
+      tradeBill: { enabled: true, format: "table" as const, templates: [] },
+      reviewForms: {
+        enabled: true,
+        templates: ["scope_by_system", "materials_schedule"],
+      },
+      technicalReview: { enabled: false },
+      drawings: {
+        enabled: true,
+        categories: ["Plumbing Schematics", "Drainage Layouts", "Isometrics"],
+      },
+      supportingDocs: { enabled: false },
+      siteRequirements: { enabled: true },
+      qualityCompliance: { enabled: true },
+    },
+    timeline: { enabled: true },
+    aiPrompts: {
+      documentCategorization: `Categorize plumbing documents into:
+- Plumbing Schematics (hot/cold water, heating pipework)
+- Drainage Layouts (above/below ground drainage)
+- Equipment Specifications (boilers, cylinders, sanitaryware)
+- Material Schedules (pipe sizes, fittings)`,
+      lineItemExtraction: `Extract plumbing line items:
+
+ABOVE GROUND DRAINAGE:
+- Soil and waste pipework (diameter, linear meters)
+- Sanitaryware connections
+
+BELOW GROUND DRAINAGE:
+- Drains (diameter, linear meters, depth)
+- Inspection chambers and manholes
+- Connection to sewer/septic
+
+HOT & COLD WATER:
+- Distribution pipework (linear meters by diameter)
+- Hot water cylinder/system
+- Sanitaryware supply
+
+HEATING:
+- Boiler/heat source
+- Radiators and pipework
+- Controls
+
+GROUP BY:
+- Drainage
+- Hot & Cold Water
+- Heating`,
+      timelineAnalysis: `Analyze plumbing installation timeline:
+
+PHASES:
+1. Below Ground Drainage (if applicable)
+   - Rate: 10-20 linear meters per day
+   - Testing before backfill
+
+2. First Fix (rough-in)
+   - Rate: 1-2 bathrooms per day (pipework only)
+   - Heating pipework
+   - Duration: Depends on property size
+
+3. Equipment Installation
+   - Boiler installation: 1-2 days
+   - Cylinder installation: 0.5-1 day
+
+4. Second Fix
+   - Sanitaryware installation
+   - Radiator hanging
+   - Rate: 1 bathroom per day
+
+5. Testing & Commissioning
+   - Pressure testing
+   - Gas safe certification (if applicable)
+   - System commissioning
+
+DEPENDENCIES:
+- Building structure complete
+- Drainage connections available
+- Gas supply (if required)`,
+    },
+  },
+
+  hvac: {
+    name: "HVAC (Heating, Ventilation, Air Conditioning)",
+    description: "For HVAC installation and maintenance",
+    sections: {
+      coverLetter: { enabled: true, template: "hvac_standard", templates: [] },
+      tradeBill: { enabled: true, format: "table" as const, templates: [] },
+      reviewForms: {
+        enabled: true,
+        templates: ["system_design", "equipment_schedule"],
+      },
+      technicalReview: { enabled: true },
+      drawings: {
+        enabled: true,
+        categories: ["Ductwork Layouts", "Equipment Schedules", "Control Schematics"],
+      },
+      supportingDocs: { enabled: false },
+      siteRequirements: { enabled: true },
+      qualityCompliance: { enabled: true },
+    },
+    timeline: { enabled: true },
+    aiPrompts: {
+      documentCategorization: `Categorize HVAC documents into:
+- System Design Calculations (heat loss, cooling loads, airflow)
+- Ductwork Layouts (routes, sizes, diffuser positions)
+- Equipment Schedules (AHUs, FCUs, condensers, boilers)
+- Control Schematics (BMS, controls, sensors)`,
+      lineItemExtraction: `Extract HVAC line items:
+
+EQUIPMENT:
+- Air handling units (capacity, features)
+- Fan coil units (quantity, capacity)
+- Condensing units / chillers
+- Boilers / heat pumps
+
+DUCTWORK:
+- Supply and extract ductwork (m² or kg)
+- Diffusers and grilles
+- Volume control dampers
+- Insulation
+
+PIPEWORK:
+- Heating/chilled water pipework (linear meters)
+- Refrigerant pipework
+- Condensate drainage
+
+CONTROLS:
+- BMS system
+- Thermostats and sensors
+- Commissioning
+
+GROUP BY:
+- Equipment
+- Ductwork
+- Pipework
+- Controls & Commissioning`,
+      timelineAnalysis: `Analyze HVAC installation timeline:
+
+PHASES:
+1. Design & Approvals (2-4 weeks)
+   - Detailed design
+   - Calculations and selections
+   - Building control notifications
+
+2. Equipment Procurement (4-8 weeks)
+   - Lead times vary by equipment
+   - Large AHUs: 8-12 weeks
+   - Standard FCUs: 4-6 weeks
+
+3. First Fix (ductwork and pipework)
+   - Rate: 50-100 kg ductwork per day
+   - Rate: 20-30 linear meters pipework per day
+
+4. Equipment Installation (1-3 weeks)
+   - Plant room equipment
+   - Terminal units
+
+5. Commissioning (1-2 weeks)
+   - System balancing
+   - Controls programming
+   - Testing and handover
+
+DEPENDENCIES:
+- Building structure complete
+- Power supply available
+- Coordination with other trades`,
+    },
+  },
+
+  roofing: {
+    name: "Roofing & Cladding",
+    description: "For roofing, cladding, and rainwater systems",
+    sections: {
+      coverLetter: { enabled: true, template: "roofing_standard", templates: [] },
+      tradeBill: { enabled: true, format: "table" as const, templates: [] },
+      reviewForms: {
+        enabled: true,
+        templates: ["scope_by_area", "materials_schedule"],
+      },
+      technicalReview: { enabled: false },
+      drawings: {
+        enabled: true,
+        categories: ["Roof Plans", "Elevations", "Details", "Structural Calculations"],
+      },
+      supportingDocs: { enabled: false },
+      siteRequirements: { enabled: true },
+      qualityCompliance: { enabled: true },
+    },
+    timeline: { enabled: true },
+    aiPrompts: {
+      documentCategorization: `Categorize roofing documents into:
+- Roof Plans (layouts, pitches, areas)
+- Elevations (cladding details, finishes)
+- Detail Drawings (eaves, verges, junctions)
+- Structural Calculations (wind loads, structural capacity)
+- Material Specifications`,
+      lineItemExtraction: `Extract roofing line items:
+
+ROOF STRUCTURE:
+- Roof trusses or rafters (if included)
+- Purlins and battens
+- OSB/plywood decking (m²)
+
+COVERINGS:
+- Roof tiles/slates (m², including wastage)
+- Flat roofing membrane (m²)
+- Insulation (m², U-value)
+
+RAINWATER:
+- Gutters (linear meters)
+- Downpipes (linear meters)
+- Gullies and connections
+
+FLASHINGS & DETAILS:
+- Ridge and hip tiles
+- Valleys and flashings
+- Soffits and fascias
+
+GROUP BY:
+- Roof area or elevation`,
+      timelineAnalysis: `Analyze roofing installation timeline:
+
+PHASES:
+1. Strip-off (if re-roof)
+   - Rate: 100-150m² per day
+   - Waste disposal
+
+2. Roof Structure (if new build)
+   - Rate: 50-100m² per day
+
+3. Covering Installation
+   - Pitched roof tiles: 30-50m² per day
+   - Flat roof membrane: 50-100m² per day
+   - Rate varies by complexity and pitch
+
+4. Rainwater & Finishes (1-2 days)
+   - Gutters and downpipes
+   - Soffits and fascias
+
+WEATHER DEPENDENCIES:
+- Heavily weather-dependent
+- Allow 30-40% contingency for delays
+- Cannot work in rain, high winds, ice
+
+DEPENDENCIES:
+- Scaffolding in place
+- Materials delivered
+- Weather forecast favorable`,
+    },
+  },
+
+  joinery: {
+    name: "Joinery & Carpentry",
+    description: "For joinery manufacture and carpentry installation",
+    sections: {
+      coverLetter: { enabled: true, template: "joinery_standard", templates: [] },
+      tradeBill: { enabled: true, format: "table" as const, templates: [] },
+      reviewForms: {
+        enabled: true,
+        templates: ["design_specifications", "materials_schedule"],
+      },
+      technicalReview: { enabled: false },
+      drawings: {
+        enabled: true,
+        categories: ["Joinery Drawings", "Elevations", "Details"],
+      },
+      supportingDocs: { enabled: false },
+      siteRequirements: { enabled: true },
+      qualityCompliance: { enabled: false },
+    },
+    timeline: { enabled: true },
+    aiPrompts: {
+      documentCategorization: `Categorize joinery documents into:
+- Joinery Drawings (elevations, sections, details)
+- Material Specifications (timber species, finishes, ironmongery)
+- Setting Out Drawings (site dimensions)`,
+      lineItemExtraction: `Extract joinery line items:
+
+FIRST FIX CARPENTRY:
+- Floor joists (linear meters)
+- Roof structure (if applicable)
+- Studwork and partitions (m²)
+- Door linings
+
+BESPOKE JOINERY:
+- Staircases (number, type)
+- Built-in furniture (linear meters or units)
+- Paneling (m²)
+- Feature joinery items
+
+SECOND FIX:
+- Door hanging (number)
+- Skirting and architrave (linear meters)
+- Shelving and accessories
+
+IRONMONGERY:
+- Hinges, locks, handles
+- Specialty hardware
+
+GROUP BY:
+- First Fix
+- Joinery Manufacture
+- Second Fix & Installation`,
+      timelineAnalysis: `Analyze joinery installation timeline:
+
+PHASES:
+1. Design & Approval (1-2 weeks)
+   - Detailed drawings
+   - Material selection
+   - Client approval
+
+2. Manufacture (varies)
+   - Standard joinery: 2-4 weeks
+   - Bespoke/complex: 4-8 weeks
+   - Staircase: 4-6 weeks typical
+
+3. First Fix Installation (if applicable)
+   - Rate: 20-30m² studwork per day
+   - Rate: 15-20 linear meters floor joists per day
+
+4. Second Fix Installation
+   - Rate: 10-15 doors hung per day
+   - Rate: 30-50 linear meters skirting per day
+   - Bespoke items: assess individually
+
+DEPENDENCIES:
+- Building structure complete
+- Services first fix complete (for studwork)
+- Site measurements taken
+- Materials delivered`,
+    },
+  },
+
+  painting: {
+    name: "Painting & Decorating",
+    description: "For painting and decorating projects",
+    sections: {
+      coverLetter: { enabled: true, template: "decorating_standard", templates: [] },
+      tradeBill: { enabled: true, format: "table" as const, templates: [] },
+      reviewForms: {
+        enabled: true,
+        templates: ["scope_by_area", "surface_preparation"],
+      },
+      technicalReview: { enabled: false },
+      drawings: { enabled: false },
+      supportingDocs: { enabled: false },
+      siteRequirements: { enabled: true },
+      qualityCompliance: { enabled: false },
+    },
+    timeline: { enabled: true },
+    aiPrompts: {
+      documentCategorization: `Categorize painting documents into:
+- Floor Plans (rooms and areas)
+- Specifications (paint types, colors, finishes, coats)
+- Surface Schedules (wall finishes, preparation required)`,
+      lineItemExtraction: `Extract painting line items:
+
+PREPARATION:
+- Filling and making good
+- Sanding
+- Sugar soaping
+- Priming/sealing
+
+PAINTING:
+- Walls (m², paint type, coats)
+- Ceilings (m², paint type, coats)
+- Woodwork (linear meters or items, undercoat/gloss)
+- Metalwork (m² or items)
+
+WALLPAPERING:
+- Wall covering (m², type)
+- Paper hanging
+
+SPECIALIST FINISHES:
+- Feature walls
+- Spray finishing
+- Specialist coatings
+
+GROUP BY:
+- Room or area`,
+      timelineAnalysis: `Analyze painting installation timeline:
+
+PHASES:
+1. Preparation (30-40% of total time)
+   - Filling and sanding
+   - Priming/sealing
+   - Protection and masking
+
+2. First Coat (walls and ceilings)
+   - Rate: 80-120m² per day per decorator
+
+3. Second Coat (walls and ceilings)
+   - Rate: 100-150m² per day per decorator
+
+4. Woodwork (undercoat and gloss)
+   - Rate: 20-30 linear meters per day
+   - 2 coats minimum
+
+5. Final Inspection & Touch-ups (0.5-1 day)
+
+DEPENDENCIES:
+- Plastering complete and dry
+- All other trades finished
+- Adequate ventilation and heating
+- Room-by-room sequential access`,
     },
   },
 } as const;

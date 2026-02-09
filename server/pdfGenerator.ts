@@ -19,8 +19,8 @@ interface BrandColors {
  * Get brand colors from organization or use defaults
  */
 function getBrandColors(organization?: Organization | null): BrandColors {
-  const defaultPrimary = '#0d6a6a'; // Teal
-  const defaultSecondary = '#0a5454'; // Darker teal
+  const defaultPrimary = '#1a365d';
+  const defaultSecondary = '#2c5282';
   
   if (!organization) {
     return { primary: defaultPrimary, secondary: defaultSecondary };
@@ -61,12 +61,12 @@ export function generateQuoteHTML(data: PDFQuoteData): string {
     .map(
       (item, index) => `
       <tr>
-        <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${index + 1}</td>
-        <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${item.description || ""}</td>
-        <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: center;">${item.quantity || "1"}</td>
-        <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: center;">${item.unit || "each"}</td>
-        <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: right;">${formatCurrency(item.rate)}</td>
-        <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: right; font-weight: 500;">${formatCurrency(item.total)}</td>
+        <td style="padding: 10px 12px; border-bottom: 1pt solid #e2e8f0; font-size: 10pt;">${index + 1}</td>
+        <td style="padding: 10px 12px; border-bottom: 1pt solid #e2e8f0; font-size: 10pt;">${item.description || ""}</td>
+        <td style="padding: 10px 12px; border-bottom: 1pt solid #e2e8f0; text-align: center; font-size: 10pt;">${item.quantity || "1"}</td>
+        <td style="padding: 10px 12px; border-bottom: 1pt solid #e2e8f0; text-align: center; font-size: 10pt;">${item.unit || "each"}</td>
+        <td style="padding: 10px 12px; border-bottom: 1pt solid #e2e8f0; text-align: right; font-size: 10pt;">${formatCurrency(item.rate)}</td>
+        <td style="padding: 10px 12px; border-bottom: 1pt solid #e2e8f0; text-align: right; font-weight: 600; font-size: 10pt;">${formatCurrency(item.total)}</td>
       </tr>
     `
     )
@@ -79,7 +79,6 @@ export function generateQuoteHTML(data: PDFQuoteData): string {
     : "";
 
   // Priority: user's company name from Settings > organization name > user's name
-  // This ensures changes in Settings are reflected on PDFs
   const companyName = user.companyName || organization?.name || user.name || "Your Company";
 
   const html = `
@@ -90,50 +89,203 @@ export function generateQuoteHTML(data: PDFQuoteData): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Quote ${quote.reference || `Q-${quote.id}`}</title>
   <style>
+    @page {
+      margin: 20mm;
+    }
+
     * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
     }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      font-size: 14px;
-      line-height: 1.5;
-      color: #1f2937;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 11pt;
+      line-height: 1.6;
+      color: #2d3748;
       background: white;
     }
+
     .container {
       max-width: 800px;
       margin: 0 auto;
       padding: 40px;
     }
+
+    /* HEADINGS - Clean hierarchy */
+    h1 {
+      font-size: 24pt;
+      font-weight: 600;
+      color: ${colors.primary};
+      margin: 0 0 8mm 0;
+      padding: 0;
+      border-bottom: 2pt solid ${colors.primary};
+      padding-bottom: 3mm;
+    }
+
+    h2 {
+      font-size: 18pt;
+      font-weight: 600;
+      color: ${colors.primary};
+      margin: 8mm 0 4mm 0;
+      padding: 0;
+    }
+
+    h3 {
+      font-size: 14pt;
+      font-weight: 600;
+      color: #2d3748;
+      margin: 6mm 0 3mm 0;
+      padding: 0;
+    }
+
+    h4 {
+      font-size: 12pt;
+      font-weight: 600;
+      color: #4a5568;
+      margin: 4mm 0 2mm 0;
+      padding: 0;
+    }
+
+    /* PARAGRAPHS - Natural flow */
+    p {
+      margin: 0 0 4mm 0;
+      text-align: justify;
+    }
+
+    /* LISTS - Clean bullets */
+    ul {
+      margin: 3mm 0 4mm 0;
+      padding-left: 8mm;
+    }
+
+    ul li {
+      margin-bottom: 2mm;
+      line-height: 1.5;
+    }
+
+    /* LABELS */
+    .label {
+      font-weight: 600;
+      display: inline-block;
+      min-width: 120pt;
+    }
+
+    .value {
+      font-weight: normal;
+    }
+
+    /* TABLES - Professional, clean borders */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 4mm 0;
+    }
+
+    th {
+      background-color: ${colors.primary};
+      color: white;
+      padding: 3mm;
+      text-align: left;
+      font-weight: 600;
+      font-size: 10pt;
+    }
+
+    td {
+      padding: 2.5mm 3mm;
+      border-bottom: 1pt solid #e2e8f0;
+      font-size: 10pt;
+    }
+
+    tr:nth-child(even) {
+      background-color: #f7fafc;
+    }
+
+    /* SECTIONS */
+    .section {
+      margin-bottom: 10mm;
+    }
+
+    .page-break {
+      page-break-before: always;
+    }
+
+    /* PHASE BLOCKS */
+    .phase-block {
+      margin: 5mm 0;
+      padding: 4mm;
+      border-left: 3pt solid ${colors.secondary};
+      background-color: #f7fafc;
+    }
+
+    .phase-description {
+      text-align: justify;
+      margin: 3mm 0;
+    }
+
+    .prerequisites {
+      margin: 3mm 0;
+      padding: 3mm;
+      background-color: #fff5f5;
+      border-left: 2pt solid #fc8181;
+    }
+
+    .risk-factors {
+      margin: 3mm 0;
+      padding: 3mm;
+      background-color: #fffaf0;
+      border-left: 2pt solid #f6ad55;
+    }
+
+    /* DETAIL ROWS */
+    .detail-row {
+      margin: 2mm 0;
+      padding: 2mm 0;
+    }
+
+    .detail-row .label {
+      font-weight: 600;
+      color: #4a5568;
+    }
+
+    .detail-row .value {
+      color: #2d3748;
+    }
+
     .header {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
       margin-bottom: 40px;
       padding-bottom: 20px;
-      border-bottom: 2px solid ${colors.primary};
+      border-bottom: 2pt solid ${colors.primary};
     }
+
     .company-info {
       flex: 1;
     }
+
     .company-name {
       font-size: 24px;
       font-weight: 700;
       color: ${colors.primary};
       margin-bottom: 8px;
     }
+
     .company-details {
       color: #6b7280;
       font-size: 13px;
     }
+
     .logo-container {
       margin-left: 40px;
     }
+
     .quote-title {
       text-align: right;
     }
+
     .quote-label {
       font-size: 32px;
       font-weight: 700;
@@ -141,24 +293,29 @@ export function generateQuoteHTML(data: PDFQuoteData): string {
       text-transform: uppercase;
       letter-spacing: 2px;
     }
+
     .quote-ref {
       font-size: 16px;
       color: #6b7280;
       margin-top: 4px;
     }
+
     .quote-date {
       font-size: 14px;
       color: #6b7280;
       margin-top: 8px;
     }
+
     .parties {
       display: flex;
       justify-content: space-between;
       margin-bottom: 40px;
     }
+
     .party {
       flex: 1;
     }
+
     .party-label {
       font-size: 12px;
       font-weight: 600;
@@ -167,22 +324,26 @@ export function generateQuoteHTML(data: PDFQuoteData): string {
       letter-spacing: 1px;
       margin-bottom: 8px;
     }
+
     .party-name {
       font-size: 18px;
       font-weight: 600;
       color: #1f2937;
       margin-bottom: 4px;
     }
+
     .party-details {
       color: #6b7280;
       font-size: 13px;
     }
+
     .description {
-      background: #f9fafb;
+      background: #f7fafc;
       padding: 20px;
       border-radius: 8px;
       margin-bottom: 30px;
     }
+
     .description-label {
       font-size: 12px;
       font-weight: 600;
@@ -191,67 +352,80 @@ export function generateQuoteHTML(data: PDFQuoteData): string {
       letter-spacing: 1px;
       margin-bottom: 8px;
     }
+
     .items-table {
       width: 100%;
       border-collapse: collapse;
       margin-bottom: 30px;
     }
+
     .items-table th {
       background: ${colors.primary};
       color: white;
       padding: 12px;
       text-align: left;
       font-weight: 600;
-      font-size: 13px;
+      font-size: 10pt;
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
+
     .items-table th:nth-child(3),
     .items-table th:nth-child(4) {
       text-align: center;
     }
+
     .items-table th:nth-child(5),
     .items-table th:nth-child(6) {
       text-align: right;
     }
+
     .totals {
       display: flex;
       justify-content: flex-end;
       margin-bottom: 40px;
     }
+
     .totals-table {
       width: 300px;
     }
+
     .totals-row {
       display: flex;
       justify-content: space-between;
       padding: 8px 0;
       border-bottom: 1px solid #e5e7eb;
     }
+
     .totals-row.total {
       border-bottom: none;
       border-top: 2px solid ${colors.primary};
       padding-top: 12px;
       margin-top: 8px;
     }
+
     .totals-label {
       color: #6b7280;
     }
+
     .totals-value {
       font-weight: 500;
     }
+
     .totals-row.total .totals-label,
     .totals-row.total .totals-value {
       font-size: 18px;
       font-weight: 700;
       color: ${colors.primary};
     }
+
     .terms {
-      background: #f9fafb;
+      background: #f7fafc;
       padding: 20px;
       border-radius: 8px;
       margin-bottom: 30px;
     }
+
     .terms-label {
       font-size: 12px;
       font-weight: 600;
@@ -260,11 +434,13 @@ export function generateQuoteHTML(data: PDFQuoteData): string {
       letter-spacing: 1px;
       margin-bottom: 8px;
     }
+
     .terms-content {
       color: #4b5563;
       font-size: 13px;
       white-space: pre-wrap;
     }
+
     .footer {
       text-align: center;
       padding-top: 30px;
@@ -272,6 +448,7 @@ export function generateQuoteHTML(data: PDFQuoteData): string {
       color: #9ca3af;
       font-size: 12px;
     }
+
     .validity {
       background: #fef3c7;
       color: #92400e;
@@ -280,6 +457,7 @@ export function generateQuoteHTML(data: PDFQuoteData): string {
       margin-bottom: 30px;
       font-size: 13px;
     }
+
     @media print {
       body {
         print-color-adjust: exact;
@@ -337,7 +515,7 @@ export function generateQuoteHTML(data: PDFQuoteData): string {
       quote.validUntil
         ? `
     <div class="validity">
-      <strong>Valid Until:</strong> ${formatDate(quote.validUntil)}
+      <span class="label">Valid Until:</span> ${formatDate(quote.validUntil)}
     </div>
     `
         : ""
@@ -408,7 +586,9 @@ export function generateQuoteHTML(data: PDFQuoteData): string {
 }
 
 /**
- * Generate additional HTML sections for comprehensive quotes
+ * Generate additional HTML sections for comprehensive quotes.
+ * Uses professional formatting with clean heading hierarchy,
+ * no mid-sentence bolding, and natural paragraph flow.
  */
 function generateComprehensiveSections(quote: Quote, colors: BrandColors): string {
   if ((quote as any).quoteMode !== "comprehensive") return "";
@@ -421,33 +601,65 @@ function generateComprehensiveSections(quote: Quote, colors: BrandColors): strin
   // Timeline section
   if (config.timeline?.enabled && config.timeline.phases && config.timeline.phases.length > 0) {
     html += `
-    <div style="margin-top: 40px; page-break-before: auto;">
-      <div style="font-size: 18px; font-weight: 700; color: ${colors.primary}; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid ${colors.primary};">
-        Project Timeline
-      </div>
+    <div class="section page-break">
+      <h2>Project Timeline</h2>
+      
       ${config.timeline.estimatedDuration ? `
-      <div style="background: #f0fdf4; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 14px;">
-        <strong>Estimated Duration:</strong> ${config.timeline.estimatedDuration.value} ${config.timeline.estimatedDuration.unit}
+      <div class="detail-row">
+        <span class="label">Estimated Duration:</span>
+        <span class="value">${config.timeline.estimatedDuration.value} ${config.timeline.estimatedDuration.unit}</span>
       </div>` : ""}
-      <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-        <thead>
-          <tr>
-            <th style="background: ${colors.primary}; color: white; padding: 10px; text-align: left; font-size: 12px; text-transform: uppercase;">Phase</th>
-            <th style="background: ${colors.primary}; color: white; padding: 10px; text-align: left; font-size: 12px; text-transform: uppercase;">Description</th>
-            <th style="background: ${colors.primary}; color: white; padding: 10px; text-align: center; font-size: 12px; text-transform: uppercase;">Duration</th>
-            <th style="background: ${colors.primary}; color: white; padding: 10px; text-align: right; font-size: 12px; text-transform: uppercase;">Est. Cost</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${config.timeline.phases.map((phase, i) => `
-          <tr style="${i % 2 === 1 ? 'background: #f9fafb;' : ''}">
-            <td style="padding: 10px; border-bottom: 1px solid #e5e7eb; font-weight: 600;">${phase.name}</td>
-            <td style="padding: 10px; border-bottom: 1px solid #e5e7eb; font-size: 13px;">${phase.description}</td>
-            <td style="padding: 10px; border-bottom: 1px solid #e5e7eb; text-align: center;">${phase.duration?.value || ""} ${phase.duration?.unit || ""}</td>
-            <td style="padding: 10px; border-bottom: 1px solid #e5e7eb; text-align: right;">${phase.costBreakdown?.total != null ? `\u00A3${phase.costBreakdown.total.toLocaleString()}` : ""}</td>
-          </tr>`).join("")}
-        </tbody>
-      </table>
+      ${config.timeline.startDate ? `
+      <div class="detail-row">
+        <span class="label">Start Date:</span>
+        <span class="value">${new Date(config.timeline.startDate).toLocaleDateString('en-GB')}</span>
+      </div>` : ""}
+      ${config.timeline.endDate ? `
+      <div class="detail-row">
+        <span class="label">Completion Date:</span>
+        <span class="value">${new Date(config.timeline.endDate).toLocaleDateString('en-GB')}</span>
+      </div>` : ""}
+
+      <h3>Phased Programme</h3>
+      
+      ${config.timeline.phases.map((phase, idx) => `
+      <div class="phase-block">
+        <h4>Phase ${idx + 1}: ${phase.name}</h4>
+        
+        <p class="phase-description">${phase.description}</p>
+        
+        <div class="detail-row">
+          <span class="label">Duration:</span>
+          <span class="value">${phase.duration?.value || ""} ${phase.duration?.unit || ""}</span>
+        </div>
+        ${phase.resources?.manpower ? `
+        <div class="detail-row">
+          <span class="label">Resources:</span>
+          <span class="value">${phase.resources.manpower}</span>
+        </div>` : ""}
+        ${phase.costBreakdown?.total != null ? `
+        <div class="detail-row">
+          <span class="label">Cost:</span>
+          <span class="value">\u00A3${phase.costBreakdown.total.toLocaleString()}</span>
+        </div>` : ""}
+        
+        ${phase.dependencies && phase.dependencies.length > 0 ? `
+        <div class="prerequisites">
+          <h4 style="margin-bottom: 2mm;">Prerequisites</h4>
+          <ul>
+            ${phase.dependencies.map((dep: string) => `<li>${dep}</li>`).join("")}
+          </ul>
+        </div>` : ""}
+        
+        ${phase.riskFactors && phase.riskFactors.length > 0 ? `
+        <div class="risk-factors">
+          <h4 style="margin-bottom: 2mm;">Risk Factors</h4>
+          <ul>
+            ${phase.riskFactors.map((risk: string) => `<li>${risk}</li>`).join("")}
+          </ul>
+        </div>` : ""}
+      </div>
+      `).join("\n")}
     </div>`;
   }
 
@@ -456,30 +668,23 @@ function generateComprehensiveSections(quote: Quote, colors: BrandColors): strin
   if (siteData?.enabled && siteData.data) {
     const sd = siteData.data;
     html += `
-    <div style="margin-top: 30px;">
-      <div style="font-size: 18px; font-weight: 700; color: ${colors.primary}; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid ${colors.primary};">
-        Site Requirements
-      </div>
-      <div style="background: #f9fafb; padding: 16px; border-radius: 8px;">
-        ${sd.workingHours ? `
-        <div style="margin-bottom: 12px;">
-          <strong>Working Hours:</strong> ${sd.workingHours.start} - ${sd.workingHours.end} (${sd.workingHours.days})
-        </div>` : ""}
-        ${sd.accessRestrictions && sd.accessRestrictions.length > 0 ? `
-        <div style="margin-bottom: 12px;">
-          <strong>Access Restrictions:</strong>
-          <ul style="margin: 4px 0 0 20px; padding: 0;">
-            ${sd.accessRestrictions.map(r => `<li style="font-size: 13px; margin-bottom: 4px;">${r}</li>`).join("")}
-          </ul>
-        </div>` : ""}
-        ${sd.safetyRequirements && sd.safetyRequirements.length > 0 ? `
-        <div>
-          <strong>Safety Requirements:</strong>
-          <ul style="margin: 4px 0 0 20px; padding: 0;">
-            ${sd.safetyRequirements.map(r => `<li style="font-size: 13px; margin-bottom: 4px;">${r}</li>`).join("")}
-          </ul>
-        </div>` : ""}
-      </div>
+    <div class="section">
+      <h2>Site Requirements</h2>
+      ${sd.workingHours ? `
+      <div class="detail-row">
+        <span class="label">Working Hours:</span>
+        <span class="value">${sd.workingHours.start} - ${sd.workingHours.end} (${sd.workingHours.days})</span>
+      </div>` : ""}
+      ${sd.accessRestrictions && sd.accessRestrictions.length > 0 ? `
+      <h3>Access Restrictions</h3>
+      <ul>
+        ${sd.accessRestrictions.map(r => `<li>${r}</li>`).join("")}
+      </ul>` : ""}
+      ${sd.safetyRequirements && sd.safetyRequirements.length > 0 ? `
+      <h3>Safety Requirements</h3>
+      <ul>
+        ${sd.safetyRequirements.map(r => `<li>${r}</li>`).join("")}
+      </ul>` : ""}
     </div>`;
   }
 
@@ -488,45 +693,47 @@ function generateComprehensiveSections(quote: Quote, colors: BrandColors): strin
   if (qualityData?.enabled && qualityData.data) {
     const qd = qualityData.data;
     html += `
-    <div style="margin-top: 30px;">
-      <div style="font-size: 18px; font-weight: 700; color: ${colors.primary}; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid ${colors.primary};">
-        Quality & Compliance
-      </div>
-      <div style="background: #f9fafb; padding: 16px; border-radius: 8px;">
-        ${qd.requiredStandards && qd.requiredStandards.length > 0 ? `
-        <div style="margin-bottom: 12px;">
-          <strong>Required Standards:</strong>
-          <div style="margin-top: 4px;">
-            ${qd.requiredStandards.map(s => `<span style="display: inline-block; background: ${colors.primary}15; color: ${colors.primary}; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin: 2px 4px 2px 0;">${s}</span>`).join("")}
-          </div>
-        </div>` : ""}
-        ${qd.certifications && qd.certifications.length > 0 ? `
-        <div style="margin-bottom: 12px;">
-          <strong>Certifications:</strong>
-          <ul style="margin: 4px 0 0 20px; padding: 0;">
-            ${qd.certifications.map(c => `<li style="font-size: 13px; margin-bottom: 4px;">${c.name} ${c.required ? '(Required)' : '(Optional)'}</li>`).join("")}
-          </ul>
-        </div>` : ""}
-        ${qd.inspectionPoints && qd.inspectionPoints.length > 0 ? `
-        <div>
-          <strong>Inspection Points:</strong>
-          <table style="width: 100%; border-collapse: collapse; margin-top: 8px;">
-            <thead>
-              <tr>
-                <th style="background: #f3f4f6; padding: 8px; text-align: left; font-size: 12px; border-bottom: 1px solid #e5e7eb;">Phase</th>
-                <th style="background: #f3f4f6; padding: 8px; text-align: left; font-size: 12px; border-bottom: 1px solid #e5e7eb;">Description</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${qd.inspectionPoints.map(p => `
-              <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-size: 13px; font-weight: 500;">${p.phase}</td>
-                <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-size: 13px;">${p.description}</td>
-              </tr>`).join("")}
-            </tbody>
-          </table>
-        </div>` : ""}
-      </div>
+    <div class="section">
+      <h2>Quality and Compliance</h2>
+      ${qd.requiredStandards && qd.requiredStandards.length > 0 ? `
+      <h3>Required Standards</h3>
+      <ul>
+        ${qd.requiredStandards.map(s => `<li>${s}</li>`).join("")}
+      </ul>` : ""}
+      ${qd.certifications && qd.certifications.length > 0 ? `
+      <h3>Certifications</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Certification</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${qd.certifications.map(c => `
+          <tr>
+            <td>${c.name}</td>
+            <td>${c.required ? 'Required' : 'Optional'}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>` : ""}
+      ${qd.inspectionPoints && qd.inspectionPoints.length > 0 ? `
+      <h3>Inspection Points</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Phase</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${qd.inspectionPoints.map(p => `
+          <tr>
+            <td>${p.phase}</td>
+            <td>${p.description}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>` : ""}
     </div>`;
   }
 
@@ -535,44 +742,39 @@ function generateComprehensiveSections(quote: Quote, colors: BrandColors): strin
   if (techData?.enabled && techData.data) {
     const td = techData.data;
     html += `
-    <div style="margin-top: 30px;">
-      <div style="font-size: 18px; font-weight: 700; color: ${colors.primary}; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid ${colors.primary};">
-        Technical Review
-      </div>
+    <div class="section">
+      <h2>Technical Review</h2>
       ${td.materialTypes && td.materialTypes.length > 0 ? `
-      <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+      <h3>Material Schedule</h3>
+      <table>
         <thead>
           <tr>
-            <th style="background: ${colors.primary}; color: white; padding: 8px; text-align: left; font-size: 12px;">Item</th>
-            <th style="background: ${colors.primary}; color: white; padding: 8px; text-align: left; font-size: 12px;">Specification</th>
-            <th style="background: ${colors.primary}; color: white; padding: 8px; text-align: left; font-size: 12px;">Grade</th>
-            <th style="background: ${colors.primary}; color: white; padding: 8px; text-align: left; font-size: 12px;">Quantity</th>
+            <th>Item</th>
+            <th>Specification</th>
+            <th>Grade</th>
+            <th>Quantity</th>
           </tr>
         </thead>
         <tbody>
-          ${td.materialTypes.map((m, i) => `
-          <tr style="${i % 2 === 1 ? 'background: #f9fafb;' : ''}">
-            <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-size: 13px;">${m.item}</td>
-            <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-size: 13px;">${m.specification}</td>
-            <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-size: 13px;">${m.grade || ''}</td>
-            <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-size: 13px;">${m.quantity || ''}</td>
+          ${td.materialTypes.map(m => `
+          <tr>
+            <td>${m.item}</td>
+            <td>${m.specification}</td>
+            <td>${m.grade || ''}</td>
+            <td>${m.quantity || ''}</td>
           </tr>`).join("")}
         </tbody>
       </table>` : ""}
       ${td.specialRequirements && td.specialRequirements.length > 0 ? `
-      <div style="margin-bottom: 12px;">
-        <strong>Special Requirements:</strong>
-        <ul style="margin: 4px 0 0 20px; padding: 0;">
-          ${td.specialRequirements.map(r => `<li style="font-size: 13px; margin-bottom: 4px;">${r}</li>`).join("")}
-        </ul>
-      </div>` : ""}
+      <h3>Special Requirements</h3>
+      <ul>
+        ${td.specialRequirements.map(r => `<li>${r}</li>`).join("")}
+      </ul>` : ""}
       ${td.inspectionRequirements && td.inspectionRequirements.length > 0 ? `
-      <div>
-        <strong>Inspection Requirements:</strong>
-        <ul style="margin: 4px 0 0 20px; padding: 0;">
-          ${td.inspectionRequirements.map(r => `<li style="font-size: 13px; margin-bottom: 4px;">${r}</li>`).join("")}
-        </ul>
-      </div>` : ""}
+      <h3>Inspection Requirements</h3>
+      <ul>
+        ${td.inspectionRequirements.map(r => `<li>${r}</li>`).join("")}
+      </ul>` : ""}
     </div>`;
   }
 

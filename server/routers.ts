@@ -332,10 +332,33 @@ export const appRouter = router({
     // Get available trade presets
     getTradePresets: publicProcedure
       .query(() => {
+        const categoryMap: Record<string, string> = {
+          construction: "Construction & Engineering",
+          electrical: "Construction & Engineering",
+          metalwork: "Construction & Engineering",
+          general_construction: "Construction & Engineering",
+          roofing: "Construction & Engineering",
+          scaffolding: "Construction & Engineering",
+          plumbing: "Mechanical & Services",
+          hvac: "Mechanical & Services",
+          fire_protection: "Mechanical & Services",
+          lifts_access: "Mechanical & Services",
+          mechanical_fabrication: "Mechanical & Services",
+          insulation_retrofit: "Mechanical & Services",
+          bathrooms_kitchens: "Fit-Out & Finishing",
+          windows_doors: "Fit-Out & Finishing",
+          joinery: "Fit-Out & Finishing",
+          painting: "Fit-Out & Finishing",
+          building_maintenance: "Specialist Services",
+          commercial_cleaning: "Specialist Services",
+          pest_control: "Specialist Services",
+          custom: "Other",
+        };
         return Object.entries(TRADE_PRESETS).map(([key, preset]) => ({
           key,
           name: preset.name,
           description: preset.description,
+          category: categoryMap[key] || "Other",
         }));
       }),
 
@@ -375,9 +398,17 @@ export const appRouter = router({
           messages: [
             {
               role: "system",
-              content: `You are an experienced project planner. Analyze the quote details and suggest a realistic project timeline.
+              content: `You are a senior project planner with decades of trade experience. Given the quote details below, produce a realistic phased programme.
 
+Trade-specific guidance:
 ${timelinePrompt}
+
+Rules:
+- Use plain, direct language. No filler phrases such as "I recommend" or "Based on my analysis".
+- Every phase must have a concrete description of the work, not a vague summary.
+- Durations must reflect real-world trade timelines, not optimistic estimates.
+- Cost breakdowns must be plausible for the scope described.
+- Risk factors should be specific and actionable, not generic.
 
 Respond with valid JSON only:
 {
@@ -386,11 +417,12 @@ Respond with valid JSON only:
     {
       "id": "phase-1",
       "name": "Phase Name",
-      "description": "Brief description",
+      "description": "Concrete description of work in this phase",
       "duration": { "value": 2, "unit": "weeks" },
       "resources": { "manpower": "2 workers", "equipment": ["crane"], "materials": ["steel"] },
       "costBreakdown": { "labour": 5000, "materials": 3000, "equipment": 1000, "total": 9000 },
-      "riskFactors": ["Weather delays"]
+      "riskFactors": ["Specific risk"],
+      "dependencies": ["What must be completed before this phase"]
     }
   ]
 }`,
@@ -467,7 +499,7 @@ Respond with valid JSON only:
           messages: [
             {
               role: "system",
-              content: `You are a document categorization specialist.\n\n${categorizationPrompt}\n\nRespond with valid JSON only:\n{\n  "category": "category_name",\n  "confidence": 0.95,\n  "reasoning": "brief explanation"\n}`,
+              content: `You are a document classifier for trade and construction tenders.\n\n${categorizationPrompt}\n\nRules:\n- Classify based on document content, not filename alone.\n- Use plain language in the reasoning field. No AI phrasing.\n- Confidence must reflect genuine certainty, not a default high value.\n\nRespond with valid JSON only:\n{\n  "category": "category_name",\n  "confidence": 0.95,\n  "reasoning": "One-sentence factual explanation of why this category was chosen"\n}`,
             },
             {
               role: "user",
@@ -546,7 +578,13 @@ Respond with valid JSON only:
           messages: [
             {
               role: "system",
-              content: `You are a tender review specialist. Analyze the tender documents and extract information to populate review forms.
+              content: `You are a tender review specialist extracting structured data from trade documents.
+
+Rules:
+- Extract only what is explicitly stated in the documents. Do not invent requirements.
+- Use plain, factual language. No phrases like "I've identified" or "Based on my review".
+- If a field cannot be determined from the documents, omit it or use an empty array.
+- Standards and certifications must use their official names (e.g. "BS EN 1090-2", not paraphrased versions).
 
 Respond with valid JSON:
 {
@@ -1178,7 +1216,7 @@ Extract and report:
 8. **Notes & Warnings**: Any special instructions, warnings, or conditions
 
 Be thorough and precise - missed details in technical drawings often lead to costly errors in quotes. Include all numbers, dates, and technical details exactly as they appear.`,
-                  "You are a document analyzer specializing in construction, engineering, IT infrastructure, and technical documents. Your role is to extract all relevant information from technical drawings, floor plans, specifications, and project documents to support accurate quote generation. Be meticulous about measurements, quantities, and specifications."
+                  "You are a document extraction tool for trade and construction tenders. Extract all text, measurements, specifications, and quantities exactly as they appear. Report facts only. Do not summarise, interpret, or add commentary. Use the document's own terminology."
                 );
               } else if (input.inputType === "image") {
                 // Check if Claude API is configured
@@ -1214,7 +1252,7 @@ Extract and report:
 7. **Notes & Warnings**: Any notes, warnings, or special instructions
 
 Be thorough - missed details in drawings often lead to costly errors in quotes.`,
-                  "You are an image analyzer specializing in construction, engineering, IT infrastructure, and technical drawings. Your role is to extract all relevant information from technical drawings, floor plans, site photos, and specifications to support accurate quote generation. Be meticulous about measurements, quantities, and visual details."
+                  "You are an image extraction tool for trade and construction tenders. Extract all visible text, dimensions, symbols, and details exactly as shown. Report facts only. Do not summarise, interpret, or add commentary. Use the drawing's own labels and terminology."
                 );
               } else if (input.inputType === "audio") {
                 // Transcribe audio
@@ -1478,16 +1516,16 @@ Be thorough and precise - missed details in technical drawings often lead to cos
             messages: [
               {
                 role: "system",
-                content: `You are analyzing an image for a quoting/estimation system. This could be a technical drawing, floor plan, specification sheet, or site photo.
+                content: `Extract all information from this image for quoting purposes.
 
-Extract and report:
-1. **Text Content**: Any visible text, labels, dimensions, measurements, specifications
-2. **Symbols & Legends**: Any symbols, abbreviations, or legend items with their meanings
-3. **Key Details**: Important features, quantities, materials, or specifications visible
-4. **Measurements**: All dimensions, areas, quantities shown
-5. **Notes & Warnings**: Any notes, warnings, or special instructions
+Report the following, using the image's own labels and terminology:
+1. **Text Content**: All visible text, labels, dimensions, measurements, and specifications exactly as shown.
+2. **Symbols & Legends**: All symbols, abbreviations, and legend items with their meanings.
+3. **Key Details**: Features, quantities, materials, and specifications visible.
+4. **Measurements**: All dimensions, areas, and quantities shown with their units.
+5. **Notes & Warnings**: Any notes, warnings, or special instructions.
 
-Be thorough - missed details in drawings often lead to costly errors in quotes.`,
+Report facts only. Do not interpret or add commentary.`,
               },
               {
                 role: "user",
@@ -1501,7 +1539,7 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
                   },
                   {
                     type: "text",
-                    text: "Please analyze this image thoroughly for quoting purposes. Extract all text, measurements, symbols, and important details.",
+                    text: "Extract all text, measurements, symbols, and details from this image.",
                   },
                 ],
               },
@@ -1748,18 +1786,17 @@ ${internalEstimate ? `## Internal Estimate Notes
 
         const userPrompt = prompts[input.promptType];
 
-        const systemPrompt = `You are an experienced business consultant and estimator helping review quotes for a professional services business. 
+        const systemPrompt = `You are a senior estimator reviewing a colleague's quote before it goes to the client.
 
-You provide practical, actionable advice based on real-world experience. Your responses should be:
-- Specific and relevant to the quote details provided
-- Practical and actionable
-- Professional but conversational
-- Focused on helping the user create better, more complete quotes
-
-Do NOT use generic advice. Base your response on the specific quote details provided.
-Keep responses concise but thorough - aim for 3-5 key points.
-Use bullet points for clarity.
-Do not start with phrases like "Based on the quote..." - get straight to the insights.`;
+Rules:
+- Write as a tradesperson would speak: direct, practical, no waffle.
+- Never use phrases like "I've analyzed", "Based on my review", "I recommend", or "It's worth noting".
+- Get straight to the point. Lead with the most important observation.
+- Every suggestion must reference a specific line item, rate, or detail from the quote.
+- If something looks underpriced or overpriced, say so plainly with reasoning.
+- Keep responses to 3-5 key points. No padding.
+- Use bullet points for clarity.
+- If the quote looks solid, say so briefly and move on.`;
 
         try {
           const response = await invokeLLM({
@@ -1867,7 +1904,14 @@ Do not start with phrases like "Based on the quote..." - get straight to the ins
           messages: [
             {
               role: "system",
-              content: `You are an expert estimator/quoting assistant. Based on the provided evidence (transcriptions, documents, images, emails), generate a structured quote draft.
+              content: `You are a senior estimator preparing a quote from tender evidence. Extract facts from the documents provided and produce a structured draft.
+
+Rules:
+- Extract client details, scope, and quantities directly from the evidence. Do not invent information.
+- Descriptions must be factual and specific to the project. No generic filler.
+- Line item descriptions should be clear enough for a tradesperson to price without further context.
+- Rates must be realistic for the UK market. If unsure, use conservative estimates and flag in assumptions.
+- The description field appears on the client-facing PDF, so write it professionally in plain English.
 
 You MUST respond with valid JSON in this exact format:
 {
@@ -1892,11 +1936,11 @@ You MUST respond with valid JSON in this exact format:
 }
 
 IMPORTANT for description field:
-- Write a professional, detailed paragraph (not bullet points)
-- Explain what the project involves and what the client will receive
-- Mention specific deliverables from the evidence
-- Include any context about the client's business or goals
-- This description appears on the final quote PDF sent to clients, so make it comprehensive and professional
+- Write 3-5 sentences in plain professional English. No bullet points.
+- State what the project involves and what the client will receive.
+- Reference specific deliverables extracted from the evidence.
+- Do not use phrases like "This comprehensive quote covers" or "We are pleased to offer".
+- Write as if a tradesperson is explaining the scope to the client directly.
 
 Be thorough but realistic with pricing. Extract all client details mentioned. List specific line items with quantities. Note any assumptions you're making and things that are explicitly excluded.${catalogContext}`,
             },

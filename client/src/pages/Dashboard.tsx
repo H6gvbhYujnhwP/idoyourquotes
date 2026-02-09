@@ -393,15 +393,28 @@ export default function Dashboard() {
                   <SelectTrigger>
                     <SelectValue placeholder="Select your trade..." />
                   </SelectTrigger>
-                  <SelectContent>
-                    {tradePresets?.map((preset) => (
-                      <SelectItem key={preset.key} value={preset.key}>
-                        <div>
-                          <div className="font-medium">{preset.name}</div>
-                          <div className="text-xs text-muted-foreground">{preset.description}</div>
+                  <SelectContent className="max-h-80">
+                    {tradePresets && (() => {
+                      const grouped = tradePresets.reduce<Record<string, typeof tradePresets>>((acc, preset) => {
+                        const cat = (preset as any).category || "Other";
+                        if (!acc[cat]) acc[cat] = [];
+                        acc[cat].push(preset);
+                        return acc;
+                      }, {});
+                      return Object.entries(grouped).map(([category, presets]) => (
+                        <div key={category}>
+                          <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{category}</div>
+                          {presets.map((preset) => (
+                            <SelectItem key={preset.key} value={preset.key}>
+                              <div>
+                                <div className="font-medium">{preset.name}</div>
+                                <div className="text-xs text-muted-foreground">{preset.description}</div>
+                              </div>
+                            </SelectItem>
+                          ))}
                         </div>
-                      </SelectItem>
-                    ))}
+                      ));
+                    })()}
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
