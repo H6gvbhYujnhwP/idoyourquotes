@@ -2129,6 +2129,7 @@ Be thorough but realistic with pricing. Extract all client details mentioned. Li
                   resources: p.resources,
                   costBreakdown: p.costBreakdown,
                   riskFactors: p.riskFactors,
+                  deliverables: p.deliverables,
                   status: "pending" as const,
                 })),
               } : existingConfig.timeline,

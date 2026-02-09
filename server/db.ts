@@ -387,6 +387,9 @@ export async function createQuote(data: Partial<InsertQuote> & { userId: number;
     taxRate: data.taxRate || "0.00",
     taxAmount: data.taxAmount || "0.00",
     total: data.total || "0.00",
+    quoteMode: data.quoteMode || "simple",
+    tradePreset: data.tradePreset,
+    comprehensiveConfig: data.comprehensiveConfig,
   }).returning();
 
   return result;
@@ -504,6 +507,9 @@ export async function duplicateQuote(
     taxRate: originalQuote.taxRate,
     taxAmount: originalQuote.taxAmount,
     total: originalQuote.total,
+    quoteMode: originalQuote.quoteMode,
+    tradePreset: originalQuote.tradePreset,
+    comprehensiveConfig: originalQuote.comprehensiveConfig,
   }).returning();
 
   // Copy line items
@@ -520,6 +526,8 @@ export async function duplicateQuote(
       unit: item.unit,
       rate: item.rate,
       total: item.total,
+      phaseId: item.phaseId,
+      category: item.category,
     }));
     await db.insert(quoteLineItems).values(newLineItems);
   }
