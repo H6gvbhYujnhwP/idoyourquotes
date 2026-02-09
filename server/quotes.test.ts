@@ -138,6 +138,10 @@ describe("quotes router", () => {
         orgId: 10,
         title: "New Quote",
         clientName: "Test Client",
+        terms: undefined,
+        quoteMode: "simple",
+        tradePreset: undefined,
+        comprehensiveConfig: undefined,
       });
       expect(result).toEqual(mockQuote);
     });
@@ -157,7 +161,14 @@ describe("quotes router", () => {
 
       const result = await caller.quotes.create({});
 
-      expect(db.createQuote).toHaveBeenCalledWith({ userId: 1, orgId: undefined });
+      expect(db.createQuote).toHaveBeenCalledWith({
+        userId: 1,
+        orgId: undefined,
+        terms: undefined,
+        quoteMode: "simple",
+        tradePreset: undefined,
+        comprehensiveConfig: undefined,
+      });
       expect(result).toEqual(mockQuote);
     });
   });

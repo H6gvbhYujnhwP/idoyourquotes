@@ -14,6 +14,7 @@ export const userRoleEnum = pgEnum("user_role", ["user", "admin"]);
 export const orgMemberRoleEnum = pgEnum("org_member_role", ["owner", "admin", "member"]);
 export const quoteStatusEnum = pgEnum("quote_status", ["draft", "sent", "accepted", "declined"]);
 export const inputTypeEnum = pgEnum("input_type", ["pdf", "image", "audio", "email", "text", "document"]);
+export const quoteModeEnum = pgEnum("quote_mode", ["simple", "comprehensive"]);
 
 /**
  * Organizations - multi-tenant container for all data
@@ -128,6 +129,10 @@ export const quotes = pgTable("quotes", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   sentAt: timestamp("sent_at"),
   acceptedAt: timestamp("accepted_at"),
+  // Comprehensive quote fields
+  quoteMode: quoteModeEnum("quote_mode").default("simple").notNull(),
+  tradePreset: varchar("trade_preset", { length: 50 }),
+  comprehensiveConfig: json("comprehensive_config").$type<ComprehensiveConfig>(),
 });
 
 export type Quote = typeof quotes.$inferSelect;
@@ -148,6 +153,9 @@ export const quoteLineItems = pgTable("quote_line_items", {
   total: decimal("total", { precision: 12, scale: 2 }).default("0.00"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  // Comprehensive quote phase tracking
+  phaseId: varchar("phase_id", { length: 50 }),
+  category: varchar("category", { length: 100 }),
 });
 
 export type QuoteLineItem = typeof quoteLineItems.$inferSelect;
@@ -234,3 +242,99 @@ export const catalogItems = pgTable("catalog_items", {
 
 export type CatalogItem = typeof catalogItems.$inferSelect;
 export type InsertCatalogItem = typeof catalogItems.$inferInsert;
+
+// ============ COMPREHENSIVE QUOTE TYPES ============
+
+/**
+ * ComprehensiveConfig - stored as JSONB in quotes.comprehensive_config
+ * Controls which sections are enabled and stores section-specific data
+ */
+export interface ComprehensiveConfig {
+  sections: {
+    coverLetter: { enabled: boolean; template?: string; content?: string };
+    tradeBill: { enabled: boolean; format?: "table" | "excel"; excelFileKey?: string };
+    reviewForms: { enabled: boolean; templates: string[]; data?: Record<string, ReviewFormData> };
+    technicalReview: { enabled: boolean; checklist?: string[]; data?: TechnicalReviewData };
+    drawings: { enabled: boolean; categories?: string[]; filesByCategory?: Record<string, number[]> };
+    supportingDocs: { enabled: boolean; categories?: string[]; filesByCategory?: Record<string, number[]> };
+    siteRequirements: { enabled: boolean; data?: SiteRequirementsData };
+    qualityCompliance: { enabled: boolean; data?: QualityComplianceData };
+    customSections?: Array<{ id: string; title: string; type: string; content?: unknown }>;
+  };
+  timeline?: {
+    enabled: boolean;
+    estimatedDuration?: { value: number; unit: "days" | "weeks" | "months" };
+    startDate?: string;
+    endDate?: string;
+    phases?: ProjectPhase[];
+  };
+  tradeSpecific?: {
+    extractElectricalQuantities?: boolean;
+    materialGradeTracking?: boolean;
+    customDimensionFields?: string[];
+  };
+}
+
+export interface ProjectPhase {
+  id: string;
+  name: string;
+  description: string;
+  duration: { value: number; unit: "days" | "weeks" | "months" };
+  startDate?: string;
+  endDate?: string;
+  dependencies?: string[];
+  resources?: {
+    manpower?: string;
+    equipment?: string[];
+    materials?: string[];
+  };
+  lineItemIds?: number[];
+  costBreakdown?: {
+    labour?: number;
+    materials?: number;
+    equipment?: number;
+    total: number;
+  };
+  status?: "pending" | "in_progress" | "completed";
+  riskFactors?: string[];
+}
+
+export interface SiteRequirementsData {
+  workingHours?: { start: string; end: string; days: string };
+  accessRestrictions?: string[];
+  parkingStorage?: string;
+  safetyRequirements?: string[];
+  permitNeeds?: string[];
+  utilities?: { power?: boolean; water?: boolean; other?: string[] };
+  constraints?: string[];
+}
+
+export interface QualityComplianceData {
+  requiredStandards?: string[];
+  certifications?: Array<{ name: string; required: boolean; providedBy?: string }>;
+  inspectionPoints?: Array<{ phase: string; description: string; inspector?: string }>;
+  testingSchedule?: Array<{ test: string; timing: string; responsibility: string }>;
+  signOffRequirements?: string[];
+}
+
+export interface ReviewFormData {
+  [key: string]: {
+    question: string;
+    answer: string | boolean | string[];
+    notes?: string;
+  };
+}
+
+export interface TechnicalReviewData {
+  materialTypes?: Array<{ item: string; specification: string; grade?: string; quantity?: string }>;
+  qualityAcceptance?: { standard: string; class?: string };
+  specialRequirements?: string[];
+  weldingSpecs?: string;
+  finishingRequirements?: string;
+  inspectionRequirements?: string[];
+  checklist?: Array<{ item: string; status: "yes" | "no" | "n/a"; notes?: string }>;
+}
+
+export type ComprehensiveQuote = Quote & {
+  comprehensiveConfig: ComprehensiveConfig;
+};

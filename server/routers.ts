@@ -49,6 +49,8 @@ import {
   logUsage,
 } from "./db";
 import { transcribeAudio } from "./_core/voiceTranscription";
+import { TRADE_PRESETS, TradePresetKey } from "./tradePresets";
+import type { ComprehensiveConfig } from "../drizzle/schema";
 
 /**
  * Helper function to get a quote with org-first access pattern.
@@ -182,6 +184,8 @@ export const appRouter = router({
         clientAddress: z.string().optional(),
         description: z.string().optional(),
         terms: z.string().optional(),
+        quoteMode: z.enum(["simple", "comprehensive"]).optional(),
+        tradePreset: z.string().optional(),
       }).optional())
       .mutation(async ({ ctx, input }) => {
         // Get user's organization to set orgId
@@ -190,12 +194,39 @@ export const appRouter = router({
         // Auto-populate T&C from user's default if not provided
         const terms = input?.terms || ctx.user.defaultTerms || undefined;
         
-        return createQuote({
+        // Build comprehensive config if mode is comprehensive
+        let comprehensiveConfig: ComprehensiveConfig | undefined;
+        const quoteMode = input?.quoteMode || "simple";
+        const tradePreset = input?.tradePreset;
+        
+        if (quoteMode === "comprehensive" && tradePreset && tradePreset in TRADE_PRESETS) {
+          const preset = TRADE_PRESETS[tradePreset as TradePresetKey];
+          comprehensiveConfig = {
+            sections: {
+              coverLetter: { enabled: preset.sections.coverLetter.enabled },
+              tradeBill: { enabled: preset.sections.tradeBill.enabled, format: preset.sections.tradeBill.format },
+              reviewForms: { enabled: preset.sections.reviewForms.enabled, templates: [...(preset.sections.reviewForms.templates || [])] },
+              technicalReview: { enabled: preset.sections.technicalReview.enabled, checklist: (preset.sections.technicalReview as { checklist?: string[] }).checklist },
+              drawings: { enabled: preset.sections.drawings.enabled, categories: (preset.sections.drawings as { categories?: string[] }).categories },
+              supportingDocs: { enabled: preset.sections.supportingDocs.enabled, categories: (preset.sections.supportingDocs as { categories?: string[] }).categories },
+              siteRequirements: { enabled: preset.sections.siteRequirements.enabled },
+              qualityCompliance: { enabled: preset.sections.qualityCompliance.enabled },
+            },
+            timeline: preset.timeline.enabled ? { enabled: true, phases: [] } : undefined,
+          };
+        }
+        
+        const quote = await createQuote({
           userId: ctx.user.id,
           orgId: org?.id,
           ...input,
           terms,
+          quoteMode: quoteMode as "simple" | "comprehensive",
+          tradePreset: tradePreset || undefined,
+          comprehensiveConfig: comprehensiveConfig as any,
         });
+        
+        return quote;
       }),
 
     update: protectedProcedure
@@ -294,6 +325,296 @@ export const appRouter = router({
         console.log(`[duplicateQuote] Created duplicate quote ${newQuote.id} (${newQuote.reference}) from original ${input.id}`);
         
         return newQuote;
+      }),
+
+    // ============ COMPREHENSIVE QUOTE ENDPOINTS ============
+
+    // Get available trade presets
+    getTradePresets: publicProcedure
+      .query(() => {
+        return Object.entries(TRADE_PRESETS).map(([key, preset]) => ({
+          key,
+          name: preset.name,
+          description: preset.description,
+        }));
+      }),
+
+    // Update comprehensive config
+    updateComprehensiveConfig: protectedProcedure
+      .input(z.object({
+        quoteId: z.number(),
+        config: z.any(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+        
+        return updateQuote(input.quoteId, ctx.user.id, {
+          comprehensiveConfig: input.config,
+        } as any);
+      }),
+
+    // AI: Suggest project timeline based on line items and trade preset
+    suggestTimeline: protectedProcedure
+      .input(z.object({ quoteId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+        if (quote.quoteMode !== "comprehensive") throw new Error("Quote is not in comprehensive mode");
+        
+        const lineItems = await getLineItemsByQuoteId(input.quoteId);
+        const preset = quote.tradePreset ? TRADE_PRESETS[quote.tradePreset as TradePresetKey] : null;
+        
+        const lineItemsText = lineItems.length > 0
+          ? lineItems.map(item => `- ${item.description}: ${item.quantity} ${item.unit} @ £${item.rate} = £${item.total}`).join("\n")
+          : "No line items added yet";
+        
+        const timelinePrompt = preset?.aiPrompts?.timelineAnalysis || "Analyze the project scope and suggest a realistic timeline with phases.";
+        
+        const response = await invokeLLM({
+          messages: [
+            {
+              role: "system",
+              content: `You are an experienced project planner. Analyze the quote details and suggest a realistic project timeline.
+
+${timelinePrompt}
+
+Respond with valid JSON only:
+{
+  "estimatedDuration": { "value": 8, "unit": "weeks" },
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "Phase Name",
+      "description": "Brief description",
+      "duration": { "value": 2, "unit": "weeks" },
+      "resources": { "manpower": "2 workers", "equipment": ["crane"], "materials": ["steel"] },
+      "costBreakdown": { "labour": 5000, "materials": 3000, "equipment": 1000, "total": 9000 },
+      "riskFactors": ["Weather delays"]
+    }
+  ]
+}`,
+            },
+            {
+              role: "user",
+              content: `Quote: ${quote.title || "Untitled"}\nClient: ${quote.clientName || "Unknown"}\nDescription: ${quote.description || "None"}\nTotal: £${quote.total || "0.00"}\n\nLine Items:\n${lineItemsText}`,
+            },
+          ],
+          response_format: { type: "json_object" },
+        });
+        
+        const content = response.choices[0]?.message?.content;
+        const responseText = typeof content === "string" ? content : "";
+        
+        try {
+          const timeline = JSON.parse(responseText);
+          
+          // Update the comprehensive config with the timeline
+          const config = (quote.comprehensiveConfig || {}) as ComprehensiveConfig;
+          const updatedConfig: ComprehensiveConfig = {
+            ...config,
+            sections: config.sections || {} as ComprehensiveConfig["sections"],
+            timeline: {
+              enabled: true,
+              estimatedDuration: timeline.estimatedDuration,
+              phases: timeline.phases || [],
+            },
+          };
+          
+          await updateQuote(input.quoteId, ctx.user.id, {
+            comprehensiveConfig: updatedConfig,
+          } as any);
+          
+          // Log usage
+          const org = await getUserPrimaryOrg(ctx.user.id);
+          if (org) {
+            await logUsage({
+              orgId: org.id,
+              userId: ctx.user.id,
+              actionType: "suggest_timeline",
+              creditsUsed: 3,
+              metadata: { quoteId: input.quoteId },
+            });
+          }
+          
+          return timeline;
+        } catch (parseError) {
+          console.error("Failed to parse timeline response:", parseError);
+          throw new Error("Failed to generate timeline. Please try again.");
+        }
+      }),
+
+    // AI: Categorize an uploaded document
+    categorizeDocument: protectedProcedure
+      .input(z.object({
+        quoteId: z.number(),
+        inputId: z.number(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+        if (quote.quoteMode !== "comprehensive") throw new Error("Quote is not in comprehensive mode");
+        
+        const inputRecord = await getInputById(input.inputId);
+        if (!inputRecord) throw new Error("Input not found");
+        
+        const preset = quote.tradePreset ? TRADE_PRESETS[quote.tradePreset as TradePresetKey] : null;
+        const categorizationPrompt = preset?.aiPrompts?.documentCategorization || "Categorize this document based on its content and purpose.";
+        
+        const docContent = inputRecord.processedContent || inputRecord.content || inputRecord.filename || "Unknown document";
+        
+        const response = await invokeLLM({
+          messages: [
+            {
+              role: "system",
+              content: `You are a document categorization specialist.\n\n${categorizationPrompt}\n\nRespond with valid JSON only:\n{\n  "category": "category_name",\n  "confidence": 0.95,\n  "reasoning": "brief explanation"\n}`,
+            },
+            {
+              role: "user",
+              content: `Document filename: ${inputRecord.filename || "unknown"}\nDocument type: ${inputRecord.inputType}\n\nContent preview:\n${docContent.substring(0, 3000)}`,
+            },
+          ],
+          response_format: { type: "json_object" },
+        });
+        
+        const content = response.choices[0]?.message?.content;
+        const responseText = typeof content === "string" ? content : "";
+        
+        try {
+          const result = JSON.parse(responseText);
+          
+          // Update comprehensive config with categorized file
+          const config = (quote.comprehensiveConfig || {}) as ComprehensiveConfig;
+          const category = result.category;
+          
+          // Add to drawings or supporting docs based on category
+          if (config.sections?.drawings?.categories?.includes(category)) {
+            if (!config.sections.drawings.filesByCategory) config.sections.drawings.filesByCategory = {};
+            if (!config.sections.drawings.filesByCategory[category]) config.sections.drawings.filesByCategory[category] = [];
+            config.sections.drawings.filesByCategory[category].push(input.inputId);
+          } else if (config.sections?.supportingDocs?.categories?.includes(category)) {
+            if (!config.sections.supportingDocs.filesByCategory) config.sections.supportingDocs.filesByCategory = {};
+            if (!config.sections.supportingDocs.filesByCategory[category]) config.sections.supportingDocs.filesByCategory[category] = [];
+            config.sections.supportingDocs.filesByCategory[category].push(input.inputId);
+          }
+          
+          await updateQuote(input.quoteId, ctx.user.id, {
+            comprehensiveConfig: config,
+          } as any);
+          
+          // Log usage
+          const org = await getUserPrimaryOrg(ctx.user.id);
+          if (org) {
+            await logUsage({
+              orgId: org.id,
+              userId: ctx.user.id,
+              actionType: "categorize_document",
+              creditsUsed: 1,
+              metadata: { quoteId: input.quoteId, inputId: input.inputId, category },
+            });
+          }
+          
+          return result;
+        } catch (parseError) {
+          console.error("Failed to parse categorization response:", parseError);
+          throw new Error("Failed to categorize document. Please try again.");
+        }
+      }),
+
+    // AI: Populate review forms from tender documents
+    populateReviewForms: protectedProcedure
+      .input(z.object({ quoteId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+        if (quote.quoteMode !== "comprehensive") throw new Error("Quote is not in comprehensive mode");
+        
+        const inputs = await getInputsByQuoteId(input.quoteId);
+        const lineItems = await getLineItemsByQuoteId(input.quoteId);
+        
+        // Build context from all processed inputs
+        const processedContent = inputs
+          .filter(inp => inp.processedContent)
+          .map(inp => `[${inp.filename || inp.inputType}]:\n${inp.processedContent}`)
+          .join("\n\n---\n\n");
+        
+        const lineItemsText = lineItems.map(item => 
+          `- ${item.description}: ${item.quantity} ${item.unit} @ £${item.rate}`
+        ).join("\n");
+        
+        const response = await invokeLLM({
+          messages: [
+            {
+              role: "system",
+              content: `You are a tender review specialist. Analyze the tender documents and extract information to populate review forms.
+
+Respond with valid JSON:
+{
+  "technicalReview": {
+    "materialTypes": [{ "item": "name", "specification": "spec", "grade": "grade", "quantity": "qty" }],
+    "specialRequirements": ["requirement"],
+    "inspectionRequirements": ["requirement"]
+  },
+  "siteRequirements": {
+    "workingHours": { "start": "08:00", "end": "16:30", "days": "Monday to Friday" },
+    "accessRestrictions": ["restriction"],
+    "safetyRequirements": ["requirement"]
+  },
+  "qualityCompliance": {
+    "requiredStandards": ["standard"],
+    "certifications": [{ "name": "cert", "required": true }],
+    "inspectionPoints": [{ "phase": "phase", "description": "desc" }]
+  }
+}`,
+            },
+            {
+              role: "user",
+              content: `Quote: ${quote.title || "Untitled"}\nClient: ${quote.clientName || "Unknown"}\n\nLine Items:\n${lineItemsText}\n\nTender Documents:\n${processedContent.substring(0, 8000)}`,
+            },
+          ],
+          response_format: { type: "json_object" },
+        });
+        
+        const content = response.choices[0]?.message?.content;
+        const responseText = typeof content === "string" ? content : "";
+        
+        try {
+          const formData = JSON.parse(responseText);
+          
+          // Update comprehensive config with form data
+          const config = (quote.comprehensiveConfig || {}) as ComprehensiveConfig;
+          
+          if (config.sections?.technicalReview?.enabled && formData.technicalReview) {
+            config.sections.technicalReview.data = formData.technicalReview;
+          }
+          if (config.sections?.siteRequirements?.enabled && formData.siteRequirements) {
+            config.sections.siteRequirements.data = formData.siteRequirements;
+          }
+          if (config.sections?.qualityCompliance?.enabled && formData.qualityCompliance) {
+            config.sections.qualityCompliance.data = formData.qualityCompliance;
+          }
+          
+          await updateQuote(input.quoteId, ctx.user.id, {
+            comprehensiveConfig: config,
+          } as any);
+          
+          // Log usage
+          const org = await getUserPrimaryOrg(ctx.user.id);
+          if (org) {
+            await logUsage({
+              orgId: org.id,
+              userId: ctx.user.id,
+              actionType: "populate_review_forms",
+              creditsUsed: 4,
+              metadata: { quoteId: input.quoteId },
+            });
+          }
+          
+          return formData;
+        } catch (parseError) {
+          console.error("Failed to parse review forms response:", parseError);
+          throw new Error("Failed to populate review forms. Please try again.");
+        }
       }),
 
     // Update quote status with validation

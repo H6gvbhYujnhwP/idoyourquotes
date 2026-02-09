@@ -34,10 +34,18 @@ import {
   PoundSterling,
   Wrench,
   MessageSquare,
+  Clock,
+  HardHat,
+  FolderOpen,
+  Layers,
+  Shield,
 } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
+import TimelineTab from "@/components/comprehensive/TimelineTab";
+import SiteQualityTab from "@/components/comprehensive/SiteQualityTab";
+import DocumentsTab from "@/components/comprehensive/DocumentsTab";
 
 type QuoteStatus = "draft" | "sent" | "accepted" | "declined";
 
@@ -707,6 +715,8 @@ export default function QuoteWorkspace() {
 
   const { quote, lineItems, inputs } = fullQuote;
   const status = quote.status as QuoteStatus;
+  const isComprehensive = (quote as any).quoteMode === "comprehensive";
+  const comprehensiveConfig = (quote as any).comprehensiveConfig;
 
   return (
     <div className="space-y-6">
@@ -754,9 +764,19 @@ export default function QuoteWorkspace() {
               <Badge className={statusConfig[status].className}>
                 {statusConfig[status].label}
               </Badge>
+              {isComprehensive && (
+                <Badge variant="outline" className="flex items-center gap-1">
+                  <Layers className="h-3 w-3" /> Comprehensive
+                </Badge>
+              )}
             </div>
             <p className="text-muted-foreground">
               {quote.clientName || "No client specified"}
+              {isComprehensive && (quote as any).tradePreset && (
+                <span className="ml-2 text-xs bg-muted px-2 py-0.5 rounded capitalize">
+                  {((quote as any).tradePreset || "").replace(/_/g, " ")}
+                </span>
+              )}
             </p>
           </div>
         </div>
@@ -846,28 +866,65 @@ export default function QuoteWorkspace() {
 
       {/* Main Content with Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5 max-w-3xl">
-          <TabsTrigger value="inputs" className="flex items-center gap-2">
-            <Upload className="h-4 w-4" />
-            <span className="hidden sm:inline">Inputs</span>
-          </TabsTrigger>
-          <TabsTrigger value="interpretation" className="flex items-center gap-2">
-            <Brain className="h-4 w-4" />
-            <span className="hidden sm:inline">Interpretation</span>
-          </TabsTrigger>
-          <TabsTrigger value="estimate" className="flex items-center gap-2">
-            <Calculator className="h-4 w-4" />
-            <span className="hidden sm:inline">Internal</span>
-          </TabsTrigger>
-          <TabsTrigger value="ai" className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4" />
-            <span className="hidden sm:inline">Ask AI</span>
-          </TabsTrigger>
-          <TabsTrigger value="quote" className="flex items-center gap-2">
-            <FileText className="h-4 w-4" />
-            <span className="hidden sm:inline">Quote</span>
-          </TabsTrigger>
-        </TabsList>
+        {isComprehensive ? (
+          <TabsList className="grid w-full grid-cols-8 max-w-5xl">
+            <TabsTrigger value="inputs" className="flex items-center gap-1">
+              <Upload className="h-4 w-4" />
+              <span className="hidden sm:inline text-xs">Inputs</span>
+            </TabsTrigger>
+            <TabsTrigger value="interpretation" className="flex items-center gap-1">
+              <Brain className="h-4 w-4" />
+              <span className="hidden sm:inline text-xs">Interpret</span>
+            </TabsTrigger>
+            <TabsTrigger value="estimate" className="flex items-center gap-1">
+              <Calculator className="h-4 w-4" />
+              <span className="hidden sm:inline text-xs">Internal</span>
+            </TabsTrigger>
+            <TabsTrigger value="timeline" className="flex items-center gap-1">
+              <Clock className="h-4 w-4" />
+              <span className="hidden sm:inline text-xs">Timeline</span>
+            </TabsTrigger>
+            <TabsTrigger value="sitequality" className="flex items-center gap-1">
+              <Shield className="h-4 w-4" />
+              <span className="hidden sm:inline text-xs">Site/Quality</span>
+            </TabsTrigger>
+            <TabsTrigger value="documents" className="flex items-center gap-1">
+              <FolderOpen className="h-4 w-4" />
+              <span className="hidden sm:inline text-xs">Documents</span>
+            </TabsTrigger>
+            <TabsTrigger value="ai" className="flex items-center gap-1">
+              <Sparkles className="h-4 w-4" />
+              <span className="hidden sm:inline text-xs">Ask AI</span>
+            </TabsTrigger>
+            <TabsTrigger value="quote" className="flex items-center gap-1">
+              <FileText className="h-4 w-4" />
+              <span className="hidden sm:inline text-xs">Quote</span>
+            </TabsTrigger>
+          </TabsList>
+        ) : (
+          <TabsList className="grid w-full grid-cols-5 max-w-3xl">
+            <TabsTrigger value="inputs" className="flex items-center gap-2">
+              <Upload className="h-4 w-4" />
+              <span className="hidden sm:inline">Inputs</span>
+            </TabsTrigger>
+            <TabsTrigger value="interpretation" className="flex items-center gap-2">
+              <Brain className="h-4 w-4" />
+              <span className="hidden sm:inline">Interpretation</span>
+            </TabsTrigger>
+            <TabsTrigger value="estimate" className="flex items-center gap-2">
+              <Calculator className="h-4 w-4" />
+              <span className="hidden sm:inline">Internal</span>
+            </TabsTrigger>
+            <TabsTrigger value="ai" className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4" />
+              <span className="hidden sm:inline">Ask AI</span>
+            </TabsTrigger>
+            <TabsTrigger value="quote" className="flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              <span className="hidden sm:inline">Quote</span>
+            </TabsTrigger>
+          </TabsList>
+        )}
 
         {/* INPUTS TAB */}
         <TabsContent value="inputs" className="space-y-6">
@@ -1708,6 +1765,27 @@ export default function QuoteWorkspace() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* COMPREHENSIVE: TIMELINE TAB */}
+        {isComprehensive && (
+          <TabsContent value="timeline" className="space-y-6">
+            <TimelineTab quoteId={quoteId} config={comprehensiveConfig} refetch={refetch} />
+          </TabsContent>
+        )}
+
+        {/* COMPREHENSIVE: SITE/QUALITY TAB */}
+        {isComprehensive && (
+          <TabsContent value="sitequality" className="space-y-6">
+            <SiteQualityTab quoteId={quoteId} config={comprehensiveConfig} refetch={refetch} />
+          </TabsContent>
+        )}
+
+        {/* COMPREHENSIVE: DOCUMENTS TAB */}
+        {isComprehensive && (
+          <TabsContent value="documents" className="space-y-6">
+            <DocumentsTab quoteId={quoteId} config={comprehensiveConfig} inputs={inputs || []} refetch={refetch} />
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* Generate Email Modal */}
