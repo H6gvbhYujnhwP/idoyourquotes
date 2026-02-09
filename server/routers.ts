@@ -382,6 +382,98 @@ export const appRouter = router({
         } as any);
       }),
 
+    // Update a specific section of comprehensive config without affecting others
+    updateComprehensiveSection: protectedProcedure
+      .input(z.object({
+        quoteId: z.number(),
+        section: z.enum(["timeline", "siteRequirements", "qualityCompliance", "technicalReview", "coverLetter"]),
+        data: z.any(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+
+        const existingConfig = ((quote as any).comprehensiveConfig || {}) as ComprehensiveConfig;
+
+        let updatedConfig: ComprehensiveConfig;
+
+        switch (input.section) {
+          case "timeline":
+            updatedConfig = {
+              ...existingConfig,
+              timeline: input.data,
+            };
+            break;
+
+          case "siteRequirements":
+            updatedConfig = {
+              ...existingConfig,
+              sections: {
+                ...existingConfig.sections,
+                siteRequirements: {
+                  ...existingConfig.sections?.siteRequirements,
+                  enabled: true,
+                  data: input.data,
+                },
+              },
+            };
+            break;
+
+          case "qualityCompliance":
+            updatedConfig = {
+              ...existingConfig,
+              sections: {
+                ...existingConfig.sections,
+                qualityCompliance: {
+                  ...existingConfig.sections?.qualityCompliance,
+                  enabled: true,
+                  data: input.data,
+                },
+              },
+            };
+            break;
+
+          case "technicalReview":
+            updatedConfig = {
+              ...existingConfig,
+              sections: {
+                ...existingConfig.sections,
+                technicalReview: {
+                  ...existingConfig.sections?.technicalReview,
+                  enabled: true,
+                  data: input.data,
+                },
+              },
+            };
+            break;
+
+          case "coverLetter":
+            updatedConfig = {
+              ...existingConfig,
+              sections: {
+                ...existingConfig.sections,
+                coverLetter: {
+                  ...existingConfig.sections?.coverLetter,
+                  enabled: true,
+                  content: input.data,
+                },
+              },
+            };
+            break;
+
+          default:
+            throw new Error("Invalid section");
+        }
+
+        await updateQuote(input.quoteId, ctx.user.id, {
+          comprehensiveConfig: updatedConfig as any,
+        } as any);
+
+        console.log(`[updateComprehensiveSection] Updated ${input.section} for quote ${input.quoteId}`);
+
+        return { success: true };
+      }),
+
     // AI: Suggest project timeline based on line items and trade preset
     suggestTimeline: protectedProcedure
       .input(z.object({ quoteId: z.number() }))
