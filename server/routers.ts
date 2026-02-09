@@ -352,6 +352,11 @@ export const appRouter = router({
           building_maintenance: "Specialist Services",
           commercial_cleaning: "Specialist Services",
           pest_control: "Specialist Services",
+          it_services: "Technology & Communications",
+          telecoms_cabling: "Technology & Communications",
+          solar_ev: "Renewable Energy",
+          groundworks: "Construction & Engineering",
+          fire_security: "Mechanical & Services",
           custom: "Other",
         };
         return Object.entries(TRADE_PRESETS).map(([key, preset]) => ({

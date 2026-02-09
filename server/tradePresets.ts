@@ -1518,6 +1518,613 @@ DEPENDENCIES:
 - Room-by-room sequential access`,
     },
   },
+  it_services: {
+    name: "IT Services / MSP",
+    description: "For managed service providers, IT support contracts, and infrastructure projects",
+    sections: {
+      coverLetter: { enabled: true, template: "it_services_standard", templates: [] },
+      tradeBill: { enabled: true, format: "table" as const, templates: [] },
+      reviewForms: {
+        enabled: true,
+        templates: ["scope_of_services", "sla_requirements"],
+      },
+      technicalReview: {
+        enabled: true,
+        checklist: [
+          "Current infrastructure assessed",
+          "Network topology documented",
+          "Licensing requirements identified",
+          "Backup and disaster recovery scope",
+          "Security requirements (firewall, endpoint, MFA)",
+          "Cloud vs on-premise decision",
+          "User count and device count confirmed",
+          "SLA response times agreed",
+          "Third-party vendor dependencies identified",
+          "Data migration requirements",
+        ],
+      },
+      drawings: {
+        enabled: true,
+        categories: ["Network Diagrams", "Rack Layouts", "Floor Plans (cable routes)", "Logical Diagrams"],
+      },
+      supportingDocs: {
+        enabled: true,
+        categories: ["ITT / RFP Documents", "Current Asset Registers", "SLA Documents", "Security Policies", "Specifications"],
+      },
+      siteRequirements: { enabled: true },
+      qualityCompliance: { enabled: true },
+    },
+    timeline: { enabled: true },
+    aiPrompts: {
+      documentCategorization: `Categorize IT services documents into:
+- ITT / RFP Documents (invitation to tender, request for proposal)
+- Network Diagrams (topology, rack layouts, logical diagrams)
+- Asset Registers (hardware lists, software inventories)
+- SLA Documents (service level agreements, response times)
+- Security Policies (acceptable use, backup policies)
+- Specifications (technical requirements, infrastructure specs)
+- Floor Plans (cable routes, server room layouts)`,
+      lineItemExtraction: `Extract IT services line items:
+
+HARDWARE:
+- Servers (make, model, specification, quantity)
+- Switches, routers, firewalls (make, model, port count)
+- Workstations, laptops, monitors
+- UPS and power distribution
+- Cabling (Cat6/6a/fibre, linear meters, terminations)
+
+SOFTWARE & LICENSING:
+- Operating system licences
+- Microsoft 365 / Google Workspace licences
+- Security software (endpoint, firewall subscriptions)
+- Backup software licences
+- Line-of-business applications
+
+SERVICES:
+- Installation and configuration (hours/days)
+- Data migration
+- User setup and training
+- Ongoing managed support (per user/per device/per month)
+- Monitoring and alerting
+
+GROUP BY:
+- Hardware
+- Software & Licensing
+- Professional Services
+- Managed Services (recurring)`,
+      timelineAnalysis: `Analyze IT project timeline:
+
+PHASES:
+1. Discovery & Audit
+   - Current infrastructure audit: 1-3 days
+   - Requirements gathering: 1-2 days
+   - Solution design: 2-5 days
+
+2. Procurement
+   - Hardware lead times: 1-4 weeks
+   - Licensing procurement: 1-5 days
+
+3. Build & Configuration
+   - Server build and config: 2-5 days per server
+   - Network equipment config: 1-3 days
+   - Cabling installation: depends on scale
+
+4. Migration
+   - Data migration: 1-5 days (depends on volume)
+   - Email migration: 1-3 days
+   - Application migration: varies
+
+5. User Deployment
+   - Workstation deployment: 10-20 per day
+   - User training: 0.5-1 day per group
+
+6. Handover & Go-Live
+   - Testing and snagging: 1-2 days
+   - Documentation handover
+   - Hypercare period: 1-2 weeks
+
+DEPENDENCIES:
+- Client sign-off on design
+- Hardware delivery
+- Access to existing systems
+- Out-of-hours migration windows`,
+    },
+  },
+
+  groundworks: {
+    name: "Groundworks & Civil Engineering",
+    description: "For excavation, foundations, drainage, and civil engineering works",
+    sections: {
+      coverLetter: { enabled: true, template: "groundworks_standard", templates: [] },
+      tradeBill: { enabled: true, format: "table" as const, templates: [] },
+      reviewForms: {
+        enabled: true,
+        templates: ["site_assessment", "ground_conditions"],
+      },
+      technicalReview: {
+        enabled: true,
+        checklist: [
+          "Ground investigation report reviewed",
+          "Foundation design confirmed",
+          "Service locations identified (gas, water, electric, telecoms)",
+          "Drainage strategy confirmed",
+          "Spoil disposal arrangements",
+          "Dewatering requirements assessed",
+          "Temporary works design (if required)",
+          "Traffic management plan",
+          "Environmental constraints (contamination, water table)",
+        ],
+      },
+      drawings: {
+        enabled: true,
+        categories: ["Site Plans", "Foundation Drawings", "Drainage Layouts", "Sections & Levels", "Setting Out Drawings"],
+      },
+      supportingDocs: {
+        enabled: true,
+        categories: ["Ground Investigation Reports", "Structural Engineer Calcs", "Specifications", "Contract Preliminaries", "Environmental Reports"],
+      },
+      siteRequirements: { enabled: true },
+      qualityCompliance: { enabled: true },
+    },
+    timeline: { enabled: true },
+    aiPrompts: {
+      documentCategorization: `Categorize groundworks documents into:
+- Site Plans (location plans, site layouts)
+- Foundation Drawings (strip, trench fill, pad, piled)
+- Drainage Layouts (foul and surface water)
+- Sections & Levels (cross sections, reduced levels)
+- Ground Investigation Reports (bore holes, trial pits)
+- Structural Engineer Calcs (foundation design)
+- Specifications (earthworks, concrete, drainage specs)
+- Environmental Reports (contamination, ecology)`,
+      lineItemExtraction: `Extract groundworks line items:
+
+SITE PREPARATION:
+- Site clearance and strip topsoil (m²)
+- Tree removal / grubbing out
+- Temporary fencing and hoarding
+- Site compound setup
+
+EXCAVATION:
+- Reduced level excavation (m³)
+- Foundation excavation (m³, depth)
+- Disposal of spoil (m³, on-site or off-site)
+- Imported fill material (m³, type)
+
+FOUNDATIONS:
+- Concrete foundations (m³, mix, type: strip/trench fill/pad)
+- Reinforcement (tonnes)
+- Blinding concrete
+- Formwork
+
+DRAINAGE:
+- Foul drainage (linear meters, diameter, depth)
+- Surface water drainage (linear meters, diameter)
+- Manholes and inspection chambers (nr, depth)
+- Soakaways / attenuation (volume)
+- Connection to mains
+
+HARDSTANDINGS:
+- Sub-base (m², thickness, type)
+- Concrete slabs (m², thickness)
+- Kerbing (linear meters)
+
+GROUP BY:
+- Site Preparation
+- Excavation & Earthworks
+- Foundations
+- Below Ground Drainage
+- External Works`,
+      timelineAnalysis: `Analyze groundworks timeline:
+
+PHASES:
+1. Site Setup & Clearance
+   - Site compound: 1-2 days
+   - Topsoil strip: rate depends on area
+   - Service diversions: 1-2 weeks lead time
+
+2. Excavation
+   - Reduced level dig: 50-200m³ per day (machine dependent)
+   - Foundation trenches: 20-50 linear meters per day
+   - Weather dependent - rain stops play
+
+3. Foundations
+   - Concrete pour: plan around batching plant availability
+   - Curing time: minimum 3-7 days before loading
+   - Strip footings: 20-30 linear meters per day
+
+4. Below Ground Drainage
+   - Rate: 15-30 linear meters per day
+   - Manholes: 1-2 per day
+   - Testing before backfill
+
+5. Backfill & External Works
+   - Backfill and compaction
+   - Sub-base and hardstandings
+   - Final levels and topsoil
+
+DEPENDENCIES:
+- Ground investigation complete
+- Building control approval
+- Service locations confirmed
+- Weather conditions (frost, heavy rain)`,
+    },
+  },
+
+  fire_security: {
+    name: "Fire & Security Systems",
+    description: "For fire alarm, detection, suppression, CCTV, access control, and intruder alarm installations",
+    sections: {
+      coverLetter: { enabled: true, template: "fire_security_standard", templates: [] },
+      tradeBill: { enabled: true, format: "table" as const, templates: [] },
+      reviewForms: {
+        enabled: true,
+        templates: ["system_design_review", "compliance_checklist"],
+      },
+      technicalReview: {
+        enabled: true,
+        checklist: [
+          "Fire risk assessment reviewed",
+          "Detection category confirmed (L1-L5, P1-P2)",
+          "Cause and effect matrix prepared",
+          "CCTV coverage areas identified",
+          "Access control door schedule confirmed",
+          "Intruder alarm grade confirmed (Grade 1-4)",
+          "Cable route survey completed",
+          "Integration requirements (BMS, lift recall, AOV)",
+          "Monitoring station requirements",
+          "Maintenance contract scope",
+        ],
+      },
+      drawings: {
+        enabled: true,
+        categories: ["Fire Alarm Layouts", "CCTV Layouts", "Access Control Layouts", "Cable Route Drawings", "Floor Plans"],
+      },
+      supportingDocs: {
+        enabled: true,
+        categories: ["Fire Risk Assessments", "System Specifications", "Cause & Effect Matrices", "Door Schedules", "Compliance Standards"],
+      },
+      siteRequirements: { enabled: true },
+      qualityCompliance: { enabled: true },
+    },
+    timeline: { enabled: true },
+    aiPrompts: {
+      documentCategorization: `Categorize fire & security documents into:
+- Fire Alarm Layouts (detector positions, sounder positions, call points)
+- CCTV Layouts (camera positions, coverage areas)
+- Access Control Layouts (door positions, reader locations)
+- Cable Route Drawings (containment, cable runs)
+- Fire Risk Assessments
+- System Specifications (BS 5839, BS EN 50131, BS EN 62676)
+- Cause & Effect Matrices (fire alarm logic)
+- Door Schedules (access control)`,
+      lineItemExtraction: `Extract fire & security line items:
+
+FIRE DETECTION & ALARM:
+- Control panel (type, zones/loops)
+- Detectors by type (smoke, heat, multi-sensor) and quantity
+- Manual call points (nr)
+- Sounders and beacons (nr)
+- Interface units (nr, purpose)
+- Cabling (fire rated, standard - linear meters)
+
+CCTV:
+- Cameras by type (dome, bullet, PTZ) and resolution
+- NVR/DVR (channels, storage)
+- Monitors
+- Cabling (Cat6, fibre - linear meters)
+
+ACCESS CONTROL:
+- Controllers (nr, doors per controller)
+- Readers (nr, type: proximity, biometric)
+- Maglocks / strikes (nr)
+- Door entry panels (nr)
+
+INTRUDER ALARM:
+- Control panel (grade, zones)
+- PIR detectors (nr)
+- Door contacts (nr)
+- Keypads (nr)
+- Signalling (dual path, monitored)
+
+GROUP BY:
+- Fire Detection & Alarm
+- CCTV
+- Access Control
+- Intruder Alarm
+- Cabling & Containment`,
+      timelineAnalysis: `Analyze fire & security installation timeline:
+
+PHASES:
+1. Design & Approval
+   - System design: 2-5 days
+   - Client/consultant approval: 1-2 weeks
+   - Equipment procurement: 2-4 weeks
+
+2. First Fix (Cabling)
+   - Containment installation
+   - Cable pulling: rate depends on building size
+   - Typically 50-100 cable drops per day with team
+
+3. Second Fix (Devices)
+   - Detector/device installation: 20-40 per day
+   - Camera installation: 8-15 per day
+   - Access control hardware: 4-8 doors per day
+
+4. Panel & Head-End
+   - Panel installation and programming: 1-3 days
+   - NVR setup and camera config: 1-2 days
+   - Access control server setup: 1-2 days
+
+5. Commissioning
+   - Fire alarm commissioning: 1-2 days
+   - CCTV commissioning: 1 day
+   - Access control commissioning: 1 day
+   - Cause and effect testing
+
+6. Certification & Handover
+   - BS 5839 certificate
+   - As-built drawings
+   - O&M manuals
+   - User training: 0.5-1 day
+
+DEPENDENCIES:
+- Ceiling grids installed (for detectors)
+- Doors hung (for access control)
+- Power supply available
+- Network infrastructure (for IP systems)`,
+    },
+  },
+
+  telecoms_cabling: {
+    name: "Telecoms / Data Cabling",
+    description: "For structured cabling, fibre optic, telecoms infrastructure, and network installations",
+    sections: {
+      coverLetter: { enabled: true, template: "telecoms_standard", templates: [] },
+      tradeBill: { enabled: true, format: "table" as const, templates: [] },
+      reviewForms: {
+        enabled: true,
+        templates: ["cabling_specification", "testing_requirements"],
+      },
+      technicalReview: {
+        enabled: true,
+        checklist: [
+          "Cable specification confirmed (Cat5e/6/6a/7, fibre type)",
+          "Outlet quantities and locations confirmed",
+          "Containment route survey completed",
+          "Comms room / cabinet locations confirmed",
+          "Patch panel and switch port counts",
+          "Fibre backbone requirements",
+          "Testing standard confirmed (ISO 11801, TIA-568)",
+          "Labelling convention agreed",
+          "As-built drawing requirements",
+          "Warranty requirements (25-year system warranty)",
+        ],
+      },
+      drawings: {
+        enabled: true,
+        categories: ["Floor Plans (outlet positions)", "Containment Routes", "Comms Room Layouts", "Riser Diagrams", "Schematic Drawings"],
+      },
+      supportingDocs: {
+        enabled: true,
+        categories: ["Cabling Specifications", "Testing Standards", "Equipment Schedules", "ITT Documents", "Manufacturer Data Sheets"],
+      },
+      siteRequirements: { enabled: true },
+      qualityCompliance: { enabled: true },
+    },
+    timeline: { enabled: true },
+    aiPrompts: {
+      documentCategorization: `Categorize telecoms/cabling documents into:
+- Floor Plans (outlet positions, furniture layouts)
+- Containment Routes (tray, basket, conduit runs)
+- Comms Room Layouts (cabinet positions, power)
+- Riser Diagrams (vertical backbone routes)
+- Cabling Specifications (cable types, testing standards)
+- Equipment Schedules (patch panels, cabinets, switches)
+- ITT Documents (tender requirements)`,
+      lineItemExtraction: `Extract telecoms/cabling line items:
+
+COPPER CABLING:
+- Data outlets (Cat5e/6/6a, single/double, quantity)
+- Cable runs (linear meters, cable type)
+- Patch panels (port count, quantity)
+- Patch leads (length, quantity)
+
+FIBRE OPTIC:
+- Fibre cables (type: OM3/OM4/OS2, core count, linear meters)
+- Fibre terminations (type: LC/SC, quantity)
+- Fibre patch panels (quantity)
+- Splice enclosures
+
+CONTAINMENT:
+- Cable tray (width, linear meters)
+- Cable basket (width, linear meters)
+- Conduit (diameter, linear meters)
+- Floor boxes (quantity)
+- Dado trunking (linear meters)
+
+CABINETS & COMMS ROOMS:
+- Server/network cabinets (size: 12U/24U/42U, quantity)
+- Power distribution (PDU quantity)
+- Cabinet accessories (shelves, blanking panels)
+
+TESTING & CERTIFICATION:
+- Copper testing (per link)
+- Fibre testing (per link, OTDR)
+- Certification and documentation
+
+GROUP BY:
+- Copper Cabling
+- Fibre Optic
+- Containment
+- Cabinets & Infrastructure
+- Testing & Certification`,
+      timelineAnalysis: `Analyze telecoms/cabling installation timeline:
+
+PHASES:
+1. Survey & Design
+   - Site survey: 1-2 days
+   - Design and drawing: 2-5 days
+   - Approval: 1 week
+
+2. Containment Installation
+   - Cable tray/basket: 30-60 linear meters per day
+   - Conduit: 20-40 linear meters per day
+   - Floor boxes: 10-20 per day
+
+3. Cable Installation
+   - Cable pulling: 30-60 drops per day (team of 2)
+   - Fibre blowing/pulling: 100-300m per day
+
+4. Termination
+   - Copper termination: 30-50 outlets per day
+   - Fibre splicing: 20-40 fibres per day
+   - Patch panel termination
+
+5. Cabinet Build
+   - Cabinet assembly and fitout: 1-2 per day
+   - Patch lead dressing
+
+6. Testing & Certification
+   - Copper testing: 50-80 links per day (Fluke tester)
+   - Fibre testing: 30-50 links per day
+   - Documentation and as-builts: 1-2 days
+
+DEPENDENCIES:
+- Ceiling grid installed (for above-ceiling routes)
+- Raised floor access (for floor void routes)
+- Comms room power and cooling
+- Builder's work holes cored`,
+    },
+  },
+
+  solar_ev: {
+    name: "Solar / EV Charging",
+    description: "For solar PV installations, battery storage, and electric vehicle charging infrastructure",
+    sections: {
+      coverLetter: { enabled: true, template: "solar_ev_standard", templates: [] },
+      tradeBill: { enabled: true, format: "table" as const, templates: [] },
+      reviewForms: {
+        enabled: true,
+        templates: ["site_survey", "grid_connection"],
+      },
+      technicalReview: {
+        enabled: true,
+        checklist: [
+          "Roof survey / structural assessment completed",
+          "Shading analysis performed",
+          "DNO application submitted / G99 notification",
+          "Grid connection capacity confirmed",
+          "Panel layout and string design confirmed",
+          "Inverter sizing and selection",
+          "Battery storage sizing (if applicable)",
+          "EV charger specification confirmed",
+          "Electrical supply capacity adequate",
+          "Planning permission (if required)",
+          "MCS certification requirements",
+        ],
+      },
+      drawings: {
+        enabled: true,
+        categories: ["Roof Plans (panel layout)", "Electrical Schematics", "String Diagrams", "Site Plans", "EV Charging Layouts"],
+      },
+      supportingDocs: {
+        enabled: true,
+        categories: ["Structural Reports", "DNO Applications", "Shading Reports", "Product Data Sheets", "Planning Documents"],
+      },
+      siteRequirements: { enabled: true },
+      qualityCompliance: { enabled: true },
+    },
+    timeline: { enabled: true },
+    aiPrompts: {
+      documentCategorization: `Categorize solar/EV documents into:
+- Roof Plans (panel layouts, orientation, tilt)
+- Electrical Schematics (AC/DC wiring, inverter connections)
+- String Diagrams (panel string configurations)
+- Site Plans (cable routes, inverter/battery locations)
+- EV Charging Layouts (charger positions, cable routes)
+- Structural Reports (roof loading calculations)
+- DNO Applications (G99 forms, grid connection)
+- Shading Reports (horizon analysis, yield predictions)
+- Product Data Sheets (panels, inverters, batteries, chargers)`,
+      lineItemExtraction: `Extract solar/EV line items:
+
+SOLAR PV:
+- Solar panels (make, model, wattage, quantity)
+- Mounting system (roof type: pitched/flat, quantity)
+- Inverter (make, model, kW rating, quantity)
+- DC cabling (linear meters)
+- AC cabling (linear meters)
+- DC isolators and connectors
+- AC isolator and consumer unit
+- Generation meter
+
+BATTERY STORAGE:
+- Battery units (make, model, kWh, quantity)
+- Battery inverter/hybrid inverter
+- Associated cabling and switchgear
+
+EV CHARGING:
+- EV chargers (make, model, kW rating, quantity)
+- Mounting posts / wall brackets
+- Supply cabling (linear meters, cable size)
+- Distribution board / sub-main
+- Earthing (earth rod, bonding)
+- Signage and bay markings
+
+BALANCE OF SYSTEM:
+- Scaffolding / access equipment
+- Roof penetration weatherproofing
+- Containment (tray, conduit)
+- Labelling
+
+GROUP BY:
+- Solar PV
+- Battery Storage
+- EV Charging
+- Electrical Infrastructure
+- Access & Ancillaries`,
+      timelineAnalysis: `Analyze solar/EV installation timeline:
+
+PHASES:
+1. Survey & Design
+   - Site survey and shading analysis: 1-2 days
+   - System design: 2-5 days
+   - DNO application: 4-12 weeks (G99 dependent)
+   - Structural assessment: 1-2 weeks
+
+2. Procurement
+   - Panel and inverter lead time: 1-3 weeks
+   - Battery lead time: 2-6 weeks
+   - EV charger lead time: 1-3 weeks
+
+3. Scaffolding / Access
+   - Scaffold erection: 1-2 days (domestic), 3-5 days (commercial)
+
+4. Solar Installation
+   - Mounting system: 1-2 days (domestic), 3-10 days (commercial)
+   - Panel installation: 1-2 days (domestic), 3-10 days (commercial)
+   - DC wiring: 0.5-1 day (domestic), 2-5 days (commercial)
+
+5. Electrical
+   - Inverter and battery installation: 1-2 days
+   - AC wiring and consumer unit: 0.5-1 day
+   - EV charger installation: 0.5-1 day per charger
+
+6. Commissioning & Certification
+   - System commissioning: 0.5-1 day
+   - MCS certification
+   - DNO notification of completion
+   - EPC update (if applicable)
+   - Handover and user training
+
+DEPENDENCIES:
+- DNO approval (critical path for larger systems)
+- Scaffolding availability
+- Roof condition adequate
+- Electrical supply capacity`,
+    },
+  },
 } as const;
 
 export type TradePresetKey = keyof typeof TRADE_PRESETS;
