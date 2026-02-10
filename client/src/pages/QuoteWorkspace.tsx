@@ -41,11 +41,14 @@ import {
   Shield,
   ChevronRight,
   ArrowRight,
+  CheckCircle,
+  FileSpreadsheet,
 } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import TimelineTab from "@/components/comprehensive/TimelineTab";
 import SiteQualityTab from "@/components/comprehensive/SiteQualityTab";
@@ -128,11 +131,22 @@ export default function QuoteWorkspace() {
   const [termsModified, setTermsModified] = useState(false);
   const [originalTerms, setOriginalTerms] = useState("");
 
-  // File input refs
+  // File input refs (legacy single-file refs kept for backward compat)
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
   const documentInputRef = useRef<HTMLInputElement>(null);
+
+  // Multi-file upload state
+  const multiFileInputRef = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploadQueue, setUploadQueue] = useState<Array<{
+    id: string;
+    file: File;
+    status: "pending" | "uploading" | "processing" | "completed" | "error";
+    progress: number;
+    error?: string;
+  }>>([]); 
 
   // Form state
   const [title, setTitle] = useState("");
@@ -297,7 +311,6 @@ export default function QuoteWorkspace() {
 
   const uploadFile = trpc.inputs.uploadFile.useMutation({
     onSuccess: () => {
-      toast.success("File uploaded successfully");
       refetch();
     },
     onError: (error) => {
@@ -658,6 +671,146 @@ export default function QuoteWorkspace() {
     event.target.value = "";
   };
 
+  // ── Multi-file upload helpers ──────────────────────────────────────
+  const detectInputType = (file: File): "pdf" | "image" | "audio" | "document" => {
+    if (file.type === "application/pdf") return "pdf";
+    if (file.type.startsWith("image/")) return "image";
+    if (file.type.startsWith("audio/")) return "audio";
+    return "document";
+  };
+
+  const uploadSingleFileFromQueue = async (file: File, queueId: string) => {
+    const inputType = detectInputType(file);
+    const config = fileTypeConfig[inputType];
+
+    // Validate file size
+    if (file.size > config.maxSize) {
+      setUploadQueue(prev => prev.map(item =>
+        item.id === queueId ? { ...item, status: "error" as const, error: `File too large (max ${config.maxSize / 1024 / 1024}MB)` } : item
+      ));
+      return;
+    }
+
+    try {
+      // Mark as uploading
+      setUploadQueue(prev => prev.map(item =>
+        item.id === queueId ? { ...item, status: "uploading" as const, progress: 20 } : item
+      ));
+
+      // Convert to base64
+      const reader = new FileReader();
+      const base64Data = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => {
+          const result = reader.result as string;
+          resolve(result.split(",")[1]);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      setUploadQueue(prev => prev.map(item =>
+        item.id === queueId ? { ...item, progress: 50 } : item
+      ));
+
+      // Upload
+      await uploadFile.mutateAsync({
+        quoteId,
+        filename: file.name,
+        contentType: file.type,
+        base64Data,
+        inputType,
+      });
+
+      // Mark as processing (backend auto-processes)
+      setUploadQueue(prev => prev.map(item =>
+        item.id === queueId ? { ...item, status: "completed" as const, progress: 100 } : item
+      ));
+    } catch (error: any) {
+      setUploadQueue(prev => prev.map(item =>
+        item.id === queueId ? { ...item, status: "error" as const, progress: 0, error: error.message || "Upload failed" } : item
+      ));
+    }
+  };
+
+  const processUploadBatch = async (files: File[], startQueue: Array<{ id: string; file: File; status: "pending" | "uploading" | "processing" | "completed" | "error"; progress: number }>) => {
+    const CONCURRENT = 3;
+    for (let i = 0; i < files.length; i += CONCURRENT) {
+      const batch = startQueue.slice(i, i + CONCURRENT);
+      await Promise.all(
+        batch.map(item => uploadSingleFileFromQueue(item.file, item.id))
+      );
+    }
+    // Refresh data after all uploads
+    refetch();
+    const completed = files.length;
+    toast.success(`${completed} file${completed > 1 ? "s" : ""} uploaded`);
+  };
+
+  const handleMultiFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    e.target.value = "";
+
+    const newItems = files.map(file => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      file,
+      status: "pending" as const,
+      progress: 0,
+    }));
+
+    setUploadQueue(prev => [...prev, ...newItems]);
+    processUploadBatch(files, newItems);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer.files);
+    const supported = files.filter(file => {
+      const ext = file.name.split(".").pop()?.toLowerCase();
+      return ["pdf", "doc", "docx", "xls", "xlsx", "csv", "png", "jpg", "jpeg", "gif", "webp", "bmp", "mp3", "wav", "m4a", "ogg", "webm"].includes(ext || "");
+    });
+    if (supported.length === 0) {
+      toast.error("No supported files found. Upload PDF, Word, Excel, Image, or Audio files.");
+      return;
+    }
+    const newItems = supported.map(file => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      file,
+      status: "pending" as const,
+      progress: 0,
+    }));
+    setUploadQueue(prev => [...prev, ...newItems]);
+    processUploadBatch(supported, newItems);
+  };
+
+  const removeFromQueue = (queueId: string) => {
+    setUploadQueue(prev => prev.filter(item => item.id !== queueId));
+  };
+
+  const clearCompletedUploads = () => {
+    setUploadQueue(prev => prev.filter(item => item.status !== "completed" && item.status !== "error"));
+  };
+
+  const getFileIcon = (file: File) => {
+    if (file.type === "application/pdf") return <FileText className="h-5 w-5 text-red-500" />;
+    if (file.type.startsWith("image/")) return <FileImage className="h-5 w-5 text-blue-500" />;
+    if (file.type.startsWith("audio/")) return <Mic className="h-5 w-5 text-green-500" />;
+    if (file.type.includes("spreadsheet") || file.type.includes("excel") || file.type.includes("csv")) return <FileSpreadsheet className="h-5 w-5 text-green-600" />;
+    if (file.type.includes("word") || file.type.includes("document")) return <FileText className="h-5 w-5 text-blue-600" />;
+    return <FileText className="h-5 w-5 text-muted-foreground" />;
+  };
+
   const handleSaveTenderContext = () => {
     upsertTenderContext.mutate({
       quoteId,
@@ -752,6 +905,14 @@ export default function QuoteWorkspace() {
         className="hidden"
         accept={fileTypeConfig.document.accept}
         onChange={(e) => handleFileInputChange(e, "document")}
+      />
+      <input
+        type="file"
+        ref={multiFileInputRef}
+        className="hidden"
+        multiple
+        accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.jpg,.jpeg,.png,.gif,.webp,.bmp,.mp3,.wav,.m4a,.ogg,.webm"
+        onChange={handleMultiFileSelect}
       />
 
       {/* Header */}
@@ -1056,49 +1217,101 @@ export default function QuoteWorkspace() {
                 </div>
               )}
 
-              {/* Upload buttons */}
-              <div className="grid grid-cols-3 gap-4">
-                <Button
-                  variant="outline"
-                  className="h-20 flex-col gap-2"
-                  onClick={() => documentInputRef.current?.click()}
-                  disabled={isUploading || !storageStatus?.configured}
-                >
-                  {isUploading && uploadingType === "document" ? (
-                    <Loader2 className="h-6 w-6 animate-spin" />
-                  ) : (
-                    <FileText className="h-6 w-6" />
-                  )}
-                  <span className="text-xs">Document</span>
-                  <span className="text-[10px] text-muted-foreground">PDF, Word, Excel</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  className="h-20 flex-col gap-2"
-                  onClick={() => imageInputRef.current?.click()}
-                  disabled={isUploading || !storageStatus?.configured}
-                >
-                  {isUploading && uploadingType === "image" ? (
-                    <Loader2 className="h-6 w-6 animate-spin" />
-                  ) : (
-                    <FileImage className="h-6 w-6" />
-                  )}
-                  <span className="text-xs">Image/Drawing</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  className="h-20 flex-col gap-2"
-                  onClick={() => audioInputRef.current?.click()}
-                  disabled={isUploading || !storageStatus?.configured}
-                >
-                  {isUploading && uploadingType === "audio" ? (
-                    <Loader2 className="h-6 w-6 animate-spin" />
-                  ) : (
-                    <Mic className="h-6 w-6" />
-                  )}
-                  <span className="text-xs">Audio Recording</span>
-                </Button>
+              {/* Drag & Drop Upload Zone */}
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={cn(
+                  "border-2 border-dashed rounded-lg p-6 text-center transition-all cursor-pointer",
+                  isDragging
+                    ? "border-primary bg-primary/5 scale-[1.01]"
+                    : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30",
+                  !storageStatus?.configured && "opacity-50 pointer-events-none"
+                )}
+                onClick={() => multiFileInputRef.current?.click()}
+              >
+                <Upload className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
+                <h3 className="text-base font-semibold mb-1">
+                  {isDragging ? "Drop files here" : "Drop files here or click to browse"}
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Select multiple files at once (Ctrl+Click or Shift+Click).
+                  Supports PDF, Word, Excel, Images, and Audio.
+                </p>
+                <div className="flex justify-center gap-4 mt-3 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5 text-red-500" /> PDF</span>
+                  <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5 text-blue-600" /> Word</span>
+                  <span className="flex items-center gap-1"><FileSpreadsheet className="h-3.5 w-3.5 text-green-600" /> Excel</span>
+                  <span className="flex items-center gap-1"><FileImage className="h-3.5 w-3.5 text-blue-500" /> Images</span>
+                  <span className="flex items-center gap-1"><Mic className="h-3.5 w-3.5 text-green-500" /> Audio</span>
+                </div>
               </div>
+
+              {/* Upload Queue */}
+              {uploadQueue.length > 0 && (
+                <div className="space-y-2 border rounded-lg p-4 bg-muted/20">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-semibold">
+                      {uploadQueue.filter(u => u.status === "uploading" || u.status === "pending").length > 0
+                        ? `Uploading ${uploadQueue.filter(u => u.status === "completed").length} of ${uploadQueue.length} files...`
+                        : `${uploadQueue.length} file${uploadQueue.length > 1 ? "s" : ""} uploaded`}
+                    </h4>
+                    <Button variant="ghost" size="sm" onClick={clearCompletedUploads} className="text-xs h-7">
+                      Clear
+                    </Button>
+                  </div>
+                  <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
+                    {uploadQueue.map((item) => (
+                      <div
+                        key={item.id}
+                        className={cn(
+                          "flex items-center gap-3 p-2.5 rounded-md border bg-background",
+                          item.status === "error" && "border-red-300 bg-red-50",
+                          item.status === "completed" && "border-green-300 bg-green-50"
+                        )}
+                      >
+                        <div className="flex-shrink-0">{getFileIcon(item.file)}</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-medium truncate">{item.file.name}</p>
+                            <div className="flex items-center gap-1.5 ml-2 flex-shrink-0">
+                              {item.status === "pending" && <span className="text-xs text-muted-foreground">Queued</span>}
+                              {item.status === "uploading" && (
+                                <span className="text-xs text-blue-600 flex items-center gap-1">
+                                  <Loader2 className="h-3 w-3 animate-spin" /> Uploading
+                                </span>
+                              )}
+                              {item.status === "completed" && (
+                                <span className="text-xs text-green-600 flex items-center gap-1">
+                                  <CheckCircle className="h-3 w-3" /> Done
+                                </span>
+                              )}
+                              {item.status === "error" && (
+                                <span className="text-xs text-red-600">Failed</span>
+                              )}
+                              {(item.status === "completed" || item.status === "error") && (
+                                <button onClick={(e) => { e.stopPropagation(); removeFromQueue(item.id); }} className="text-muted-foreground hover:text-foreground">
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          {(item.status === "uploading" || item.status === "pending") && (
+                            <Progress value={item.progress} className="h-1 mt-1" />
+                          )}
+                          {item.status === "error" && item.error && (
+                            <p className="text-xs text-red-600 mt-0.5">{item.error}</p>
+                          )}
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            {(item.file.size / 1024 / 1024).toFixed(2)} MB
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Instructions / Notes for AI */}
               <div className="space-y-3 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200">
