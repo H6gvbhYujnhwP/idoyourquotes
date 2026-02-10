@@ -4,12 +4,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FileText, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { TRADE_SECTOR_OPTIONS } from "@/lib/tradeSectors";
 
 export default function Register() {
   const [name, setName] = useState("");
   const [companyName, setCompanyName] = useState("");
+  const [tradeSector, setTradeSector] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -29,6 +32,11 @@ export default function Register() {
       return;
     }
 
+    if (!tradeSector) {
+      setError("Please select your business sector");
+      return;
+    }
+
     if (password !== confirmPassword) {
       setError("Passwords do not match");
       return;
@@ -45,7 +53,13 @@ export default function Register() {
       const response = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name, companyName: companyName.trim() }),
+        body: JSON.stringify({
+          email,
+          password,
+          name,
+          companyName: companyName.trim(),
+          defaultTradeSector: tradeSector,
+        }),
       });
 
       const data = await response.json();
@@ -120,6 +134,24 @@ export default function Register() {
                 />
                 <p className="text-xs text-muted-foreground">
                   This will be used as your organization name for team collaboration
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="tradeSector">Your Business Sector <span className="text-red-500">*</span></Label>
+                <Select value={tradeSector} onValueChange={setTradeSector}>
+                  <SelectTrigger id="tradeSector">
+                    <SelectValue placeholder="Select your primary business sector..." />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[300px]">
+                    {TRADE_SECTOR_OPTIONS.map((sector) => (
+                      <SelectItem key={sector.value} value={sector.value}>
+                        {sector.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  This will be your default for comprehensive quotes. You can change it later in Settings.
                 </p>
               </div>
               <div className="space-y-2">

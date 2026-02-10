@@ -5,7 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X } from "lucide-react";
+import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { TRADE_SECTOR_OPTIONS } from "@/lib/tradeSectors";
 import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -20,6 +22,7 @@ export default function Settings() {
   const [companyPhone, setCompanyPhone] = useState("");
   const [companyEmail, setCompanyEmail] = useState("");
   const [companyLogo, setCompanyLogo] = useState<string | null>(null);
+  const [defaultTradeSector, setDefaultTradeSector] = useState("");
   const [defaultTerms, setDefaultTerms] = useState(
     "1. This quote is valid for 30 days from the date of issue.\n2. Payment terms: 50% deposit, 50% on completion.\n3. All prices are exclusive of VAT unless otherwise stated."
   );
@@ -34,6 +37,7 @@ export default function Settings() {
       setCompanyPhone(user.companyPhone || "");
       setCompanyEmail(user.companyEmail || "");
       setCompanyLogo(user.companyLogo || null);
+      setDefaultTradeSector((user as any).defaultTradeSector || "");
       if (user.defaultTerms) {
         setDefaultTerms(user.defaultTerms);
       }
@@ -70,6 +74,7 @@ export default function Settings() {
       companyPhone: companyPhone || undefined,
       companyEmail: companyEmail || undefined,
       defaultTerms: defaultTerms || undefined,
+      defaultTradeSector: defaultTradeSector || undefined,
     });
   };
 
@@ -263,6 +268,33 @@ export default function Settings() {
               />
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Default Business Sector */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Briefcase className="h-5 w-5" />
+            Default Business Sector
+          </CardTitle>
+          <CardDescription>
+            Your default sector for comprehensive quotes. You can still override this when creating individual quotes.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Select value={defaultTradeSector} onValueChange={setDefaultTradeSector}>
+            <SelectTrigger id="defaultTradeSector">
+              <SelectValue placeholder="Select your business sector..." />
+            </SelectTrigger>
+            <SelectContent className="max-h-[300px]">
+              {TRADE_SECTOR_OPTIONS.map((sector) => (
+                <SelectItem key={sector.value} value={sector.value}>
+                  {sector.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </CardContent>
       </Card>
 

@@ -49,7 +49,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 
 type QuoteStatus = "draft" | "sent" | "accepted" | "declined";
@@ -88,6 +88,13 @@ export default function Dashboard() {
 
   const { data: quotes, isLoading, refetch } = trpc.quotes.list.useQuery();
   const { data: tradePresets } = trpc.quotes.getTradePresets.useQuery();
+
+  // Auto-populate trade preset from user's default when opening comprehensive mode
+  useEffect(() => {
+    if (showCreateDialog && quoteMode === "comprehensive" && !tradePreset && (user as any)?.defaultTradeSector) {
+      setTradePreset((user as any).defaultTradeSector);
+    }
+  }, [showCreateDialog, quoteMode, user]);
 
   const createQuote = trpc.quotes.create.useMutation({
     onSuccess: (data) => {
@@ -418,7 +425,9 @@ export default function Dashboard() {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  This pre-configures sections, AI prompts, and document categories for your trade. You can customise everything after creation.
+                  {(user as any)?.defaultTradeSector
+                    ? "Using your default sector. You can override this or change your default in Settings."
+                    : "This pre-configures sections, AI prompts, and document categories for your trade. You can customise everything after creation."}
                 </p>
               </div>
             )}

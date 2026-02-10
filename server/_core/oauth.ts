@@ -41,7 +41,7 @@ export function registerOAuthRoutes(app: Express) {
 
   // Register endpoint
   app.post("/api/auth/register", async (req: Request, res: Response) => {
-    const { email, password, name, companyName } = req.body;
+    const { email, password, name, companyName, defaultTradeSector } = req.body;
 
     if (!email || !password) {
       res.status(400).json({ error: "Email and password are required" });
@@ -68,7 +68,7 @@ export function registerOAuthRoutes(app: Express) {
     }
 
     try {
-      const result = await sdk.register(email, password, name, companyName.trim());
+      const result = await sdk.register(email, password, name, companyName.trim(), defaultTradeSector);
       
       if (!result) {
         res.status(409).json({ error: "An account with this email already exists" });

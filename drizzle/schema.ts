@@ -92,6 +92,7 @@ export const users = pgTable("users", {
   companyEmail: varchar("company_email", { length: 320 }),
   defaultTerms: text("default_terms"),
   companyLogo: text("company_logo"),
+  defaultTradeSector: varchar("default_trade_sector", { length: 50 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   lastSignedIn: timestamp("last_signed_in").defaultNow().notNull(),

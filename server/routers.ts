@@ -85,6 +85,7 @@ export const appRouter = router({
         companyEmail: z.string().optional(),
         defaultTerms: z.string().optional(),
         companyLogo: z.string().optional(),
+        defaultTradeSector: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         return updateUserProfile(ctx.user.id, input);

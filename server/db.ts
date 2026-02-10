@@ -216,7 +216,7 @@ export async function getUsageByOrgId(orgId: number, limit = 100): Promise<Usage
 
 const SALT_ROUNDS = 12;
 
-export async function createUser(email: string, password: string, name?: string, companyName?: string): Promise<User | null> {
+export async function createUser(email: string, password: string, name?: string, companyName?: string, defaultTradeSector?: string): Promise<User | null> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -233,6 +233,7 @@ export async function createUser(email: string, password: string, name?: string,
     passwordHash,
     name: name || null,
     companyName: companyName || null,
+    defaultTradeSector: defaultTradeSector || null,
     role: 'user',
     isActive: true,
   }).returning();

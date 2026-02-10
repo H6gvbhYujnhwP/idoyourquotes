@@ -39,6 +39,8 @@ import {
   FolderOpen,
   Layers,
   Shield,
+  ChevronRight,
+  ArrowRight,
 } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { useState, useEffect, useRef } from "react";
@@ -868,134 +870,160 @@ export default function QuoteWorkspace() {
 
       {/* Main Content with Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        {/* Grouped Tab Navigation */}
-        <div className="rounded-lg border bg-card">
-          <div className="px-4 py-3 space-y-3">
-            {/* INPUT Section */}
-            <div>
-              <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Input</div>
-              <div className="flex flex-wrap gap-1">
-                <button
-                  onClick={() => setActiveTab("inputs")}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors",
-                    activeTab === "inputs"
-                      ? "bg-primary text-primary-foreground font-medium shadow-sm"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                  )}
-                >
-                  <Upload className="h-3.5 w-3.5" />
-                  Inputs
-                </button>
-                <button
-                  onClick={() => setActiveTab("interpretation")}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors",
-                    activeTab === "interpretation"
-                      ? "bg-primary text-primary-foreground font-medium shadow-sm"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                  )}
-                >
-                  <Brain className="h-3.5 w-3.5" />
-                  Interpret
-                </button>
-                <button
-                  onClick={() => setActiveTab("ai")}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors",
-                    activeTab === "ai"
-                      ? "bg-primary text-primary-foreground font-medium shadow-sm"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                  )}
-                >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Ask AI
-                </button>
-              </div>
+        {/* Grouped Tab Navigation - Visual Flow */}
+        <div className="flex flex-col md:flex-row items-stretch gap-0 overflow-hidden">
+          {/* STEP 1: INPUT */}
+          <div className="flex-1 bg-blue-50 border border-blue-200 rounded-l-xl md:rounded-l-xl rounded-r-none p-4 relative">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-blue-600 text-white text-xs font-bold">1</span>
+              <span className="text-xs font-bold text-blue-700 uppercase tracking-wider">Input</span>
             </div>
-
-            <Separator />
-
-            {/* OUTPUT Section */}
-            <div>
-              <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
-                Output{isComprehensive && <span className="ml-1.5 text-blue-600 normal-case">(Comprehensive)</span>}
-              </div>
-              <div className="flex flex-wrap gap-1">
-                <button
-                  onClick={() => setActiveTab("quote")}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors",
-                    activeTab === "quote"
-                      ? "bg-primary text-primary-foreground font-medium shadow-sm"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                  )}
-                >
-                  <FileText className="h-3.5 w-3.5" />
-                  Quote
-                </button>
-                {isComprehensive && (
-                  <>
-                    <button
-                      onClick={() => setActiveTab("timeline")}
-                      className={cn(
-                        "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors",
-                        activeTab === "timeline"
-                          ? "bg-primary text-primary-foreground font-medium shadow-sm"
-                          : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                      )}
-                    >
-                      <Clock className="h-3.5 w-3.5" />
-                      Timeline
-                    </button>
-                    <button
-                      onClick={() => setActiveTab("sitequality")}
-                      className={cn(
-                        "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors",
-                        activeTab === "sitequality"
-                          ? "bg-primary text-primary-foreground font-medium shadow-sm"
-                          : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                      )}
-                    >
-                      <Shield className="h-3.5 w-3.5" />
-                      Site/Quality
-                    </button>
-                    <button
-                      onClick={() => setActiveTab("documents")}
-                      className={cn(
-                        "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors",
-                        activeTab === "documents"
-                          ? "bg-primary text-primary-foreground font-medium shadow-sm"
-                          : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                      )}
-                    >
-                      <FolderOpen className="h-3.5 w-3.5" />
-                      Documents
-                    </button>
-                  </>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                onClick={() => setActiveTab("inputs")}
+                className={cn(
+                  "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all",
+                  activeTab === "inputs"
+                    ? "bg-blue-600 text-white font-medium shadow-md"
+                    : "text-blue-700 hover:bg-blue-100 border border-blue-200"
                 )}
+              >
+                <Upload className="h-3.5 w-3.5" />
+                Inputs
+              </button>
+              <button
+                onClick={() => setActiveTab("interpretation")}
+                className={cn(
+                  "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all",
+                  activeTab === "interpretation"
+                    ? "bg-blue-600 text-white font-medium shadow-md"
+                    : "text-blue-700 hover:bg-blue-100 border border-blue-200"
+                )}
+              >
+                <Brain className="h-3.5 w-3.5" />
+                Interpret
+              </button>
+              <button
+                onClick={() => setActiveTab("ai")}
+                className={cn(
+                  "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all",
+                  activeTab === "ai"
+                    ? "bg-blue-600 text-white font-medium shadow-md"
+                    : "text-blue-700 hover:bg-blue-100 border border-blue-200"
+                )}
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Ask AI
+              </button>
+            </div>
+            {/* Arrow connector */}
+            <div className="hidden md:flex absolute -right-3 top-1/2 -translate-y-1/2 z-10">
+              <div className="bg-blue-600 text-white rounded-full p-1 shadow-md">
+                <ChevronRight className="h-4 w-4" />
               </div>
             </div>
+            <div className="md:hidden flex justify-center py-1">
+              <ArrowRight className="h-4 w-4 text-blue-400 rotate-90" />
+            </div>
+          </div>
 
-            <Separator />
-
-            {/* INTERNAL Section */}
-            <div>
-              <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Internal</div>
-              <div className="flex flex-wrap gap-1">
-                <button
-                  onClick={() => setActiveTab("estimate")}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors",
-                    activeTab === "estimate"
-                      ? "bg-primary text-primary-foreground font-medium shadow-sm"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                  )}
-                >
-                  <Calculator className="h-3.5 w-3.5" />
-                  Internal Notes
-                </button>
+          {/* STEP 2: OUTPUT */}
+          <div className="flex-1 bg-emerald-50 border border-emerald-200 p-4 relative">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-emerald-600 text-white text-xs font-bold">2</span>
+              <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">
+                Output
+              </span>
+              {isComprehensive && (
+                <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-100 border border-emerald-300 px-1.5 py-0.5 rounded-full">
+                  Comprehensive
+                </span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                onClick={() => setActiveTab("quote")}
+                className={cn(
+                  "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all",
+                  activeTab === "quote"
+                    ? "bg-emerald-600 text-white font-medium shadow-md"
+                    : "text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+                )}
+              >
+                <FileText className="h-3.5 w-3.5" />
+                Quote
+              </button>
+              {isComprehensive && (
+                <>
+                  <button
+                    onClick={() => setActiveTab("timeline")}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all",
+                      activeTab === "timeline"
+                        ? "bg-emerald-600 text-white font-medium shadow-md"
+                        : "text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+                    )}
+                  >
+                    <Clock className="h-3.5 w-3.5" />
+                    Timeline
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("sitequality")}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all",
+                      activeTab === "sitequality"
+                        ? "bg-emerald-600 text-white font-medium shadow-md"
+                        : "text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+                    )}
+                  >
+                    <Shield className="h-3.5 w-3.5" />
+                    Site/Quality
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("documents")}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all",
+                      activeTab === "documents"
+                        ? "bg-emerald-600 text-white font-medium shadow-md"
+                        : "text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+                    )}
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" />
+                    Documents
+                  </button>
+                </>
+              )}
+            </div>
+            {/* Arrow connector */}
+            <div className="hidden md:flex absolute -right-3 top-1/2 -translate-y-1/2 z-10">
+              <div className="bg-emerald-600 text-white rounded-full p-1 shadow-md">
+                <ChevronRight className="h-4 w-4" />
               </div>
+            </div>
+            <div className="md:hidden flex justify-center py-1">
+              <ArrowRight className="h-4 w-4 text-emerald-400 rotate-90" />
+            </div>
+          </div>
+
+          {/* STEP 3: INTERNAL */}
+          <div className="flex-1 bg-amber-50 border border-amber-200 rounded-r-xl md:rounded-r-xl rounded-l-none p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-amber-600 text-white text-xs font-bold">3</span>
+              <span className="text-xs font-bold text-amber-700 uppercase tracking-wider">Internal</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                onClick={() => setActiveTab("estimate")}
+                className={cn(
+                  "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all",
+                  activeTab === "estimate"
+                    ? "bg-amber-600 text-white font-medium shadow-md"
+                    : "text-amber-700 hover:bg-amber-100 border border-amber-200"
+                )}
+              >
+                <Calculator className="h-3.5 w-3.5" />
+                Internal Notes
+              </button>
             </div>
           </div>
         </div>
