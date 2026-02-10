@@ -43,12 +43,15 @@ import {
   ArrowRight,
   CheckCircle,
   FileSpreadsheet,
+  RefreshCw,
+  AlertCircle,
 } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import TimelineTab from "@/components/comprehensive/TimelineTab";
 import SiteQualityTab from "@/components/comprehensive/SiteQualityTab";
@@ -146,6 +149,8 @@ export default function QuoteWorkspace() {
     status: "pending" | "uploading" | "processing" | "completed" | "error";
     progress: number;
     error?: string;
+    isRateLimitError?: boolean;
+    inputId?: number;
   }>>([]); 
 
   // Form state
@@ -679,6 +684,10 @@ export default function QuoteWorkspace() {
     return "document";
   };
 
+  const fileNeedsAI = (file: File) => {
+    return file.type === "application/pdf" || file.type.startsWith("image/") || file.type.startsWith("audio/");
+  };
+
   const uploadSingleFileFromQueue = async (file: File, queueId: string) => {
     const inputType = detectInputType(file);
     const config = fileTypeConfig[inputType];
@@ -713,7 +722,7 @@ export default function QuoteWorkspace() {
       ));
 
       // Upload
-      await uploadFile.mutateAsync({
+      const result = await uploadFile.mutateAsync({
         quoteId,
         filename: file.name,
         contentType: file.type,
@@ -721,35 +730,92 @@ export default function QuoteWorkspace() {
         inputType,
       });
 
-      // Mark as processing (backend auto-processes)
+      // Mark as completed and store inputId for potential retry
       setUploadQueue(prev => prev.map(item =>
-        item.id === queueId ? { ...item, status: "completed" as const, progress: 100 } : item
+        item.id === queueId ? { ...item, status: "completed" as const, progress: 100, inputId: result?.id } : item
       ));
     } catch (error: any) {
+      // Detect rate limit errors
+      const isRateLimit =
+        error.message?.includes("rate_limit") ||
+        error.message?.includes("429") ||
+        error.message?.includes("30,000 input tokens");
+
       setUploadQueue(prev => prev.map(item =>
-        item.id === queueId ? { ...item, status: "error" as const, progress: 0, error: error.message || "Upload failed" } : item
+        item.id === queueId ? {
+          ...item,
+          status: "error" as const,
+          progress: 0,
+          error: isRateLimit ? "Rate limit exceeded" : (error.message || "Upload failed"),
+          isRateLimitError: isRateLimit,
+        } : item
       ));
+
+      if (isRateLimit) {
+        toast.error(
+          "Rate limit exceeded. File uploaded but AI processing failed. Wait 60 seconds then click Retry.",
+          { duration: 10000 }
+        );
+      }
     }
   };
 
-  const processUploadBatch = async (files: File[], startQueue: Array<{ id: string; file: File; status: "pending" | "uploading" | "processing" | "completed" | "error"; progress: number }>) => {
-    const CONCURRENT = 3;
-    for (let i = 0; i < files.length; i += CONCURRENT) {
-      const batch = startQueue.slice(i, i + CONCURRENT);
-      await Promise.all(
-        batch.map(item => uploadSingleFileFromQueue(item.file, item.id))
-      );
+  const processUploadSequentially = async (items: Array<{ id: string; file: File }>) => {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      await uploadSingleFileFromQueue(item.file, item.id);
+
+      // Add delay between AI-processed files to avoid rate limits
+      if (i < items.length - 1) {
+        const currentNeedsAI = fileNeedsAI(item.file);
+        const nextNeedsAI = fileNeedsAI(items[i + 1].file);
+
+        if (currentNeedsAI && nextNeedsAI) {
+          const delaySeconds = 15;
+          toast.info(
+            `Waiting ${delaySeconds}s before next file to avoid rate limits...`,
+            { duration: delaySeconds * 1000 }
+          );
+          await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
+        }
+      }
     }
-    // Refresh data after all uploads
     refetch();
-    const completed = files.length;
-    toast.success(`${completed} file${completed > 1 ? "s" : ""} uploaded`);
+    const completed = items.length;
+    toast.success(`All ${completed} file${completed > 1 ? "s" : ""} processed successfully!`);
   };
 
-  const handleMultiFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
+  const enforceFileLimit = (files: File[]): File[] | null => {
+    if (files.length > 3) {
+      toast.error(
+        `Maximum 3 files at once to avoid rate limits. You selected ${files.length}. Please select up to 3 files.`,
+        { duration: 5000 }
+      );
+      return null;
+    }
+    return files;
+  };
+
+  const handleMultiFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawFiles = Array.from(e.target.files || []);
+    if (rawFiles.length === 0) return;
     e.target.value = "";
+
+    const files = enforceFileLimit(rawFiles);
+    if (!files) return;
+
+    // Warn about large PDF batches
+    const totalSizeMB = files.reduce((sum, f) => sum + (f.size / 1024 / 1024), 0);
+    const pdfCount = files.filter(f => f.type === "application/pdf").length;
+
+    if (pdfCount >= 2 && totalSizeMB > 30) {
+      const confirmed = window.confirm(
+        `You're uploading ${pdfCount} large PDFs (${totalSizeMB.toFixed(1)} MB total).\n\n` +
+        `Files will be processed one at a time with delays to avoid rate limits.\n` +
+        `This may take 1-2 minutes. Continue?`
+      );
+      if (!confirmed) return;
+    }
 
     const newItems = files.map(file => ({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -759,7 +825,7 @@ export default function QuoteWorkspace() {
     }));
 
     setUploadQueue(prev => [...prev, ...newItems]);
-    processUploadBatch(files, newItems);
+    processUploadSequentially(newItems);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -775,8 +841,8 @@ export default function QuoteWorkspace() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const files = Array.from(e.dataTransfer.files);
-    const supported = files.filter(file => {
+    const allFiles = Array.from(e.dataTransfer.files);
+    const supported = allFiles.filter(file => {
       const ext = file.name.split(".").pop()?.toLowerCase();
       return ["pdf", "doc", "docx", "xls", "xlsx", "csv", "png", "jpg", "jpeg", "gif", "webp", "bmp", "mp3", "wav", "m4a", "ogg", "webm"].includes(ext || "");
     });
@@ -784,14 +850,17 @@ export default function QuoteWorkspace() {
       toast.error("No supported files found. Upload PDF, Word, Excel, Image, or Audio files.");
       return;
     }
-    const newItems = supported.map(file => ({
+    const files = enforceFileLimit(supported);
+    if (!files) return;
+
+    const newItems = files.map(file => ({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       file,
       status: "pending" as const,
       progress: 0,
     }));
     setUploadQueue(prev => [...prev, ...newItems]);
-    processUploadBatch(supported, newItems);
+    processUploadSequentially(newItems);
   };
 
   const removeFromQueue = (queueId: string) => {
@@ -800,6 +869,50 @@ export default function QuoteWorkspace() {
 
   const clearCompletedUploads = () => {
     setUploadQueue(prev => prev.filter(item => item.status !== "completed" && item.status !== "error"));
+  };
+
+  const handleRetryUpload = async (queueId: string) => {
+    const item = uploadQueue.find(i => i.id === queueId);
+    if (!item) return;
+
+    // If we have an inputId, retry just the AI processing
+    if (item.inputId) {
+      setUploadQueue(prev => prev.map(i =>
+        i.id === queueId ? { ...i, status: "processing" as const, progress: 60, error: undefined, isRateLimitError: false } : i
+      ));
+      try {
+        const fileType = item.file.type;
+        if (fileType === "application/pdf") {
+          await extractPdfText.mutateAsync({ inputId: item.inputId, quoteId });
+        } else if (fileType.startsWith("image/")) {
+          await analyzeImage.mutateAsync({ inputId: item.inputId, quoteId });
+        } else if (fileType.startsWith("audio/")) {
+          await transcribeAudio.mutateAsync({ inputId: item.inputId, quoteId });
+        }
+        setUploadQueue(prev => prev.map(i =>
+          i.id === queueId ? { ...i, status: "completed" as const, progress: 100 } : i
+        ));
+        toast.success("Processing complete!");
+        refetch();
+      } catch (error: any) {
+        const isRateLimit = error.message?.includes("rate_limit") || error.message?.includes("429");
+        setUploadQueue(prev => prev.map(i =>
+          i.id === queueId ? {
+            ...i,
+            status: "error" as const,
+            error: isRateLimit ? "Rate limit exceeded" : error.message,
+            isRateLimitError: isRateLimit,
+          } : i
+        ));
+        if (isRateLimit) {
+          toast.error("Still rate limited. Please wait another 60 seconds and try again.");
+        }
+      }
+    } else {
+      // Re-upload the whole file
+      await uploadSingleFileFromQueue(item.file, queueId);
+      refetch();
+    }
   };
 
   const getFileIcon = (file: File) => {
@@ -1217,6 +1330,16 @@ export default function QuoteWorkspace() {
                 </div>
               )}
 
+              {/* Upload Tips Banner */}
+              <Alert className="bg-blue-50 border-blue-200">
+                <AlertCircle className="h-4 w-4 text-blue-600" />
+                <AlertTitle className="text-blue-900">Upload Tips</AlertTitle>
+                <AlertDescription className="text-xs text-blue-800 space-y-1">
+                  <p><strong>Maximum 3 files at once</strong> to avoid rate limits.</p>
+                  <p>Large tender packages? Upload in batches of 3, wait for processing, then upload the next batch.</p>
+                </AlertDescription>
+              </Alert>
+
               {/* Drag & Drop Upload Zone */}
               <div
                 onDragOver={handleDragOver}
@@ -1236,7 +1359,7 @@ export default function QuoteWorkspace() {
                   {isDragging ? "Drop files here" : "Drop files here or click to browse"}
                 </h3>
                 <p className="text-sm text-muted-foreground">
-                  Select multiple files at once (Ctrl+Click or Shift+Click).
+                  <strong>Select up to 3 files at once</strong> (Ctrl+Click or Shift+Click).
                   Supports PDF, Word, Excel, Images, and Audio.
                 </p>
                 <div className="flex justify-center gap-4 mt-3 text-xs text-muted-foreground">
@@ -1267,7 +1390,8 @@ export default function QuoteWorkspace() {
                         key={item.id}
                         className={cn(
                           "flex items-center gap-3 p-2.5 rounded-md border bg-background",
-                          item.status === "error" && "border-red-300 bg-red-50",
+                          item.status === "error" && item.isRateLimitError && "border-orange-400 bg-orange-50",
+                          item.status === "error" && !item.isRateLimitError && "border-red-300 bg-red-50",
                           item.status === "completed" && "border-green-300 bg-green-50"
                         )}
                       >
@@ -1280,6 +1404,11 @@ export default function QuoteWorkspace() {
                               {item.status === "uploading" && (
                                 <span className="text-xs text-blue-600 flex items-center gap-1">
                                   <Loader2 className="h-3 w-3 animate-spin" /> Uploading
+                                </span>
+                              )}
+                              {item.status === "processing" && (
+                                <span className="text-xs text-purple-600 flex items-center gap-1">
+                                  <Loader2 className="h-3 w-3 animate-spin" /> Processing
                                 </span>
                               )}
                               {item.status === "completed" && (
@@ -1297,12 +1426,63 @@ export default function QuoteWorkspace() {
                               )}
                             </div>
                           </div>
-                          {(item.status === "uploading" || item.status === "pending") && (
+                          {(item.status === "uploading" || item.status === "pending" || item.status === "processing") && (
                             <Progress value={item.progress} className="h-1 mt-1" />
                           )}
-                          {item.status === "error" && item.error && (
-                            <p className="text-xs text-red-600 mt-0.5">{item.error}</p>
+
+                          {/* Rate Limit Error - special orange box with instructions */}
+                          {item.status === "error" && item.isRateLimitError && (
+                            <div className="mt-2 p-2 bg-orange-100 border border-orange-300 rounded text-xs space-y-1">
+                              <p className="font-semibold text-orange-900">Rate Limit Exceeded</p>
+                              <p className="text-orange-800">
+                                File uploaded successfully, but AI processing was delayed.
+                              </p>
+                              <div className="mt-1 space-y-0.5 text-orange-700">
+                                <p className="font-medium">What to do:</p>
+                                <ol className="list-decimal list-inside ml-2">
+                                  <li>Wait 60 seconds for the rate limit to reset</li>
+                                  <li>Click "Retry" below</li>
+                                  <li>Or click "Skip" to continue without AI processing</li>
+                                </ol>
+                              </div>
+                              <div className="mt-2 flex gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs bg-white"
+                                  onClick={(e) => { e.stopPropagation(); handleRetryUpload(item.id); }}
+                                >
+                                  <RefreshCw className="h-3 w-3 mr-1" />
+                                  Retry
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 text-xs"
+                                  onClick={(e) => { e.stopPropagation(); removeFromQueue(item.id); }}
+                                >
+                                  Skip
+                                </Button>
+                              </div>
+                            </div>
                           )}
+
+                          {/* Standard Error */}
+                          {item.status === "error" && !item.isRateLimitError && item.error && (
+                            <div className="mt-1">
+                              <p className="text-xs text-red-600">{item.error}</p>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs mt-1"
+                                onClick={(e) => { e.stopPropagation(); handleRetryUpload(item.id); }}
+                              >
+                                <RefreshCw className="h-3 w-3 mr-1" />
+                                Retry
+                              </Button>
+                            </div>
+                          )}
+
                           <p className="text-[10px] text-muted-foreground mt-0.5">
                             {(item.file.size / 1024 / 1024).toFixed(2)} MB
                           </p>
