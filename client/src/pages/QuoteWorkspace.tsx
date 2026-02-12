@@ -1336,6 +1336,7 @@ export default function QuoteWorkspace() {
                 <AlertTitle className="text-blue-900">Upload Tips</AlertTitle>
                 <AlertDescription className="text-xs text-blue-800 space-y-1">
                   <p><strong>Maximum 3 files at once</strong> to avoid rate limits.</p>
+                  <p>Large PDFs (20+ pages) are automatically split into sections and processed sequentially. This may take 30-90 seconds but ensures reliable processing.</p>
                   <p>Large tender packages? Upload in batches of 3, wait for processing, then upload the next batch.</p>
                 </AlertDescription>
               </Alert>
