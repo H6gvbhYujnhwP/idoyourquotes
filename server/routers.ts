@@ -5,7 +5,7 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { invokeLLM } from "./_core/llm";
 import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured, getFileBuffer } from "./r2Storage";
-import { analyzePdfWithClaude, analyzeImageWithClaude, isClaudeConfigured } from "./_core/claude";
+import { analyzePdfWithClaude, analyzePdfWithOpenAI, analyzeImageWithClaude, isClaudeConfigured } from "./_core/claude";
 import { extractUrls, scrapeUrls, formatScrapedContentForAI } from "./_core/webScraper";
 import { extractBrandColors } from "./services/colorExtractor";
 import { parseWordDocument, isWordDocument } from "./services/wordParser";
@@ -1547,7 +1547,8 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
           // Download PDF from R2 storage and analyze with Claude
           const pdfBuffer = await getFileBuffer(inputRecord.fileKey);
           
-          const extractedText = await analyzePdfWithClaude(
+          // Use OpenAI GPT-4 Turbo for faster processing with higher rate limits
+          const extractedText = await analyzePdfWithOpenAI(
             pdfBuffer,
             `Analyze this document for quoting/estimation purposes. This could be a technical drawing, floor plan, specification sheet, architectural plan, or project documentation.
 
