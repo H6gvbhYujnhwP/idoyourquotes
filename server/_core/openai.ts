@@ -18,3 +18,4 @@ export { openai };
 export function isOpenAIConfigured(): boolean {
   return !!process.env.OPENAI_API_KEY;
 }
+
