@@ -1330,46 +1330,45 @@ export default function QuoteWorkspace() {
                 </div>
               )}
 
-              {/* Upload Tips & Drop Zone - Side by Side */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Upload Tips - Left Side */}
-                <Alert className="bg-blue-50 border-blue-200">
-                  <AlertCircle className="h-4 w-4 text-blue-600" />
-                  <AlertTitle className="text-blue-900">Upload Tips</AlertTitle>
-                  <AlertDescription className="text-xs text-blue-800 space-y-1">
-                    <p><strong>Maximum 3 files at once</strong> to avoid rate limits.</p>
-                    <p>Large PDFs (20+ pages) are split into sections and processed sequentially (30-90 seconds).</p>
-                    <p>Large tender packages? Upload in batches of 3.</p>
-                  </AlertDescription>
-                </Alert>
+              {/* Upload Tips Banner */}
+              <Alert className="bg-blue-50 border-blue-200">
+                <AlertCircle className="h-4 w-4 text-blue-600" />
+                <AlertTitle className="text-blue-900">Upload Tips</AlertTitle>
+                <AlertDescription className="text-xs text-blue-800 space-y-1">
+                  <p><strong>Maximum 3 files at once</strong> to avoid rate limits.</p>
+                  <p>Large PDFs (20+ pages) are automatically split into sections and processed sequentially. This may take 30-90 seconds but ensures reliable processing.</p>
+                  <p>Large tender packages? Upload in batches of 3, wait for processing, then upload the next batch.</p>
+                </AlertDescription>
+              </Alert>
 
-                {/* Drag & Drop Upload Zone - Right Side */}
-                <div
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  className={cn(
-                    "border-2 border-dashed rounded-lg p-4 text-center transition-all cursor-pointer flex flex-col justify-center",
-                    isDragging
-                      ? "border-primary bg-primary/5 scale-[1.01]"
-                      : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30",
-                    !storageStatus?.configured && "opacity-50 pointer-events-none"
-                  )}
-                  onClick={() => multiFileInputRef.current?.click()}
-                >
-                  <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                  <h3 className="text-sm font-semibold mb-1">
-                    {isDragging ? "Drop files here" : "Drop files or click"}
-                  </h3>
-                  <p className="text-xs text-muted-foreground mb-2">
-                    Up to 3 files (Ctrl+Click)
-                  </p>
-                  <div className="flex justify-center gap-3 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-0.5"><FileText className="h-3 w-3 text-red-500" /> PDF</span>
-                    <span className="flex items-center gap-0.5"><FileText className="h-3 w-3 text-blue-600" /> Doc</span>
-                    <span className="flex items-center gap-0.5"><FileSpreadsheet className="h-3 w-3 text-green-600" /> Excel</span>
-                    <span className="flex items-center gap-0.5"><FileImage className="h-3 w-3 text-blue-500" /> Img</span>
-                  </div>
+              {/* Drag & Drop Upload Zone */}
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={cn(
+                  "border-2 border-dashed rounded-lg p-6 text-center transition-all cursor-pointer",
+                  isDragging
+                    ? "border-primary bg-primary/5 scale-[1.01]"
+                    : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30",
+                  !storageStatus?.configured && "opacity-50 pointer-events-none"
+                )}
+                onClick={() => multiFileInputRef.current?.click()}
+              >
+                <Upload className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
+                <h3 className="text-base font-semibold mb-1">
+                  {isDragging ? "Drop files here" : "Drop files here or click to browse"}
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  <strong>Select up to 3 files at once</strong> (Ctrl+Click or Shift+Click).
+                  Supports PDF, Word, Excel, Images, and Audio.
+                </p>
+                <div className="flex justify-center gap-4 mt-3 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5 text-red-500" /> PDF</span>
+                  <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5 text-blue-600" /> Word</span>
+                  <span className="flex items-center gap-1"><FileSpreadsheet className="h-3.5 w-3.5 text-green-600" /> Excel</span>
+                  <span className="flex items-center gap-1"><FileImage className="h-3.5 w-3.5 text-blue-500" /> Images</span>
+                  <span className="flex items-center gap-1"><Mic className="h-3.5 w-3.5 text-green-500" /> Audio</span>
                 </div>
               </div>
 
