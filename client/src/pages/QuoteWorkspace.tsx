@@ -1335,46 +1335,67 @@ export default function QuoteWorkspace() {
                 </div>
               )}
 
-              {/* Upload Tips Banner */}
-              <Alert className="bg-blue-50 border-blue-200">
-                <AlertCircle className="h-4 w-4 text-blue-600" />
-                <AlertTitle className="text-blue-900">Upload Tips</AlertTitle>
-                <AlertDescription className="text-xs text-blue-800 space-y-1">
-                  <p><strong>Maximum 3 files at once</strong> to avoid rate limits.</p>
-                  <p>Large PDFs (20+ pages) are automatically split into sections and processed sequentially. This may take 30-90 seconds but ensures reliable processing.</p>
-                  <p>Large tender packages? Upload in batches of 3, wait for processing, then upload the next batch.</p>
-                </AlertDescription>
-              </Alert>
+              {/* Upload Tips + Drag & Drop Zone — side by side */}
+              <div className="flex gap-4 items-stretch">
+                {/* Upload Tips Banner */}
+                <Alert className="bg-blue-50 border-blue-200 flex-1 min-w-0">
+                  <AlertCircle className="h-4 w-4 text-blue-600" />
+                  <AlertTitle className="text-blue-900">Upload Tips</AlertTitle>
+                  <AlertDescription className="text-xs text-blue-800 space-y-1">
+                    <p><strong>Maximum 3 files at once</strong> to avoid rate limits.</p>
+                    <p>Large PDFs (20+ pages) are automatically split into sections and processed sequentially. This may take 30-90 seconds but ensures reliable processing.</p>
+                    <p>Large tender packages? Upload in batches of 3, wait for processing, then upload the next batch.</p>
+                  </AlertDescription>
+                </Alert>
 
-              {/* Drag & Drop Upload Zone */}
-              <div
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                className={cn(
-                  "border-2 border-dashed rounded-lg p-6 text-center transition-all cursor-pointer",
-                  isDragging
-                    ? "border-primary bg-primary/5 scale-[1.01]"
-                    : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30",
-                  !storageStatus?.configured && "opacity-50 pointer-events-none"
-                )}
-                onClick={() => multiFileInputRef.current?.click()}
-              >
-                <Upload className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
-                <h3 className="text-base font-semibold mb-1">
-                  {isDragging ? "Drop files here" : "Drop files here or click to browse"}
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  <strong>Select up to 3 files at once</strong> (Ctrl+Click or Shift+Click).
-                  Supports PDF, Word, Excel, Images, and Audio.
-                </p>
-                <div className="flex justify-center gap-4 mt-3 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5 text-red-500" /> PDF</span>
-                  <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5 text-blue-600" /> Word</span>
-                  <span className="flex items-center gap-1"><FileSpreadsheet className="h-3.5 w-3.5 text-green-600" /> Excel</span>
-                  <span className="flex items-center gap-1"><FileImage className="h-3.5 w-3.5 text-blue-500" /> Images</span>
-                  <span className="flex items-center gap-1"><Mic className="h-3.5 w-3.5 text-green-500" /> Audio</span>
+                {/* Drag & Drop Upload Zone */}
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  className={cn(
+                    "border-2 border-dashed rounded-lg p-6 text-center transition-all cursor-pointer flex-1 min-w-0 flex flex-col items-center justify-center",
+                    isDragging
+                      ? "border-primary bg-primary/5 scale-[1.01]"
+                      : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30",
+                    !storageStatus?.configured && "opacity-50 pointer-events-none"
+                  )}
+                  onClick={() => multiFileInputRef.current?.click()}
+                >
+                  <Upload className="h-10 w-10 mb-3 text-muted-foreground" />
+                  <h3 className="text-base font-semibold mb-1">
+                    {isDragging ? "Drop files here" : "Drop files here or click to browse"}
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    <strong>Select up to 3 files at once</strong> (Ctrl+Click or Shift+Click).
+                    Supports PDF, Word, Excel, Images, and Audio.
+                  </p>
+                  <div className="flex justify-center gap-4 mt-3 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5 text-red-500" /> PDF</span>
+                    <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5 text-blue-600" /> Word</span>
+                    <span className="flex items-center gap-1"><FileSpreadsheet className="h-3.5 w-3.5 text-green-600" /> Excel</span>
+                    <span className="flex items-center gap-1"><FileImage className="h-3.5 w-3.5 text-blue-500" /> Images</span>
+                    <span className="flex items-center gap-1"><Mic className="h-3.5 w-3.5 text-green-500" /> Audio</span>
+                  </div>
                 </div>
+              </div>
+
+              {/* Instructions / Notes for AI */}
+              <div className="space-y-3 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200">
+                <div className="flex items-center gap-2">
+                  <Mail className="h-5 w-5 text-purple-600" />
+                  <Label className="text-purple-900 font-medium">Instructions / Notes for AI</Label>
+                </div>
+                <p className="text-sm text-purple-700">
+                  Copy and paste client emails, project briefs, specifications, or any notes here. This will be used when generating the quote draft.
+                </p>
+                <Textarea
+                  placeholder="Paste client emails, project briefs, or instructions here...\n\nExample:\n'Hi, I need a quote for painting 3 bedrooms and the hallway. The rooms are roughly 12x12 each. We'd like it done in 2 weeks if possible. Thanks, John'"
+                  value={userPrompt}
+                  onChange={(e) => setUserPrompt(e.target.value)}
+                  rows={6}
+                  className="bg-white"
+                />
               </div>
 
               {/* Upload Queue */}
@@ -1498,24 +1519,6 @@ export default function QuoteWorkspace() {
                   </div>
                 </div>
               )}
-
-              {/* Instructions / Notes for AI */}
-              <div className="space-y-3 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200">
-                <div className="flex items-center gap-2">
-                  <Mail className="h-5 w-5 text-purple-600" />
-                  <Label className="text-purple-900 font-medium">Instructions / Notes for AI</Label>
-                </div>
-                <p className="text-sm text-purple-700">
-                  Copy and paste client emails, project briefs, specifications, or any notes here. This will be used when generating the quote draft.
-                </p>
-                <Textarea
-                  placeholder="Paste client emails, project briefs, or instructions here...\n\nExample:\n'Hi, I need a quote for painting 3 bedrooms and the hallway. The rooms are roughly 12x12 each. We'd like it done in 2 weeks if possible. Thanks, John'"
-                  value={userPrompt}
-                  onChange={(e) => setUserPrompt(e.target.value)}
-                  rows={6}
-                  className="bg-white"
-                />
-              </div>
 
               {/* Existing inputs */}
               {inputs && inputs.length > 0 && (
