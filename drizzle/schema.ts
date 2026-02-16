@@ -155,6 +155,7 @@ export const quotes = pgTable("quotes", {
   quoteMode: quoteModeEnum("quote_mode").default("simple").notNull(),
   tradePreset: varchar("trade_preset", { length: 50 }),
   comprehensiveConfig: json("comprehensive_config").$type<ComprehensiveConfig>(),
+  userPrompt: text("user_prompt"),
 });
 
 export type Quote = typeof quotes.$inferSelect;

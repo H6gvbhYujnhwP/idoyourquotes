@@ -310,6 +310,7 @@ export const appRouter = router({
         terms: z.string().optional(),
         validUntil: z.date().optional(),
         taxRate: z.string().optional(),
+        userPrompt: z.string().nullable().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
@@ -2197,6 +2198,38 @@ STRUCTURE:
         let systemPrompt: string;
 
         if (isComprehensive) {
+          // When a BoQ is detected, modify the comprehensive prompt to price individual items
+          // instead of creating generic lump-sum phases
+          const lineItemInstructions = hasBoQ ? `
+  "lineItems": [
+    {
+      "description": "string - MUST be the exact item description from the BoQ/Trade Bill, prefixed with the site name (e.g. 'Haseldine Meadows - Universal Beam 203x133x30 - 5.50m long')",
+      "quantity": "number - MUST be the exact quantity from the BoQ Qty column. Read carefully: 1, 5, 10, 2, 4, 6 etc. Do NOT default to 1.",
+      "unit": "string - from the BoQ (nr, m, m², tonnes, etc.)",
+      "rate": "number - use catalog rate if available, otherwise estimate",
+      "phase": "string - the site or section name from the BoQ (e.g. 'Haseldine Meadows - Frame' or 'Lockley Crescent - Frame')",
+      "category": "string - the trade category (e.g. 'Structural Steelwork')"
+    }
+  ],` : `
+  "lineItems": [
+    {
+      "description": "string - detailed description of the specific deliverable",
+      "quantity": number,
+      "unit": "string (each, hours, days, licences, per user, etc.)",
+      "rate": number,
+      "phase": "string - which project phase this belongs to (e.g., 'Phase 1: Discovery & Audit')",
+      "category": "string - grouping category (e.g., 'Hardware', 'Professional Services', 'Software & Licensing')"
+    }
+  ],`;
+
+          const lineItemRules = hasBoQ ? `
+- A Bill of Quantities / Trade Bill has been detected. Your line items MUST be a 1:1 copy of the BoQ items with rates filled in.
+- Do NOT create generic phase-based line items like "Haseldine Meadows structural steel frame - £75,000". Instead, list each individual beam/item from the BoQ.
+- Do NOT invent line items for "project management", "design review", "quality assurance", "handover" etc. unless they appear in the BoQ.
+- The timeline section should still have phases (fabrication, delivery, erection etc.) but the line items must match the BoQ exactly.
+- Read the Qty column carefully — quantities like 5, 10, 4, 6 must be used exactly as stated.` : `
+- Group line items by phase/category. Each phase should have multiple granular line items, not one lump sum.`;
+
           systemPrompt = `You are a senior consultant preparing a comprehensive multi-page proposal document. This is NOT a simple invoice - it is a detailed professional proposal that justifies the investment to the client.
 
 You must produce a thorough, detailed proposal with ALL of the following sections populated. The output will be rendered as a multi-page PDF document.
@@ -2204,7 +2237,7 @@ You must produce a thorough, detailed proposal with ALL of the following section
 Rules:
 - Extract client details from the evidence. If the user has provided specific requirements, follow them precisely.
 - Every line item must have a clear, specific description that a non-technical person can understand.
-- Group line items by phase/category. Each phase should have multiple granular line items, not one lump sum.
+${lineItemRules}
 - Rates must be realistic for the UK market.
 - The description field is the EXECUTIVE SUMMARY - it must be 2-3 full paragraphs explaining the project scope, business case, and expected outcomes.
 - The coverLetterContent is a formal introduction letter to the client.
@@ -2223,16 +2256,7 @@ You MUST respond with valid JSON in this exact format:
   "title": "string - professional proposal title",
   "description": "string - EXECUTIVE SUMMARY: 2-3 full paragraphs. Paragraph 1: Project background and business case (why this work is needed, reference any incidents or risks). Paragraph 2: Scope overview covering all major workstreams. Paragraph 3: Expected outcomes and benefits to the client. Write in plain professional English. No bullet points in this field.",
   "coverLetterContent": "string - A formal cover letter (3-4 paragraphs) addressed to the client. Introduce your company, summarise the proposal, highlight key benefits, and include a call to action. Professional but not stuffy. IMPORTANT: Sign off with the signatory name and position from the COMPANY DEFAULTS provided. Never use placeholders like [Your Name] or [Your Position].",
-  "lineItems": [
-    {
-      "description": "string - detailed description of the specific deliverable",
-      "quantity": number,
-      "unit": "string (each, hours, days, licences, per user, etc.)",
-      "rate": number,
-      "phase": "string - which project phase this belongs to (e.g., 'Phase 1: Discovery & Audit')",
-      "category": "string - grouping category (e.g., 'Hardware', 'Professional Services', 'Software & Licensing')"
-    }
-  ],
+${lineItemInstructions}
   "timeline": {
     "estimatedDuration": { "value": number, "unit": "days or weeks or months" },
     "phases": [
@@ -2277,9 +2301,9 @@ You MUST respond with valid JSON in this exact format:
     "checklist": [{ "item": "string", "status": "yes", "notes": "string" }]
   },
   "assumptions": ["string array of assumptions made - be thorough"],
-  "exclusions": ["string array of what is NOT included - be explicit"],
+  "exclusions": ["string array of what is NOT included - MUST include ALL standard exclusions from COMPANY DEFAULTS plus any project-specific exclusions"],
   "riskNotes": "string - internal notes about risks or concerns (not shown to client)",
-  "terms": "string - payment terms, warranty, and conditions. Include: payment schedule, warranty period, what happens if scope changes, cancellation terms. Write as numbered clauses."
+  "terms": "string - payment terms, warranty, and conditions. Build from COMPANY DEFAULTS: include quote validity period, insurance limits, day work rates, working hours, return visit rate, payment terms, VAT status. Write as numbered clauses."
 }
 
 CRITICAL RULES:
@@ -2381,6 +2405,11 @@ ${boqContext}${companyDefaultsContext}${catalogContext}`;
             title: draft.title || quote.title,
             description: draft.description || quote.description,
           };
+
+          // Save the user's instruction text so it persists across page loads
+          if (input.userPrompt !== undefined) {
+            (quoteUpdateData as any).userPrompt = input.userPrompt || null;
+          }
 
           // Save AI-generated terms (works for both simple and comprehensive)
           if (draft.terms) {
