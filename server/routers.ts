@@ -6,6 +6,7 @@ import { z } from "zod";
 import { invokeLLM } from "./_core/llm";
 import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured, getFileBuffer } from "./r2Storage";
 import { analyzePdfWithClaude, analyzePdfWithOpenAI, analyzeImageWithClaude, isClaudeConfigured } from "./_core/claude";
+import { isOpenAIConfigured } from "./_core/openai";
 import { extractUrls, scrapeUrls, formatScrapedContentForAI } from "./_core/webScraper";
 import { extractBrandColors } from "./services/colorExtractor";
 import { parseWordDocument, isWordDocument } from "./services/wordParser";
@@ -1367,15 +1368,15 @@ Sender Name: ${user.name || "[Your Name]"}`,
               let processedContent = "";
 
               if (input.inputType === "pdf") {
-                // Check if Claude API is configured
-                if (!isClaudeConfigured()) {
-                  throw new Error("ANTHROPIC_API_KEY is not configured. Claude API is required for PDF analysis.");
+                // Use OpenAI for PDF analysis (higher rate limits, no separate API key needed)
+                if (!isOpenAIConfigured()) {
+                  throw new Error("OPENAI_API_KEY is not configured. OpenAI API is required for PDF analysis.");
                 }
 
-                // Download PDF from R2 storage and analyze with Claude
+                // Download PDF from R2 storage and analyze with OpenAI
                 const pdfBuffer = await getFileBuffer(key);
                 
-                processedContent = await analyzePdfWithClaude(
+                processedContent = await analyzePdfWithOpenAI(
                   pdfBuffer,
                   `Analyze this document for quoting/estimation purposes. This could be a technical drawing, floor plan, specification sheet, architectural plan, or project documentation.
 
