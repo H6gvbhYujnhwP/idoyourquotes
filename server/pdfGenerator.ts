@@ -754,6 +754,25 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
       <div class="terms-content">${escapeHtml(quote.terms)}</div>
     </div>` : ""}
 
+    ${(() => {
+      const assumptions = data.tenderContext?.assumptions;
+      const exclusions = data.tenderContext?.exclusions;
+      if ((!assumptions || assumptions.length === 0) && (!exclusions || exclusions.length === 0)) return "";
+      return `
+      <div class="terms-box" style="margin-top: 12pt;">
+        ${exclusions && exclusions.length > 0 ? `
+        <div class="terms-label">Exclusions</div>
+        <div class="terms-content">The following items are excluded from this quotation:
+${exclusions.map((e: any) => `• ${escapeHtml(typeof e === "string" ? e : e.text || "")}`).join("\n")}</div>
+        ` : ""}
+        ${assumptions && assumptions.length > 0 ? `
+        <div class="terms-label" style="margin-top: 8pt;">Assumptions</div>
+        <div class="terms-content">
+${assumptions.map((a: any) => `• ${escapeHtml(typeof a === "string" ? a : a.text || "")}`).join("\n")}</div>
+        ` : ""}
+      </div>`;
+    })()}
+
     <div class="footer">
       <p>Thank you for your business</p>
     </div>

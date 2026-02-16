@@ -970,15 +970,13 @@ Respond with valid JSON:
           const lineItems = await getLineItemsByQuoteId(input.id);
           console.log("[generatePDF] Line items:", lineItems.length);
           
-          // Fetch tender context for assumptions/exclusions in comprehensive PDFs
+          // Fetch tender context for assumptions/exclusions (for all quote types)
           let tenderContext = null;
-          if ((quote as any).quoteMode === "comprehensive") {
-            try {
-              tenderContext = await getTenderContextByQuoteId(input.id);
-              console.log("[generatePDF] Tender context:", tenderContext ? 'found' : 'not found');
-            } catch (e) {
-              console.log("[generatePDF] Tender context fetch failed, continuing without");
-            }
+          try {
+            tenderContext = await getTenderContextByQuoteId(input.id);
+            console.log("[generatePDF] Tender context:", tenderContext ? 'found' : 'not found');
+          } catch (e) {
+            console.log("[generatePDF] Tender context fetch failed, continuing without");
           }
 
           const user = ctx.user;
@@ -2145,16 +2143,33 @@ IMPORTANT: When a line item from the evidence matches (or closely matches) a cat
         
         let boqContext = "";
         if (hasBoQ) {
-          boqContext = `\n\nBILL OF QUANTITIES DETECTED — CRITICAL INSTRUCTIONS:
-The tender documents contain a Bill of Quantities (BoQ) or Trade Bill. You MUST:
-1. Extract EVERY line item from the BoQ exactly as written — do not summarise or combine items
-2. Use the EXACT quantities and units from the BoQ — do NOT estimate or round
-3. Match each BoQ item to the company catalog (if available) and use catalog rates
-4. If no catalog rate exists, provide a realistic UK market rate for the specific item
-5. Maintain the BoQ's grouping structure (e.g. site sections, trade sections)
-6. The output line items must map 1:1 to the BoQ items — the client expects to receive their bill back with rates filled in
-7. Do NOT add extra line items for "project management", "design review", "handover documentation" or similar unless the BoQ specifically includes them
-8. Do NOT create multi-phase structures unless the BoQ itself is phased`;
+          boqContext = `\n\nBILL OF QUANTITIES DETECTED — THESE INSTRUCTIONS OVERRIDE ALL OTHER FORMATTING RULES:
+The tender documents contain a Bill of Quantities (BoQ) or Trade Bill. You MUST follow these rules EXACTLY:
+
+QUANTITIES — THIS IS THE MOST IMPORTANT RULE:
+- Read the QTY column from the BoQ for EVERY line item. The quantities are numbers like 1, 2, 4, 5, 6, 10 etc.
+- You MUST use the EXACT quantity from the QTY column — do NOT default to 1
+- Example: if the BoQ says "Universal Beam 203x133x30 - 2.50m long | Qty: 5 | nr" then quantity MUST be 5, not 1
+- Example: if the BoQ says "Universal Beam 203x133x30 - 5.50m long | Qty: 10 | nr" then quantity MUST be 10, not 1
+- If a quantity column shows a number, USE THAT NUMBER
+
+LINE ITEMS — KEEP EVERY ITEM SEPARATE:
+- Extract EVERY line item from the BoQ as a SEPARATE line item in your output
+- Do NOT merge or combine items that appear on different rows, even if they have similar descriptions
+- Items from different SITES must remain separate (e.g. Haseldine Meadows items and Lockley Crescent items are separate even if the beam size is the same)
+- If the BoQ has "5.50m long" under Haseldine Meadows with qty 10, AND "5.50m long" under Lockley Crescent with qty 1, these are TWO separate line items
+- Include the site name in each description to distinguish them (e.g. "Haseldine Meadows - UB 203x133x30 - 5.50m" and "Lockley Crescent - UB 203x133x30 - 5.50m")
+
+RATES:
+- Match each BoQ item to the company catalog and use catalog rates
+- If no catalog rate exists, provide a realistic UK market rate
+- The total for each line = quantity × rate
+
+STRUCTURE:
+- The output line items must map 1:1 to the BoQ rows
+- Do NOT add extra items for "project management", "design review", "handover", "completion" etc.
+- Do NOT create multi-phase structures — just price the bill items
+- If the BoQ is grouped by site or section, use the site/section name as a prefix in the description`;
         }
 
         // Determine if this is a comprehensive quote
@@ -2285,14 +2300,15 @@ You MUST respond with valid JSON in this exact format:
   "description": "string - COMPREHENSIVE description (3-5 sentences minimum) that includes: 1) Project overview and scope, 2) Key deliverables being quoted, 3) Client objectives or goals mentioned, 4) Any phases or timeline if discussed. This appears on the quote PDF so make it professional and informative.",
   "lineItems": [
     {
-      "description": "string - detailed description of the line item",
-      "quantity": number,
-      "unit": "string (each, sqm, hours, etc.)",
-      "rate": number
+      "description": "string - detailed description of the line item including site name if multiple sites",
+      "quantity": "number - MUST match the exact quantity from the BoQ/evidence. Read the Qty column carefully. Do NOT default to 1.",
+      "unit": "string (each, nr, sqm, hours, etc.)",
+      "rate": "number - use catalog rate if available, otherwise estimate"
     }
   ],
   "assumptions": ["string array of assumptions made"],
-  "exclusions": ["string array of what is NOT included"],
+  "exclusions": ["string array of what is NOT included - MUST include ALL standard exclusions from company defaults plus any project-specific exclusions"],
+  "terms": "string - payment terms and conditions. Use the company defaults if provided. Include: quote validity period, payment terms, insurance limits, day work rates, return visit rates, working hours. Write as numbered clauses.",
   "riskNotes": "string - internal notes about risks or concerns",
   "symbolMappings": { "symbol": { "meaning": "string", "confirmed": false } }
 }
@@ -2303,6 +2319,19 @@ IMPORTANT for description field:
 - Reference specific deliverables extracted from the evidence.
 - Do not use phrases like "This comprehensive quote covers" or "We are pleased to offer".
 - Write as if a tradesperson is explaining the scope to the client directly.
+
+IMPORTANT for lineItems:
+- The "quantity" field is a NUMBER not a string. Read it from the Qty column of the BoQ.
+- If the BoQ says Qty=5, the quantity must be 5. If it says Qty=10, the quantity must be 10.
+- NEVER default all quantities to 1. Each line item has its own quantity from the source document.
+- Keep items from different sites as separate line items, even if the description is similar.
+
+IMPORTANT for exclusions:
+- ALWAYS include every item from the STANDARD EXCLUSIONS in company defaults.
+- Add any additional project-specific exclusions on top.
+
+IMPORTANT for terms:
+- Build the terms from company defaults: include validity period, insurance limits, day work rates, working hours, return visit rate, payment terms, and VAT status.
 
 Be thorough but realistic with pricing. Extract all client details mentioned. List specific line items with quantities. Note any assumptions you're making and things that are explicitly excluded.
 
@@ -2344,6 +2373,11 @@ ${boqContext}${companyDefaultsContext}${catalogContext}`;
             title: draft.title || quote.title,
             description: draft.description || quote.description,
           };
+
+          // Save AI-generated terms (works for both simple and comprehensive)
+          if (draft.terms) {
+            quoteUpdateData.terms = draft.terms;
+          }
 
           // For comprehensive quotes, populate the comprehensiveConfig with AI-generated data
           if (isComprehensive) {
