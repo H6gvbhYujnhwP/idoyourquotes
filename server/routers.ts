@@ -2088,6 +2088,13 @@ Rules:
           throw new Error("No evidence found. Please add text in the 'Email/Instructions for AI' field, or upload and process files (transcribe audio, extract PDF text, analyze images).");
         }
 
+        // Log evidence summary for debugging
+        console.log(`[generateDraft] Evidence pieces: ${processedEvidence.length}, total chars: ${processedEvidence.join('').length}`);
+        // Log first 500 chars of each evidence piece to help diagnose parsing issues
+        processedEvidence.forEach((e, i) => {
+          console.log(`[generateDraft] Evidence[${i}] (${e.length} chars): ${e.substring(0, 500).replace(/\n/g, '\\n')}`);
+        });
+
         // Build catalog context - structured for rate matching
         let catalogContext = "";
         if (catalogItems.length > 0) {
@@ -2140,6 +2147,7 @@ IMPORTANT: When a line item from the evidence matches (or closely matches) a cat
           /page\s+total\s+\d+\/\d+/i, // "Page Total 1/4/1" format
         ];
         const hasBoQ = boqPatterns.some(pattern => pattern.test(allEvidence));
+        console.log(`[generateDraft] BoQ detected: ${hasBoQ}, catalog items: ${catalogItems.length}`);
         
         let boqContext = "";
         if (hasBoQ) {
