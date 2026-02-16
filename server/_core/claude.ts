@@ -375,8 +375,10 @@ export function isClaudeConfigured(): boolean {
 // ══════════════════════════════════════════════════════════════════════
 
 import { openai, isOpenAIConfigured } from './openai';
-// @ts-ignore - pdf-parse doesn't have perfect types
-import pdfParse from 'pdf-parse';
+// pdf-parse is CommonJS - use createRequire for ESM compatibility
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const pdfParse = require('pdf-parse');
 
 export { isOpenAIConfigured };
 
