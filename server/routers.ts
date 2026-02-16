@@ -5,7 +5,7 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { invokeLLM } from "./_core/llm";
 import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured, getFileBuffer } from "./r2Storage";
-import { analyzePdfWithClaude, analyzePdfWithOpenAI, analyzeImageWithClaude, isClaudeConfigured, isOpenAIConfigured } from "./_core/claude";
+import { analyzePdfWithClaude, analyzePdfWithOpenAI, analyzeImageWithClaude, isClaudeConfigured } from "./_core/claude";
 import { extractUrls, scrapeUrls, formatScrapedContentForAI } from "./_core/webScraper";
 import { extractBrandColors } from "./services/colorExtractor";
 import { parseWordDocument, isWordDocument } from "./services/wordParser";
@@ -71,6 +71,10 @@ export const appRouter = router({
   
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
+    orgProfile: protectedProcedure.query(async ({ ctx }) => {
+      const org = await getUserPrimaryOrg(ctx.user.id);
+      return org || null;
+    }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
@@ -86,9 +90,70 @@ export const appRouter = router({
         defaultTerms: z.string().optional(),
         companyLogo: z.string().optional(),
         defaultTradeSector: z.string().optional(),
+        // Trade-specific company defaults (saved to organization)
+        defaultWorkingHoursStart: z.string().optional(),
+        defaultWorkingHoursEnd: z.string().optional(),
+        defaultWorkingDays: z.string().optional(),
+        defaultInsuranceLimits: z.object({
+          employers: z.string().optional(),
+          public: z.string().optional(),
+          professional: z.string().optional(),
+        }).optional(),
+        defaultDayWorkRates: z.object({
+          labourRate: z.number().optional(),
+          materialMarkup: z.number().optional(),
+          plantMarkup: z.number().optional(),
+        }).optional(),
+        defaultExclusions: z.string().optional(),
+        defaultValidityDays: z.number().optional(),
+        defaultSignatoryName: z.string().optional(),
+        defaultSignatoryPosition: z.string().optional(),
+        defaultSurfaceTreatment: z.string().optional(),
+        defaultReturnVisitRate: z.string().optional(),
+        defaultPaymentTerms: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        return updateUserProfile(ctx.user.id, input);
+        // Save basic profile fields to user table (legacy compatibility)
+        const { 
+          defaultWorkingHoursStart, defaultWorkingHoursEnd, defaultWorkingDays,
+          defaultInsuranceLimits, defaultDayWorkRates, defaultExclusions,
+          defaultValidityDays, defaultSignatoryName, defaultSignatoryPosition,
+          defaultSurfaceTreatment, defaultReturnVisitRate, defaultPaymentTerms,
+          ...userFields 
+        } = input;
+
+        const user = await updateUserProfile(ctx.user.id, userFields);
+
+        // Save trade defaults to organization (the multi-tenant entity)
+        const org = await getUserPrimaryOrg(ctx.user.id);
+        if (org) {
+          const orgUpdate: Record<string, unknown> = {};
+          // Sync basic company info to org too
+          if (input.companyName !== undefined) orgUpdate.companyName = input.companyName;
+          if (input.companyAddress !== undefined) orgUpdate.companyAddress = input.companyAddress;
+          if (input.companyPhone !== undefined) orgUpdate.companyPhone = input.companyPhone;
+          if (input.companyEmail !== undefined) orgUpdate.companyEmail = input.companyEmail;
+          if (input.defaultTerms !== undefined) orgUpdate.defaultTerms = input.defaultTerms;
+          // Trade-specific defaults
+          if (defaultWorkingHoursStart !== undefined) orgUpdate.defaultWorkingHoursStart = defaultWorkingHoursStart;
+          if (defaultWorkingHoursEnd !== undefined) orgUpdate.defaultWorkingHoursEnd = defaultWorkingHoursEnd;
+          if (defaultWorkingDays !== undefined) orgUpdate.defaultWorkingDays = defaultWorkingDays;
+          if (defaultInsuranceLimits !== undefined) orgUpdate.defaultInsuranceLimits = defaultInsuranceLimits;
+          if (defaultDayWorkRates !== undefined) orgUpdate.defaultDayWorkRates = defaultDayWorkRates;
+          if (defaultExclusions !== undefined) orgUpdate.defaultExclusions = defaultExclusions;
+          if (defaultValidityDays !== undefined) orgUpdate.defaultValidityDays = defaultValidityDays;
+          if (defaultSignatoryName !== undefined) orgUpdate.defaultSignatoryName = defaultSignatoryName;
+          if (defaultSignatoryPosition !== undefined) orgUpdate.defaultSignatoryPosition = defaultSignatoryPosition;
+          if (defaultSurfaceTreatment !== undefined) orgUpdate.defaultSurfaceTreatment = defaultSurfaceTreatment;
+          if (defaultReturnVisitRate !== undefined) orgUpdate.defaultReturnVisitRate = defaultReturnVisitRate;
+          if (defaultPaymentTerms !== undefined) orgUpdate.defaultPaymentTerms = defaultPaymentTerms;
+
+          if (Object.keys(orgUpdate).length > 0) {
+            await updateOrganization(org.id, orgUpdate as any);
+          }
+        }
+
+        return user;
       }),
     uploadLogo: protectedProcedure
       .input(z.object({
@@ -1302,15 +1367,15 @@ Sender Name: ${user.name || "[Your Name]"}`,
               let processedContent = "";
 
               if (input.inputType === "pdf") {
-                // Check if OpenAI API is configured (primary), fall back to Claude
-                if (!isOpenAIConfigured() && !isClaudeConfigured()) {
-                  throw new Error("Neither OPENAI_API_KEY nor ANTHROPIC_API_KEY is configured. An AI API key is required for PDF analysis.");
+                // Check if Claude API is configured
+                if (!isClaudeConfigured()) {
+                  throw new Error("ANTHROPIC_API_KEY is not configured. Claude API is required for PDF analysis.");
                 }
 
-                // Download PDF from R2 storage and analyze with OpenAI (faster, higher rate limits)
+                // Download PDF from R2 storage and analyze with Claude
                 const pdfBuffer = await getFileBuffer(key);
                 
-                processedContent = await analyzePdfWithOpenAI(
+                processedContent = await analyzePdfWithClaude(
                   pdfBuffer,
                   `Analyze this document for quoting/estimation purposes. This could be a technical drawing, floor plan, specification sheet, architectural plan, or project documentation.
 
@@ -1539,12 +1604,12 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
         });
 
         try {
-          // Check if OpenAI API is configured
-          if (!isOpenAIConfigured()) {
-            throw new Error("OPENAI_API_KEY is not configured. OpenAI API is required for PDF analysis.");
+          // Check if Claude API is configured
+          if (!isClaudeConfigured()) {
+            throw new Error("ANTHROPIC_API_KEY is not configured. Claude API is required for PDF analysis.");
           }
 
-          // Download PDF from R2 storage and analyze with OpenAI (faster, higher rate limits)
+          // Download PDF from R2 storage and analyze with Claude
           const pdfBuffer = await getFileBuffer(inputRecord.fileKey);
           
           // Use OpenAI GPT-4 Turbo for faster processing with higher rate limits
@@ -1962,6 +2027,26 @@ Rules:
         const internalEstimate = await getInternalEstimateByQuoteId(input.quoteId);
         const catalogItems = await getCatalogItemsByUserId(ctx.user.id);
 
+        // Fetch organization profile for company defaults
+        const org = await getUserPrimaryOrg(ctx.user.id);
+        const orgDefaults = org ? {
+          companyName: org.companyName || ctx.user.companyName || null,
+          workingHours: {
+            start: (org as any).defaultWorkingHoursStart || "08:00",
+            end: (org as any).defaultWorkingHoursEnd || "16:30",
+            days: (org as any).defaultWorkingDays || "Monday to Friday",
+          },
+          insuranceLimits: (org as any).defaultInsuranceLimits || null,
+          dayWorkRates: (org as any).defaultDayWorkRates || null,
+          exclusions: (org as any).defaultExclusions || null,
+          validityDays: (org as any).defaultValidityDays || 30,
+          signatoryName: (org as any).defaultSignatoryName || ctx.user.name || null,
+          signatoryPosition: (org as any).defaultSignatoryPosition || null,
+          surfaceTreatment: (org as any).defaultSurfaceTreatment || null,
+          returnVisitRate: (org as any).defaultReturnVisitRate || null,
+          paymentTerms: (org as any).defaultPaymentTerms || null,
+        } : null;
+
         // Build context from all processed inputs
         const processedEvidence: string[] = [];
         
@@ -2004,10 +2089,72 @@ Rules:
           throw new Error("No evidence found. Please add text in the 'Email/Instructions for AI' field, or upload and process files (transcribe audio, extract PDF text, analyze images).");
         }
 
-        // Build catalog context
-        const catalogContext = catalogItems.length > 0
-          ? `\n\nAvailable catalog items for reference:\n${catalogItems.map(c => `- ${c.name}: £${c.defaultRate}/${c.unit} - ${c.description || ""}`).join("\n")}`
-          : "";
+        // Build catalog context - structured for rate matching
+        let catalogContext = "";
+        if (catalogItems.length > 0) {
+          catalogContext = `\n\nCOMPANY CATALOG — USE THESE RATES (do NOT invent your own rates when a catalog match exists):
+${catalogItems.map(c => `- "${c.name}" | Rate: £${c.defaultRate}/${c.unit} | Cost: £${c.costPrice || "n/a"} | Category: ${c.category || "General"} | ${c.description || ""}`).join("\n")}
+
+IMPORTANT: When a line item from the evidence matches (or closely matches) a catalog item, you MUST use the catalog rate. Only estimate rates for items with no catalog match.`;
+        }
+
+        // Build company defaults context from organization profile
+        let companyDefaultsContext = "";
+        if (orgDefaults) {
+          const parts: string[] = ["\n\nCOMPANY DEFAULTS — USE THESE VALUES (do NOT invent alternatives):"];
+          parts.push(`Working Hours: ${orgDefaults.workingHours.start} to ${orgDefaults.workingHours.end}, ${orgDefaults.workingHours.days}`);
+          if (orgDefaults.signatoryName) parts.push(`Signatory: ${orgDefaults.signatoryName}${orgDefaults.signatoryPosition ? `, ${orgDefaults.signatoryPosition}` : ""}`);
+          if (orgDefaults.validityDays) parts.push(`Quote Validity: ${orgDefaults.validityDays} days from date of issue`);
+          if (orgDefaults.insuranceLimits) {
+            const ins = orgDefaults.insuranceLimits as any;
+            if (ins.employers) parts.push(`Employers Liability Insurance: ${ins.employers} per incident`);
+            if (ins.public) parts.push(`Public Liability Insurance: ${ins.public} per incident`);
+            if (ins.professional) parts.push(`Professional Indemnity Insurance: ${ins.professional} per claim`);
+          }
+          if (orgDefaults.dayWorkRates) {
+            const dw = orgDefaults.dayWorkRates as any;
+            const dwParts: string[] = [];
+            if (dw.labourRate) dwParts.push(`Labour: £${dw.labourRate}/hr`);
+            if (dw.materialMarkup) dwParts.push(`Material: cost + ${dw.materialMarkup}%`);
+            if (dw.plantMarkup) dwParts.push(`Plant: cost + ${dw.plantMarkup}%`);
+            if (dwParts.length > 0) parts.push(`Day Work Rates: ${dwParts.join(", ")}`);
+          }
+          if (orgDefaults.surfaceTreatment) parts.push(`Surface Treatment: ${orgDefaults.surfaceTreatment}`);
+          if (orgDefaults.returnVisitRate) parts.push(`Return Visit Rate: ${orgDefaults.returnVisitRate}`);
+          if (orgDefaults.exclusions) {
+            parts.push(`\nSTANDARD EXCLUSIONS — ALWAYS include these in the exclusions list:\n${orgDefaults.exclusions}`);
+          }
+          if (orgDefaults.paymentTerms) parts.push(`Payment Terms: ${orgDefaults.paymentTerms}`);
+          companyDefaultsContext = parts.join("\n");
+        }
+
+        // BoQ Detection — scan evidence for Bill of Quantities patterns
+        const allEvidence = processedEvidence.join("\n");
+        const boqPatterns = [
+          /bill\s+of\s+quantities/i,
+          /trade\s+bill/i,
+          /\bboq\b/i,
+          /priced\s+schedule/i,
+          /\bqty\b.*\bunit\b.*\brate\b/i,
+          /\bdescription\b.*\bqty\b.*\bunit\b/i,
+          /\bnr\b.*£?\s*0\.00/i, // Blank rate columns typical in BoQs
+          /page\s+total\s+\d+\/\d+/i, // "Page Total 1/4/1" format
+        ];
+        const hasBoQ = boqPatterns.some(pattern => pattern.test(allEvidence));
+        
+        let boqContext = "";
+        if (hasBoQ) {
+          boqContext = `\n\nBILL OF QUANTITIES DETECTED — CRITICAL INSTRUCTIONS:
+The tender documents contain a Bill of Quantities (BoQ) or Trade Bill. You MUST:
+1. Extract EVERY line item from the BoQ exactly as written — do not summarise or combine items
+2. Use the EXACT quantities and units from the BoQ — do NOT estimate or round
+3. Match each BoQ item to the company catalog (if available) and use catalog rates
+4. If no catalog rate exists, provide a realistic UK market rate for the specific item
+5. Maintain the BoQ's grouping structure (e.g. site sections, trade sections)
+6. The output line items must map 1:1 to the BoQ items — the client expects to receive their bill back with rates filled in
+7. Do NOT add extra line items for "project management", "design review", "handover documentation" or similar unless the BoQ specifically includes them
+8. Do NOT create multi-phase structures unless the BoQ itself is phased`;
+        }
 
         // Determine if this is a comprehensive quote
         const isComprehensive = (quote as any).quoteMode === "comprehensive";
@@ -2051,7 +2198,7 @@ You MUST respond with valid JSON in this exact format:
   "clientAddress": "string or null",
   "title": "string - professional proposal title",
   "description": "string - EXECUTIVE SUMMARY: 2-3 full paragraphs. Paragraph 1: Project background and business case (why this work is needed, reference any incidents or risks). Paragraph 2: Scope overview covering all major workstreams. Paragraph 3: Expected outcomes and benefits to the client. Write in plain professional English. No bullet points in this field.",
-  "coverLetterContent": "string - A formal cover letter (3-4 paragraphs) addressed to the client. Introduce your company, summarise the proposal, highlight key benefits, and include a call to action. Professional but not stuffy.",
+  "coverLetterContent": "string - A formal cover letter (3-4 paragraphs) addressed to the client. Introduce your company, summarise the proposal, highlight key benefits, and include a call to action. Professional but not stuffy. IMPORTANT: Sign off with the signatory name and position from the COMPANY DEFAULTS provided. Never use placeholders like [Your Name] or [Your Position].",
   "lineItems": [
     {
       "description": "string - detailed description of the specific deliverable",
@@ -2087,7 +2234,7 @@ You MUST respond with valid JSON in this exact format:
     ]
   },
   "siteRequirements": {
-    "workingHours": { "start": "09:00", "end": "17:30", "days": "Monday to Friday" },
+    "workingHours": { "start": "${orgDefaults?.workingHours?.start || '08:00'}", "end": "${orgDefaults?.workingHours?.end || '16:30'}", "days": "${orgDefaults?.workingHours?.days || 'Monday to Friday'}" },
     "accessRestrictions": ["string array"],
     "safetyRequirements": ["string array"],
     "parkingStorage": "string",
@@ -2109,7 +2256,14 @@ You MUST respond with valid JSON in this exact format:
   "exclusions": ["string array of what is NOT included - be explicit"],
   "riskNotes": "string - internal notes about risks or concerns (not shown to client)",
   "terms": "string - payment terms, warranty, and conditions. Include: payment schedule, warranty period, what happens if scope changes, cancellation terms. Write as numbered clauses."
-}${tradePromptAdditions}${catalogContext}`;
+}
+
+CRITICAL RULES:
+- When the evidence contains specific quantities (e.g. "5 nr", "10 metres", "2.5 tonnes"), you MUST use those exact quantities. NEVER substitute your own estimates for quantities explicitly stated in the evidence.
+- When a Bill of Quantities or Trade Bill is present, extract and price each item individually — do not lump items together or create generic phases.
+- Use company catalog rates when items match. Only estimate rates for items with no catalog match.
+- Use the company defaults provided below for working hours, insurance, exclusions, signatory details, etc. Do NOT invent these values.
+${tradePromptAdditions}${boqContext}${companyDefaultsContext}${catalogContext}`;
         } else {
           systemPrompt = `You are a senior estimator preparing a quote from tender evidence. Extract facts from the documents provided and produce a structured draft.
 
@@ -2149,7 +2303,14 @@ IMPORTANT for description field:
 - Do not use phrases like "This comprehensive quote covers" or "We are pleased to offer".
 - Write as if a tradesperson is explaining the scope to the client directly.
 
-Be thorough but realistic with pricing. Extract all client details mentioned. List specific line items with quantities. Note any assumptions you're making and things that are explicitly excluded.${catalogContext}`;
+Be thorough but realistic with pricing. Extract all client details mentioned. List specific line items with quantities. Note any assumptions you're making and things that are explicitly excluded.
+
+CRITICAL RULES:
+- When the evidence contains specific quantities (e.g. "5 nr", "10 metres"), you MUST use those exact quantities. NEVER substitute your own estimates.
+- When a Bill of Quantities or Trade Bill is present, extract and price each item individually.
+- Use company catalog rates when items match. Only estimate rates for items with no catalog match.
+- Use the company defaults below for working hours, insurance, exclusions, etc. Do NOT invent these values.
+${boqContext}${companyDefaultsContext}${catalogContext}`;
         }
 
         // Generate draft using LLM

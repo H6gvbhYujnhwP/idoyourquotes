@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase } from "lucide-react";
+import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase, Shield, Clock, PoundSterling } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TRADE_SECTOR_OPTIONS } from "@/lib/tradeSectors";
 import { useState, useEffect, useRef } from "react";
@@ -16,7 +16,7 @@ export default function Settings() {
   const { user, logout } = useAuth();
   const utils = trpc.useUtils();
   
-  // Form state
+  // Form state — basic profile
   const [companyName, setCompanyName] = useState("");
   const [companyAddress, setCompanyAddress] = useState("");
   const [companyPhone, setCompanyPhone] = useState("");
@@ -26,8 +26,29 @@ export default function Settings() {
   const [defaultTerms, setDefaultTerms] = useState(
     "1. This quote is valid for 30 days from the date of issue.\n2. Payment terms: 50% deposit, 50% on completion.\n3. All prices are exclusive of VAT unless otherwise stated."
   );
+
+  // Form state — trade defaults (from organization)
+  const [workingHoursStart, setWorkingHoursStart] = useState("08:00");
+  const [workingHoursEnd, setWorkingHoursEnd] = useState("16:30");
+  const [workingDays, setWorkingDays] = useState("Monday to Friday");
+  const [insuranceEmployers, setInsuranceEmployers] = useState("");
+  const [insurancePublic, setInsurancePublic] = useState("");
+  const [insuranceProfessional, setInsuranceProfessional] = useState("");
+  const [dayWorkLabourRate, setDayWorkLabourRate] = useState("");
+  const [dayWorkMaterialMarkup, setDayWorkMaterialMarkup] = useState("");
+  const [dayWorkPlantMarkup, setDayWorkPlantMarkup] = useState("");
+  const [defaultExclusions, setDefaultExclusions] = useState("");
+  const [validityDays, setValidityDays] = useState("30");
+  const [signatoryName, setSignatoryName] = useState("");
+  const [signatoryPosition, setSignatoryPosition] = useState("");
+  const [surfaceTreatment, setSurfaceTreatment] = useState("");
+  const [returnVisitRate, setReturnVisitRate] = useState("");
+  const [paymentTerms, setPaymentTerms] = useState("");
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch organization profile for trade defaults
+  const { data: orgProfile } = trpc.auth.orgProfile.useQuery();
 
   // Load user data into form
   useEffect(() => {
@@ -44,10 +65,40 @@ export default function Settings() {
     }
   }, [user]);
 
+  // Load org trade defaults
+  useEffect(() => {
+    if (orgProfile) {
+      const org = orgProfile as any;
+      if (org.defaultWorkingHoursStart) setWorkingHoursStart(org.defaultWorkingHoursStart);
+      if (org.defaultWorkingHoursEnd) setWorkingHoursEnd(org.defaultWorkingHoursEnd);
+      if (org.defaultWorkingDays) setWorkingDays(org.defaultWorkingDays);
+      if (org.defaultInsuranceLimits) {
+        const ins = org.defaultInsuranceLimits as any;
+        setInsuranceEmployers(ins.employers || "");
+        setInsurancePublic(ins.public || "");
+        setInsuranceProfessional(ins.professional || "");
+      }
+      if (org.defaultDayWorkRates) {
+        const dw = org.defaultDayWorkRates as any;
+        setDayWorkLabourRate(dw.labourRate?.toString() || "");
+        setDayWorkMaterialMarkup(dw.materialMarkup?.toString() || "");
+        setDayWorkPlantMarkup(dw.plantMarkup?.toString() || "");
+      }
+      if (org.defaultExclusions) setDefaultExclusions(org.defaultExclusions);
+      if (org.defaultValidityDays) setValidityDays(org.defaultValidityDays.toString());
+      if (org.defaultSignatoryName) setSignatoryName(org.defaultSignatoryName);
+      if (org.defaultSignatoryPosition) setSignatoryPosition(org.defaultSignatoryPosition);
+      if (org.defaultSurfaceTreatment) setSurfaceTreatment(org.defaultSurfaceTreatment);
+      if (org.defaultReturnVisitRate) setReturnVisitRate(org.defaultReturnVisitRate);
+      if (org.defaultPaymentTerms) setPaymentTerms(org.defaultPaymentTerms);
+    }
+  }, [orgProfile]);
+
   // Update profile mutation
   const updateProfile = trpc.auth.updateProfile.useMutation({
     onSuccess: () => {
       utils.auth.me.invalidate();
+      utils.auth.orgProfile.invalidate();
       toast.success("Settings saved");
     },
     onError: (error) => {
@@ -75,6 +126,27 @@ export default function Settings() {
       companyEmail: companyEmail || undefined,
       defaultTerms: defaultTerms || undefined,
       defaultTradeSector: defaultTradeSector || undefined,
+      // Trade defaults
+      defaultWorkingHoursStart: workingHoursStart || undefined,
+      defaultWorkingHoursEnd: workingHoursEnd || undefined,
+      defaultWorkingDays: workingDays || undefined,
+      defaultInsuranceLimits: (insuranceEmployers || insurancePublic || insuranceProfessional) ? {
+        employers: insuranceEmployers || undefined,
+        public: insurancePublic || undefined,
+        professional: insuranceProfessional || undefined,
+      } : undefined,
+      defaultDayWorkRates: (dayWorkLabourRate || dayWorkMaterialMarkup || dayWorkPlantMarkup) ? {
+        labourRate: dayWorkLabourRate ? parseFloat(dayWorkLabourRate) : undefined,
+        materialMarkup: dayWorkMaterialMarkup ? parseFloat(dayWorkMaterialMarkup) : undefined,
+        plantMarkup: dayWorkPlantMarkup ? parseFloat(dayWorkPlantMarkup) : undefined,
+      } : undefined,
+      defaultExclusions: defaultExclusions || undefined,
+      defaultValidityDays: validityDays ? parseInt(validityDays) : undefined,
+      defaultSignatoryName: signatoryName || undefined,
+      defaultSignatoryPosition: signatoryPosition || undefined,
+      defaultSurfaceTreatment: surfaceTreatment || undefined,
+      defaultReturnVisitRate: returnVisitRate || undefined,
+      defaultPaymentTerms: paymentTerms || undefined,
     });
   };
 
@@ -295,6 +367,249 @@ export default function Settings() {
               ))}
             </SelectContent>
           </Select>
+        </CardContent>
+      </Card>
+
+      {/* Quote Defaults — Signatory & Validity */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            Quote Defaults
+          </CardTitle>
+          <CardDescription>
+            These details appear on every quote. The AI will use them instead of generating placeholders.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="signatoryName">Signatory Name</Label>
+              <Input
+                id="signatoryName"
+                placeholder="e.g. Andrew Wright"
+                value={signatoryName}
+                onChange={(e) => setSignatoryName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="signatoryPosition">Position / Title</Label>
+              <Input
+                id="signatoryPosition"
+                placeholder="e.g. Estimator"
+                value={signatoryPosition}
+                onChange={(e) => setSignatoryPosition(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="validityDays">Quote Validity (days)</Label>
+              <Input
+                id="validityDays"
+                type="number"
+                placeholder="30"
+                value={validityDays}
+                onChange={(e) => setValidityDays(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="surfaceTreatment">Default Surface Treatment</Label>
+              <Input
+                id="surfaceTreatment"
+                placeholder="e.g. Shop primed (SB + zinc phosphate + MIO)"
+                value={surfaceTreatment}
+                onChange={(e) => setSurfaceTreatment(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="returnVisitRate">Return Visit Rate</Label>
+            <Input
+              id="returnVisitRate"
+              placeholder="e.g. £856/day per 2-man team"
+              value={returnVisitRate}
+              onChange={(e) => setReturnVisitRate(e.target.value)}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Working Hours */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Clock className="h-5 w-5" />
+            Working Hours
+          </CardTitle>
+          <CardDescription>
+            Standard site working hours included in quotes
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid sm:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="workingHoursStart">Start Time</Label>
+              <Input
+                id="workingHoursStart"
+                type="time"
+                value={workingHoursStart}
+                onChange={(e) => setWorkingHoursStart(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="workingHoursEnd">End Time</Label>
+              <Input
+                id="workingHoursEnd"
+                type="time"
+                value={workingHoursEnd}
+                onChange={(e) => setWorkingHoursEnd(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="workingDays">Days</Label>
+              <Input
+                id="workingDays"
+                placeholder="Monday to Friday"
+                value={workingDays}
+                onChange={(e) => setWorkingDays(e.target.value)}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Insurance Limits */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5" />
+            Insurance Limits
+          </CardTitle>
+          <CardDescription>
+            Standard insurance indemnity limits stated on quotes
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid sm:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="insuranceEmployers">Employers Liability</Label>
+              <Input
+                id="insuranceEmployers"
+                placeholder="e.g. £10 million"
+                value={insuranceEmployers}
+                onChange={(e) => setInsuranceEmployers(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="insurancePublic">Public Liability</Label>
+              <Input
+                id="insurancePublic"
+                placeholder="e.g. £5 million"
+                value={insurancePublic}
+                onChange={(e) => setInsurancePublic(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="insuranceProfessional">Professional Indemnity</Label>
+              <Input
+                id="insuranceProfessional"
+                placeholder="e.g. £2 million"
+                value={insuranceProfessional}
+                onChange={(e) => setInsuranceProfessional(e.target.value)}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Day Work Rates */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <PoundSterling className="h-5 w-5" />
+            Day Work Rates
+          </CardTitle>
+          <CardDescription>
+            Rates for additional/varied work outside the quoted scope
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid sm:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="dayWorkLabourRate">Labour Rate (£/hr)</Label>
+              <Input
+                id="dayWorkLabourRate"
+                type="number"
+                step="0.50"
+                placeholder="e.g. 53.50"
+                value={dayWorkLabourRate}
+                onChange={(e) => setDayWorkLabourRate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="dayWorkMaterialMarkup">Material Markup (%)</Label>
+              <Input
+                id="dayWorkMaterialMarkup"
+                type="number"
+                placeholder="e.g. 32"
+                value={dayWorkMaterialMarkup}
+                onChange={(e) => setDayWorkMaterialMarkup(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="dayWorkPlantMarkup">Plant Markup (%)</Label>
+              <Input
+                id="dayWorkPlantMarkup"
+                type="number"
+                placeholder="e.g. 18"
+                value={dayWorkPlantMarkup}
+                onChange={(e) => setDayWorkPlantMarkup(e.target.value)}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Standard Exclusions */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            Standard Exclusions
+          </CardTitle>
+          <CardDescription>
+            Items you always exclude from quotes. One per line. The AI will include these on every quote.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Textarea
+            placeholder={"e.g.\nSecondary steelwork where section sizes not provided\nWind posts\nBuilder's work (cutting out, padstones, grouting, dry packing)\nTemporary propping\nIntumescent painting\nDiamond drilling\nMaking good to existing"}
+            value={defaultExclusions}
+            onChange={(e) => setDefaultExclusions(e.target.value)}
+            rows={6}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Payment Terms */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <PoundSterling className="h-5 w-5" />
+            Default Payment Terms
+          </CardTitle>
+          <CardDescription>
+            Specific payment terms for your trade (overrides generic T&Cs for payment section)
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Textarea
+            placeholder="e.g. Monthly valuations, payment 35 days from due date. 5% retention until practical completion."
+            value={paymentTerms}
+            onChange={(e) => setPaymentTerms(e.target.value)}
+            rows={3}
+          />
         </CardContent>
       </Card>
 

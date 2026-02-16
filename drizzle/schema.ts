@@ -35,6 +35,27 @@ export const organizations = pgTable("organizations", {
   billingEmail: varchar("billing_email", { length: 320 }),
   stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
   aiCreditsRemaining: integer("ai_credits_remaining").default(0),
+  // Trade-specific company defaults — used by AI when generating quotes
+  defaultWorkingHoursStart: varchar("default_working_hours_start", { length: 10 }).default("08:00"),
+  defaultWorkingHoursEnd: varchar("default_working_hours_end", { length: 10 }).default("16:30"),
+  defaultWorkingDays: varchar("default_working_days", { length: 100 }).default("Monday to Friday"),
+  defaultInsuranceLimits: json("default_insurance_limits").$type<{
+    employers?: string;
+    public?: string;
+    professional?: string;
+  }>(),
+  defaultDayWorkRates: json("default_day_work_rates").$type<{
+    labourRate?: number;
+    materialMarkup?: number;
+    plantMarkup?: number;
+  }>(),
+  defaultExclusions: text("default_exclusions"),
+  defaultValidityDays: integer("default_validity_days").default(30),
+  defaultSignatoryName: varchar("default_signatory_name", { length: 255 }),
+  defaultSignatoryPosition: varchar("default_signatory_position", { length: 255 }),
+  defaultSurfaceTreatment: varchar("default_surface_treatment", { length: 255 }),
+  defaultReturnVisitRate: varchar("default_return_visit_rate", { length: 255 }),
+  defaultPaymentTerms: text("default_payment_terms"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
