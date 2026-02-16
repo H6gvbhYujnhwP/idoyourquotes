@@ -5,7 +5,7 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { invokeLLM } from "./_core/llm";
 import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured, getFileBuffer } from "./r2Storage";
-import { analyzePdfWithClaude, analyzePdfWithOpenAI, analyzeImageWithClaude, isClaudeConfigured } from "./_core/claude";
+import { analyzePdfWithClaude, analyzePdfWithOpenAI, analyzeImageWithClaude, isClaudeConfigured, isOpenAIConfigured } from "./_core/claude";
 import { extractUrls, scrapeUrls, formatScrapedContentForAI } from "./_core/webScraper";
 import { extractBrandColors } from "./services/colorExtractor";
 import { parseWordDocument, isWordDocument } from "./services/wordParser";
@@ -1302,15 +1302,15 @@ Sender Name: ${user.name || "[Your Name]"}`,
               let processedContent = "";
 
               if (input.inputType === "pdf") {
-                // Check if Claude API is configured
-                if (!isClaudeConfigured()) {
-                  throw new Error("ANTHROPIC_API_KEY is not configured. Claude API is required for PDF analysis.");
+                // Check if OpenAI API is configured (primary), fall back to Claude
+                if (!isOpenAIConfigured() && !isClaudeConfigured()) {
+                  throw new Error("Neither OPENAI_API_KEY nor ANTHROPIC_API_KEY is configured. An AI API key is required for PDF analysis.");
                 }
 
-                // Download PDF from R2 storage and analyze with Claude
+                // Download PDF from R2 storage and analyze with OpenAI (faster, higher rate limits)
                 const pdfBuffer = await getFileBuffer(key);
                 
-                processedContent = await analyzePdfWithClaude(
+                processedContent = await analyzePdfWithOpenAI(
                   pdfBuffer,
                   `Analyze this document for quoting/estimation purposes. This could be a technical drawing, floor plan, specification sheet, architectural plan, or project documentation.
 
@@ -1539,12 +1539,12 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
         });
 
         try {
-          // Check if Claude API is configured
-          if (!isClaudeConfigured()) {
-            throw new Error("ANTHROPIC_API_KEY is not configured. Claude API is required for PDF analysis.");
+          // Check if OpenAI API is configured
+          if (!isOpenAIConfigured()) {
+            throw new Error("OPENAI_API_KEY is not configured. OpenAI API is required for PDF analysis.");
           }
 
-          // Download PDF from R2 storage and analyze with Claude
+          // Download PDF from R2 storage and analyze with OpenAI (faster, higher rate limits)
           const pdfBuffer = await getFileBuffer(inputRecord.fileKey);
           
           // Use OpenAI GPT-4 Turbo for faster processing with higher rate limits

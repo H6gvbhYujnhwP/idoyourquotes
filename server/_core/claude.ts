@@ -370,17 +370,23 @@ export function isClaudeConfigured(): boolean {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// OpenAI GPT-4 Turbo PDF Analysis (Faster, Higher Rate Limits)
+// OpenAI GPT-4o PDF Analysis (Text extraction + AI analysis)
+// Faster and more reliable than vision-based PDF processing
 // ══════════════════════════════════════════════════════════════════════
 
 import { openai, isOpenAIConfigured } from './openai';
+// @ts-ignore - pdf-parse doesn't have perfect types
+import pdfParse from 'pdf-parse';
 
-const GPT4_MAX_PAGES_PER_CHUNK = 40; // GPT-4 can handle 4x more than Claude
-const GPT4_DELAY_BETWEEN_CHUNKS_MS = 2000; // 2 seconds (vs 5s for Claude)
+export { isOpenAIConfigured };
+
+const TEXT_CHUNK_SIZE = 80000; // ~20K tokens worth of text per chunk
+const GPT4_DELAY_BETWEEN_CHUNKS_MS = 1000; // 1 second between chunks
 
 /**
- * Analyze PDF with OpenAI GPT-4 Turbo Vision
- * Much faster and higher rate limits than Claude (150K vs 30K tokens/min)
+ * Analyze PDF with OpenAI GPT-4o
+ * Uses pdf-parse for fast text extraction, then GPT-4o for analysis.
+ * Much faster and more reliable than vision-based approaches.
  */
 export async function analyzePdfWithOpenAI(
   pdfBuffer: Buffer,
@@ -391,58 +397,104 @@ export async function analyzePdfWithOpenAI(
     throw new Error("OPENAI_API_KEY is not configured");
   }
 
-  const defaultSystem = systemPrompt || 
+  const system = systemPrompt ||
     "You are a document analyzer specializing in construction, engineering, and technical documents. Extract all relevant information for quoting purposes.";
 
-  // Determine page count
+  // Step 1: Extract text from PDF using pdf-parse (very fast, no API call)
+  let pdfText = "";
   let totalPages = 1;
+
   try {
-    const pdfDoc = await PDFDocument.load(pdfBuffer);
-    totalPages = pdfDoc.getPageCount();
-  } catch {
-    totalPages = 1;
+    console.log(`[OpenAI PDF] Extracting text from PDF...`);
+    const parsed = await pdfParse(pdfBuffer);
+    pdfText = parsed.text || "";
+    totalPages = parsed.numpages || 1;
+    console.log(`[OpenAI PDF] Extracted ${pdfText.length} chars from ${totalPages} pages`);
+  } catch (err: any) {
+    console.error(`[OpenAI PDF] pdf-parse failed, falling back to pdf-lib page count:`, err.message);
+    // If pdf-parse fails, try to at least get page count
+    try {
+      const pdfDoc = await PDFDocument.load(pdfBuffer);
+      totalPages = pdfDoc.getPageCount();
+    } catch {
+      totalPages = 1;
+    }
   }
 
-  console.log(`[OpenAI PDF] PDF has ${totalPages} pages`);
+  // If we got no text, the PDF might be image-only (scanned) - report this clearly
+  if (!pdfText.trim()) {
+    console.log(`[OpenAI PDF] No extractable text found - PDF may be scanned/image-only`);
+    return `# Document Analysis (${totalPages} pages)\n\n` +
+      `**Note:** This PDF appears to be scanned or image-based with no extractable text. ` +
+      `The document has ${totalPages} page(s). To process scanned PDFs, please use image-based analysis or OCR.`;
+  }
 
-  // GPT-4 can handle larger chunks (40 pages vs Claude's 10)
-  const chunks = await splitPdfIntoChunks(pdfBuffer, GPT4_MAX_PAGES_PER_CHUNK);
-  console.log(`[OpenAI PDF] Split into ${chunks.length} chunks (${GPT4_MAX_PAGES_PER_CHUNK} pages each)`);
+  // Step 2: If text is small enough, send in a single API call
+  if (pdfText.length <= TEXT_CHUNK_SIZE) {
+    console.log(`[OpenAI PDF] Small document (${pdfText.length} chars), processing in single call`);
+
+    try {
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: system },
+          {
+            role: 'user',
+            content: `${prompt}\n\n--- DOCUMENT TEXT (${totalPages} pages) ---\n\n${pdfText}`,
+          },
+        ],
+        max_tokens: 4096,
+        temperature: 0.1,
+      });
+
+      const analysis = response.choices[0]?.message?.content || '';
+      console.log(`[OpenAI PDF] Complete - single call (${analysis.length} chars output)`);
+      return analysis;
+    } catch (error: any) {
+      console.error(`[OpenAI PDF] API call failed:`, error.message);
+      // One retry on rate limit
+      if (error.status === 429) {
+        console.log(`[OpenAI PDF] Rate limit, waiting 10s and retrying...`);
+        await sleep(10000);
+        const retryResponse = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          messages: [
+            { role: 'system', content: system },
+            {
+              role: 'user',
+              content: `${prompt}\n\n--- DOCUMENT TEXT (${totalPages} pages) ---\n\n${pdfText}`,
+            },
+          ],
+          max_tokens: 4096,
+          temperature: 0.1,
+        });
+        return retryResponse.choices[0]?.message?.content || '';
+      }
+      throw error;
+    }
+  }
+
+  // Step 3: Large document - split text into chunks and process each
+  const textChunks: string[] = [];
+  for (let i = 0; i < pdfText.length; i += TEXT_CHUNK_SIZE) {
+    textChunks.push(pdfText.slice(i, i + TEXT_CHUNK_SIZE));
+  }
+  console.log(`[OpenAI PDF] Large document (${pdfText.length} chars), split into ${textChunks.length} text chunks`);
 
   const chunkResults: string[] = [];
 
-  for (let i = 0; i < chunks.length; i++) {
-    const startPage = i * GPT4_MAX_PAGES_PER_CHUNK + 1;
-    const endPage = Math.min((i + 1) * GPT4_MAX_PAGES_PER_CHUNK, totalPages);
-    const chunkLabel = `Pages ${startPage}-${endPage}`;
-
-    console.log(`[OpenAI PDF] Processing chunk ${i + 1}/${chunks.length} (${chunkLabel})`);
+  for (let i = 0; i < textChunks.length; i++) {
+    const chunkLabel = `Section ${i + 1} of ${textChunks.length}`;
+    console.log(`[OpenAI PDF] Processing ${chunkLabel}...`);
 
     try {
-      const base64Pdf = chunks[i].toString('base64');
-
       const response = await openai.chat.completions.create({
-        model: 'gpt-4-turbo',
+        model: 'gpt-4o',
         messages: [
-          {
-            role: 'system',
-            content: defaultSystem,
-          },
+          { role: 'system', content: system },
           {
             role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: `${prompt}\n\nNote: This is section ${i + 1} of ${chunks.length} (${chunkLabel} of ${totalPages} total pages). Extract all relevant information from these pages.`,
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: `data:application/pdf;base64,${base64Pdf}`,
-                  detail: 'high',
-                },
-              },
-            ],
+            content: `${prompt}\n\nNote: This is ${chunkLabel} of a ${totalPages}-page document.\n\n--- DOCUMENT TEXT (${chunkLabel}) ---\n\n${textChunks[i]}`,
           },
         ],
         max_tokens: 4096,
@@ -451,62 +503,46 @@ export async function analyzePdfWithOpenAI(
 
       const analysis = response.choices[0]?.message?.content || '';
       chunkResults.push(`## ${chunkLabel}\n\n${analysis}`);
-      
-      console.log(`[OpenAI PDF] Chunk ${i + 1} completed (${analysis.length} chars)`);
+      console.log(`[OpenAI PDF] ${chunkLabel} completed (${analysis.length} chars)`);
 
-      if (i < chunks.length - 1) {
-        console.log(`[OpenAI PDF] Waiting ${GPT4_DELAY_BETWEEN_CHUNKS_MS / 1000}s before next chunk...`);
+      if (i < textChunks.length - 1) {
         await sleep(GPT4_DELAY_BETWEEN_CHUNKS_MS);
       }
-
     } catch (error: any) {
-      console.error(`[OpenAI PDF] Chunk ${i + 1} failed:`, error.message);
-      
+      console.error(`[OpenAI PDF] ${chunkLabel} failed:`, error.message);
+
       if (error.status === 429) {
-        console.log(`[OpenAI PDF] Rate limit hit, waiting 10s and retrying chunk ${i + 1}...`);
+        console.log(`[OpenAI PDF] Rate limit hit, waiting 10s and retrying...`);
         await sleep(10000);
-        
         try {
-          const base64Pdf = chunks[i].toString('base64');
           const retryResponse = await openai.chat.completions.create({
-            model: 'gpt-4-turbo',
+            model: 'gpt-4o',
             messages: [
-              { role: 'system', content: defaultSystem },
+              { role: 'system', content: system },
               {
                 role: 'user',
-                content: [
-                  { type: 'text', text: prompt },
-                  {
-                    type: 'image_url',
-                    image_url: {
-                      url: `data:application/pdf;base64,${base64Pdf}`,
-                      detail: 'high',
-                    },
-                  },
-                ],
+                content: `${prompt}\n\n--- DOCUMENT TEXT (${chunkLabel}) ---\n\n${textChunks[i]}`,
               },
             ],
             max_tokens: 4096,
             temperature: 0.1,
           });
-          
           const analysis = retryResponse.choices[0]?.message?.content || '';
           chunkResults.push(`## ${chunkLabel}\n\n${analysis}`);
-          console.log(`[OpenAI PDF] Retry successful for chunk ${i + 1}`);
+          console.log(`[OpenAI PDF] Retry successful for ${chunkLabel}`);
         } catch (retryError: any) {
-          console.error(`[OpenAI PDF] Retry also failed:`, retryError.message);
-          chunkResults.push(`[Section ${chunkLabel}: Processing failed - ${retryError.message}]`);
+          console.error(`[OpenAI PDF] Retry failed:`, retryError.message);
+          chunkResults.push(`[${chunkLabel}: Processing failed - ${retryError.message}]`);
         }
       } else {
-        chunkResults.push(`[Section ${chunkLabel}: Processing failed - ${error.message}]`);
+        chunkResults.push(`[${chunkLabel}: Processing failed - ${error.message}]`);
       }
     }
   }
 
-  const combined = `# Document Analysis (${totalPages} pages, processed in ${chunks.length} sections via GPT-4 Turbo)\n\n` +
+  const combined = `# Document Analysis (${totalPages} pages, processed in ${textChunks.length} sections via GPT-4o)\n\n` +
     chunkResults.join('\n\n---\n\n');
 
-  console.log(`[OpenAI PDF] Complete - ${chunks.length} chunks processed`);
-  
+  console.log(`[OpenAI PDF] Complete - ${textChunks.length} chunks processed`);
   return combined;
 }
