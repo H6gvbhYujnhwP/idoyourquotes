@@ -314,6 +314,7 @@ export const appRouter = router({
         validUntil: z.date().optional(),
         taxRate: z.string().optional(),
         userPrompt: z.string().nullable().optional(),
+        processingInstructions: z.string().nullable().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;

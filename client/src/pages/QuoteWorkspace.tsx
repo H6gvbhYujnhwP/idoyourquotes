@@ -193,6 +193,7 @@ export default function QuoteWorkspace() {
   const [processingInstructions, setProcessingInstructions] = useState(""); // For telling AI what to look for when analysing uploads
   const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
   const [processingInputId, setProcessingInputId] = useState<number | null>(null);
+  const [reanalyzeTriggers, setReanalyzeTriggers] = useState<Record<number, number>>({}); // per-input trigger counters
 
   // Generate Email modal state
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -530,6 +531,9 @@ export default function QuoteWorkspace() {
       if ((fullQuote.quote as any).userPrompt) {
         setUserPrompt((fullQuote.quote as any).userPrompt);
       }
+      if ((fullQuote.quote as any).processingInstructions) {
+        setProcessingInstructions((fullQuote.quote as any).processingInstructions);
+      }
     }
     if (fullQuote?.tenderContext) {
       setTenderNotes(fullQuote.tenderContext.notes || "");
@@ -554,6 +558,7 @@ export default function QuoteWorkspace() {
         terms,
         taxRate,
         userPrompt: userPrompt || null,
+        processingInstructions: processingInstructions || null,
       });
     } finally {
       setIsSaving(false);
@@ -1405,11 +1410,20 @@ export default function QuoteWorkspace() {
                     <Button
                       size="sm"
                       className="h-7 text-xs bg-teal-600 hover:bg-teal-700 text-white"
-                      onClick={() => {
-                        // Re-process all completed inputs with updated instructions
+                      onClick={async () => {
+                        // Save instructions first
+                        await updateQuote.mutateAsync({
+                          id: quoteId,
+                          processingInstructions: processingInstructions || null,
+                        });
+                        // Trigger takeoff re-run for all completed PDF inputs
                         const completedInputs = inputs.filter((i: QuoteInput) => i.processingStatus === "completed");
-                        completedInputs.forEach((input: QuoteInput) => handleProcessInput(input));
-                        toast.success(`Re-analysing ${completedInputs.length} input${completedInputs.length > 1 ? 's' : ''} with updated instructions`);
+                        const newTriggers: Record<number, number> = { ...reanalyzeTriggers };
+                        completedInputs.forEach((input: QuoteInput) => {
+                          newTriggers[input.id] = (newTriggers[input.id] || 0) + 1;
+                        });
+                        setReanalyzeTriggers(newTriggers);
+                        toast.success(`Instructions saved. Re-analysing ${completedInputs.length} input${completedInputs.length > 1 ? 's' : ''}`);
                       }}
                     >
                       <RefreshCw className="h-3 w-3 mr-1" />
@@ -1424,6 +1438,13 @@ export default function QuoteWorkspace() {
                   placeholder="e.g. 'Lighting only — general lighting, emergency lighting, controls and external lighting. Exclude fire alarm, power, access control and CCTV.'"
                   value={processingInstructions}
                   onChange={(e) => setProcessingInstructions(e.target.value)}
+                  onBlur={() => {
+                    // Auto-save when user clicks away
+                    updateQuote.mutate({
+                      id: quoteId,
+                      processingInstructions: processingInstructions || null,
+                    });
+                  }}
                   rows={4}
                   className="bg-white"
                 />
@@ -1611,6 +1632,7 @@ export default function QuoteWorkspace() {
                                 filename={input.filename || "Drawing"}
                                 fileUrl={input.fileUrl || undefined}
                                 processingInstructions={processingInstructions}
+                                reanalyzeTrigger={reanalyzeTriggers[input.id] || 0}
                               />
                             )}
                             {input.processingStatus === "processing" && (
@@ -1657,11 +1679,19 @@ export default function QuoteWorkspace() {
                               variant="outline"
                               size="sm"
                               className="h-8 text-xs text-teal-600 border-teal-300 hover:bg-teal-50"
-                              onClick={() => {
-                                handleProcessInput(input);
-                                toast.success(`Re-analysing ${input.filename || 'input'}...`);
+                              onClick={async () => {
+                                // Save instructions first
+                                await updateQuote.mutateAsync({
+                                  id: quoteId,
+                                  processingInstructions: processingInstructions || null,
+                                });
+                                // Trigger takeoff re-run for this input
+                                setReanalyzeTriggers(prev => ({
+                                  ...prev,
+                                  [input.id]: (prev[input.id] || 0) + 1,
+                                }));
+                                toast.success(`Re-analysing ${input.filename || 'input'} with updated instructions...`);
                               }}
-                              disabled={processingInputId === input.id}
                               title="Re-analyse this input with current processing instructions"
                             >
                               <RefreshCw className="mr-1 h-3 w-3" />

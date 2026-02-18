@@ -19,9 +19,10 @@ interface TakeoffPanelProps {
   filename: string;
   fileUrl?: string;
   processingInstructions?: string;
+  reanalyzeTrigger?: number;
 }
 
-export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, processingInstructions }: TakeoffPanelProps) {
+export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, processingInstructions, reanalyzeTrigger }: TakeoffPanelProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showViewer, setShowViewer] = useState(false);
   const [showChat, setShowChat] = useState(true);
@@ -53,6 +54,16 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
     setIsAnalyzing(true);
     analyzeMutation.mutate({ inputId, quoteId });
   };
+
+  // Re-run takeoff when parent triggers re-analysis
+  const [lastTrigger, setLastTrigger] = useState(0);
+  useEffect(() => {
+    if (reanalyzeTrigger && reanalyzeTrigger > lastTrigger && takeoffData) {
+      setLastTrigger(reanalyzeTrigger);
+      setIsAnalyzing(true);
+      analyzeMutation.mutate({ inputId, quoteId });
+    }
+  }, [reanalyzeTrigger]);
 
   const handleAnswersSubmitted = (answers: Record<string, string>) => {
     if (!takeoffData?.id) return;
