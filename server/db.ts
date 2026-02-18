@@ -33,6 +33,9 @@ import {
   InsertOrgMember,
   UsageLog,
   InsertUsageLog,
+  electricalTakeoffs,
+  ElectricalTakeoff,
+  InsertElectricalTakeoff,
 } from "../drizzle/schema";
 
 /**
@@ -847,4 +850,57 @@ export async function migrateExistingUsersToOrgs(): Promise<void> {
 
     console.log(`[Migration] Created org "${org.name}" for user ${user.email}`);
   }
+}
+
+// ============ ELECTRICAL TAKEOFF HELPERS ============
+
+export async function createElectricalTakeoff(data: InsertElectricalTakeoff): Promise<ElectricalTakeoff> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const [result] = await db.insert(electricalTakeoffs).values(data).returning();
+  return result;
+}
+
+export async function getElectricalTakeoffsByQuoteId(quoteId: number): Promise<ElectricalTakeoff[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select().from(electricalTakeoffs)
+    .where(eq(electricalTakeoffs.quoteId, quoteId))
+    .orderBy(desc(electricalTakeoffs.createdAt));
+}
+
+export async function getElectricalTakeoffById(id: number): Promise<ElectricalTakeoff | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const [result] = await db.select().from(electricalTakeoffs)
+    .where(eq(electricalTakeoffs.id, id))
+    .limit(1);
+  return result;
+}
+
+export async function getElectricalTakeoffByInputId(inputId: number): Promise<ElectricalTakeoff | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const [result] = await db.select().from(electricalTakeoffs)
+    .where(eq(electricalTakeoffs.inputId, inputId))
+    .limit(1);
+  return result;
+}
+
+export async function updateElectricalTakeoff(
+  id: number,
+  data: Partial<InsertElectricalTakeoff>
+): Promise<ElectricalTakeoff | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const [result] = await db.update(electricalTakeoffs)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(electricalTakeoffs.id, id))
+    .returning();
+  return result;
 }

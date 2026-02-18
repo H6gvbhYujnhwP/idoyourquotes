@@ -10,6 +10,9 @@ import { isOpenAIConfigured } from "./_core/openai";
 import { extractUrls, scrapeUrls, formatScrapedContentForAI } from "./_core/webScraper";
 import { extractBrandColors } from "./services/colorExtractor";
 import { parseWordDocument, isWordDocument } from "./services/wordParser";
+import { performElectricalTakeoff, applyUserAnswers, formatTakeoffForQuoteContext, SYMBOL_STYLES, SYMBOL_DESCRIPTIONS } from "./services/electricalTakeoff";
+import { generateSvgOverlay } from "./services/takeoffMarkup";
+import { createElectricalTakeoff, getElectricalTakeoffsByQuoteId, getElectricalTakeoffById, getElectricalTakeoffByInputId, updateElectricalTakeoff } from "./db";
 import { parseSpreadsheet, isSpreadsheet, formatSpreadsheetForAI } from "./services/excelParser";
 import { generateQuoteHTML } from "./pdfGenerator";
 import {
@@ -1751,6 +1754,181 @@ Report facts only. Do not interpret or add commentary.`,
           });
           throw error;
         }
+      }),
+  }),
+
+  // ============ ELECTRICAL TAKEOFF ============
+  electricalTakeoff: router({
+    // Get all takeoffs for a quote
+    list: protectedProcedure
+      .input(z.object({ quoteId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+        return getElectricalTakeoffsByQuoteId(input.quoteId);
+      }),
+
+    // Get single takeoff with SVG overlay
+    get: protectedProcedure
+      .input(z.object({ takeoffId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const takeoff = await getElectricalTakeoffById(input.takeoffId);
+        if (!takeoff) throw new Error("Takeoff not found");
+        
+        const quote = await getQuoteWithOrgAccess(takeoff.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Access denied");
+        
+        return {
+          ...takeoff,
+          symbolStyles: SYMBOL_STYLES,
+          symbolDescriptions: SYMBOL_DESCRIPTIONS,
+        };
+      }),
+
+    // Get takeoff for a specific input (drawing)
+    getByInputId: protectedProcedure
+      .input(z.object({ inputId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const takeoff = await getElectricalTakeoffByInputId(input.inputId);
+        if (!takeoff) return null;
+        
+        const quote = await getQuoteWithOrgAccess(takeoff.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Access denied");
+        
+        return {
+          ...takeoff,
+          symbolStyles: SYMBOL_STYLES,
+          symbolDescriptions: SYMBOL_DESCRIPTIONS,
+        };
+      }),
+
+    // Run takeoff extraction on a drawing
+    analyze: protectedProcedure
+      .input(z.object({
+        inputId: z.number(),
+        quoteId: z.number(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+        
+        // Get the input record to find the PDF file
+        const inputRecord = await getInputById(input.inputId);
+        if (!inputRecord || !inputRecord.fileKey) {
+          throw new Error("Input file not found");
+        }
+        
+        // Download PDF from R2
+        const pdfBuffer = await getFileBuffer(inputRecord.fileKey);
+        
+        // Run electrical takeoff extraction
+        const result = await performElectricalTakeoff(pdfBuffer, inputRecord.filename || 'Unknown');
+        
+        // Generate SVG overlay
+        const svgOverlay = generateSvgOverlay(result);
+        
+        // Save to database
+        const takeoff = await createElectricalTakeoff({
+          quoteId: input.quoteId,
+          inputId: input.inputId,
+          drawingRef: result.drawingRef,
+          status: result.questions.length > 0 ? 'questions' : 'draft',
+          pageWidth: result.pageWidth.toString(),
+          pageHeight: result.pageHeight.toString(),
+          symbols: result.symbols,
+          counts: result.counts,
+          questions: result.questions,
+          userAnswers: {},
+          drawingNotes: result.notes,
+          dbCircuits: result.dbCircuits,
+          hasTextLayer: result.hasTextLayer,
+          totalTextElements: result.totalTextElements,
+          svgOverlay,
+        });
+        
+        // Also update the input's processed content with takeoff summary
+        await updateInputProcessing(input.inputId, {
+          processedContent: formatTakeoffForQuoteContext(result),
+          processingStatus: "completed",
+        });
+        
+        return {
+          takeoff,
+          symbolStyles: SYMBOL_STYLES,
+          symbolDescriptions: SYMBOL_DESCRIPTIONS,
+        };
+      }),
+
+    // Submit answers to takeoff questions
+    answerQuestions: protectedProcedure
+      .input(z.object({
+        takeoffId: z.number(),
+        answers: z.record(z.string(), z.string()),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const takeoff = await getElectricalTakeoffById(input.takeoffId);
+        if (!takeoff) throw new Error("Takeoff not found");
+        
+        const quote = await getQuoteWithOrgAccess(takeoff.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Access denied");
+        
+        // Rebuild result from stored data and apply answers
+        const storedResult = {
+          drawingRef: takeoff.drawingRef || '',
+          pageWidth: Number(takeoff.pageWidth) || 0,
+          pageHeight: Number(takeoff.pageHeight) || 0,
+          symbols: takeoff.symbols || [],
+          counts: takeoff.counts || {},
+          questions: takeoff.questions || [],
+          notes: takeoff.drawingNotes || [],
+          dbCircuits: takeoff.dbCircuits || [],
+          hasTextLayer: takeoff.hasTextLayer ?? true,
+          totalTextElements: takeoff.totalTextElements || 0,
+        };
+        
+        const updated = applyUserAnswers(storedResult, input.answers);
+        const svgOverlay = generateSvgOverlay(updated);
+        
+        // Update database
+        const updatedTakeoff = await updateElectricalTakeoff(takeoff.id, {
+          symbols: updated.symbols,
+          counts: updated.counts,
+          userAnswers: input.answers,
+          svgOverlay,
+          status: 'draft',
+        });
+        
+        // Update input processed content with new counts
+        if (takeoff.inputId) {
+          await updateInputProcessing(Number(takeoff.inputId), {
+            processedContent: formatTakeoffForQuoteContext(updated),
+          });
+        }
+        
+        return {
+          takeoff: updatedTakeoff,
+          symbolStyles: SYMBOL_STYLES,
+          symbolDescriptions: SYMBOL_DESCRIPTIONS,
+        };
+      }),
+
+    // Verify takeoff (lock counts)
+    verify: protectedProcedure
+      .input(z.object({ takeoffId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const takeoff = await getElectricalTakeoffById(input.takeoffId);
+        if (!takeoff) throw new Error("Takeoff not found");
+        
+        const quote = await getQuoteWithOrgAccess(takeoff.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Access denied");
+        
+        const updatedTakeoff = await updateElectricalTakeoff(takeoff.id, {
+          status: 'verified',
+          verifiedAt: new Date(),
+          verifiedBy: BigInt(ctx.user.id) as any,
+        });
+        
+        return { verified: true, takeoff: updatedTakeoff };
       }),
   }),
 

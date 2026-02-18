@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import TakeoffPanel from "@/components/TakeoffPanel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -1565,6 +1566,15 @@ export default function QuoteWorkspace() {
                                   Upload more evidence or use the prompt field above to generate your quote.
                                 </p>
                               </div>
+                            )}
+                            {/* Electrical takeoff panel */}
+                            {input.inputType === "pdf" && input.processingStatus === "completed" && (
+                              <TakeoffPanel
+                                inputId={input.id}
+                                quoteId={quoteId}
+                                filename={input.filename || "Drawing"}
+                                fileUrl={input.fileUrl || undefined}
+                              />
                             )}
                             {input.processingStatus === "processing" && (
                               <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200">

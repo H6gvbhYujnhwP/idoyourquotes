@@ -244,6 +244,47 @@ export type InternalEstimate = typeof internalEstimates.$inferSelect;
 export type InsertInternalEstimate = typeof internalEstimates.$inferInsert;
 
 /**
+ * Electrical Takeoffs - AI-extracted symbol counts with coordinates
+ * Used by the electrical sector module for drawing quantification
+ * Status flow: draft → questions → verified → locked
+ */
+export const electricalTakeoffs = pgTable("electrical_takeoffs", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  quoteId: bigint("quote_id", { mode: "number" }).notNull(),
+  inputId: bigint("input_id", { mode: "number" }).notNull(),
+  drawingRef: varchar("drawing_ref", { length: 255 }),
+  status: varchar("status", { length: 20 }).default("draft").notNull(),
+  pageWidth: decimal("page_width", { precision: 10, scale: 2 }),
+  pageHeight: decimal("page_height", { precision: 10, scale: 2 }),
+  symbols: json("symbols").$type<Array<{
+    id: string; symbolCode: string; category: string;
+    x: number; y: number; confidence: string;
+    isStatusMarker: boolean; nearbySymbol?: string;
+  }>>(),
+  counts: json("counts").$type<Record<string, number>>(),
+  questions: json("questions").$type<Array<{
+    id: string; question: string; context: string;
+    options: Array<{ label: string; value: string }>;
+    defaultValue?: string; symbolsAffected: number;
+  }>>(),
+  userAnswers: json("user_answers").$type<Record<string, string>>(),
+  drawingNotes: json("drawing_notes").$type<string[]>(),
+  dbCircuits: json("db_circuits").$type<string[]>(),
+  hasTextLayer: boolean("has_text_layer").default(true),
+  totalTextElements: integer("total_text_elements").default(0),
+  svgOverlay: text("svg_overlay"),
+  markupImageUrl: text("markup_image_url"),
+  verifiedAt: timestamp("verified_at"),
+  verifiedBy: bigint("verified_by", { mode: "number" }),
+  revision: integer("revision").default(1),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ElectricalTakeoff = typeof electricalTakeoffs.$inferSelect;
+export type InsertElectricalTakeoff = typeof electricalTakeoffs.$inferInsert;
+
+/**
  * Product/Service Catalog - reusable items for quotes
  * Now owned by organization
  * IMPORTANT: Column names use snake_case to match PostgreSQL
