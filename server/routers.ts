@@ -1930,6 +1930,24 @@ Report facts only. Do not interpret or add commentary.`,
         
         return { verified: true, takeoff: updatedTakeoff };
       }),
+
+    // Get PDF file data as base64 for client-side rendering (avoids CORS issues with R2)
+    getPdfData: protectedProcedure
+      .input(z.object({ inputId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const inputRecord = await getInputById(input.inputId);
+        if (!inputRecord || !inputRecord.fileKey) {
+          throw new Error("Input file not found");
+        }
+
+        // Verify access through quote
+        const quote = await getQuoteWithOrgAccess(inputRecord.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Access denied");
+
+        const pdfBuffer = await getFileBuffer(inputRecord.fileKey);
+        const base64 = pdfBuffer.toString('base64');
+        return { base64, filename: inputRecord.filename || 'drawing.pdf' };
+      }),
   }),
 
   // ============ TENDER CONTEXT ============

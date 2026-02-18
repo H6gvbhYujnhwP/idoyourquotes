@@ -234,7 +234,7 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl }: Ta
       {/* Full-screen Drawing Viewer Modal */}
       {showViewer && svgOverlay && (
         <DrawingViewerModal
-          pdfUrl={fileUrl || ''}
+          inputId={inputId}
           svgOverlay={svgOverlay}
           counts={counts}
           symbolStyles={symbolStyles}
@@ -565,7 +565,7 @@ function TakeoffChatSection({
 // ============ DRAWING VIEWER MODAL ============
 
 interface DrawingViewerModalProps {
-  pdfUrl: string;
+  inputId: number;
   svgOverlay: string;
   counts: Record<string, number>;
   symbolStyles: Record<string, { colour: string; shape: string; radius: number }>;
@@ -576,7 +576,7 @@ interface DrawingViewerModalProps {
 }
 
 function DrawingViewerModal({
-  pdfUrl,
+  inputId,
   svgOverlay,
   counts,
   symbolStyles,
@@ -622,9 +622,15 @@ function DrawingViewerModal({
     setZoom(z => Math.max(0.25, Math.min(5, z + delta)));
   };
 
+  // Fetch PDF data through server proxy (avoids CORS with R2)
+  const { data: pdfData } = trpc.electricalTakeoff.getPdfData.useQuery(
+    { inputId },
+    { enabled: !!inputId }
+  );
+
   // Render PDF to canvas using pdfjs-dist loaded from CDN
   useEffect(() => {
-    if (!pdfUrl || !canvasRef.current) return;
+    if (!pdfData?.base64 || !canvasRef.current) return;
 
     let cancelled = false;
 
@@ -637,14 +643,8 @@ function DrawingViewerModal({
         if (!(window as any).pdfjsLib) {
           await new Promise<void>((resolve, reject) => {
             const script = document.createElement('script');
-            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs';
-            script.type = 'module';
-            script.onerror = () => reject(new Error('Failed to load PDF.js'));
-
-            // Use a different approach - load as classic script
-            const script2 = document.createElement('script');
-            script2.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-            script2.onload = () => {
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+            script.onload = () => {
               const pdfjsLib = (window as any).pdfjsLib;
               if (pdfjsLib) {
                 pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -654,23 +654,25 @@ function DrawingViewerModal({
                 reject(new Error('pdfjsLib not found after loading'));
               }
             };
-            script2.onerror = () => reject(new Error('Failed to load PDF.js'));
-            document.head.appendChild(script2);
+            script.onerror = () => reject(new Error('Failed to load PDF.js'));
+            document.head.appendChild(script);
           });
         }
 
         const pdfjsLib = (window as any).pdfjsLib;
         if (!pdfjsLib) throw new Error('PDF.js not available');
 
-        // Fetch the PDF
-        const response = await fetch(pdfUrl);
-        if (!response.ok) throw new Error(`Failed to fetch PDF: ${response.status}`);
-        const arrayBuffer = await response.arrayBuffer();
+        // Convert base64 to Uint8Array
+        const binaryString = atob(pdfData.base64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
 
         if (cancelled) return;
 
         // Load the PDF document
-        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+        const loadingTask = pdfjsLib.getDocument({ data: bytes });
         const pdf = await loadingTask.promise;
         const page = await pdf.getPage(1);
 
@@ -685,7 +687,6 @@ function DrawingViewerModal({
 
         canvas.width = viewport.width;
         canvas.height = viewport.height;
-        // Display size is half the render size (CSS pixels vs device pixels)
         canvas.style.width = `${viewport.width / renderScale}px`;
         canvas.style.height = `${viewport.height / renderScale}px`;
 
@@ -714,7 +715,7 @@ function DrawingViewerModal({
     renderPdf();
 
     return () => { cancelled = true; };
-  }, [pdfUrl]);
+  }, [pdfData]);
 
   // Filter SVG overlay to hide toggled-off symbol codes
   const getFilteredOverlay = () => {
