@@ -596,8 +596,50 @@ function DrawingViewerModal({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [hiddenCodes, setHiddenCodes] = useState<Set<string>>(new Set());
 
-  const handleZoomIn = () => setZoom(z => Math.min(z + 0.25, 5));
-  const handleZoomOut = () => setZoom(z => Math.max(z - 0.25, 0.25));
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Zoom towards a specific point (in container coordinates)
+  const zoomToPoint = (newZoom: number, clientX: number, clientY: number) => {
+    const clampedZoom = Math.max(0.25, Math.min(5, newZoom));
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) {
+      setZoom(clampedZoom);
+      return;
+    }
+
+    // Mouse position relative to the container
+    const mouseX = clientX - rect.left;
+    const mouseY = clientY - rect.top;
+
+    // Point on the content that the mouse is over (in content coordinates)
+    const contentX = (mouseX - position.x) / zoom;
+    const contentY = (mouseY - position.y) / zoom;
+
+    // After zoom, that same content point should still be under the mouse
+    const newX = mouseX - contentX * clampedZoom;
+    const newY = mouseY - contentY * clampedZoom;
+
+    setZoom(clampedZoom);
+    setPosition({ x: newX, y: newY });
+  };
+
+  // Toolbar zoom buttons — zoom towards centre of viewport
+  const handleZoomIn = () => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (rect) {
+      zoomToPoint(zoom + 0.25, rect.left + rect.width / 2, rect.top + rect.height / 2);
+    } else {
+      setZoom(z => Math.min(z + 0.25, 5));
+    }
+  };
+  const handleZoomOut = () => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (rect) {
+      zoomToPoint(zoom - 0.25, rect.left + rect.width / 2, rect.top + rect.height / 2);
+    } else {
+      setZoom(z => Math.max(z - 0.25, 0.25));
+    }
+  };
   const handleFit = () => { setZoom(1); setPosition({ x: 0, y: 0 }); };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -619,7 +661,7 @@ function DrawingViewerModal({
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     const delta = e.deltaY > 0 ? -0.15 : 0.15;
-    setZoom(z => Math.max(0.25, Math.min(5, z + delta)));
+    zoomToPoint(zoom + delta, e.clientX, e.clientY);
   };
 
   // Fetch PDF data through server proxy (avoids CORS with R2)
@@ -834,6 +876,7 @@ function DrawingViewerModal({
 
       {/* Drawing canvas */}
       <div
+        ref={containerRef}
         className="flex-1 overflow-hidden bg-gray-800 cursor-grab active:cursor-grabbing relative"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
