@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,9 +18,10 @@ interface TakeoffPanelProps {
   quoteId: number;
   filename: string;
   fileUrl?: string;
+  processingInstructions?: string;
 }
 
-export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl }: TakeoffPanelProps) {
+export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, processingInstructions }: TakeoffPanelProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showViewer, setShowViewer] = useState(false);
   const [showChat, setShowChat] = useState(true);
@@ -114,8 +115,70 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl }: Ta
   }>;
   const symbolDescriptions = (takeoff.symbolDescriptions || {}) as Record<string, string>;
   const symbolStyles = (takeoff.symbolStyles || {}) as Record<string, { colour: string; shape: string; radius: number }>;
-  const totalItems = Object.values(counts).reduce((a, b) => a + b, 0);
   const svgOverlay = (takeoff.svgOverlay || '') as string;
+
+  // Parse processing instructions to auto-exclude symbol categories
+  const excludedCodes = useMemo(() => {
+    if (!processingInstructions) return new Set<string>();
+    const lower = processingInstructions.toLowerCase();
+    const excluded = new Set<string>();
+
+    // Detect "exclude" / "only" patterns
+    const isLightingOnly = (lower.includes('lighting only') || lower.includes('lights only')) ||
+      (lower.includes('lighting') && !lower.includes('fire alarm') && lower.includes('exclude'));
+    const excludeFireAlarm = lower.includes('exclude fire alarm') || lower.includes('no fire alarm') ||
+      lower.includes('excluding fire') || lower.includes('not fire');
+    const excludePower = lower.includes('exclude power') || lower.includes('no power') ||
+      lower.includes('excluding power');
+    const excludeAccess = lower.includes('exclude access') || lower.includes('no access control') ||
+      lower.includes('excluding access');
+    const excludeCCTV = lower.includes('exclude cctv') || lower.includes('no cctv') ||
+      lower.includes('excluding cctv');
+
+    // Map exclusion flags to symbol codes
+    const fireAlarmCodes = ['SO', 'CO', 'HF', 'HC', 'HR', 'CO2', 'SB', 'FARP', 'VESDA'];
+    const controlCodes = ['P1', 'P2', 'P3', 'P4', 'LCM'];
+
+    if (excludeFireAlarm || isLightingOnly) {
+      for (const code of fireAlarmCodes) {
+        if (counts[code]) excluded.add(code);
+      }
+    }
+
+    // If lighting only, also check each symbol and exclude non-lighting
+    if (isLightingOnly) {
+      for (const [code] of Object.entries(counts)) {
+        const desc = (symbolDescriptions[code] || '').toLowerCase();
+        const isLighting = desc.includes('light') || desc.includes('led') || desc.includes('emergency') ||
+          desc.includes('exit') || desc.includes('luminaire') || desc.includes('downlight') ||
+          desc.includes('batten') || code === 'J' || code === 'JE' || code === 'N' ||
+          code === 'EXIT1' || code === 'EX';
+        const isControl = desc.includes('pir') || desc.includes('presence') || desc.includes('control') ||
+          code.startsWith('P') || code === 'LCM';
+        // Keep lighting and controls (controls are part of lighting package)
+        if (!isLighting && !isControl) {
+          excluded.add(code);
+        }
+      }
+    }
+
+    return excluded;
+  }, [processingInstructions, counts, symbolDescriptions]);
+
+  // Filtered counts (excluding instruction-filtered codes)
+  const filteredCounts = useMemo(() => {
+    const filtered: Record<string, number> = {};
+    for (const [code, count] of Object.entries(counts)) {
+      if (!excludedCodes.has(code)) {
+        filtered[code] = count;
+      }
+    }
+    return filtered;
+  }, [counts, excludedCodes]);
+
+  const totalItems = Object.values(counts).reduce((a, b) => a + b, 0);
+  const filteredTotal = Object.values(filteredCounts).reduce((a, b) => a + b, 0);
+  const hasFilter = excludedCodes.size > 0;
 
   return (
     <div className="mt-2 space-y-2">
@@ -134,12 +197,17 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl }: Ta
               {isVerified ? 'Takeoff Verified' : 'Takeoff Ready — Verify Counts'}
             </span>
             <Badge variant="outline" className="text-xs">
-              {totalItems} items
+              {hasFilter ? `${filteredTotal} in scope` : `${totalItems} items`}
             </Badge>
+            {hasFilter && (
+              <Badge variant="outline" className="text-xs text-gray-400 border-gray-200">
+                {totalItems - filteredTotal} excluded
+              </Badge>
+            )}
           </div>
           <div className="flex items-center gap-1">
             {/* View Drawing button */}
-            {svgOverlay && fileUrl && (
+            {svgOverlay && (
               <Button
                 size="sm"
                 variant="outline"
@@ -163,18 +231,22 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl }: Ta
         <div className="flex flex-wrap gap-1.5">
           {Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)).map(([code, count]) => {
             const style = symbolStyles[code];
+            const isExcluded = excludedCodes.has(code);
             return (
               <div
                 key={code}
-                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-white border"
-                style={{
+                className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${
+                  isExcluded ? 'bg-gray-50 line-through opacity-50' : 'bg-white'
+                }`}
+                style={isExcluded ? { borderColor: '#ddd', color: '#999' } : {
                   borderColor: style?.colour ? `${style.colour}60` : '#ddd',
                   color: style?.colour || '#666',
                 }}
+                title={isExcluded ? `${code} excluded by processing instructions` : `${code}: ${symbolDescriptions[code] || code}`}
               >
                 <span
                   className="w-2 h-2 rounded-full"
-                  style={{ backgroundColor: style?.colour || '#888' }}
+                  style={{ backgroundColor: isExcluded ? '#ccc' : (style?.colour || '#888') }}
                 />
                 {code}: {count}
               </div>
@@ -241,6 +313,7 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl }: Ta
           symbolDescriptions={symbolDescriptions}
           drawingRef={takeoff.drawingRef || filename}
           isVerified={isVerified}
+          initialHiddenCodes={excludedCodes}
           onClose={() => setShowViewer(false)}
         />
       )}
@@ -573,6 +646,7 @@ interface DrawingViewerModalProps {
   symbolDescriptions: Record<string, string>;
   drawingRef: string;
   isVerified?: boolean;
+  initialHiddenCodes?: Set<string>;
   onClose: () => void;
 }
 
@@ -584,6 +658,7 @@ function DrawingViewerModal({
   symbolDescriptions,
   drawingRef,
   isVerified = false,
+  initialHiddenCodes,
   onClose,
 }: DrawingViewerModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -595,7 +670,7 @@ function DrawingViewerModal({
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [hiddenCodes, setHiddenCodes] = useState<Set<string>>(new Set());
+  const [hiddenCodes, setHiddenCodes] = useState<Set<string>>(initialHiddenCodes || new Set());
 
   const containerRef = useRef<HTMLDivElement>(null);
 

@@ -1396,12 +1396,29 @@ export default function QuoteWorkspace() {
 
               {/* Processing Instructions — tells the AI what to look for when analysing uploads */}
               <div className="space-y-3 p-4 bg-gradient-to-r from-teal-50 to-cyan-50 rounded-lg border border-teal-200">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-5 w-5 text-teal-600" />
-                  <Label className="text-teal-900 font-medium">Processing Instructions</Label>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5 text-teal-600" />
+                    <Label className="text-teal-900 font-medium">Processing Instructions</Label>
+                  </div>
+                  {processingInstructions && inputs && inputs.length > 0 && (
+                    <Button
+                      size="sm"
+                      className="h-7 text-xs bg-teal-600 hover:bg-teal-700 text-white"
+                      onClick={() => {
+                        // Re-process all completed inputs with updated instructions
+                        const completedInputs = inputs.filter((i: QuoteInput) => i.processingStatus === "completed");
+                        completedInputs.forEach((input: QuoteInput) => handleProcessInput(input));
+                        toast.success(`Re-analysing ${completedInputs.length} input${completedInputs.length > 1 ? 's' : ''} with updated instructions`);
+                      }}
+                    >
+                      <RefreshCw className="h-3 w-3 mr-1" />
+                      Apply to All Inputs
+                    </Button>
+                  )}
                 </div>
                 <p className="text-sm text-teal-700">
-                  Tell the AI what to look for when processing uploaded documents. This helps the takeoff and analysis focus on the right items.
+                  Tell the AI what to look for when processing uploaded documents. These instructions filter takeoff results and guide the analysis.
                 </p>
                 <Textarea
                   placeholder="e.g. 'Lighting only — general lighting, emergency lighting, controls and external lighting. Exclude fire alarm, power, access control and CCTV.'"
@@ -1410,6 +1427,12 @@ export default function QuoteWorkspace() {
                   rows={4}
                   className="bg-white"
                 />
+                {processingInstructions && (
+                  <p className="text-xs text-teal-600 flex items-center gap-1">
+                    <CheckCircle className="h-3 w-3" />
+                    Instructions active — takeoff results will be filtered automatically
+                  </p>
+                )}
               </div>
 
               {/* Upload Queue */}
@@ -1587,6 +1610,7 @@ export default function QuoteWorkspace() {
                                 quoteId={quoteId}
                                 filename={input.filename || "Drawing"}
                                 fileUrl={input.fileUrl || undefined}
+                                processingInstructions={processingInstructions}
                               />
                             )}
                             {input.processingStatus === "processing" && (
@@ -1625,6 +1649,23 @@ export default function QuoteWorkspace() {
                             >
                               <AlertTriangle className="mr-1 h-3 w-3" />
                               Retry
+                            </Button>
+                          )}
+                          {/* Re-analyse button for completed inputs */}
+                          {input.processingStatus === "completed" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs text-teal-600 border-teal-300 hover:bg-teal-50"
+                              onClick={() => {
+                                handleProcessInput(input);
+                                toast.success(`Re-analysing ${input.filename || 'input'}...`);
+                              }}
+                              disabled={processingInputId === input.id}
+                              title="Re-analyse this input with current processing instructions"
+                            >
+                              <RefreshCw className="mr-1 h-3 w-3" />
+                              Re-analyse
                             </Button>
                           )}
                           {input.fileUrl && (
