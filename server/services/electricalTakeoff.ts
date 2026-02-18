@@ -147,11 +147,25 @@ async function extractWithPdfJs(pdfBuffer: Buffer): Promise<{
   pageWidth: number;
   pageHeight: number;
 }> {
-  // Dynamic import for pdfjs-dist
-  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  // Dynamic import for pdfjs-dist — try multiple import paths for compatibility
+  let pdfjsLib: any;
+  try {
+    pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  } catch {
+    try {
+      pdfjsLib = await import('pdfjs-dist');
+    } catch (e2: any) {
+      console.error(`[Electrical Takeoff] Failed to import pdfjs-dist:`, e2.message);
+      throw new Error(`pdfjs-dist not available: ${e2.message}`);
+    }
+  }
   
   const data = new Uint8Array(pdfBuffer);
-  const doc = await pdfjsLib.getDocument({ data }).promise;
+  const getDocument = pdfjsLib.getDocument || pdfjsLib.default?.getDocument;
+  if (!getDocument) {
+    throw new Error('pdfjs-dist getDocument function not found');
+  }
+  const doc = await getDocument({ data }).promise;
   const page = await doc.getPage(1);
   const viewport = page.getViewport({ scale: 1.0 });
   const textContent = await page.getTextContent();
@@ -310,15 +324,51 @@ export async function performElectricalTakeoff(
 ): Promise<TakeoffResult> {
   console.log(`[Electrical Takeoff] Starting extraction for: ${drawingRef}`);
   
-  // Step 1: Check if PDF has text layer
-  const { text: rawText } = await extractWithPdfParse(pdfBuffer);
+  // Step 1: Extract with pdfjs-dist directly (skip pdf-parse which has ESM issues)
+  let chars: ExtractedChar[];
+  let words: ExtractedWord[];
+  let pageWidth: number;
+  let pageHeight: number;
   
-  if (!rawText.trim() || rawText.trim().length < 50) {
-    console.log(`[Electrical Takeoff] No text layer found in PDF`);
+  try {
+    const extracted = await extractWithPdfJs(pdfBuffer);
+    chars = extracted.chars;
+    words = extracted.words;
+    pageWidth = extracted.pageWidth;
+    pageHeight = extracted.pageHeight;
+    console.log(`[Electrical Takeoff] Extracted ${chars.length} chars, ${words.length} words from ${pageWidth}x${pageHeight} page`);
+  } catch (err: any) {
+    console.error(`[Electrical Takeoff] pdfjs extraction failed:`, err.message);
     return {
       drawingRef,
       pageWidth: 0,
       pageHeight: 0,
+      symbols: [],
+      counts: {},
+      questions: [{
+        id: 'no-text',
+        question: 'PDF extraction failed.',
+        context: `Error: ${err.message}. The drawing may be scanned or in an unsupported format.`,
+        options: [
+          { label: 'Skip this drawing', value: 'skip' },
+          { label: 'Try standard analysis', value: 'standard' },
+        ],
+        symbolsAffected: 0,
+      }],
+      notes: [],
+      dbCircuits: [],
+      hasTextLayer: false,
+      totalTextElements: 0,
+    };
+  }
+  
+  // Check if we got any text content
+  if (words.length === 0) {
+    console.log(`[Electrical Takeoff] No text elements found in PDF`);
+    return {
+      drawingRef,
+      pageWidth,
+      pageHeight,
       symbols: [],
       counts: {},
       questions: [{
@@ -336,29 +386,6 @@ export async function performElectricalTakeoff(
       hasTextLayer: false,
       totalTextElements: 0,
     };
-  }
-  
-  // Step 2: Extract with coordinate data
-  let chars: ExtractedChar[];
-  let words: ExtractedWord[];
-  let pageWidth: number;
-  let pageHeight: number;
-  
-  try {
-    const extracted = await extractWithPdfJs(pdfBuffer);
-    chars = extracted.chars;
-    words = extracted.words;
-    pageWidth = extracted.pageWidth;
-    pageHeight = extracted.pageHeight;
-    console.log(`[Electrical Takeoff] Extracted ${chars.length} chars, ${words.length} words from ${pageWidth}x${pageHeight} page`);
-  } catch (err: any) {
-    console.error(`[Electrical Takeoff] pdfjs extraction failed:`, err.message);
-    // Fall back to text-only count using raw text from pdf-parse
-    return buildFallbackResult(rawText, drawingRef);
-  }
-  
-  if (words.length === 0) {
-    return buildFallbackResult(rawText, drawingRef);
   }
   
   // Step 3: Determine drawing area bounds (exclude title block, legend, notes)
