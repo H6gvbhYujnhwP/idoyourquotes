@@ -64,6 +64,57 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
     verifyMutation.mutate({ takeoffId: takeoffData.id });
   };
 
+  // Parse processing instructions to auto-exclude symbol categories
+  // Must be before any conditional returns to maintain React hook ordering
+  const rawCounts = (takeoffData?.counts || {}) as Record<string, number>;
+  const rawSymbolDescriptions = (takeoffData?.symbolDescriptions || {}) as Record<string, string>;
+
+  const excludedCodes = useMemo(() => {
+    if (!processingInstructions || !takeoffData) return new Set<string>();
+    const lower = processingInstructions.toLowerCase();
+    const excluded = new Set<string>();
+
+    const isLightingOnly = (lower.includes('lighting only') || lower.includes('lights only')) ||
+      (lower.includes('lighting') && !lower.includes('fire alarm') && lower.includes('exclude'));
+    const excludeFireAlarm = lower.includes('exclude fire alarm') || lower.includes('no fire alarm') ||
+      lower.includes('excluding fire') || lower.includes('not fire');
+
+    const fireAlarmCodes = ['SO', 'CO', 'HF', 'HC', 'HR', 'CO2', 'SB', 'FARP', 'VESDA'];
+
+    if (excludeFireAlarm || isLightingOnly) {
+      for (const code of fireAlarmCodes) {
+        if (rawCounts[code]) excluded.add(code);
+      }
+    }
+
+    if (isLightingOnly) {
+      for (const [code] of Object.entries(rawCounts)) {
+        const desc = (rawSymbolDescriptions[code] || '').toLowerCase();
+        const isLighting = desc.includes('light') || desc.includes('led') || desc.includes('emergency') ||
+          desc.includes('exit') || desc.includes('luminaire') || desc.includes('downlight') ||
+          desc.includes('batten') || code === 'J' || code === 'JE' || code === 'N' ||
+          code === 'EXIT1' || code === 'EX';
+        const isControl = desc.includes('pir') || desc.includes('presence') || desc.includes('control') ||
+          code.startsWith('P') || code === 'LCM';
+        if (!isLighting && !isControl) {
+          excluded.add(code);
+        }
+      }
+    }
+
+    return excluded;
+  }, [processingInstructions, rawCounts, rawSymbolDescriptions, takeoffData]);
+
+  const filteredCounts = useMemo(() => {
+    const filtered: Record<string, number> = {};
+    for (const [code, count] of Object.entries(rawCounts)) {
+      if (!excludedCodes.has(code)) {
+        filtered[code] = count;
+      }
+    }
+    return filtered;
+  }, [rawCounts, excludedCodes]);
+
   // No takeoff exists yet — show "Run Takeoff" button
   if (!takeoffData) {
     return (
@@ -104,7 +155,8 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
   // Takeoff exists — show results
   const takeoff = takeoffData;
   const isVerified = takeoff.status === 'verified';
-  const counts = (takeoff.counts || {}) as Record<string, number>;
+  const counts = rawCounts;
+  const symbolDescriptions = rawSymbolDescriptions;
   const questions = (takeoff.questions || []) as Array<{
     id: string;
     question: string;
@@ -113,70 +165,10 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
     defaultValue?: string;
     symbolsAffected: number;
   }>;
-  const symbolDescriptions = (takeoff.symbolDescriptions || {}) as Record<string, string>;
   const symbolStyles = (takeoff.symbolStyles || {}) as Record<string, { colour: string; shape: string; radius: number }>;
   const svgOverlay = (takeoff.svgOverlay || '') as string;
 
-  // Parse processing instructions to auto-exclude symbol categories
-  const excludedCodes = useMemo(() => {
-    if (!processingInstructions) return new Set<string>();
-    const lower = processingInstructions.toLowerCase();
-    const excluded = new Set<string>();
-
-    // Detect "exclude" / "only" patterns
-    const isLightingOnly = (lower.includes('lighting only') || lower.includes('lights only')) ||
-      (lower.includes('lighting') && !lower.includes('fire alarm') && lower.includes('exclude'));
-    const excludeFireAlarm = lower.includes('exclude fire alarm') || lower.includes('no fire alarm') ||
-      lower.includes('excluding fire') || lower.includes('not fire');
-    const excludePower = lower.includes('exclude power') || lower.includes('no power') ||
-      lower.includes('excluding power');
-    const excludeAccess = lower.includes('exclude access') || lower.includes('no access control') ||
-      lower.includes('excluding access');
-    const excludeCCTV = lower.includes('exclude cctv') || lower.includes('no cctv') ||
-      lower.includes('excluding cctv');
-
-    // Map exclusion flags to symbol codes
-    const fireAlarmCodes = ['SO', 'CO', 'HF', 'HC', 'HR', 'CO2', 'SB', 'FARP', 'VESDA'];
-    const controlCodes = ['P1', 'P2', 'P3', 'P4', 'LCM'];
-
-    if (excludeFireAlarm || isLightingOnly) {
-      for (const code of fireAlarmCodes) {
-        if (counts[code]) excluded.add(code);
-      }
-    }
-
-    // If lighting only, also check each symbol and exclude non-lighting
-    if (isLightingOnly) {
-      for (const [code] of Object.entries(counts)) {
-        const desc = (symbolDescriptions[code] || '').toLowerCase();
-        const isLighting = desc.includes('light') || desc.includes('led') || desc.includes('emergency') ||
-          desc.includes('exit') || desc.includes('luminaire') || desc.includes('downlight') ||
-          desc.includes('batten') || code === 'J' || code === 'JE' || code === 'N' ||
-          code === 'EXIT1' || code === 'EX';
-        const isControl = desc.includes('pir') || desc.includes('presence') || desc.includes('control') ||
-          code.startsWith('P') || code === 'LCM';
-        // Keep lighting and controls (controls are part of lighting package)
-        if (!isLighting && !isControl) {
-          excluded.add(code);
-        }
-      }
-    }
-
-    return excluded;
-  }, [processingInstructions, counts, symbolDescriptions]);
-
-  // Filtered counts (excluding instruction-filtered codes)
-  const filteredCounts = useMemo(() => {
-    const filtered: Record<string, number> = {};
-    for (const [code, count] of Object.entries(counts)) {
-      if (!excludedCodes.has(code)) {
-        filtered[code] = count;
-      }
-    }
-    return filtered;
-  }, [counts, excludedCodes]);
-
-  const totalItems = Object.values(counts).reduce((a, b) => a + b, 0);
+  const totalItems = Object.values(rawCounts).reduce((a, b) => a + b, 0);
   const filteredTotal = Object.values(filteredCounts).reduce((a, b) => a + b, 0);
   const hasFilter = excludedCodes.size > 0;
 
