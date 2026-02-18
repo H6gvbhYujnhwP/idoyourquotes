@@ -585,10 +585,12 @@ function DrawingViewerModal({
   isVerified = false,
   onClose,
 }: DrawingViewerModalProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [zoom, setZoom] = useState(1);
   const [showOverlay, setShowOverlay] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
-  const [imgError, setImgError] = useState(false);
+  const [renderError, setRenderError] = useState<string | null>(null);
+  const [pdfDimensions, setPdfDimensions] = useState({ width: 0, height: 0 });
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -620,13 +622,105 @@ function DrawingViewerModal({
     setZoom(z => Math.max(0.25, Math.min(5, z + delta)));
   };
 
+  // Render PDF to canvas using pdfjs-dist loaded from CDN
+  useEffect(() => {
+    if (!pdfUrl || !canvasRef.current) return;
+
+    let cancelled = false;
+
+    const renderPdf = async () => {
+      try {
+        setIsLoading(true);
+        setRenderError(null);
+
+        // Load pdfjs from CDN if not already available
+        if (!(window as any).pdfjsLib) {
+          await new Promise<void>((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs';
+            script.type = 'module';
+            script.onerror = () => reject(new Error('Failed to load PDF.js'));
+
+            // Use a different approach - load as classic script
+            const script2 = document.createElement('script');
+            script2.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+            script2.onload = () => {
+              const pdfjsLib = (window as any).pdfjsLib;
+              if (pdfjsLib) {
+                pdfjsLib.GlobalWorkerOptions.workerSrc =
+                  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                resolve();
+              } else {
+                reject(new Error('pdfjsLib not found after loading'));
+              }
+            };
+            script2.onerror = () => reject(new Error('Failed to load PDF.js'));
+            document.head.appendChild(script2);
+          });
+        }
+
+        const pdfjsLib = (window as any).pdfjsLib;
+        if (!pdfjsLib) throw new Error('PDF.js not available');
+
+        // Fetch the PDF
+        const response = await fetch(pdfUrl);
+        if (!response.ok) throw new Error(`Failed to fetch PDF: ${response.status}`);
+        const arrayBuffer = await response.arrayBuffer();
+
+        if (cancelled) return;
+
+        // Load the PDF document
+        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+        const pdf = await loadingTask.promise;
+        const page = await pdf.getPage(1);
+
+        if (cancelled) return;
+
+        // Render at 2x scale for crisp display
+        const renderScale = 2;
+        const viewport = page.getViewport({ scale: renderScale });
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        // Display size is half the render size (CSS pixels vs device pixels)
+        canvas.style.width = `${viewport.width / renderScale}px`;
+        canvas.style.height = `${viewport.height / renderScale}px`;
+
+        setPdfDimensions({
+          width: viewport.width / renderScale,
+          height: viewport.height / renderScale,
+        });
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Cannot get canvas context');
+
+        await page.render({ canvasContext: ctx, viewport }).promise;
+
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          console.error('[DrawingViewer] PDF render error:', err);
+          setRenderError(err.message || 'Failed to render PDF');
+          setIsLoading(false);
+        }
+      }
+    };
+
+    renderPdf();
+
+    return () => { cancelled = true; };
+  }, [pdfUrl]);
+
   // Filter SVG overlay to hide toggled-off symbol codes
   const getFilteredOverlay = () => {
     if (hiddenCodes.size === 0) return svgOverlay;
-    // Parse the SVG and hide markers for hidden codes
     let filtered = svgOverlay;
     for (const code of hiddenCodes) {
-      // Hide all takeoff-marker groups with this data-code
       const regex = new RegExp(
         `<g class="takeoff-marker" data-id="[^"]*" data-code="${code}"[^>]*>[\\s\\S]*?</g>`,
         'g'
@@ -754,43 +848,45 @@ function DrawingViewerModal({
             transition: isDragging ? 'none' : 'transform 0.1s ease-out',
           }}
         >
-          <div className="relative">
+          <div className="relative" style={pdfDimensions.width ? { width: pdfDimensions.width, height: pdfDimensions.height } : undefined}>
             {isLoading && (
               <div className="absolute inset-0 flex items-center justify-center bg-gray-700 z-10 min-h-[400px] min-w-[600px]">
                 <div className="text-center">
                   <Loader2 className="h-8 w-8 animate-spin text-gray-400 mx-auto" />
-                  <p className="text-gray-400 text-sm mt-2">Loading drawing...</p>
+                  <p className="text-gray-400 text-sm mt-2">Rendering drawing...</p>
                 </div>
               </div>
             )}
 
-            {imgError ? (
+            {renderError ? (
               <div className="flex items-center justify-center bg-gray-700 min-h-[400px] min-w-[600px]">
                 <div className="text-center p-8">
                   <AlertTriangle className="h-12 w-12 text-amber-400 mx-auto mb-3" />
                   <p className="text-gray-300 text-sm">
-                    Cannot display PDF as image. The SVG overlay data is still available in the count summary.
+                    Failed to render PDF: {renderError}
                   </p>
                   <p className="text-gray-500 text-xs mt-2">
-                    PDF rendering requires conversion to image format.
+                    The symbol counts and positions are still available in the summary above.
                   </p>
                 </div>
               </div>
             ) : (
               <>
-                <img
-                  src={pdfUrl}
-                  alt={`Drawing: ${drawingRef}`}
-                  className="max-w-none"
-                  onLoad={() => setIsLoading(false)}
-                  onError={() => { setIsLoading(false); setImgError(true); }}
-                  draggable={false}
+                {/* PDF rendered to canvas */}
+                <canvas
+                  ref={canvasRef}
+                  className="block"
+                  style={{ imageRendering: 'auto' }}
                 />
 
-                {/* SVG overlay */}
-                {showOverlay && !imgError && (
+                {/* SVG overlay positioned over the canvas */}
+                {showOverlay && pdfDimensions.width > 0 && (
                   <div
-                    className="absolute inset-0"
+                    className="absolute top-0 left-0"
+                    style={{
+                      width: pdfDimensions.width,
+                      height: pdfDimensions.height,
+                    }}
                     dangerouslySetInnerHTML={{ __html: getFilteredOverlay() }}
                   />
                 )}
