@@ -190,6 +190,7 @@ export default function QuoteWorkspace() {
 
   // Generate Draft state
   const [userPrompt, setUserPrompt] = useState(""); // For pasting email/instructions
+  const [processingInstructions, setProcessingInstructions] = useState(""); // For telling AI what to look for when analysing uploads
   const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
   const [processingInputId, setProcessingInputId] = useState<number | null>(null);
 
@@ -1195,6 +1196,18 @@ export default function QuoteWorkspace() {
                 <Sparkles className="h-3.5 w-3.5" />
                 Ask AI
               </button>
+              <button
+                onClick={() => setActiveTab("instructions")}
+                className={cn(
+                  "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all",
+                  activeTab === "instructions"
+                    ? "bg-purple-600 text-white font-medium shadow-md"
+                    : "text-purple-700 hover:bg-purple-100 border border-purple-200"
+                )}
+              >
+                <Mail className="h-3.5 w-3.5" />
+                Instructions
+              </button>
             </div>
             {/* Arrow connector */}
             <div className="hidden md:flex absolute -right-3 top-1/2 -translate-y-1/2 z-10">
@@ -1381,20 +1394,20 @@ export default function QuoteWorkspace() {
                 </div>
               </div>
 
-              {/* Instructions / Notes for AI */}
-              <div className="space-y-3 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200">
+              {/* Processing Instructions — tells the AI what to look for when analysing uploads */}
+              <div className="space-y-3 p-4 bg-gradient-to-r from-teal-50 to-cyan-50 rounded-lg border border-teal-200">
                 <div className="flex items-center gap-2">
-                  <Mail className="h-5 w-5 text-purple-600" />
-                  <Label className="text-purple-900 font-medium">Instructions / Notes for AI</Label>
+                  <Sparkles className="h-5 w-5 text-teal-600" />
+                  <Label className="text-teal-900 font-medium">Processing Instructions</Label>
                 </div>
-                <p className="text-sm text-purple-700">
-                  Copy and paste client emails, project briefs, specifications, or any notes here. This will be used when generating the quote draft.
+                <p className="text-sm text-teal-700">
+                  Tell the AI what to look for when processing uploaded documents. This helps the takeoff and analysis focus on the right items.
                 </p>
                 <Textarea
-                  placeholder="Paste client emails, project briefs, or instructions here...\n\nExample:\n'Hi, I need a quote for painting 3 bedrooms and the hallway. The rooms are roughly 12x12 each. We'd like it done in 2 weeks if possible. Thanks, John'"
-                  value={userPrompt}
-                  onChange={(e) => setUserPrompt(e.target.value)}
-                  rows={6}
+                  placeholder="e.g. 'Lighting only — general lighting, emergency lighting, controls and external lighting. Exclude fire alarm, power, access control and CCTV.'"
+                  value={processingInstructions}
+                  onChange={(e) => setProcessingInstructions(e.target.value)}
+                  rows={4}
                   className="bg-white"
                 />
               </div>
@@ -1886,6 +1899,43 @@ export default function QuoteWorkspace() {
                   </p>
                 </div>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* INSTRUCTIONS TAB — Quote generation instructions (tender emails, briefs etc.) */}
+        <TabsContent value="instructions" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Mail className="h-5 w-5 text-purple-600" />
+                Instructions / Notes for AI
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Paste client emails, project briefs, tender invitations, or specifications here. This content will be used when generating the quote draft.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-3 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200">
+                <Textarea
+                  placeholder={"Paste client emails, project briefs, or instructions here...\n\nExample:\n'Hi, I need a quote for painting 3 bedrooms and the hallway. The rooms are roughly 12x12 each. We'd like it done in 2 weeks if possible. Thanks, John'"}
+                  value={userPrompt}
+                  onChange={(e) => setUserPrompt(e.target.value)}
+                  rows={12}
+                  className="bg-white"
+                />
+                {userPrompt && (
+                  <p className="text-xs text-purple-600 flex items-center gap-1">
+                    <CheckCircle className="h-3 w-3" />
+                    {userPrompt.length} characters — will be included when generating your quote
+                  </p>
+                )}
+              </div>
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                <p className="text-sm text-purple-800">
+                  <strong>Tip:</strong> The more detail you provide here, the better the AI can tailor the quote. Include scope of works, exclusions, special requirements, deadlines, and any specific instructions from the client or main contractor.
+                </p>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

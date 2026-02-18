@@ -377,11 +377,12 @@ function TakeoffChatSection({
             <p className="font-medium text-blue-900 mb-2">
               Extraction complete — {totalItems} items detected
             </p>
-            <div className="grid grid-cols-2 gap-1 text-xs text-blue-800">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-blue-800">
               {Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)).map(([code, count]) => (
-                <div key={code} className="flex justify-between">
+                <div key={code} className="flex items-center gap-1">
+                  <span className="font-mono font-bold w-6 text-right">{count}</span>
+                  <span className="text-blue-600">×</span>
                   <span>{code} ({symbolDescriptions[code] || code})</span>
-                  <span className="font-mono font-bold ml-2">{count}</span>
                 </div>
               ))}
             </div>
