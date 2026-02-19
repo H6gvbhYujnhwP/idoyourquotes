@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Loader2, Zap, CheckCircle, AlertTriangle, X,
   ZoomIn, ZoomOut, Maximize, Eye, EyeOff,
-  Bot, MessageCircle, Send, Image, ChevronDown, ChevronUp,
+  Bot, MessageCircle, Send, Image, ChevronDown, ChevronUp, Lock,
 } from "lucide-react";
 
 interface TakeoffPanelProps {
@@ -50,15 +50,19 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
     onSuccess: () => refetch(),
   });
 
+  const unlockMutation = trpc.electricalTakeoff.unlock.useMutation({
+    onSuccess: () => refetch(),
+  });
+
   const handleRunTakeoff = () => {
     setIsAnalyzing(true);
     analyzeMutation.mutate({ inputId, quoteId });
   };
 
-  // Re-run takeoff when parent triggers re-analysis
+  // Re-run takeoff when parent triggers re-analysis (skip if locked/verified)
   const [lastTrigger, setLastTrigger] = useState(0);
   useEffect(() => {
-    if (reanalyzeTrigger && reanalyzeTrigger > lastTrigger && takeoffData) {
+    if (reanalyzeTrigger && reanalyzeTrigger > lastTrigger && takeoffData && takeoffData.status !== 'verified') {
       setLastTrigger(reanalyzeTrigger);
       setIsAnalyzing(true);
       analyzeMutation.mutate({ inputId, quoteId });
@@ -82,6 +86,8 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
 
   const excludedCodes = useMemo(() => {
     if (!processingInstructions || !takeoffData) return new Set<string>();
+    // Don't apply instruction filtering to locked/verified takeoffs
+    if (takeoffData.status === 'verified') return new Set<string>();
     const lower = processingInstructions.toLowerCase();
     const excluded = new Set<string>();
 
@@ -197,8 +203,26 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
               <Zap className="h-4 w-4 text-blue-600" />
             )}
             <span className={`text-sm font-medium ${isVerified ? 'text-green-900' : 'text-blue-900'}`}>
-              {isVerified ? 'Takeoff Verified' : 'Takeoff Ready — Verify Counts'}
+              {isVerified ? 'Approved' : 'Takeoff Ready'}
             </span>
+            {isVerified && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 text-xs text-amber-600 border-amber-300 hover:bg-amber-50 px-2"
+                onClick={() => {
+                  if (takeoff?.id) unlockMutation.mutate({ takeoffId: takeoff.id });
+                }}
+                disabled={unlockMutation.isPending}
+              >
+                {unlockMutation.isPending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Lock className="h-3 w-3 mr-1" />
+                )}
+                Edit
+              </Button>
+            )}
             <Badge variant="outline" className="text-xs">
               {hasFilter ? `${filteredTotal} in scope` : `${totalItems} items`}
             </Badge>
@@ -302,7 +326,7 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
           ) : (
             <CheckCircle className="h-4 w-4 mr-1" />
           )}
-          Verify Counts
+          Ready for Quote
         </Button>
       )}
 
@@ -623,13 +647,13 @@ function TakeoffChatSection({
               disabled={isSubmitting}
             >
               <CheckCircle className="h-4 w-4 mr-1" />
-              Verify Counts
+              Ready for Quote
             </Button>
           )}
           {isVerified && (
             <Badge className="flex-1 justify-center py-2 bg-green-100 text-green-800 hover:bg-green-100">
               <CheckCircle className="h-4 w-4 mr-1" />
-              Verified
+              Approved
             </Badge>
           )}
         </div>
@@ -888,7 +912,7 @@ function DrawingViewerModal({
               <Eye className="h-4 w-4" />
               Drawing Viewer — {drawingRef}
               {isVerified && (
-                <Badge className="bg-green-100 text-green-800 text-xs">Verified</Badge>
+                <Badge className="bg-green-100 text-green-800 text-xs">Approved</Badge>
               )}
             </h3>
           </div>

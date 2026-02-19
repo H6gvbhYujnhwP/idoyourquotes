@@ -1932,6 +1932,25 @@ Report facts only. Do not interpret or add commentary.`,
         return { verified: true, takeoff: updatedTakeoff };
       }),
 
+    // Unlock a verified takeoff to allow re-analysis
+    unlock: protectedProcedure
+      .input(z.object({ takeoffId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const takeoff = await getElectricalTakeoffById(input.takeoffId);
+        if (!takeoff) throw new Error("Takeoff not found");
+        
+        const quote = await getQuoteWithOrgAccess(takeoff.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Access denied");
+        
+        const updatedTakeoff = await updateElectricalTakeoff(takeoff.id, {
+          status: 'draft',
+          verifiedAt: null,
+          verifiedBy: null,
+        });
+        
+        return { unlocked: true, takeoff: updatedTakeoff };
+      }),
+
     // Get PDF file data as base64 for client-side rendering (avoids CORS issues with R2)
     getPdfData: protectedProcedure
       .input(z.object({ inputId: z.number() }))
