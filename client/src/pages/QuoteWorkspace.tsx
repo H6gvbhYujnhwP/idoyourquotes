@@ -51,6 +51,8 @@ import { useLocation, useParams } from "wouter";
 import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { brand, fileTypeConfig, symbolColors as brandSymbolColors } from "@/lib/brandTheme";
+import FileIcon from "@/components/FileIcon";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
@@ -194,6 +196,7 @@ export default function QuoteWorkspace() {
   const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
   const [processingInputId, setProcessingInputId] = useState<number | null>(null);
   const [reanalyzeTriggers, setReanalyzeTriggers] = useState<Record<number, number>>({}); // per-input trigger counters
+  const [selectedInputId, setSelectedInputId] = useState<number | null>(null);
 
   // Generate Email modal state
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -1326,404 +1329,263 @@ export default function QuoteWorkspace() {
           </div>
         </div>
 
-        {/* INPUTS TAB */}
-        <TabsContent value="inputs" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Upload className="h-5 w-5" />
-                Evidence & Inputs
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Upload tender documents, images, audio recordings, or add text notes.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Storage status warning */}
-              {storageStatus && !storageStatus.configured && (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+        {/* INPUTS TAB — Style C: Bold Headers + Clean Body */}
+        <TabsContent value="inputs" className="space-y-5">
+
+          {/* Storage warning */}
+          {storageStatus && !storageStatus.configured && (
+            <div className="flex items-center gap-3 p-3 rounded-xl border" style={{ backgroundColor: '#fffbeb', borderColor: '#fde68a' }}>
+              <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0" />
+              <p className="text-xs font-medium text-amber-800">File storage not configured. Contact support to enable uploads.</p>
+            </div>
+          )}
+
+          {/* Section header with teal accent bar */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-1 h-8 rounded-full" style={{ backgroundColor: brand.teal }} />
+              <div>
+                <h2 className="text-lg font-extrabold tracking-tight" style={{ color: brand.navy }}>Documents</h2>
+                <p className="text-[10px] font-medium" style={{ color: brand.navyMuted }}>
+                  {inputs?.length || 0} files{inputs && inputs.length > 0 ? ` • ${inputs.filter((i: QuoteInput) => i.processingStatus === "completed").length} analysed` : ''}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Upload + Instructions combined panel */}
+          <div className="rounded-xl overflow-hidden" style={{ border: `1.5px solid ${brand.tealBorder}` }}>
+            <div className="flex items-center gap-3 px-4 py-2.5" style={{ backgroundColor: brand.tealBg }}>
+              <button
+                className="flex items-center gap-2 px-4 py-2 text-white text-xs font-bold rounded-lg shadow-sm transition-colors whitespace-nowrap"
+                style={{ backgroundColor: brand.teal }}
+                onClick={() => multiFileInputRef.current?.click()}
+                disabled={!storageStatus?.configured}
+              >
+                <Upload className="w-4 h-4" />
+                Upload Files
+              </button>
+              <div
+                className={cn(
+                  "flex-1 flex items-center gap-2 px-3 py-2 border border-dashed rounded-lg text-xs transition-all cursor-pointer",
+                  isDragging ? "border-teal-500 bg-teal-100/50" : "border-teal-300/50 hover:border-teal-400"
+                )}
+                style={{ color: brand.navyMuted }}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => multiFileInputRef.current?.click()}
+              >
+                <span className="font-medium">{isDragging ? "Drop files here" : "Drop files here"}</span>
+                <span className="text-[10px]" style={{ color: `${brand.teal}90` }}>PDF, Word, Excel, Images, Audio — max 3</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 px-4 py-2 border-t" style={{ borderColor: brand.tealBorder }}>
+              <span className="font-bold text-sm flex-shrink-0" style={{ color: brand.teal }}>✦</span>
+              <input
+                type="text"
+                value={processingInstructions}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProcessingInstructions(e.target.value)}
+                onBlur={() => {
+                  updateQuote.mutate({ id: quoteId, processingInstructions: processingInstructions || null });
+                }}
+                className="flex-1 text-xs font-medium border-0 bg-transparent focus:ring-0 focus:outline-none py-1"
+                style={{ color: brand.navy }}
+                placeholder="Processing instructions — e.g. lighting only, exclude fire alarm..."
+              />
+              {processingInstructions && (
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full" style={{ backgroundColor: `${brand.teal}15`, color: brand.teal }}>Active</span>
+                  <button
+                    className="text-[10px] font-bold px-2.5 py-1 rounded-md text-white transition-colors"
+                    style={{ backgroundColor: brand.teal }}
+                    onClick={async () => {
+                      await updateQuote.mutateAsync({ id: quoteId, processingInstructions: processingInstructions || null });
+                      const completedInputs = inputs?.filter((i: QuoteInput) => i.processingStatus === "completed") || [];
+                      const newTriggers: Record<number, number> = { ...reanalyzeTriggers };
+                      completedInputs.forEach((input: QuoteInput) => { newTriggers[input.id] = (newTriggers[input.id] || 0) + 1; });
+                      setReanalyzeTriggers(newTriggers);
+                      toast.success(`Instructions saved. Re-analysing ${completedInputs.length} input${completedInputs.length > 1 ? 's' : ''}`);
+                    }}
+                  >
+                    Apply All
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Upload queue — progress bars */}
+          {uploadQueue.length > 0 && (
+            <div className="space-y-1.5">
+              {uploadQueue.map((item) => (
+                <div key={item.id} className="flex items-center gap-3 px-4 py-2 rounded-xl" style={{ backgroundColor: brand.white, border: `1px solid ${brand.borderLight}` }}>
+                  <FileIcon type={item.file.type.includes('pdf') ? 'pdf' : item.file.type.includes('audio') ? 'audio' : item.file.type.includes('image') ? 'image' : 'document'} size="sm" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold truncate" style={{ color: brand.navy }}>{item.file.name}</p>
+                    {item.isRateLimitError && (
+                      <p className="text-[10px] text-amber-600 font-medium mt-0.5">Rate limited — wait {item.retryAfter ? `~${Math.ceil(item.retryAfter)}s` : '30-60s'} then retry</p>
+                    )}
+                    <div className="mt-1 w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: `${brand.teal}15` }}>
+                      <div className="h-full rounded-full transition-all duration-500" style={{
+                        width: `${item.status === 'completed' ? 100 : item.status === 'error' ? 100 : item.progress || 30}%`,
+                        backgroundColor: item.status === 'error' ? '#ef4444' : brand.teal,
+                      }} />
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold flex-shrink-0" style={{ color: item.status === 'error' ? '#ef4444' : item.status === 'completed' ? brand.teal : brand.navyMuted }}>
+                    {item.status === 'completed' ? '100%' : item.status === 'error' ? 'Failed' : `${item.progress || 30}%`}
+                  </span>
+                  {item.status === 'completed' && (
+                    <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${brand.teal}15` }}>
+                      <Check className="w-3 h-3" style={{ color: brand.teal }} />
+                    </div>
+                  )}
+                  {item.status === 'error' && (
+                    <button className="text-[10px] font-bold px-2 py-1 rounded-md text-amber-700 bg-amber-50" onClick={() => handleRetryUpload(item.id)}>Retry</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* File icon grid */}
+          {inputs && inputs.length > 0 && (
+            <div className="grid grid-cols-5 gap-3">
+              {inputs.map((input: QuoteInput) => {
+                const isSelected = selectedInputId === input.id;
+                const inputType = input.inputType || 'document';
+                return (
+                  <div
+                    key={input.id}
+                    onClick={() => setSelectedInputId(isSelected ? null : input.id)}
+                    className="relative p-4 rounded-2xl cursor-pointer transition-all text-center"
+                    style={{
+                      backgroundColor: brand.white,
+                      border: `2px solid ${isSelected ? brand.teal : brand.borderLight}`,
+                      boxShadow: isSelected ? brand.shadowActive : brand.shadow,
+                    }}
+                  >
+                    <div className="absolute top-2.5 right-2.5">
+                      {input.processingStatus === "completed" && (
+                        <div className="w-5 h-5 rounded-full flex items-center justify-center" style={{ backgroundColor: `${brand.teal}12` }}>
+                          <Check className="w-3 h-3" style={{ color: brand.teal }} />
+                        </div>
+                      )}
+                      {input.processingStatus === "processing" && (
+                        <div className="w-5 h-5 rounded-full flex items-center justify-center animate-pulse" style={{ backgroundColor: `${brand.teal}12` }}>
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: brand.teal }} />
+                        </div>
+                      )}
+                      {input.processingStatus === "failed" && (
+                        <div className="w-5 h-5 rounded-full bg-red-50 flex items-center justify-center">
+                          <X className="w-3 h-3 text-red-400" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex justify-center mb-2.5 mt-1">
+                      <FileIcon type={inputType} size="lg" />
+                    </div>
+                    <p className="text-[11px] font-bold truncate px-0.5" style={{ color: brand.navy }}>
+                      {input.filename || `${inputType.charAt(0).toUpperCase() + inputType.slice(1)} Input`}
+                    </p>
+                    <p className="text-[9px] font-medium mt-0.5" style={{ color: brand.navyMuted }}>
+                      {input.mimeType ? input.mimeType.split('/')[1]?.toUpperCase() : inputType.toUpperCase()}
+                    </p>
+                    {input.processingStatus === "processing" && (
+                      <div className="mt-2 px-1.5">
+                        <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: `${brand.teal}15` }}>
+                          <div className="h-full rounded-full animate-pulse" style={{ width: '60%', backgroundColor: brand.teal }} />
+                        </div>
+                      </div>
+                    )}
+                    {input.processingStatus === "failed" && (
+                      <div className="mt-2"><span className="text-[9px] font-bold text-red-500">Analysis failed</span></div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Detail panel for selected file */}
+          {selectedInputId && inputs && (() => {
+            const selected = inputs.find((i: QuoteInput) => i.id === selectedInputId);
+            if (!selected) return null;
+            return (
+              <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: brand.white, border: `1.5px solid ${brand.border}`, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+                <div className="flex items-center justify-between px-5 py-3" style={{ backgroundColor: `${brand.navy}03`, borderBottom: `1px solid ${brand.borderLight}` }}>
+                  <div className="flex items-center gap-3">
+                    <FileIcon type={selected.inputType || 'document'} size="sm" />
                     <div>
-                      <p className="font-medium text-amber-800">File storage not configured</p>
-                      <p className="text-sm text-amber-700 mt-1">
-                        File uploads are disabled. Contact support to enable file storage.
+                      <h4 className="text-sm font-extrabold" style={{ color: brand.navy }}>{selected.filename || 'Input'}</h4>
+                      <p className="text-[10px] font-medium mt-0.5" style={{ color: brand.navyMuted }}>
+                        {selected.mimeType || selected.inputType} • {selected.createdAt ? new Date(selected.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''}
+                        {selected.processingStatus === "completed" && <span className="font-bold" style={{ color: brand.teal }}> • Analysed</span>}
+                        {selected.processingStatus === "processing" && <span className="font-bold text-blue-500"> • Processing</span>}
+                        {selected.processingStatus === "failed" && <span className="font-bold text-red-500"> • Failed</span>}
                       </p>
                     </div>
                   </div>
-                </div>
-              )}
-
-              {/* Upload Tips + Drag & Drop Zone — side by side */}
-              <div className="flex gap-4 items-stretch">
-                {/* Upload Tips Banner */}
-                <Alert className="bg-blue-50 border-blue-200 flex-1 min-w-0">
-                  <AlertCircle className="h-4 w-4 text-blue-600" />
-                  <AlertTitle className="text-blue-900">Upload Tips</AlertTitle>
-                  <AlertDescription className="text-xs text-blue-800 space-y-1">
-                    <p><strong>Maximum 3 files at once</strong> to avoid rate limits.</p>
-                    <p>Large PDFs (20+ pages) are automatically split into sections and processed sequentially. This may take 30-90 seconds but ensures reliable processing.</p>
-                    <p>Large tender packages? Upload in batches of 3, wait for processing, then upload the next batch.</p>
-                  </AlertDescription>
-                </Alert>
-
-                {/* Drag & Drop Upload Zone */}
-                <div
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  className={cn(
-                    "border-2 border-dashed rounded-lg p-6 text-center transition-all cursor-pointer flex-1 min-w-0 flex flex-col items-center justify-center",
-                    isDragging
-                      ? "border-primary bg-primary/5 scale-[1.01]"
-                      : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30",
-                    !storageStatus?.configured && "opacity-50 pointer-events-none"
-                  )}
-                  onClick={() => multiFileInputRef.current?.click()}
-                >
-                  <Upload className="h-10 w-10 mb-3 text-muted-foreground" />
-                  <h3 className="text-base font-semibold mb-1">
-                    {isDragging ? "Drop files here" : "Drop files here or click to browse"}
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    <strong>Select up to 3 files at once</strong> (Ctrl+Click or Shift+Click).
-                    Supports PDF, Word, Excel, Images, and Audio.
-                  </p>
-                  <div className="flex justify-center gap-4 mt-3 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5 text-red-500" /> PDF</span>
-                    <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5 text-blue-600" /> Word</span>
-                    <span className="flex items-center gap-1"><FileSpreadsheet className="h-3.5 w-3.5 text-green-600" /> Excel</span>
-                    <span className="flex items-center gap-1"><FileImage className="h-3.5 w-3.5 text-blue-500" /> Images</span>
-                    <span className="flex items-center gap-1"><Mic className="h-3.5 w-3.5 text-green-500" /> Audio</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Processing Instructions — tells the AI what to look for when analysing uploads */}
-              <div className="space-y-3 p-4 bg-gradient-to-r from-teal-50 to-cyan-50 rounded-lg border border-teal-200">
-                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Sparkles className="h-5 w-5 text-teal-600" />
-                    <Label className="text-teal-900 font-medium">Processing Instructions</Label>
+                    {selected.processingStatus === "completed" && (
+                      <button className="text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors" style={{ color: brand.teal, backgroundColor: `${brand.teal}08` }}
+                        onClick={async () => {
+                          await updateQuote.mutateAsync({ id: quoteId, processingInstructions: processingInstructions || null });
+                          setReanalyzeTriggers(prev => ({ ...prev, [selected.id]: (prev[selected.id] || 0) + 1 }));
+                          toast.success(`Re-analysing ${selected.filename || 'input'}...`);
+                        }}>Re-analyse</button>
+                    )}
+                    {selected.fileUrl && (
+                      <button className="text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors" style={{ color: brand.navy, backgroundColor: `${brand.navy}06` }}
+                        onClick={() => window.open(selected.fileUrl!, "_blank")}>Open File</button>
+                    )}
+                    {selected.processingStatus === "failed" && (
+                      <button className="text-[11px] font-bold text-white px-4 py-1.5 rounded-lg" style={{ backgroundColor: '#ef4444' }}
+                        onClick={() => handleProcessInput(selected)}>Retry</button>
+                    )}
+                    <button className="p-1.5 rounded-lg transition-colors hover:bg-red-50" style={{ color: brand.navyMuted }}
+                      onClick={() => { deleteInput.mutate({ id: selected.id, quoteId }); setSelectedInputId(null); }}>
+                      <X className="w-4 h-4" />
+                    </button>
                   </div>
-                  {processingInstructions && inputs && inputs.length > 0 && (
-                    <Button
-                      size="sm"
-                      className="h-7 text-xs bg-teal-600 hover:bg-teal-700 text-white"
-                      onClick={async () => {
-                        // Save instructions first
-                        await updateQuote.mutateAsync({
-                          id: quoteId,
-                          processingInstructions: processingInstructions || null,
-                        });
-                        // Trigger takeoff re-run for all completed PDF inputs
-                        const completedInputs = inputs.filter((i: QuoteInput) => i.processingStatus === "completed");
-                        const newTriggers: Record<number, number> = { ...reanalyzeTriggers };
-                        completedInputs.forEach((input: QuoteInput) => {
-                          newTriggers[input.id] = (newTriggers[input.id] || 0) + 1;
-                        });
-                        setReanalyzeTriggers(newTriggers);
-                        toast.success(`Instructions saved. Re-analysing ${completedInputs.length} input${completedInputs.length > 1 ? 's' : ''}`);
-                      }}
-                    >
-                      <RefreshCw className="h-3 w-3 mr-1" />
-                      Apply to All Inputs
-                    </Button>
-                  )}
                 </div>
-                <p className="text-sm text-teal-700">
-                  Tell the AI what to look for when processing uploaded documents. These instructions filter takeoff results and guide the analysis.
-                </p>
-                <Textarea
-                  placeholder="e.g. 'Lighting only — general lighting, emergency lighting, controls and external lighting. Exclude fire alarm, power, access control and CCTV.'"
-                  value={processingInstructions}
-                  onChange={(e) => setProcessingInstructions(e.target.value)}
-                  onBlur={() => {
-                    // Auto-save when user clicks away
-                    updateQuote.mutate({
-                      id: quoteId,
-                      processingInstructions: processingInstructions || null,
-                    });
-                  }}
-                  rows={4}
-                  className="bg-white"
-                />
-                {processingInstructions && (
-                  <p className="text-xs text-teal-600 flex items-center gap-1">
-                    <CheckCircle className="h-3 w-3" />
-                    Instructions active — takeoff results will be filtered automatically
-                  </p>
+                {selected.content && (
+                  <div className="px-5 py-2.5" style={{ borderBottom: `1px solid ${brand.borderLight}` }}>
+                    <p className="text-xs line-clamp-2" style={{ color: brand.navyMuted }}>{selected.content}</p>
+                  </div>
+                )}
+                {selected.inputType === "pdf" && selected.processingStatus === "completed" && (
+                  <div className="px-5 py-3">
+                    <TakeoffPanel inputId={selected.id} quoteId={quoteId} filename={selected.filename || "Drawing"} fileUrl={selected.fileUrl || undefined} processingInstructions={processingInstructions} reanalyzeTrigger={reanalyzeTriggers[selected.id] || 0} />
+                  </div>
+                )}
+                {selected.inputType !== "pdf" && selected.processingStatus === "completed" && (
+                  <div className="px-5 py-3"><p className="text-xs font-medium" style={{ color: brand.navyMuted }}>Text extracted — ready for quote generation.</p></div>
+                )}
+                {selected.processingStatus === "failed" && (
+                  <div className="px-5 py-3 flex items-center gap-2" style={{ backgroundColor: '#fef2f2' }}>
+                    <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                    <span className="text-xs font-semibold text-red-700">Analysis failed — try re-uploading or splitting the file.</span>
+                  </div>
                 )}
               </div>
+            );
+          })()}
 
-              {/* Upload Queue */}
-              {uploadQueue.length > 0 && (
-                <div className="space-y-2 border rounded-lg p-4 bg-muted/20">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-sm font-semibold">
-                      {uploadQueue.filter(u => u.status === "uploading" || u.status === "pending").length > 0
-                        ? `Uploading ${uploadQueue.filter(u => u.status === "completed").length} of ${uploadQueue.length} files...`
-                        : `${uploadQueue.length} file${uploadQueue.length > 1 ? "s" : ""} uploaded`}
-                    </h4>
-                    <Button variant="ghost" size="sm" onClick={clearCompletedUploads} className="text-xs h-7">
-                      Clear
-                    </Button>
-                  </div>
-                  <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
-                    {uploadQueue.map((item) => (
-                      <div
-                        key={item.id}
-                        className={cn(
-                          "flex items-center gap-3 p-2.5 rounded-md border bg-background",
-                          item.status === "error" && item.isRateLimitError && "border-orange-400 bg-orange-50",
-                          item.status === "error" && !item.isRateLimitError && "border-red-300 bg-red-50",
-                          item.status === "completed" && "border-green-300 bg-green-50"
-                        )}
-                      >
-                        <div className="flex-shrink-0">{getFileIcon(item.file)}</div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <p className="text-sm font-medium truncate">{item.file.name}</p>
-                            <div className="flex items-center gap-1.5 ml-2 flex-shrink-0">
-                              {item.status === "pending" && <span className="text-xs text-muted-foreground">Queued</span>}
-                              {item.status === "uploading" && (
-                                <span className="text-xs text-blue-600 flex items-center gap-1">
-                                  <Loader2 className="h-3 w-3 animate-spin" /> Uploading
-                                </span>
-                              )}
-                              {item.status === "processing" && (
-                                <span className="text-xs text-purple-600 flex items-center gap-1">
-                                  <Loader2 className="h-3 w-3 animate-spin" /> Processing
-                                </span>
-                              )}
-                              {item.status === "completed" && (
-                                <span className="text-xs text-green-600 flex items-center gap-1">
-                                  <CheckCircle className="h-3 w-3" /> Done
-                                </span>
-                              )}
-                              {item.status === "error" && (
-                                <span className="text-xs text-red-600">Failed</span>
-                              )}
-                              {(item.status === "completed" || item.status === "error") && (
-                                <button onClick={(e) => { e.stopPropagation(); removeFromQueue(item.id); }} className="text-muted-foreground hover:text-foreground">
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                          {(item.status === "uploading" || item.status === "pending" || item.status === "processing") && (
-                            <Progress value={item.progress} className="h-1 mt-1" />
-                          )}
-
-                          {/* Rate Limit Error - special orange box with instructions */}
-                          {item.status === "error" && item.isRateLimitError && (
-                            <div className="mt-2 p-2 bg-orange-100 border border-orange-300 rounded text-xs space-y-1">
-                              <p className="font-semibold text-orange-900">Rate Limit Exceeded</p>
-                              <p className="text-orange-800">
-                                File uploaded successfully, but AI processing was delayed.
-                              </p>
-                              <div className="mt-1 space-y-0.5 text-orange-700">
-                                <p className="font-medium">What to do:</p>
-                                <ol className="list-decimal list-inside ml-2">
-                                  <li>Wait 60 seconds for the rate limit to reset</li>
-                                  <li>Click "Retry" below</li>
-                                  <li>Or click "Skip" to continue without AI processing</li>
-                                </ol>
-                              </div>
-                              <div className="mt-2 flex gap-2">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-7 text-xs bg-white"
-                                  onClick={(e) => { e.stopPropagation(); handleRetryUpload(item.id); }}
-                                >
-                                  <RefreshCw className="h-3 w-3 mr-1" />
-                                  Retry
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-7 text-xs"
-                                  onClick={(e) => { e.stopPropagation(); removeFromQueue(item.id); }}
-                                >
-                                  Skip
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Standard Error */}
-                          {item.status === "error" && !item.isRateLimitError && item.error && (
-                            <div className="mt-1">
-                              <p className="text-xs text-red-600">{item.error}</p>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 text-xs mt-1"
-                                onClick={(e) => { e.stopPropagation(); handleRetryUpload(item.id); }}
-                              >
-                                <RefreshCw className="h-3 w-3 mr-1" />
-                                Retry
-                              </Button>
-                            </div>
-                          )}
-
-                          <p className="text-[10px] text-muted-foreground mt-0.5">
-                            {(item.file.size / 1024 / 1024).toFixed(2)} MB
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Existing inputs */}
-              {inputs && inputs.length > 0 && (
-                <div className="space-y-3">
-                  <Label>Added Inputs ({inputs.length})</Label>
-                  <div className="space-y-2">
-                    {inputs.map((input: QuoteInput) => (
-                      <div
-                        key={input.id}
-                        className="flex items-start justify-between p-3 rounded-lg border bg-muted/30"
-                      >
-                        <div className="flex items-start gap-3 min-w-0 flex-1">
-                          {input.inputType === "text" && <FileText className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />}
-                          {input.inputType === "pdf" && <FileText className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />}
-                          {input.inputType === "image" && <FileImage className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />}
-                          {input.inputType === "audio" && <Mic className="h-5 w-5 text-green-500 shrink-0 mt-0.5" />}
-                          {input.inputType === "email" && <Mail className="h-5 w-5 text-purple-500 shrink-0 mt-0.5" />}
-                          {input.inputType === "document" && <FileText className="h-5 w-5 text-orange-500 shrink-0 mt-0.5" />}
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium">
-                              {input.filename || input.inputType.charAt(0).toUpperCase() + input.inputType.slice(1) + " Input"}
-                            </p>
-                            {input.content && (
-                              <p className="text-sm text-muted-foreground line-clamp-2 mt-1">
-                                {input.content}
-                              </p>
-                            )}
-                            {input.mimeType && (
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {input.mimeType}
-                              </p>
-                            )}
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Added {new Date(input.createdAt).toLocaleDateString("en-GB")}
-                            </p>
-                            {/* Processing status */}
-                            {input.processingStatus === "completed" && (
-                              <div className="mt-2 p-2 bg-green-50 rounded border border-green-200">
-                                <div className="flex items-center gap-1">
-                                  <Check className="h-3 w-3 text-green-500" />
-                                  <span className="text-xs text-green-700 font-medium">Document analysed</span>
-                                </div>
-                                <p className="text-xs text-green-600 mt-1">
-                                  Upload more evidence or use the prompt field above to generate your quote.
-                                </p>
-                              </div>
-                            )}
-                            {/* Electrical takeoff panel */}
-                            {input.inputType === "pdf" && input.processingStatus === "completed" && (
-                              <TakeoffPanel
-                                inputId={input.id}
-                                quoteId={quoteId}
-                                filename={input.filename || "Drawing"}
-                                fileUrl={input.fileUrl || undefined}
-                                processingInstructions={processingInstructions}
-                                reanalyzeTrigger={reanalyzeTriggers[input.id] || 0}
-                              />
-                            )}
-                            {input.processingStatus === "processing" && (
-                              <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200">
-                                <div className="flex items-center gap-1">
-                                  <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />
-                                  <span className="text-xs text-blue-700 font-medium">Please wait whilst analysing your document, this can take up to a minute...</span>
-                                </div>
-                              </div>
-                            )}
-                            {input.processingStatus === "failed" && (
-                              <div className="mt-2 p-2 bg-red-50 rounded border border-red-200">
-                                <div className="flex items-center gap-1">
-                                  <AlertTriangle className="h-3 w-3 text-red-500" />
-                                  <span className="text-xs text-red-600">{input.processingError || "Analysis failed"}</span>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          {/* Processing status indicator */}
-                          {input.processingStatus === "processing" && (
-                            <span className="flex items-center text-xs text-blue-600">
-                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                            </span>
-                          )}
-                          {/* Retry button for failed processing */}
-                          {input.processingStatus === "failed" && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-8 text-xs text-amber-600 border-amber-300"
-                              onClick={() => handleProcessInput(input)}
-                              disabled={processingInputId === input.id}
-                            >
-                              <AlertTriangle className="mr-1 h-3 w-3" />
-                              Retry
-                            </Button>
-                          )}
-                          {/* Re-analyse button for completed inputs */}
-                          {input.processingStatus === "completed" && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-8 text-xs text-teal-600 border-teal-300 hover:bg-teal-50"
-                              onClick={async () => {
-                                // Save instructions first
-                                await updateQuote.mutateAsync({
-                                  id: quoteId,
-                                  processingInstructions: processingInstructions || null,
-                                });
-                                // Trigger takeoff re-run for this input
-                                setReanalyzeTriggers(prev => ({
-                                  ...prev,
-                                  [input.id]: (prev[input.id] || 0) + 1,
-                                }));
-                                toast.success(`Re-analysing ${input.filename || 'input'} with updated instructions...`);
-                              }}
-                              title="Re-analyse this input with current processing instructions"
-                            >
-                              <RefreshCw className="mr-1 h-3 w-3" />
-                              Re-analyse
-                            </Button>
-                          )}
-                          {input.fileUrl && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-muted-foreground hover:text-primary"
-                              onClick={() => window.open(input.fileUrl!, "_blank")}
-                            >
-                              <ExternalLink className="h-4 w-4" />
-                            </Button>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                            onClick={() => deleteInput.mutate({ id: input.id, quoteId })}
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          {/* Empty state */}
+          {(!inputs || inputs.length === 0) && uploadQueue.length === 0 && (
+            <div
+              className="text-center py-12 rounded-2xl border-2 border-dashed cursor-pointer transition-all hover:border-teal-400"
+              style={{ borderColor: brand.tealBorder, backgroundColor: `${brand.tealBg}50` }}
+              onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
+              onClick={() => multiFileInputRef.current?.click()}
+            >
+              <Upload className="h-10 w-10 mx-auto mb-3" style={{ color: brand.teal }} />
+              <p className="text-sm font-bold" style={{ color: brand.navy }}>No documents yet</p>
+              <p className="text-xs mt-1" style={{ color: brand.navyMuted }}>Drop files here or click to upload tender documents, drawings, and specifications</p>
+            </div>
+          )}
         </TabsContent>
 
         {/* INTERPRETATION TAB */}
