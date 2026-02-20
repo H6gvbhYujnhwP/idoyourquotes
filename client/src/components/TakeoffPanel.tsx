@@ -88,24 +88,88 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
     if (!processingInstructions || !takeoffData) return new Set<string>();
     // Don't apply instruction filtering to locked/verified takeoffs
     if (takeoffData.status === 'verified') return new Set<string>();
-    const lower = processingInstructions.toLowerCase();
+    const lower = processingInstructions.toLowerCase().trim();
     const excluded = new Set<string>();
 
-    const isLightingOnly = (lower.includes('lighting only') || lower.includes('lights only')) ||
-      (lower.includes('lighting') && !lower.includes('fire alarm') && lower.includes('exclude'));
-    const excludeFireAlarm = lower.includes('exclude fire alarm') || lower.includes('no fire alarm') ||
-      lower.includes('excluding fire') || lower.includes('not fire');
-
-    const fireAlarmCodes = ['SO', 'CO', 'HF', 'HC', 'HR', 'CO2', 'SB', 'FARP', 'VESDA'];
-
-    if (excludeFireAlarm || isLightingOnly) {
-      for (const code of fireAlarmCodes) {
-        if (rawCounts[code]) excluded.add(code);
+    // Build a lookup: code -> description, and description words -> code
+    const codeList = Object.keys(rawCounts);
+    const descToCode: Record<string, string[]> = {};
+    for (const code of codeList) {
+      const desc = (rawSymbolDescriptions[code] || '').toLowerCase();
+      // Map whole description and individual meaningful words to this code
+      if (desc) {
+        if (!descToCode[desc]) descToCode[desc] = [];
+        descToCode[desc].push(code);
+        // Also map key words (e.g. "smoke" from "Optical Smoke Detector")
+        const words = desc.split(/\s+/).filter(w => w.length > 3);
+        for (const word of words) {
+          if (!descToCode[word]) descToCode[word] = [];
+          if (!descToCode[word].includes(code)) descToCode[word].push(code);
+        }
       }
     }
 
+    // Helper: check if a term matches a symbol code or description
+    const findMatchingCodes = (term: string): string[] => {
+      const t = term.trim().toLowerCase();
+      if (!t) return [];
+      const matches: string[] = [];
+
+      for (const code of codeList) {
+        // Direct code match (case insensitive)
+        if (code.toLowerCase() === t) {
+          matches.push(code);
+          continue;
+        }
+        // Description contains the term
+        const desc = (rawSymbolDescriptions[code] || '').toLowerCase();
+        if (desc && (desc.includes(t) || t.includes(desc))) {
+          matches.push(code);
+        }
+      }
+
+      // Also check common aliases
+      const aliases: Record<string, string[]> = {
+        'exit signs': ['EXIT1', 'EX'],
+        'exit sign': ['EXIT1', 'EX'],
+        'exits': ['EXIT1', 'EX'],
+        'smoke detectors': ['SO'],
+        'smoke detector': ['SO'],
+        'smoke': ['SO'],
+        'fire alarm': ['SO', 'CO', 'HF', 'HC', 'HR', 'CO2', 'SB', 'FARP', 'VESDA'],
+        'fire': ['SO', 'CO', 'HF', 'HC', 'HR', 'CO2', 'SB', 'FARP', 'VESDA'],
+        'pir': ['P4', 'P1', 'P2', 'P3'],
+        'pirs': ['P4', 'P1', 'P2', 'P3'],
+        'sensors': ['P4', 'P1', 'P2', 'P3'],
+        'emergency': ['JE', 'EXIT1', 'EX'],
+        'emergency lights': ['JE'],
+        'emergency lighting': ['JE'],
+        'downlights': ['J'],
+        'led lights': ['J', 'JE', 'N'],
+        'surface lights': ['N'],
+        'controls': ['P4', 'P1', 'P2', 'P3', 'LCM'],
+        'cctv': ['CCTV'],
+        'access control': ['AC'],
+        'power': ['PWR', 'DB'],
+      };
+
+      if (aliases[t]) {
+        for (const code of aliases[t]) {
+          if (rawCounts[code] && !matches.includes(code)) {
+            matches.push(code);
+          }
+        }
+      }
+
+      return matches;
+    };
+
+    // === CATEGORY-LEVEL PATTERNS ===
+
+    // "lighting only" / "lights only" → exclude everything that isn't lighting
+    const isLightingOnly = lower.includes('lighting only') || lower.includes('lights only');
     if (isLightingOnly) {
-      for (const [code] of Object.entries(rawCounts)) {
+      for (const code of codeList) {
         const desc = (rawSymbolDescriptions[code] || '').toLowerCase();
         const isLighting = desc.includes('light') || desc.includes('led') || desc.includes('emergency') ||
           desc.includes('exit') || desc.includes('luminaire') || desc.includes('downlight') ||
@@ -115,6 +179,31 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
           code.startsWith('P') || code === 'LCM';
         if (!isLighting && !isControl) {
           excluded.add(code);
+        }
+      }
+    }
+
+    // === ITEM-LEVEL PATTERNS ===
+    // Match: "remove X", "exclude X", "no X", "without X", "drop X", "delete X", "ignore X"
+    const excludePatterns = [
+      /(?:remove|exclude|excluding|no|without|drop|delete|ignore|take out|take off|minus|less|not|don'?t (?:include|count|want))\s+(.+)/gi,
+    ];
+
+    for (const pattern of excludePatterns) {
+      let match;
+      // Reset lastIndex for global regex
+      pattern.lastIndex = 0;
+      while ((match = pattern.exec(lower)) !== null) {
+        const remainder = match[1].trim();
+        // Split on commas, "and", "&" to handle "remove X, Y and Z"
+        const terms = remainder.split(/[,&]|\band\b/).map(s => s.trim()).filter(Boolean);
+        for (const term of terms) {
+          // Clean trailing punctuation
+          const cleaned = term.replace(/[.\s]+$/, '');
+          const codes = findMatchingCodes(cleaned);
+          for (const code of codes) {
+            excluded.add(code);
+          }
         }
       }
     }
