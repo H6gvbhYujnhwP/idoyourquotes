@@ -1951,6 +1951,60 @@ Report facts only. Do not interpret or add commentary.`,
         return { unlocked: true, takeoff: updatedTakeoff };
       }),
 
+    // Update user-excluded symbol codes (persists chip toggling)
+    updateExcludedCodes: protectedProcedure
+      .input(z.object({
+        takeoffId: z.number(),
+        excludedCodes: z.array(z.string()),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const takeoff = await getElectricalTakeoffById(input.takeoffId);
+        if (!takeoff) throw new Error("Takeoff not found");
+        
+        const quote = await getQuoteWithOrgAccess(takeoff.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Access denied");
+        
+        // Store in userAnswers under a special key
+        const existingAnswers = (takeoff.userAnswers || {}) as Record<string, string>;
+        const updatedAnswers = {
+          ...existingAnswers,
+          _excludedCodes: JSON.stringify(input.excludedCodes),
+        };
+        
+        const updatedTakeoff = await updateElectricalTakeoff(takeoff.id, {
+          userAnswers: updatedAnswers,
+        });
+
+        // Also update the processedContent to reflect excluded codes
+        if (takeoff.inputId) {
+          const storedResult = {
+            drawingRef: takeoff.drawingRef || '',
+            pageWidth: Number(takeoff.pageWidth) || 0,
+            pageHeight: Number(takeoff.pageHeight) || 0,
+            symbols: takeoff.symbols || [],
+            counts: takeoff.counts || {},
+            questions: takeoff.questions || [],
+            notes: takeoff.drawingNotes || [],
+            dbCircuits: takeoff.dbCircuits || [],
+            hasTextLayer: takeoff.hasTextLayer ?? true,
+            totalTextElements: takeoff.totalTextElements || 0,
+          };
+          // Filter counts by excluded codes for quote context
+          const filteredCounts: Record<string, number> = {};
+          for (const [code, count] of Object.entries(storedResult.counts as Record<string, number>)) {
+            if (!input.excludedCodes.includes(code)) {
+              filteredCounts[code] = count;
+            }
+          }
+          const filteredResult = { ...storedResult, counts: filteredCounts };
+          await updateInputProcessing(Number(takeoff.inputId), {
+            processedContent: formatTakeoffForQuoteContext(filteredResult),
+          });
+        }
+        
+        return { success: true };
+      }),
+
     // Get PDF file data as base64 for client-side rendering (avoids CORS issues with R2)
     getPdfData: protectedProcedure
       .input(z.object({ inputId: z.number() }))

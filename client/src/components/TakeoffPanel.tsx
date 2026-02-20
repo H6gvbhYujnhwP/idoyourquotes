@@ -64,6 +64,23 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
   // Re-run takeoff when parent triggers re-analysis (skip if locked/verified)
   const [lastTrigger, setLastTrigger] = useState(0);
   const [userExcludedCodes, setUserExcludedCodes] = useState<Set<string>>(new Set());
+
+  // Load persisted excluded codes from takeoff userAnswers
+  useEffect(() => {
+    if (takeoffData?.userAnswers) {
+      const answers = takeoffData.userAnswers as Record<string, string>;
+      if (answers._excludedCodes) {
+        try {
+          const codes = JSON.parse(answers._excludedCodes) as string[];
+          setUserExcludedCodes(new Set(codes));
+        } catch {}
+      }
+    }
+  }, [takeoffData?.userAnswers]);
+
+  // Mutation to persist excluded codes to backend
+  const saveExcludedMutation = trpc.electricalTakeoff.updateExcludedCodes.useMutation();
+
   useEffect(() => {
     if (reanalyzeTrigger && reanalyzeTrigger > lastTrigger && takeoffData && takeoffData.status !== 'verified') {
       setLastTrigger(reanalyzeTrigger);
@@ -291,8 +308,7 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
   const hasFilter = allExcludedCodes.size > 0;
 
   const toggleChipExclusion = (code: string) => {
-    if (isVerified) return; // Don't allow toggling on approved takeoffs
-    // If it was excluded by instructions, can't toggle it back on via chip
+    if (isVerified) return;
     if (excludedCodes.has(code)) return;
     setUserExcludedCodes(prev => {
       const next = new Set(prev);
@@ -300,6 +316,10 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
         next.delete(code);
       } else {
         next.add(code);
+      }
+      // Persist to backend
+      if (takeoff?.id) {
+        saveExcludedMutation.mutate({ takeoffId: takeoff.id, excludedCodes: Array.from(next) });
       }
       return next;
     });
@@ -429,6 +449,10 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
               setUserExcludedCodes(prev => {
                 const next = new Set(prev);
                 codes.forEach(c => next.add(c));
+                // Persist to backend
+                if (takeoff?.id) {
+                  saveExcludedMutation.mutate({ takeoffId: takeoff.id, excludedCodes: Array.from(next) });
+                }
                 return next;
               });
             }}
