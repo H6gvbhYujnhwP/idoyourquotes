@@ -474,7 +474,7 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
           ) : (
             <CheckCircle className="h-4 w-4 mr-1" />
           )}
-          Ready for Quote
+          Approve for Quote
         </Button>
       )}
 
@@ -823,7 +823,7 @@ function TakeoffChatSection({
               disabled={isSubmitting}
             >
               <CheckCircle className="h-4 w-4 mr-1" />
-              Ready for Quote
+              Approve for Quote
             </Button>
           )}
           {isVerified && (
