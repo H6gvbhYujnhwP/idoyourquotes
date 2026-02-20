@@ -306,9 +306,9 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
   };
 
   return (
-    <div className="mt-2 space-y-2">
+    <div className="space-y-2">
       {/* Takeoff summary — Style D: Gradient navy header + clickable chips */}
-      <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: brand.white, border: `1.5px solid ${brand.border}` }}>
+      <div className="rounded-xl overflow-hidden" style={{ backgroundColor: brand.white }}>
         {/* Gradient header */}
         <div className="flex items-center justify-between px-4 py-2.5" style={{ background: `linear-gradient(135deg, ${brand.navy} 0%, #1e3a5f 100%)` }}>
           <div className="flex items-center gap-2">
@@ -427,6 +427,13 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
             symbolDescriptions={symbolDescriptions}
             onAnswersSubmitted={handleAnswersSubmitted}
             onVerify={handleVerify}
+            onExcludeCodes={(codes) => {
+              setUserExcludedCodes(prev => {
+                const next = new Set(prev);
+                codes.forEach(c => next.add(c));
+                return next;
+              });
+            }}
             isSubmitting={answerMutation.isPending || verifyMutation.isPending}
             isVerified={isVerified}
           />
@@ -489,6 +496,7 @@ interface TakeoffChatSectionProps {
   symbolDescriptions: Record<string, string>;
   onAnswersSubmitted: (answers: Record<string, string>) => void;
   onVerify: () => void;
+  onExcludeCodes?: (codes: string[]) => void;
   isSubmitting?: boolean;
   isVerified?: boolean;
 }
@@ -500,6 +508,7 @@ function TakeoffChatSection({
   symbolDescriptions,
   onAnswersSubmitted,
   onVerify,
+  onExcludeCodes,
   isSubmitting = false,
   isVerified = false,
 }: TakeoffChatSectionProps) {
@@ -560,8 +569,13 @@ function TakeoffChatSection({
                  desc.includes('exit') || code === 'J' || code === 'JE' || code === 'N' ||
                  code === 'EXIT1' || code === 'EX';
         });
+      const nonLightingCodes = Object.keys(counts).filter(code => !lightingCodes.some(([c]) => c === code));
       const lightingTotal = lightingCodes.reduce((sum, [, c]) => sum + c, 0);
-      response = `Noted — filtering to lighting items only. Your lighting scope includes:\n\n${lightingCodes.map(([code, count]) => `• ${code} (${symbolDescriptions[code] || code}): ${count}`).join('\n')}\n\nLighting total: ${lightingTotal} items.\n\nFire alarm and other non-lighting symbols will be excluded from the quote. You can verify these counts and they'll be passed to the quote generator with the lighting-only scope.`;
+      // Actually exclude non-lighting codes
+      if (onExcludeCodes && nonLightingCodes.length > 0) {
+        onExcludeCodes(nonLightingCodes);
+      }
+      response = `Done — excluded ${nonLightingCodes.join(', ')} from scope. Your lighting items:\n\n${lightingCodes.map(([code, count]) => `• ${code} (${symbolDescriptions[code] || code}): ${count}`).join('\n')}\n\nLighting total: ${lightingTotal} items. The excluded symbols are now greyed out above.`;
     } else if (lowerMsg.includes('include') && lowerMsg.includes('n') && (lowerMsg.includes('surface') || lowerMsg.includes('led') || lowerMsg.includes('fitting') || lowerMsg.includes('count'))) {
       // User wants to include the N status markers as actual fittings — trigger the backend answer
       onAnswersSubmitted({ 'n-status-marker': 'include' });
@@ -577,6 +591,28 @@ function TakeoffChatSection({
       response = `I can't re-run the extraction from here yet, but the counts shown are from the most recent analysis. If you believe symbols were missed, please note which ones and I'll flag them for manual review. You can adjust the final quantities during quote generation.`;
     } else if (lowerMsg.includes('scope') || lowerMsg.includes('tender') || lowerMsg.includes('spec')) {
       response = `To scope the takeoff correctly, paste the tender email or specification requirements into the "Instructions / Notes for AI" field at the top of the page. When you generate the quote, the AI will cross-reference those instructions with these takeoff counts to only price what's in scope.\n\nFor example, if the tender says "lighting only, exclude fire alarm", the quote AI will use the J, JE, N, EXIT1, and P4 counts but skip SO (smoke detectors) and other fire alarm items.`;
+    } else if (lowerMsg.includes('exclude') || lowerMsg.includes('remove') || lowerMsg.includes('ignore')) {
+      // Try to find which codes the user wants to exclude
+      const codesToExclude: string[] = [];
+      for (const code of Object.keys(counts)) {
+        const desc = (symbolDescriptions[code] || '').toLowerCase();
+        if (lowerMsg.includes(code.toLowerCase()) || (desc && lowerMsg.includes(desc.split(' ')[0].toLowerCase()))) {
+          codesToExclude.push(code);
+        }
+      }
+      // Also check description keywords
+      for (const [code, desc] of Object.entries(symbolDescriptions)) {
+        const words = desc.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+        if (words.some(w => lowerMsg.includes(w)) && !codesToExclude.includes(code)) {
+          codesToExclude.push(code);
+        }
+      }
+      if (codesToExclude.length > 0 && onExcludeCodes) {
+        onExcludeCodes(codesToExclude);
+        response = `Done — excluded ${codesToExclude.map(c => `${c} (${symbolDescriptions[c] || c})`).join(', ')} from scope. These are now greyed out above.`;
+      } else {
+        response = `I couldn't identify which symbols to exclude. Try specifying the code (e.g. "exclude SO") or the description (e.g. "exclude smoke detectors").`;
+      }
     } else {
       response = `I've extracted ${Object.values(counts).reduce((a, b) => a + b, 0)} symbols from this drawing across ${Object.keys(counts).length} different types. Here's what I can help with:\n\n• Tell me to focus on specific categories (e.g. "lighting only", "exclude fire alarm")\n• Ask about specific symbol codes (e.g. "what is JE?")\n• Ask for a count summary\n• Ask about how scope filtering works with the tender instructions\n\nThe marked-up drawing view shows coloured markers at each detected symbol location.`;
     }
