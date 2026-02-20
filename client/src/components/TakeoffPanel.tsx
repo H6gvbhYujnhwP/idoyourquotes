@@ -13,6 +13,7 @@ import {
   Bot, MessageCircle, Send, Image, ChevronDown, ChevronUp, Lock,
   Plus, Save, MousePointer2,
 } from "lucide-react";
+import { brand } from "@/lib/brandTheme";
 
 interface TakeoffPanelProps {
   inputId: number;
@@ -281,91 +282,82 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
 
   return (
     <div className="mt-2 space-y-2">
-      {/* Counts summary */}
-      <div className={`p-3 rounded-lg border ${
-        isVerified ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'
-      }`}>
-        <div className="flex items-center justify-between mb-2">
+      {/* Takeoff summary — Design B: Expanded chips with descriptions */}
+      <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: brand.white, border: `1.5px solid ${brand.border}` }}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-2.5" style={{ backgroundColor: isVerified ? '#f0fdf4' : brand.tealBg, borderBottom: `1px solid ${isVerified ? '#bbf7d0' : brand.tealBorder}` }}>
           <div className="flex items-center gap-2">
             {isVerified ? (
               <CheckCircle className="h-4 w-4 text-green-600" />
             ) : (
-              <Zap className="h-4 w-4 text-blue-600" />
+              <Zap className="h-4 w-4" style={{ color: brand.teal }} />
             )}
-            <span className={`text-sm font-medium ${isVerified ? 'text-green-900' : 'text-blue-900'}`}>
+            <span className="text-sm font-extrabold" style={{ color: brand.navy }}>
               {isVerified ? 'Approved' : 'Takeoff Ready'}
             </span>
             {isVerified && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-6 text-xs text-amber-600 border-amber-300 hover:bg-amber-50 px-2"
-                onClick={() => {
-                  if (takeoff?.id) unlockMutation.mutate({ takeoffId: takeoff.id });
-                }}
+              <button
+                className="text-[11px] font-bold px-2 py-1 rounded-lg text-amber-600 bg-amber-50 border border-amber-200 hover:bg-amber-100 transition-colors"
+                onClick={() => { if (takeoff?.id) unlockMutation.mutate({ takeoffId: takeoff.id }); }}
                 disabled={unlockMutation.isPending}
               >
-                {unlockMutation.isPending ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <Lock className="h-3 w-3 mr-1" />
-                )}
-                Edit
-              </Button>
+                {unlockMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <><Lock className="h-3 w-3 mr-1 inline" />Edit</>}
+              </button>
             )}
-            <Badge variant="outline" className="text-xs">
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${brand.teal}15`, color: brand.teal }}>
               {hasFilter ? `${filteredTotal} in scope` : `${totalItems} items`}
-            </Badge>
+            </span>
             {hasFilter && (
-              <Badge variant="outline" className="text-xs text-gray-400 border-gray-200">
+              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: '#f1f5f9', color: brand.navyMuted }}>
                 {totalItems - filteredTotal} excluded
-              </Badge>
-            )}
-          </div>
-          <div className="flex items-center gap-1">
-            {/* View Drawing button */}
-            {svgOverlay && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="text-xs h-7"
-                onClick={() => setShowViewer(true)}
-              >
-                <Image className="h-3 w-3 mr-1" />
-                View Marked Drawing
-              </Button>
+              </span>
             )}
             {takeoff.hasTextLayer === false && (
-              <Badge variant="destructive" className="text-xs">
-                <AlertTriangle className="h-3 w-3 mr-1" />
-                No text layer
-              </Badge>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">No text layer</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {svgOverlay && (
+              <button
+                className="text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors"
+                style={{ color: brand.navy, backgroundColor: `${brand.navy}06`, border: `1px solid ${brand.border}` }}
+                onClick={() => setShowViewer(true)}
+              >
+                <Image className="h-3 w-3 mr-1 inline" />
+                View Marked Drawing
+              </button>
             )}
           </div>
         </div>
 
-        {/* Symbol count chips */}
-        <div className="flex flex-wrap gap-1.5">
+        {/* Expanded chips with descriptions */}
+        <div className="px-4 py-3 flex flex-wrap gap-2">
           {Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)).map(([code, count]) => {
             const style = symbolStyles[code];
+            const colour = style?.colour || '#888888';
             const isExcluded = excludedCodes.has(code);
             return (
               <div
                 key={code}
-                className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${
-                  isExcluded ? 'bg-gray-50 line-through opacity-50' : 'bg-white'
-                }`}
-                style={isExcluded ? { borderColor: '#ddd', color: '#999' } : {
-                  borderColor: style?.colour ? `${style.colour}60` : '#ddd',
-                  color: style?.colour || '#666',
+                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all ${isExcluded ? 'opacity-40' : ''}`}
+                style={{
+                  borderColor: isExcluded ? '#e5e7eb' : `${colour}30`,
+                  backgroundColor: isExcluded ? '#f9fafb' : `${colour}06`,
                 }}
                 title={isExcluded ? `${code} excluded by processing instructions` : `${code}: ${symbolDescriptions[code] || code}`}
               >
-                <span
-                  className="w-2 h-2 rounded-full"
-                  style={{ backgroundColor: isExcluded ? '#ccc' : (style?.colour || '#888') }}
-                />
-                {code}: {count}
+                <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: isExcluded ? '#d1d5db' : colour }} />
+                <span className={`text-xs font-extrabold ${isExcluded ? 'line-through' : ''}`} style={{ color: isExcluded ? '#9ca3af' : colour }}>
+                  {count}
+                </span>
+                <span className="text-[10px] font-bold" style={{ color: isExcluded ? '#9ca3af' : brand.navyMuted }}>
+                  {code}
+                </span>
+                <span className="text-[10px]" style={{ color: isExcluded ? '#d1d5db' : '#cbd5e1' }}>—</span>
+                <span className={`text-[10px] font-medium ${isExcluded ? 'line-through' : ''}`} style={{ color: isExcluded ? '#9ca3af' : brand.navyMuted }}>
+                  {symbolDescriptions[code] || code}
+                </span>
+                {isExcluded && <span className="text-[8px] text-gray-400 ml-0.5">excluded</span>}
               </div>
             );
           })}
@@ -563,26 +555,6 @@ function TakeoffChatSection({
   return (
     <div className="flex flex-col">
       <div ref={scrollRef} className="max-h-96 overflow-y-auto p-3 space-y-3">
-        {/* Initial summary message */}
-        <div className="flex gap-2">
-          <div className="h-7 w-7 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-            <Bot className="h-4 w-4 text-blue-600" />
-          </div>
-          <div className="flex-1 bg-blue-50 rounded-lg p-3 text-sm">
-            <p className="font-medium text-blue-900 mb-2">
-              Extraction complete — {totalItems} items detected
-            </p>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-blue-800">
-              {Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)).map(([code, count]) => (
-                <div key={code} className="flex items-center gap-1">
-                  <span className="font-mono font-bold w-6 text-right">{count}</span>
-                  <span className="text-blue-600">×</span>
-                  <span>{code} ({symbolDescriptions[code] || code})</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
 
         {/* Questions */}
         {questions.map((q) => (
