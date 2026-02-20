@@ -574,10 +574,18 @@ function TakeoffChatSection({
         onExcludeCodes(nonLightingCodes);
       }
       response = `Done — excluded ${nonLightingCodes.join(', ')} from scope. Your lighting items:\n\n${lightingCodes.map(([code, count]) => `• ${code} (${symbolDescriptions[code] || code}): ${count}`).join('\n')}\n\nLighting total: ${lightingTotal} items. The excluded symbols are now greyed out above.`;
-    } else if (lowerMsg.includes('include') && lowerMsg.includes('n') && (lowerMsg.includes('surface') || lowerMsg.includes('led') || lowerMsg.includes('fitting') || lowerMsg.includes('count'))) {
+    } else if (
+      // Broad match: user wants N status markers counted as fittings
+      // Matches: "add all N", "include N", "count N as", "make N a surface", "N are surface LED", etc.
+      (lowerMsg.match(/\bn\b/) || lowerMsg.includes("'n'") || lowerMsg.includes('"n"')) &&
+      (lowerMsg.includes('add') || lowerMsg.includes('include') || lowerMsg.includes('count') ||
+       lowerMsg.includes('make') || lowerMsg.includes('are') || lowerMsg.includes('should be') ||
+       lowerMsg.includes('surface') || lowerMsg.includes('led') || lowerMsg.includes('fitting') ||
+       lowerMsg.includes('175') || lowerMsg.includes('status'))
+    ) {
       // User wants to include the N status markers as actual fittings — trigger the backend answer
       onAnswersSubmitted({ 'n-status-marker': 'include' });
-      response = `Done — I've included all N labels as Surface LED Light fittings. The counts are being recalculated now and will update in a moment.`;
+      response = `Done — I've included all N labels as Surface LED Light fittings. The counts are being recalculated now and the N chip above will update to show the full count.`;
     } else if (lowerMsg.includes('how many') || lowerMsg.includes('count') || lowerMsg.includes('total')) {
       const totalItems = Object.values(counts).reduce((a, b) => a + b, 0);
       response = `Current counts from ${drawingRef}:\n\n${Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)).map(([code, count]) => `• ${code} (${symbolDescriptions[code] || code}): ${count}`).join('\n')}\n\nTotal: ${totalItems} items detected.`;
