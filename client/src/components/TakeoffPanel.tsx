@@ -306,11 +306,10 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
   };
 
   return (
-    <div className="space-y-2">
-      {/* Takeoff summary — Style D: Gradient navy header + clickable chips */}
-      <div className="rounded-xl overflow-hidden" style={{ backgroundColor: brand.white }}>
-        {/* Gradient header */}
-        <div className="flex items-center justify-between px-4 py-2.5" style={{ background: `linear-gradient(135deg, ${brand.navy} 0%, #1e3a5f 100%)` }}>
+    <div>
+      {/* Takeoff summary — gradient header sits flush inside parent container */}
+      {/* Gradient header */}
+      <div className="flex items-center justify-between px-4 py-2.5" style={{ background: `linear-gradient(135deg, ${brand.navy} 0%, #1e3a5f 100%)` }}>
           <div className="flex items-center gap-2">
             {isVerified ? (
               <CheckCircle className="h-4 w-4 text-green-400" />
@@ -399,10 +398,9 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
             );
           })}
         </div>
-      </div>
 
       {/* Expandable Chat / Q&A Section */}
-      <div className="border rounded-lg overflow-hidden">
+      <div className="border-t overflow-hidden" style={{ borderColor: brand.border }}>
         <button
           className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors"
           onClick={() => setShowChat(!showChat)}

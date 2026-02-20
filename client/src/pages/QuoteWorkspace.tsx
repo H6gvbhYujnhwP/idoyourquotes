@@ -1575,11 +1575,9 @@ export default function QuoteWorkspace() {
                   </div>
                 )}
 
-                {/* Takeoff panel (for PDFs) */}
+                {/* Takeoff panel (for PDFs) — renders flush, no padding wrapper */}
                 {selected.inputType === "pdf" && selected.processingStatus === "completed" && (
-                  <div className="px-4 py-3" style={{ backgroundColor: brand.white }}>
-                    <TakeoffPanel inputId={selected.id} quoteId={quoteId} filename={selected.filename || "Drawing"} fileUrl={selected.fileUrl || undefined} processingInstructions={processingInstructions} reanalyzeTrigger={reanalyzeTriggers[selected.id] || 0} />
-                  </div>
+                  <TakeoffPanel inputId={selected.id} quoteId={quoteId} filename={selected.filename || "Drawing"} fileUrl={selected.fileUrl || undefined} processingInstructions={processingInstructions} reanalyzeTrigger={reanalyzeTriggers[selected.id] || 0} />
                 )}
 
                 {/* Non-PDF completed */}
