@@ -530,6 +530,8 @@ function TakeoffChatSection({
 
   const handleConfirmQuestion = (questionId: string) => {
     setAnsweredIds(prev => new Set([...prev, questionId]));
+    // Submit answers immediately so counts update right away
+    onAnswersSubmitted({ ...answers });
   };
 
   const allAnswered = questions.every(q => answeredIds.has(q.id));
@@ -560,6 +562,10 @@ function TakeoffChatSection({
         });
       const lightingTotal = lightingCodes.reduce((sum, [, c]) => sum + c, 0);
       response = `Noted — filtering to lighting items only. Your lighting scope includes:\n\n${lightingCodes.map(([code, count]) => `• ${code} (${symbolDescriptions[code] || code}): ${count}`).join('\n')}\n\nLighting total: ${lightingTotal} items.\n\nFire alarm and other non-lighting symbols will be excluded from the quote. You can verify these counts and they'll be passed to the quote generator with the lighting-only scope.`;
+    } else if (lowerMsg.includes('include') && lowerMsg.includes('n') && (lowerMsg.includes('surface') || lowerMsg.includes('led') || lowerMsg.includes('fitting') || lowerMsg.includes('count'))) {
+      // User wants to include the N status markers as actual fittings — trigger the backend answer
+      onAnswersSubmitted({ 'n-status-marker': 'include' });
+      response = `Done — I've included all N labels as Surface LED Light fittings. The counts are being recalculated now and will update in a moment.`;
     } else if (lowerMsg.includes('how many') || lowerMsg.includes('count') || lowerMsg.includes('total')) {
       const totalItems = Object.values(counts).reduce((a, b) => a + b, 0);
       response = `Current counts from ${drawingRef}:\n\n${Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)).map(([code, count]) => `• ${code} (${symbolDescriptions[code] || code}): ${count}`).join('\n')}\n\nTotal: ${totalItems} items detected.`;
