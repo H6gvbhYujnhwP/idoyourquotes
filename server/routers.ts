@@ -1968,6 +1968,91 @@ Report facts only. Do not interpret or add commentary.`,
         const base64 = pdfBuffer.toString('base64');
         return { base64, filename: inputRecord.filename || 'drawing.pdf' };
       }),
+
+    // Update markers — add/remove markers from the viewer and recalculate counts
+    updateMarkers: protectedProcedure
+      .input(z.object({
+        takeoffId: z.number(),
+        removedIds: z.array(z.string()), // symbol IDs to remove
+        addedMarkers: z.array(z.object({
+          symbolCode: z.string(),
+          x: z.number(),
+          y: z.number(),
+        })),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const takeoff = await getElectricalTakeoffById(input.takeoffId);
+        if (!takeoff) throw new Error("Takeoff not found");
+
+        const quote = await getQuoteWithOrgAccess(takeoff.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Access denied");
+
+        if (takeoff.status === 'verified') {
+          throw new Error("Cannot edit markers on an approved takeoff. Please unlock first.");
+        }
+
+        // Get current symbols
+        const currentSymbols = (takeoff.symbols || []) as Array<{
+          id: string; symbolCode: string; category: string;
+          x: number; y: number; confidence: string;
+          isStatusMarker: boolean; nearbySymbol?: string;
+        }>;
+
+        // Remove specified markers
+        let updatedSymbols = currentSymbols.filter(s => !input.removedIds.includes(s.id));
+
+        // Add new markers
+        for (const added of input.addedMarkers) {
+          const newId = `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          updatedSymbols.push({
+            id: newId,
+            symbolCode: added.symbolCode,
+            category: 'manual',
+            x: added.x,
+            y: added.y,
+            confidence: 'manual',
+            isStatusMarker: false,
+          });
+        }
+
+        // Recalculate counts (exclude status markers)
+        const newCounts: Record<string, number> = {};
+        for (const sym of updatedSymbols) {
+          if (!sym.isStatusMarker) {
+            newCounts[sym.symbolCode] = (newCounts[sym.symbolCode] || 0) + 1;
+          }
+        }
+
+        // Regenerate SVG overlay
+        const pageWidth = parseFloat(takeoff.pageWidth as string) || 2384;
+        const pageHeight = parseFloat(takeoff.pageHeight as string) || 1684;
+        const svgOverlay = generateSvgOverlay({
+          drawingRef: takeoff.drawingRef || '',
+          pageWidth,
+          pageHeight,
+          symbols: updatedSymbols as any,
+          counts: newCounts,
+          questions: [],
+          drawingNotes: [],
+          dbCircuits: [],
+          hasTextLayer: takeoff.hasTextLayer ?? true,
+          totalTextElements: takeoff.totalTextElements || 0,
+        });
+
+        // Save
+        const updated = await updateElectricalTakeoff(takeoff.id, {
+          symbols: updatedSymbols as any,
+          counts: newCounts as any,
+          svgOverlay,
+          updatedAt: new Date(),
+        });
+
+        return {
+          takeoff: updated,
+          counts: newCounts,
+          symbolCount: updatedSymbols.filter(s => !s.isStatusMarker).length,
+        };
+      }),
   }),
 
   // ============ TENDER CONTEXT ============

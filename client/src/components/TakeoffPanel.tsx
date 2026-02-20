@@ -11,6 +11,7 @@ import {
   Loader2, Zap, CheckCircle, AlertTriangle, X,
   ZoomIn, ZoomOut, Maximize, Eye, EyeOff,
   Bot, MessageCircle, Send, Image, ChevronDown, ChevronUp, Lock,
+  Plus, Save, MousePointer2,
 } from "lucide-react";
 
 interface TakeoffPanelProps {
@@ -423,7 +424,11 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
       {showViewer && svgOverlay && (
         <DrawingViewerModal
           inputId={inputId}
+          takeoffId={takeoff.id}
           svgOverlay={svgOverlay}
+          symbols={(takeoff.symbols || []) as Array<{id: string; symbolCode: string; category: string; x: number; y: number; confidence: string; isStatusMarker: boolean}>}
+          pageWidth={parseFloat(takeoff.pageWidth as string) || 2384}
+          pageHeight={parseFloat(takeoff.pageHeight as string) || 1684}
           counts={counts}
           symbolStyles={symbolStyles}
           symbolDescriptions={symbolDescriptions}
@@ -431,6 +436,7 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
           isVerified={isVerified}
           initialHiddenCodes={excludedCodes}
           onClose={() => setShowViewer(false)}
+          onSave={() => { refetch(); setShowViewer(false); }}
         />
       )}
     </div>
@@ -754,9 +760,22 @@ function TakeoffChatSection({
 
 // ============ DRAWING VIEWER MODAL ============
 
+interface MarkerData {
+  id: string;
+  symbolCode: string;
+  x: number;
+  y: number;
+  isStatusMarker: boolean;
+  isNew?: boolean; // added by user
+}
+
 interface DrawingViewerModalProps {
   inputId: number;
+  takeoffId: number;
   svgOverlay: string;
+  symbols: Array<{id: string; symbolCode: string; category: string; x: number; y: number; confidence: string; isStatusMarker: boolean}>;
+  pageWidth: number;
+  pageHeight: number;
   counts: Record<string, number>;
   symbolStyles: Record<string, { colour: string; shape: string; radius: number }>;
   symbolDescriptions: Record<string, string>;
@@ -764,18 +783,24 @@ interface DrawingViewerModalProps {
   isVerified?: boolean;
   initialHiddenCodes?: Set<string>;
   onClose: () => void;
+  onSave?: () => void;
 }
 
 function DrawingViewerModal({
   inputId,
+  takeoffId,
   svgOverlay,
-  counts,
+  symbols: initialSymbols,
+  pageWidth: pdfPageWidth,
+  pageHeight: pdfPageHeight,
+  counts: initialCounts,
   symbolStyles,
   symbolDescriptions,
   drawingRef,
   isVerified = false,
   initialHiddenCodes,
   onClose,
+  onSave,
 }: DrawingViewerModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [zoom, setZoom] = useState(1);
@@ -788,7 +813,64 @@ function DrawingViewerModal({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [hiddenCodes, setHiddenCodes] = useState<Set<string>>(initialHiddenCodes || new Set());
 
+  // Editing state
+  const [markers, setMarkers] = useState<MarkerData[]>(() =>
+    initialSymbols.filter(s => !s.isStatusMarker).map(s => ({
+      id: s.id,
+      symbolCode: s.symbolCode,
+      x: s.x,
+      y: s.y,
+      isStatusMarker: s.isStatusMarker,
+    }))
+  );
+  const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
+  const [addedMarkers, setAddedMarkers] = useState<MarkerData[]>([]);
+  const [editMode, setEditMode] = useState<string | null>(null); // null = pan mode, string = symbol code to place
+  const [isSaving, setIsSaving] = useState(false);
+
+  const hasChanges = removedIds.size > 0 || addedMarkers.length > 0;
+
+  // Live counts based on current markers
+  const liveCounts = useMemo(() => {
+    const c: Record<string, number> = {};
+    // Original markers minus removed
+    for (const m of markers) {
+      if (!removedIds.has(m.id)) {
+        c[m.symbolCode] = (c[m.symbolCode] || 0) + 1;
+      }
+    }
+    // Plus added
+    for (const m of addedMarkers) {
+      c[m.symbolCode] = (c[m.symbolCode] || 0) + 1;
+    }
+    return c;
+  }, [markers, removedIds, addedMarkers]);
+
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const updateMarkersMutation = trpc.electricalTakeoff.updateMarkers.useMutation({
+    onSuccess: () => {
+      setIsSaving(false);
+      if (onSave) onSave();
+    },
+    onError: (err) => {
+      setIsSaving(false);
+      console.error('Save failed:', err);
+    },
+  });
+
+  const handleSaveEdits = () => {
+    setIsSaving(true);
+    updateMarkersMutation.mutate({
+      takeoffId,
+      removedIds: Array.from(removedIds),
+      addedMarkers: addedMarkers.map(m => ({
+        symbolCode: m.symbolCode,
+        x: m.x,
+        y: m.y,
+      })),
+    });
+  };
 
   // Zoom towards a specific point (in container coordinates)
   const zoomToPoint = (newZoom: number, clientX: number, clientY: number) => {
@@ -798,44 +880,31 @@ function DrawingViewerModal({
       setZoom(clampedZoom);
       return;
     }
-
-    // Mouse position relative to the container
     const mouseX = clientX - rect.left;
     const mouseY = clientY - rect.top;
-
-    // Point on the content that the mouse is over (in content coordinates)
     const contentX = (mouseX - position.x) / zoom;
     const contentY = (mouseY - position.y) / zoom;
-
-    // After zoom, that same content point should still be under the mouse
     const newX = mouseX - contentX * clampedZoom;
     const newY = mouseY - contentY * clampedZoom;
-
     setZoom(clampedZoom);
     setPosition({ x: newX, y: newY });
   };
 
-  // Toolbar zoom buttons — zoom towards centre of viewport
   const handleZoomIn = () => {
     const rect = containerRef.current?.getBoundingClientRect();
-    if (rect) {
-      zoomToPoint(zoom + 0.25, rect.left + rect.width / 2, rect.top + rect.height / 2);
-    } else {
-      setZoom(z => Math.min(z + 0.25, 5));
-    }
+    if (rect) zoomToPoint(zoom + 0.25, rect.left + rect.width / 2, rect.top + rect.height / 2);
+    else setZoom(z => Math.min(z + 0.25, 5));
   };
   const handleZoomOut = () => {
     const rect = containerRef.current?.getBoundingClientRect();
-    if (rect) {
-      zoomToPoint(zoom - 0.25, rect.left + rect.width / 2, rect.top + rect.height / 2);
-    } else {
-      setZoom(z => Math.max(z - 0.25, 0.25));
-    }
+    if (rect) zoomToPoint(zoom - 0.25, rect.left + rect.width / 2, rect.top + rect.height / 2);
+    else setZoom(z => Math.max(z - 0.25, 0.25));
   };
   const handleFit = () => { setZoom(1); setPosition({ x: 0, y: 0 }); };
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
+    if (editMode) return; // Don't pan when in edit mode
     setIsDragging(true);
     setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
   };
@@ -856,16 +925,69 @@ function DrawingViewerModal({
     zoomToPoint(zoom + delta, e.clientX, e.clientY);
   };
 
-  // Fetch PDF data through server proxy (avoids CORS with R2)
+  // Handle click on the drawing area — add marker in edit mode
+  const handleDrawingClick = (e: React.MouseEvent) => {
+    if (!editMode || !pdfDimensions.width) return;
+    if (isDragging) return;
+
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    // Convert screen click to content coordinates
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const contentX = (mouseX - position.x) / zoom;
+    const contentY = (mouseY - position.y) / zoom;
+
+    // Convert from CSS pixel space to PDF coordinate space
+    const pdfX = (contentX / pdfDimensions.width) * pdfPageWidth;
+    const pdfY = (contentY / pdfDimensions.height) * pdfPageHeight;
+
+    // Don't place markers outside the drawing
+    if (pdfX < 0 || pdfX > pdfPageWidth || pdfY < 0 || pdfY > pdfPageHeight) return;
+
+    const newMarker: MarkerData = {
+      id: `added-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      symbolCode: editMode,
+      x: pdfX,
+      y: pdfY,
+      isStatusMarker: false,
+      isNew: true,
+    };
+
+    setAddedMarkers(prev => [...prev, newMarker]);
+  };
+
+  // Handle clicking an existing marker to remove it
+  const handleMarkerClick = (markerId: string, isAdded: boolean) => {
+    if (isVerified) return;
+
+    if (isAdded) {
+      // Remove from addedMarkers
+      setAddedMarkers(prev => prev.filter(m => m.id !== markerId));
+    } else {
+      // Add to removedIds
+      setRemovedIds(prev => {
+        const next = new Set(prev);
+        if (next.has(markerId)) {
+          next.delete(markerId); // Undo removal
+        } else {
+          next.add(markerId);
+        }
+        return next;
+      });
+    }
+  };
+
+  // Fetch PDF data through server proxy
   const { data: pdfData } = trpc.electricalTakeoff.getPdfData.useQuery(
     { inputId },
     { enabled: !!inputId }
   );
 
-  // Render PDF to canvas using pdfjs-dist loaded from CDN
+  // Render PDF to canvas
   useEffect(() => {
     if (!pdfData?.base64 || !canvasRef.current) return;
-
     let cancelled = false;
 
     const renderPdf = async () => {
@@ -873,7 +995,6 @@ function DrawingViewerModal({
         setIsLoading(true);
         setRenderError(null);
 
-        // Load pdfjs from CDN if not already available
         if (!(window as any).pdfjsLib) {
           await new Promise<void>((resolve, reject) => {
             const script = document.createElement('script');
@@ -884,9 +1005,7 @@ function DrawingViewerModal({
                 pdfjsLib.GlobalWorkerOptions.workerSrc =
                   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
                 resolve();
-              } else {
-                reject(new Error('pdfjsLib not found after loading'));
-              }
+              } else reject(new Error('pdfjsLib not found'));
             };
             script.onerror = () => reject(new Error('Failed to load PDF.js'));
             document.head.appendChild(script);
@@ -896,26 +1015,18 @@ function DrawingViewerModal({
         const pdfjsLib = (window as any).pdfjsLib;
         if (!pdfjsLib) throw new Error('PDF.js not available');
 
-        // Convert base64 to Uint8Array
         const binaryString = atob(pdfData.base64);
         const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
+        for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
 
         if (cancelled) return;
 
-        // Load the PDF document
-        const loadingTask = pdfjsLib.getDocument({ data: bytes });
-        const pdf = await loadingTask.promise;
+        const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
         const page = await pdf.getPage(1);
-
         if (cancelled) return;
 
-        // Render at 2x scale for crisp display
         const renderScale = 2;
         const viewport = page.getViewport({ scale: renderScale });
-
         const canvas = canvasRef.current;
         if (!canvas) return;
 
@@ -924,19 +1035,13 @@ function DrawingViewerModal({
         canvas.style.width = `${viewport.width / renderScale}px`;
         canvas.style.height = `${viewport.height / renderScale}px`;
 
-        setPdfDimensions({
-          width: viewport.width / renderScale,
-          height: viewport.height / renderScale,
-        });
+        setPdfDimensions({ width: viewport.width / renderScale, height: viewport.height / renderScale });
 
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error('Cannot get canvas context');
 
         await page.render({ canvasContext: ctx, viewport }).promise;
-
-        if (!cancelled) {
-          setIsLoading(false);
-        }
+        if (!cancelled) setIsLoading(false);
       } catch (err: any) {
         if (!cancelled) {
           console.error('[DrawingViewer] PDF render error:', err);
@@ -947,49 +1052,78 @@ function DrawingViewerModal({
     };
 
     renderPdf();
-
     return () => { cancelled = true; };
   }, [pdfData]);
-
-  // Filter SVG overlay to hide toggled-off symbol codes
-  const getFilteredOverlay = () => {
-    if (hiddenCodes.size === 0) return svgOverlay;
-    let filtered = svgOverlay;
-    for (const code of hiddenCodes) {
-      const regex = new RegExp(
-        `<g class="takeoff-marker" data-id="[^"]*" data-code="${code}"[^>]*>[\\s\\S]*?</g>`,
-        'g'
-      );
-      filtered = filtered.replace(regex, '');
-    }
-    return filtered;
-  };
 
   const toggleCode = (code: string) => {
     setHiddenCodes(prev => {
       const next = new Set(prev);
-      if (next.has(code)) {
-        next.delete(code);
-      } else {
-        next.add(code);
-      }
+      next.has(code) ? next.delete(code) : next.add(code);
       return next;
     });
   };
 
-  const totalItems = Object.values(counts).reduce((a, b) => a + b, 0);
-  const visibleTotal = Object.entries(counts)
+  const totalItems = Object.values(liveCounts).reduce((a, b) => a + b, 0);
+  const visibleTotal = Object.entries(liveCounts)
     .filter(([code]) => !hiddenCodes.has(code))
     .reduce((sum, [, count]) => sum + count, 0);
+
+  // Render a single marker as SVG
+  const renderMarker = (m: MarkerData, isRemoved: boolean, isAdded: boolean) => {
+    if (isRemoved || hiddenCodes.has(m.symbolCode)) return null;
+    if (!showOverlay) return null;
+
+    const style = symbolStyles[m.symbolCode] || { colour: '#888888', shape: 'circle', radius: 20 };
+    const r = style.radius / 4;
+    const cx = (m.x / pdfPageWidth) * pdfDimensions.width;
+    const cy = (m.y / pdfPageHeight) * pdfDimensions.height;
+
+    return (
+      <g
+        key={m.id}
+        style={{ cursor: isVerified ? 'default' : 'pointer' }}
+        onClick={(e) => {
+          e.stopPropagation();
+          handleMarkerClick(m.id, isAdded);
+        }}
+      >
+        {style.shape === 'circle' && (
+          <>
+            <circle cx={cx} cy={cy} r={r} fill="none" stroke={style.colour} strokeWidth={1.5} strokeOpacity={0.9} />
+            <circle cx={cx} cy={cy} r={1.5} fill={style.colour} />
+          </>
+        )}
+        {style.shape === 'square' && (
+          <>
+            <rect x={cx - r} y={cy - r} width={r * 2} height={r * 2} fill="none" stroke={style.colour} strokeWidth={1.5} strokeOpacity={0.9} />
+            <circle cx={cx} cy={cy} r={1.2} fill={style.colour} />
+          </>
+        )}
+        {style.shape === 'diamond' && (
+          <polygon
+            points={`${cx},${cy - r} ${cx + r},${cy} ${cx},${cy + r} ${cx - r},${cy}`}
+            fill="none" stroke={style.colour} strokeWidth={1.5} strokeOpacity={0.9}
+          />
+        )}
+        {isAdded && (
+          <circle cx={cx} cy={cy} r={r + 2} fill="none" stroke="#00ff00" strokeWidth={0.8} strokeDasharray="2,2" />
+        )}
+        <title>{m.symbolCode} ({symbolDescriptions[m.symbolCode] || m.symbolCode}) — click to {isAdded ? 'remove' : 'toggle'}</title>
+      </g>
+    );
+  };
 
   // Close on Escape
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        if (editMode) setEditMode(null);
+        else onClose();
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [onClose]);
+  }, [onClose, editMode]);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex flex-col">
@@ -1000,9 +1134,7 @@ function DrawingViewerModal({
             <h3 className="text-sm font-semibold flex items-center gap-2">
               <Eye className="h-4 w-4" />
               Drawing Viewer — {drawingRef}
-              {isVerified && (
-                <Badge className="bg-green-100 text-green-800 text-xs">Approved</Badge>
-              )}
+              {isVerified && <Badge className="bg-green-100 text-green-800 text-xs">Approved</Badge>}
             </h3>
           </div>
           <div className="flex items-center gap-1 ml-4">
@@ -1025,6 +1157,37 @@ function DrawingViewerModal({
               {showOverlay ? <Eye className="h-3 w-3 mr-1" /> : <EyeOff className="h-3 w-3 mr-1" />}
               {showOverlay ? 'Overlay On' : 'Overlay Off'}
             </Button>
+
+            {/* Edit mode toggle */}
+            {!isVerified && (
+              <div className="flex items-center gap-1 ml-3 border-l pl-3">
+                <Button
+                  variant={editMode ? "outline" : "ghost"}
+                  size="sm"
+                  className={`h-8 text-xs ${editMode ? 'bg-amber-50 border-amber-300 text-amber-700' : ''}`}
+                  onClick={() => setEditMode(editMode ? null : Object.keys(liveCounts)[0] || 'J')}
+                >
+                  {editMode ? (
+                    <><MousePointer2 className="h-3 w-3 mr-1" /> Pan Mode</>
+                  ) : (
+                    <><Plus className="h-3 w-3 mr-1" /> Edit Markers</>
+                  )}
+                </Button>
+
+                {/* Save button */}
+                {hasChanges && (
+                  <Button
+                    size="sm"
+                    className="h-8 text-xs bg-green-600 hover:bg-green-700 text-white"
+                    onClick={handleSaveEdits}
+                    disabled={isSaving}
+                  >
+                    {isSaving ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Save className="h-3 w-3 mr-1" />}
+                    Save ({removedIds.size > 0 ? `-${removedIds.size}` : ''}{addedMarkers.length > 0 ? `+${addedMarkers.length}` : ''})
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         </div>
         <Button variant="ghost" size="icon" onClick={onClose}>
@@ -1032,49 +1195,85 @@ function DrawingViewerModal({
         </Button>
       </div>
 
-      {/* Symbol filter chips */}
+      {/* Symbol filter chips / edit mode selector */}
       <div className="bg-white border-b px-4 py-2 flex flex-wrap gap-1.5 flex-shrink-0">
-        {Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)).map(([code, count]) => {
+        {editMode && (
+          <span className="text-xs text-amber-700 font-medium mr-2 flex items-center">
+            Place:
+          </span>
+        )}
+        {Object.entries(liveCounts).sort(([a], [b]) => a.localeCompare(b)).map(([code, count]) => {
           const style = symbolStyles[code];
           const isHidden = hiddenCodes.has(code);
+          const isSelected = editMode === code;
           return (
             <button
               key={code}
               className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border transition-all ${
-                isHidden
-                  ? 'bg-gray-100 text-gray-400 border-gray-200 line-through'
-                  : 'bg-white hover:bg-gray-50'
+                isSelected
+                  ? 'bg-amber-100 border-amber-400 ring-2 ring-amber-300'
+                  : isHidden
+                    ? 'bg-gray-100 text-gray-400 border-gray-200 line-through'
+                    : 'bg-white hover:bg-gray-50'
               }`}
-              style={isHidden ? {} : {
-                borderColor: style?.colour ? `${style.colour}60` : '#ddd',
+              style={isHidden && !isSelected ? {} : {
+                borderColor: isSelected ? undefined : (style?.colour ? `${style.colour}60` : '#ddd'),
                 color: style?.colour || '#666',
               }}
-              onClick={() => toggleCode(code)}
-              title={`${isHidden ? 'Show' : 'Hide'} ${code} (${symbolDescriptions[code] || code})`}
+              onClick={() => {
+                if (editMode) {
+                  // In edit mode, clicking selects which symbol to place
+                  setEditMode(isSelected ? null : code);
+                } else {
+                  toggleCode(code);
+                }
+              }}
+              title={editMode
+                ? `${isSelected ? 'Deselect' : 'Select'} ${code} to place on drawing`
+                : `${isHidden ? 'Show' : 'Hide'} ${code} (${symbolDescriptions[code] || code})`
+              }
             >
               <span
                 className="w-2 h-2 rounded-full"
                 style={{ backgroundColor: isHidden ? '#ccc' : (style?.colour || '#888') }}
               />
               {code}: {count}
-              {isHidden && <EyeOff className="h-2.5 w-2.5 ml-0.5" />}
+              {isHidden && !editMode && <EyeOff className="h-2.5 w-2.5 ml-0.5" />}
             </button>
           );
         })}
         <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-gray-100 text-gray-700">
           Showing: {visibleTotal}/{totalItems}
         </div>
+        {hasChanges && (
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700">
+            Unsaved changes
+          </div>
+        )}
       </div>
+
+      {/* Edit mode instructions bar */}
+      {editMode && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-1.5 text-xs text-amber-800 flex items-center gap-2">
+          <Plus className="h-3 w-3" />
+          <span>
+            <strong>Adding {editMode}</strong> — click on the drawing to place a marker. Click an existing marker to remove it. Press Escape to exit edit mode.
+          </span>
+        </div>
+      )}
 
       {/* Drawing canvas */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-hidden bg-gray-800 cursor-grab active:cursor-grabbing relative"
+        className={`flex-1 overflow-hidden bg-gray-800 relative ${
+          editMode ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'
+        }`}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
         onWheel={handleWheel}
+        onClick={handleDrawingClick}
       >
         <div
           className="absolute"
@@ -1098,33 +1297,48 @@ function DrawingViewerModal({
               <div className="flex items-center justify-center bg-gray-700 min-h-[400px] min-w-[600px]">
                 <div className="text-center p-8">
                   <AlertTriangle className="h-12 w-12 text-amber-400 mx-auto mb-3" />
-                  <p className="text-gray-300 text-sm">
-                    Failed to render PDF: {renderError}
-                  </p>
-                  <p className="text-gray-500 text-xs mt-2">
-                    The symbol counts and positions are still available in the summary above.
-                  </p>
+                  <p className="text-gray-300 text-sm">Failed to render PDF: {renderError}</p>
+                  <p className="text-gray-500 text-xs mt-2">The symbol counts and positions are still available in the summary above.</p>
                 </div>
               </div>
             ) : (
               <>
-                {/* PDF rendered to canvas */}
-                <canvas
-                  ref={canvasRef}
-                  className="block"
-                  style={{ imageRendering: 'auto' }}
-                />
+                <canvas ref={canvasRef} className="block" style={{ imageRendering: 'auto' }} />
 
-                {/* SVG overlay positioned over the canvas */}
-                {showOverlay && pdfDimensions.width > 0 && (
-                  <div
+                {/* Interactive SVG overlay */}
+                {pdfDimensions.width > 0 && (
+                  <svg
                     className="absolute top-0 left-0"
-                    style={{
-                      width: pdfDimensions.width,
-                      height: pdfDimensions.height,
-                    }}
-                    dangerouslySetInnerHTML={{ __html: getFilteredOverlay() }}
-                  />
+                    width={pdfDimensions.width}
+                    height={pdfDimensions.height}
+                    viewBox={`0 0 ${pdfDimensions.width} ${pdfDimensions.height}`}
+                    style={{ pointerEvents: editMode || !isVerified ? 'all' : 'none' }}
+                  >
+                    {/* Original markers */}
+                    {markers.map(m => renderMarker(m, removedIds.has(m.id), false))}
+
+                    {/* Added markers */}
+                    {addedMarkers.map(m => renderMarker(m, false, true))}
+
+                    {/* Show removed markers as faded red X */}
+                    {Array.from(removedIds).map(id => {
+                      const m = markers.find(mk => mk.id === id);
+                      if (!m || hiddenCodes.has(m.symbolCode) || !showOverlay) return null;
+                      const cx = (m.x / pdfPageWidth) * pdfDimensions.width;
+                      const cy = (m.y / pdfPageHeight) * pdfDimensions.height;
+                      return (
+                        <g
+                          key={`removed-${id}`}
+                          style={{ cursor: 'pointer', opacity: 0.5 }}
+                          onClick={(e) => { e.stopPropagation(); handleMarkerClick(id, false); }}
+                        >
+                          <line x1={cx - 4} y1={cy - 4} x2={cx + 4} y2={cy + 4} stroke="red" strokeWidth={2} />
+                          <line x1={cx + 4} y1={cy - 4} x2={cx - 4} y2={cy + 4} stroke="red" strokeWidth={2} />
+                          <title>Removed {m.symbolCode} — click to restore</title>
+                        </g>
+                      );
+                    })}
+                  </svg>
                 )}
               </>
             )}
