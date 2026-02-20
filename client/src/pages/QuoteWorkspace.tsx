@@ -1419,7 +1419,6 @@ export default function QuoteWorkspace() {
                 />
               </div>
             </div>
-            </div>
           </div>
 
           {/* Upload queue — progress bars */}
