@@ -1380,22 +1380,14 @@ export default function QuoteWorkspace() {
                 <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>PDF, Word, Excel, Images, Audio — max 3</span>
               </div>
             </div>
-            <div className="flex items-center gap-3 px-4 py-2" style={{ backgroundColor: '#f8fafc' }}>
-              <span className="font-bold text-sm flex-shrink-0" style={{ color: brand.teal }}>✦</span>
-              <input
-                type="text"
-                value={processingInstructions}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProcessingInstructions(e.target.value)}
-                onBlur={() => {
-                  updateQuote.mutate({ id: quoteId, processingInstructions: processingInstructions || null });
-                }}
-                className="flex-1 text-xs font-medium border-0 bg-transparent focus:ring-0 focus:outline-none py-1"
-                style={{ color: brand.navy }}
-                placeholder="Processing instructions — e.g. lighting only, exclude fire alarm..."
-              />
-              {processingInstructions && (
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full" style={{ backgroundColor: `${brand.teal}15`, color: brand.teal }}>Active</span>
+            <div className="px-4 py-3" style={{ backgroundColor: '#f8fafc' }}>
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm" style={{ color: brand.teal }}>✦</span>
+                  <span className="text-[11px] font-bold" style={{ color: brand.navy }}>Processing Instructions</span>
+                  {processingInstructions && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full" style={{ backgroundColor: `${brand.teal}15`, color: brand.teal }}>Active</span>}
+                </div>
+                {processingInstructions && (
                   <button
                     className="text-[10px] font-bold px-2.5 py-1 rounded-md text-white transition-colors"
                     style={{ backgroundColor: brand.teal }}
@@ -1410,8 +1402,23 @@ export default function QuoteWorkspace() {
                   >
                     Apply All
                   </button>
-                </div>
-              )}
+                )}
+              </div>
+              <div className="flex rounded-lg overflow-hidden" style={{ border: `1.5px solid ${processingInstructions ? brand.tealBorder : brand.border}` }}>
+                <div className="w-1 flex-shrink-0" style={{ backgroundColor: brand.teal }} />
+                <textarea
+                  value={processingInstructions}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setProcessingInstructions(e.target.value)}
+                  onBlur={() => {
+                    updateQuote.mutate({ id: quoteId, processingInstructions: processingInstructions || null });
+                  }}
+                  className="w-full px-3 py-2 text-sm border-0 focus:ring-0 resize-none"
+                  style={{ color: brand.navy, backgroundColor: brand.white }}
+                  rows={2}
+                  placeholder={"Tell the AI what to include or exclude when analysing drawings...\ne.g. Lighting only — exclude fire alarm, power, access control and CCTV"}
+                />
+              </div>
+            </div>
             </div>
           </div>
 
@@ -1508,63 +1515,84 @@ export default function QuoteWorkspace() {
             </div>
           )}
 
-          {/* Detail panel for selected file */}
+          {/* Detail panel — Design A: File info in gradient header */}
           {selectedInputId && inputs && (() => {
             const selected = inputs.find((i: QuoteInput) => i.id === selectedInputId);
             if (!selected) return null;
             return (
-              <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: brand.white, border: `1.5px solid ${brand.border}`, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-                <div className="flex items-center justify-between px-5 py-3" style={{ backgroundColor: `${brand.navy}03`, borderBottom: `1px solid ${brand.borderLight}` }}>
-                  <div className="flex items-center gap-3">
-                    <FileIcon type={selected.inputType || 'document'} size="sm" />
-                    <div>
-                      <h4 className="text-sm font-extrabold" style={{ color: brand.navy }}>{selected.filename || 'Input'}</h4>
-                      <p className="text-[10px] font-medium mt-0.5" style={{ color: brand.navyMuted }}>
-                        {selected.mimeType || selected.inputType} • {selected.createdAt ? new Date(selected.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''}
-                        {selected.processingStatus === "completed" && <span className="font-bold" style={{ color: brand.teal }}> • Analysed</span>}
-                        {selected.processingStatus === "processing" && <span className="font-bold text-blue-500"> • Processing</span>}
-                        {selected.processingStatus === "failed" && <span className="font-bold text-red-500"> • Failed</span>}
-                      </p>
+              <div className="rounded-2xl overflow-hidden" style={{ border: `1.5px solid ${brand.border}` }}>
+                {/* Dark gradient header with file info */}
+                <div className="px-4 py-3" style={{ background: `linear-gradient(135deg, ${brand.navy} 0%, #1e3a5f 100%)` }}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <FileIcon type={selected.inputType || 'document'} size="sm" />
+                      <div>
+                        <h4 className="text-sm font-extrabold text-white">{selected.filename || 'Input'}</h4>
+                        <p className="text-[10px] font-medium text-white/50 mt-0.5">
+                          {selected.mimeType || selected.inputType} • {selected.createdAt ? new Date(selected.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''}
+                          {selected.processingStatus === "completed" && <span className="text-teal-300 font-bold"> • Analysed</span>}
+                          {selected.processingStatus === "processing" && <span className="text-blue-300 font-bold"> • Processing</span>}
+                          {selected.processingStatus === "failed" && <span className="text-red-300 font-bold"> • Failed</span>}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {selected.processingStatus === "completed" && (
+                        <button
+                          className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-teal-300 bg-white/10 hover:bg-white/15 border border-white/15 transition-colors"
+                          onClick={async () => {
+                            await updateQuote.mutateAsync({ id: quoteId, processingInstructions: processingInstructions || null });
+                            setReanalyzeTriggers(prev => ({ ...prev, [selected.id]: (prev[selected.id] || 0) + 1 }));
+                            toast.success(`Re-analysing ${selected.filename || 'input'}...`);
+                          }}
+                        >Re-analyse</button>
+                      )}
+                      {selected.fileUrl && (
+                        <button
+                          className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white/70 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+                          onClick={() => window.open(selected.fileUrl!, "_blank")}
+                        >Open File</button>
+                      )}
+                      {selected.processingStatus === "failed" && (
+                        <button
+                          className="text-[11px] font-bold text-white px-4 py-1.5 rounded-lg bg-red-500/80 hover:bg-red-500 transition-colors"
+                          onClick={() => handleProcessInput(selected)}
+                        >Retry</button>
+                      )}
+                      <button
+                        className="p-1.5 rounded-lg text-white/40 hover:text-red-300 hover:bg-white/10 transition-colors"
+                        onClick={() => { deleteInput.mutate({ id: selected.id, quoteId }); setSelectedInputId(null); }}
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {selected.processingStatus === "completed" && (
-                      <button className="text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors" style={{ color: brand.teal, backgroundColor: `${brand.teal}08` }}
-                        onClick={async () => {
-                          await updateQuote.mutateAsync({ id: quoteId, processingInstructions: processingInstructions || null });
-                          setReanalyzeTriggers(prev => ({ ...prev, [selected.id]: (prev[selected.id] || 0) + 1 }));
-                          toast.success(`Re-analysing ${selected.filename || 'input'}...`);
-                        }}>Re-analyse</button>
-                    )}
-                    {selected.fileUrl && (
-                      <button className="text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors" style={{ color: brand.navy, backgroundColor: `${brand.navy}06` }}
-                        onClick={() => window.open(selected.fileUrl!, "_blank")}>Open File</button>
-                    )}
-                    {selected.processingStatus === "failed" && (
-                      <button className="text-[11px] font-bold text-white px-4 py-1.5 rounded-lg" style={{ backgroundColor: '#ef4444' }}
-                        onClick={() => handleProcessInput(selected)}>Retry</button>
-                    )}
-                    <button className="p-1.5 rounded-lg transition-colors hover:bg-red-50" style={{ color: brand.navyMuted }}
-                      onClick={() => { deleteInput.mutate({ id: selected.id, quoteId }); setSelectedInputId(null); }}>
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
                 </div>
+
+                {/* Content preview */}
                 {selected.content && (
-                  <div className="px-5 py-2.5" style={{ borderBottom: `1px solid ${brand.borderLight}` }}>
+                  <div className="px-4 py-2.5" style={{ backgroundColor: '#f8fafc', borderBottom: `1px solid ${brand.borderLight}` }}>
                     <p className="text-xs line-clamp-2" style={{ color: brand.navyMuted }}>{selected.content}</p>
                   </div>
                 )}
+
+                {/* Takeoff panel (for PDFs) */}
                 {selected.inputType === "pdf" && selected.processingStatus === "completed" && (
-                  <div className="px-5 py-3">
+                  <div className="px-4 py-3" style={{ backgroundColor: brand.white }}>
                     <TakeoffPanel inputId={selected.id} quoteId={quoteId} filename={selected.filename || "Drawing"} fileUrl={selected.fileUrl || undefined} processingInstructions={processingInstructions} reanalyzeTrigger={reanalyzeTriggers[selected.id] || 0} />
                   </div>
                 )}
+
+                {/* Non-PDF completed */}
                 {selected.inputType !== "pdf" && selected.processingStatus === "completed" && (
-                  <div className="px-5 py-3"><p className="text-xs font-medium" style={{ color: brand.navyMuted }}>Text extracted — ready for quote generation.</p></div>
+                  <div className="px-4 py-3" style={{ backgroundColor: brand.white }}>
+                    <p className="text-xs font-medium" style={{ color: brand.navyMuted }}>Text extracted — ready for quote generation.</p>
+                  </div>
                 )}
+
+                {/* Failed state */}
                 {selected.processingStatus === "failed" && (
-                  <div className="px-5 py-3 flex items-center gap-2" style={{ backgroundColor: '#fef2f2' }}>
+                  <div className="px-4 py-3 flex items-center gap-2" style={{ backgroundColor: '#fef2f2' }}>
                     <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
                     <span className="text-xs font-semibold text-red-700">Analysis failed — try re-uploading or splitting the file.</span>
                   </div>
