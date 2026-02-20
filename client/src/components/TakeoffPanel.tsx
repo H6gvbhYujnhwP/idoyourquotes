@@ -63,6 +63,7 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
 
   // Re-run takeoff when parent triggers re-analysis (skip if locked/verified)
   const [lastTrigger, setLastTrigger] = useState(0);
+  const [userExcludedCodes, setUserExcludedCodes] = useState<Set<string>>(new Set());
   useEffect(() => {
     if (reanalyzeTrigger && reanalyzeTrigger > lastTrigger && takeoffData && takeoffData.status !== 'verified') {
       setLastTrigger(reanalyzeTrigger);
@@ -213,15 +214,24 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
     return excluded;
   }, [processingInstructions, rawCounts, rawSymbolDescriptions, takeoffData]);
 
+  // Combined exclusions: instruction-based + user-toggled
+  const allExcludedCodes = useMemo(() => {
+    const combined = new Set(excludedCodes);
+    for (const code of userExcludedCodes) {
+      combined.add(code);
+    }
+    return combined;
+  }, [excludedCodes, userExcludedCodes]);
+
   const filteredCounts = useMemo(() => {
     const filtered: Record<string, number> = {};
     for (const [code, count] of Object.entries(rawCounts)) {
-      if (!excludedCodes.has(code)) {
+      if (!allExcludedCodes.has(code)) {
         filtered[code] = count;
       }
     }
     return filtered;
-  }, [rawCounts, excludedCodes]);
+  }, [rawCounts, allExcludedCodes]);
 
   // No takeoff exists yet — show "Run Takeoff" button
   if (!takeoffData) {
@@ -278,49 +288,63 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
 
   const totalItems = Object.values(rawCounts).reduce((a, b) => a + b, 0);
   const filteredTotal = Object.values(filteredCounts).reduce((a, b) => a + b, 0);
-  const hasFilter = excludedCodes.size > 0;
+  const hasFilter = allExcludedCodes.size > 0;
+
+  const toggleChipExclusion = (code: string) => {
+    if (isVerified) return; // Don't allow toggling on approved takeoffs
+    // If it was excluded by instructions, can't toggle it back on via chip
+    if (excludedCodes.has(code)) return;
+    setUserExcludedCodes(prev => {
+      const next = new Set(prev);
+      if (next.has(code)) {
+        next.delete(code);
+      } else {
+        next.add(code);
+      }
+      return next;
+    });
+  };
 
   return (
     <div className="mt-2 space-y-2">
-      {/* Takeoff summary — Design B: Expanded chips with descriptions */}
+      {/* Takeoff summary — Style D: Gradient navy header + clickable chips */}
       <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: brand.white, border: `1.5px solid ${brand.border}` }}>
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-2.5" style={{ backgroundColor: isVerified ? '#f0fdf4' : brand.tealBg, borderBottom: `1px solid ${isVerified ? '#bbf7d0' : brand.tealBorder}` }}>
+        {/* Gradient header */}
+        <div className="flex items-center justify-between px-4 py-2.5" style={{ background: `linear-gradient(135deg, ${brand.navy} 0%, #1e3a5f 100%)` }}>
           <div className="flex items-center gap-2">
             {isVerified ? (
-              <CheckCircle className="h-4 w-4 text-green-600" />
+              <CheckCircle className="h-4 w-4 text-green-400" />
             ) : (
-              <Zap className="h-4 w-4" style={{ color: brand.teal }} />
+              <Zap className="h-4 w-4 text-teal-400" />
             )}
-            <span className="text-sm font-extrabold" style={{ color: brand.navy }}>
+            <span className="text-sm font-extrabold text-white">
               {isVerified ? 'Approved' : 'Takeoff Ready'}
             </span>
             {isVerified && (
               <button
-                className="text-[11px] font-bold px-2 py-1 rounded-lg text-amber-600 bg-amber-50 border border-amber-200 hover:bg-amber-100 transition-colors"
+                className="text-[11px] font-bold px-2 py-1 rounded-lg text-amber-300 bg-white/10 border border-white/20 hover:bg-white/20 transition-colors"
                 onClick={() => { if (takeoff?.id) unlockMutation.mutate({ takeoffId: takeoff.id }); }}
                 disabled={unlockMutation.isPending}
               >
                 {unlockMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <><Lock className="h-3 w-3 mr-1 inline" />Edit</>}
               </button>
             )}
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${brand.teal}15`, color: brand.teal }}>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300">
               {hasFilter ? `${filteredTotal} in scope` : `${totalItems} items`}
             </span>
             {hasFilter && (
-              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: '#f1f5f9', color: brand.navyMuted }}>
+              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-white/10 text-white/50">
                 {totalItems - filteredTotal} excluded
               </span>
             )}
             {takeoff.hasTextLayer === false && (
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">No text layer</span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/20 text-red-300">No text layer</span>
             )}
           </div>
           <div className="flex items-center gap-2">
             {svgOverlay && (
               <button
-                className="text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors"
-                style={{ color: brand.navy, backgroundColor: `${brand.navy}06`, border: `1px solid ${brand.border}` }}
+                className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-white/15 text-white hover:bg-white/25 border border-white/20 transition-colors"
                 onClick={() => setShowViewer(true)}
               >
                 <Image className="h-3 w-3 mr-1 inline" />
@@ -330,35 +354,48 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
           </div>
         </div>
 
-        {/* Expanded chips with descriptions */}
+        {/* Clickable chips with descriptions */}
         <div className="px-4 py-3 flex flex-wrap gap-2">
           {Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)).map(([code, count]) => {
             const style = symbolStyles[code];
             const colour = style?.colour || '#888888';
-            const isExcluded = excludedCodes.has(code);
+            const isInstructionExcluded = excludedCodes.has(code);
+            const isUserExcluded = userExcludedCodes.has(code);
+            const isExcluded = allExcludedCodes.has(code);
+            const isClickable = !isVerified && !isInstructionExcluded;
             return (
-              <div
+              <button
                 key={code}
-                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all ${isExcluded ? 'opacity-40' : ''}`}
+                onClick={() => toggleChipExclusion(code)}
+                disabled={!isClickable}
+                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all ${
+                  isExcluded ? 'opacity-40' : 'hover:shadow-md'
+                } ${isClickable ? 'cursor-pointer' : isInstructionExcluded ? 'cursor-not-allowed' : 'cursor-default'}`}
                 style={{
                   borderColor: isExcluded ? '#e5e7eb' : `${colour}30`,
                   backgroundColor: isExcluded ? '#f9fafb' : `${colour}06`,
                 }}
-                title={isExcluded ? `${code} excluded by processing instructions` : `${code}: ${symbolDescriptions[code] || code}`}
+                title={
+                  isInstructionExcluded ? `${code} excluded by processing instructions`
+                  : isUserExcluded ? `${code} excluded — click to include`
+                  : isVerified ? `${code}: ${symbolDescriptions[code] || code}`
+                  : `Click to exclude ${code} from quote`
+                }
               >
                 <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: isExcluded ? '#d1d5db' : colour }} />
                 <span className={`text-xs font-extrabold ${isExcluded ? 'line-through' : ''}`} style={{ color: isExcluded ? '#9ca3af' : colour }}>
                   {count}
                 </span>
-                <span className="text-[10px] font-bold" style={{ color: isExcluded ? '#9ca3af' : brand.navyMuted }}>
+                <span className={`text-[10px] font-bold ${isExcluded ? '' : ''}`} style={{ color: isExcluded ? '#9ca3af' : brand.navyMuted }}>
                   {code}
                 </span>
                 <span className="text-[10px]" style={{ color: isExcluded ? '#d1d5db' : '#cbd5e1' }}>—</span>
                 <span className={`text-[10px] font-medium ${isExcluded ? 'line-through' : ''}`} style={{ color: isExcluded ? '#9ca3af' : brand.navyMuted }}>
                   {symbolDescriptions[code] || code}
                 </span>
-                {isExcluded && <span className="text-[8px] text-gray-400 ml-0.5">excluded</span>}
-              </div>
+                {isInstructionExcluded && <span className="text-[8px] text-gray-400 ml-0.5">instructions</span>}
+                {isUserExcluded && <span className="text-[8px] ml-0.5" style={{ color: brand.teal }}>click to restore</span>}
+              </button>
             );
           })}
         </div>
@@ -426,7 +463,7 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
           symbolDescriptions={symbolDescriptions}
           drawingRef={takeoff.drawingRef || filename}
           isVerified={isVerified}
-          initialHiddenCodes={excludedCodes}
+          initialHiddenCodes={allExcludedCodes}
           onClose={() => setShowViewer(false)}
           onSave={() => { refetch(); setShowViewer(false); }}
         />

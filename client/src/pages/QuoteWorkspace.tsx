@@ -1353,9 +1353,9 @@ export default function QuoteWorkspace() {
             </div>
           </div>
 
-          {/* Upload + Instructions combined panel */}
-          <div className="rounded-xl overflow-hidden" style={{ border: `1.5px solid ${brand.tealBorder}` }}>
-            <div className="flex items-center gap-3 px-4 py-2.5" style={{ backgroundColor: brand.tealBg }}>
+          {/* Upload + Instructions combined panel — Style D gradient */}
+          <div className="rounded-xl overflow-hidden" style={{ border: `1.5px solid ${brand.border}` }}>
+            <div className="flex items-center gap-3 px-4 py-2.5" style={{ background: `linear-gradient(135deg, ${brand.navy} 0%, #1e3a5f 100%)` }}>
               <button
                 className="flex items-center gap-2 px-4 py-2 text-white text-xs font-bold rounded-lg shadow-sm transition-colors whitespace-nowrap"
                 style={{ backgroundColor: brand.teal }}
@@ -1368,19 +1368,19 @@ export default function QuoteWorkspace() {
               <div
                 className={cn(
                   "flex-1 flex items-center gap-2 px-3 py-2 border border-dashed rounded-lg text-xs transition-all cursor-pointer",
-                  isDragging ? "border-teal-500 bg-teal-100/50" : "border-teal-300/50 hover:border-teal-400"
+                  isDragging ? "border-white/40 bg-white/10" : "border-white/20 hover:border-white/40"
                 )}
-                style={{ color: brand.navyMuted }}
+                style={{ color: 'rgba(255,255,255,0.5)' }}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 onClick={() => multiFileInputRef.current?.click()}
               >
                 <span className="font-medium">{isDragging ? "Drop files here" : "Drop files here"}</span>
-                <span className="text-[10px]" style={{ color: `${brand.teal}90` }}>PDF, Word, Excel, Images, Audio — max 3</span>
+                <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>PDF, Word, Excel, Images, Audio — max 3</span>
               </div>
             </div>
-            <div className="flex items-center gap-3 px-4 py-2 border-t" style={{ borderColor: brand.tealBorder }}>
+            <div className="flex items-center gap-3 px-4 py-2" style={{ backgroundColor: '#f8fafc' }}>
               <span className="font-bold text-sm flex-shrink-0" style={{ color: brand.teal }}>✦</span>
               <input
                 type="text"
@@ -1577,11 +1577,11 @@ export default function QuoteWorkspace() {
           {(!inputs || inputs.length === 0) && uploadQueue.length === 0 && (
             <div
               className="text-center py-12 rounded-2xl border-2 border-dashed cursor-pointer transition-all hover:border-teal-400"
-              style={{ borderColor: brand.tealBorder, backgroundColor: `${brand.tealBg}50` }}
+              style={{ borderColor: brand.border, backgroundColor: '#f8fafc' }}
               onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
               onClick={() => multiFileInputRef.current?.click()}
             >
-              <Upload className="h-10 w-10 mx-auto mb-3" style={{ color: brand.teal }} />
+              <Upload className="h-10 w-10 mx-auto mb-3" style={{ color: brand.navyMuted }} />
               <p className="text-sm font-bold" style={{ color: brand.navy }}>No documents yet</p>
               <p className="text-xs mt-1" style={{ color: brand.navyMuted }}>Drop files here or click to upload tender documents, drawings, and specifications</p>
             </div>
