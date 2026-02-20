@@ -236,7 +236,7 @@ export default function QuoteWorkspace() {
   // Fetch all takeoffs for this quote to check approval status
   const { data: allTakeoffs } = trpc.electricalTakeoff.list.useQuery(
     { quoteId },
-    { enabled: quoteId > 0 }
+    { enabled: quoteId > 0, refetchOnWindowFocus: true, staleTime: 5000 }
   );
 
   const updateQuote = trpc.quotes.update.useMutation({
@@ -480,27 +480,21 @@ export default function QuoteWorkspace() {
   };
 
   const handleGenerateDraft = () => {
-    // Check if PDF inputs have approved takeoffs
-    if (inputs && inputs.length > 0 && allTakeoffs) {
-      const pdfInputs = inputs.filter((i: QuoteInput) => i.inputType === 'pdf' && i.processingStatus === 'completed');
-      if (pdfInputs.length > 0) {
-        const unapproved: string[] = [];
-        for (const input of pdfInputs) {
-          const takeoff = allTakeoffs.find((t: any) => Number(t.inputId) === input.id);
-          if (!takeoff || takeoff.status !== 'verified') {
-            unapproved.push(input.filename || `Input #${input.id}`);
-          }
+    // Check if PDF inputs with takeoffs have been approved
+    if (inputs && inputs.length > 0 && allTakeoffs && allTakeoffs.length > 0) {
+      const unapproved: string[] = [];
+      for (const takeoff of allTakeoffs as any[]) {
+        if (takeoff.status !== 'verified') {
+          const matchingInput = inputs.find((i: QuoteInput) => String(i.id) === String(takeoff.inputId));
+          unapproved.push(matchingInput?.filename || `Drawing #${takeoff.inputId}`);
         }
-        if (unapproved.length > 0) {
-          const allUnapproved = unapproved.length === pdfInputs.length;
-          toast.error(
-            allUnapproved
-              ? `All ${unapproved.length} drawing${unapproved.length > 1 ? 's have' : ' has'} not been approved. Go to the Inputs tab and click "Approve for Quote" on each drawing before generating.`
-              : `${unapproved.length} of ${pdfInputs.length} drawing${unapproved.length > 1 ? 's have' : ' has'} not been approved: ${unapproved.join(', ')}. Approve all drawings before generating.`,
-            { duration: 6000 }
-          );
-          return;
-        }
+      }
+      if (unapproved.length > 0) {
+        toast.error(
+          `${unapproved.length} of ${allTakeoffs.length} drawing${unapproved.length > 1 ? 's' : ''} not approved: ${unapproved.join(', ')}. Click "Approve for Quote" on each drawing in the Inputs tab.`,
+          { duration: 6000 }
+        );
+        return;
       }
     }
 
