@@ -22,7 +22,7 @@ import {
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { trpc } from "@/lib/trpc";
-import { LayoutDashboard, LogOut, PanelLeft, Package, Settings, Crown, AlertTriangle, CreditCard } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Package, Settings, Crown, AlertTriangle, CreditCard, Mail } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -88,6 +88,51 @@ type DashboardLayoutContentProps = {
 function SubscriptionBanner() {
   const [, setLocation] = useLocation();
   const { data: sub } = trpc.subscription.status.useQuery();
+  const { user } = useAuth();
+  const [resending, setResending] = useState(false);
+
+  // Email verification banner
+  if (user && !(user as any).emailVerified) {
+    const handleResend = async () => {
+      setResending(true);
+      try {
+        const res = await fetch('/api/auth/resend-verification', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: user.email }),
+        });
+        if (res.ok) {
+          alert('Verification email sent! Check your inbox.');
+        } else {
+          const data = await res.json();
+          alert(data.error || 'Failed to resend');
+        }
+      } catch {
+        alert('Failed to resend verification email');
+      }
+      setResending(false);
+    };
+
+    return (
+      <div className="flex items-center justify-between px-4 py-2.5 text-sm bg-amber-500 text-white">
+        <div className="flex items-center gap-2">
+          <Mail className="h-4 w-4" />
+          <span className="font-medium">
+            Please verify your email to activate your free trial. Check your inbox for a verification link.
+          </span>
+        </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="h-7 text-xs font-bold"
+          onClick={handleResend}
+          disabled={resending}
+        >
+          {resending ? 'Sending...' : 'Resend Email'}
+        </Button>
+      </div>
+    );
+  }
 
   if (!sub) return null;
 
