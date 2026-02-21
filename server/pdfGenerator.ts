@@ -9,6 +9,7 @@ interface PDFQuoteData {
   user: User;
   organization?: Organization | null;
   tenderContext?: { assumptions?: any[] | null; exclusions?: any[] | null; [key: string]: any } | null;
+  trialWatermark?: boolean;
 }
 
 interface BrandColors {
@@ -622,17 +623,65 @@ function generateStyles(colors: BrandColors): string {
 }
 
 /**
+ * Generate trial watermark CSS and HTML overlay
+ */
+function getTrialWatermarkCSS(): string {
+  return `
+    .trial-watermark {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 9999;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .trial-watermark-text {
+      font-size: 72pt;
+      font-weight: 800;
+      color: rgba(220, 38, 38, 0.08);
+      transform: rotate(-35deg);
+      white-space: nowrap;
+      letter-spacing: 8px;
+      text-transform: uppercase;
+      user-select: none;
+    }
+    @media print {
+      .trial-watermark { position: fixed; }
+    }
+  `;
+}
+
+function getTrialWatermarkHTML(): string {
+  return `<div class="trial-watermark"><div class="trial-watermark-text">TRIAL — IdoYourQuotes.com</div></div>`;
+}
+
+/**
  * Generate HTML for a professional quote PDF
  * Routes to either simple or comprehensive format based on quote mode
  */
 export function generateQuoteHTML(data: PDFQuoteData): string {
-  const { quote } = data;
+  const { quote, trialWatermark } = data;
   const isComprehensive = (quote as any).quoteMode === "comprehensive";
 
+  let html: string;
   if (isComprehensive) {
-    return generateComprehensiveProposalHTML(data);
+    html = generateComprehensiveProposalHTML(data);
+  } else {
+    html = generateSimpleQuoteHTML(data);
   }
-  return generateSimpleQuoteHTML(data);
+
+  // Inject trial watermark if applicable
+  if (trialWatermark) {
+    // Inject watermark CSS before </head> and watermark HTML after <body>
+    html = html.replace('</head>', `<style>${getTrialWatermarkCSS()}</style></head>`);
+    html = html.replace(/<body[^>]*>/, (match) => `${match}${getTrialWatermarkHTML()}`);
+  }
+
+  return html;
 }
 
 /**

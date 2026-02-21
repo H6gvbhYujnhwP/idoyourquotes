@@ -1005,7 +1005,10 @@ Respond with valid JSON:
           console.log("[generatePDF] Generating HTML...");
           console.log("[generatePDF] Org brand colors:", org?.brandPrimaryColor, org?.brandSecondaryColor);
 
-          const html = generateQuoteHTML({ quote, lineItems, user, organization: org, tenderContext });
+          // Add trial watermark if org is on trial
+          const trialWatermark = org ? (org as any).subscriptionTier === 'trial' : false;
+
+          const html = generateQuoteHTML({ quote, lineItems, user, organization: org, tenderContext, trialWatermark });
           console.log("[generatePDF] HTML generated, length:", html.length);
           
           return { html };
