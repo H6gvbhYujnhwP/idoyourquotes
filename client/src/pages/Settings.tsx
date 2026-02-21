@@ -5,12 +5,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase, Shield, Clock, PoundSterling } from "lucide-react";
+import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase, Shield, Clock, PoundSterling, CreditCard, Users, Crown, AlertTriangle, Trash2, Mail, UserPlus, Check } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TRADE_SECTOR_OPTIONS } from "@/lib/tradeSectors";
 import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { useLocation } from "wouter";
 
 export default function Settings() {
   const { user, logout } = useAuth();
@@ -188,15 +189,57 @@ export default function Settings() {
     toast.success("Logo removed");
   };
 
+  // Tab state from URL params
+  const [location, setLocation] = useLocation();
+  const urlParams = new URLSearchParams(window.location.search);
+  const [activeTab, setActiveTab] = useState(urlParams.get('tab') || 'profile');
+
+  const switchTab = (tab: string) => {
+    setActiveTab(tab);
+    window.history.replaceState(null, '', `/settings?tab=${tab}`);
+  };
+
   return (
     <div className="space-y-6 max-w-3xl">
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
         <p className="text-muted-foreground">
-          Manage your account and company details.
+          Manage your account, billing, and team.
         </p>
       </div>
+
+      {/* Tab Navigation */}
+      <div className="flex gap-1 border-b">
+        {[
+          { id: 'profile', label: 'Profile', icon: User },
+          { id: 'billing', label: 'Billing', icon: CreditCard },
+          { id: 'team', label: 'Team', icon: Users },
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => switchTab(tab.id)}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === tab.id
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <tab.icon className="h-4 w-4" />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Billing Tab */}
+      {activeTab === 'billing' && <BillingTab />}
+
+      {/* Team Tab */}
+      {activeTab === 'team' && <TeamTab />}
+
+      {/* Profile Tab - existing content */}
+      {activeTab === 'profile' && (
+      <>
 
       {/* Profile Section */}
       <Card>
@@ -659,6 +702,341 @@ export default function Settings() {
           </Button>
         </CardContent>
       </Card>
+      </>
+      )}
+    </div>
+  );
+}
+
+// ============ BILLING TAB ============
+
+function BillingTab() {
+  const [, setLocation] = useLocation();
+  const { data: sub, isLoading } = trpc.subscription.status.useQuery();
+
+  const createPortal = trpc.subscription.createPortal.useMutation({
+    onSuccess: (data) => {
+      window.location.href = data.url;
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!sub) return null;
+
+  const tierColors: Record<string, string> = {
+    trial: '#0d9488',
+    solo: '#0d9488',
+    pro: '#3b82f6',
+    business: '#d97706',
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Current Plan */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Crown className="h-5 w-5" style={{ color: tierColors[sub.tier] || '#0d9488' }} />
+            Current Plan
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between p-4 rounded-xl border-2" style={{ borderColor: tierColors[sub.tier] || '#e5e7eb' }}>
+            <div>
+              <h3 className="text-xl font-bold" style={{ color: tierColors[sub.tier] }}>{sub.tierName}</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                {sub.tier === 'trial' ? (
+                  sub.isTrialExpired
+                    ? 'Trial expired — choose a plan to continue'
+                    : `Free trial — ${sub.trialDaysRemaining} day${sub.trialDaysRemaining !== 1 ? 's' : ''} remaining`
+                ) : sub.cancelAtPeriodEnd ? (
+                  `Cancels on ${new Date(sub.currentPeriodEnd).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                ) : (
+                  `Active — renews ${sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}`
+                )}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => setLocation('/pricing')}
+            >
+              {sub.tier === 'trial' || sub.isTrialExpired ? 'Choose a Plan' : 'Change Plan'}
+            </Button>
+          </div>
+
+          {/* Usage */}
+          {sub.maxQuotesPerMonth !== -1 && (
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Quotes this month</span>
+                <span className="font-medium">{sub.currentQuoteCount} / {sub.maxQuotesPerMonth}</span>
+              </div>
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{
+                    width: `${Math.min(100, (sub.currentQuoteCount / sub.maxQuotesPerMonth) * 100)}%`,
+                    backgroundColor: sub.currentQuoteCount >= sub.maxQuotesPerMonth ? '#ef4444' : tierColors[sub.tier],
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">Team members</span>
+            <span className="font-medium">{sub.currentUsers} / {sub.maxUsers}</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Manage Billing */}
+      {sub.hasStripeCustomer && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CreditCard className="h-5 w-5" />
+              Manage Billing
+            </CardTitle>
+            <CardDescription>
+              Update payment method, view invoices, or cancel your subscription
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              onClick={() => createPortal.mutate()}
+              disabled={createPortal.isPending}
+            >
+              {createPortal.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <CreditCard className="h-4 w-4 mr-2" />
+              )}
+              Open Billing Portal
+            </Button>
+            <p className="text-xs text-muted-foreground mt-2">
+              Manage your subscription through Stripe's secure portal
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Trial info card */}
+      {sub.tier === 'trial' && !sub.isTrialExpired && (
+        <Card className="border-teal-200 bg-teal-50">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-3">
+              <Shield className="h-5 w-5 text-teal-600 mt-0.5" />
+              <div>
+                <h4 className="font-semibold text-teal-800">Your trial is active</h4>
+                <p className="text-sm text-teal-700 mt-1">
+                  You have full access to Solo features for {sub.trialDaysRemaining} more day{sub.trialDaysRemaining !== 1 ? 's' : ''}. 
+                  No credit card required — only enter card details after 14 days if you're happy. We know you'll love it.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ============ TEAM TAB ============
+
+function TeamTab() {
+  const { user } = useAuth();
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'member' | 'admin'>('member');
+
+  const { data: sub } = trpc.subscription.status.useQuery();
+  const { data: teamMembers, refetch: refetchTeam } = trpc.subscription.teamMembers.useQuery();
+
+  const inviteMember = trpc.subscription.inviteTeamMember.useMutation({
+    onSuccess: () => {
+      toast.success('Team member added');
+      setInviteEmail('');
+      refetchTeam();
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  const removeMember = trpc.subscription.removeTeamMember.useMutation({
+    onSuccess: () => {
+      toast.success('Team member removed');
+      refetchTeam();
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  const changeRole = trpc.subscription.changeTeamMemberRole.useMutation({
+    onSuccess: () => {
+      toast.success('Role updated');
+      refetchTeam();
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  const handleInvite = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteEmail.trim()) return;
+    inviteMember.mutate({ email: inviteEmail.trim(), role: inviteRole });
+  };
+
+  const canManageTeam = sub && sub.tier !== 'solo' && sub.tier !== 'trial';
+  const isAtLimit = sub && sub.currentUsers >= sub.maxUsers;
+
+  return (
+    <div className="space-y-6">
+      {/* Team info */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            Team Members
+          </CardTitle>
+          <CardDescription>
+            {sub ? `${sub.currentUsers} of ${sub.maxUsers} seats used on your ${sub.tierName} plan` : 'Loading...'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Tier restriction message */}
+          {(sub?.tier === 'solo' || sub?.tier === 'trial') && (
+            <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200">
+              <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-amber-800">
+                  {sub.tier === 'trial' ? 'Trial' : 'Solo'} plan — single user only
+                </p>
+                <p className="text-xs text-amber-600 mt-1">
+                  Upgrade to Pro (up to 3 users) or Business (up to 10 users) to invite team members.
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-2 text-xs"
+                  onClick={() => window.location.href = '/pricing'}
+                >
+                  View Plans
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Member list */}
+          <div className="divide-y">
+            {teamMembers?.map((member: any) => (
+              <div key={member.id} className="flex items-center justify-between py-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-full bg-gray-100 flex items-center justify-center text-sm font-medium text-gray-600">
+                    {member.name?.charAt(0)?.toUpperCase() || member.email?.charAt(0)?.toUpperCase() || '?'}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">{member.name || member.email}</p>
+                    <p className="text-xs text-muted-foreground">{member.email}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {member.role === 'owner' ? (
+                    <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-100 text-gray-600">Owner</span>
+                  ) : (
+                    <>
+                      <Select
+                        value={member.role}
+                        onValueChange={(val) => changeRole.mutate({ memberId: member.memberId, role: val as 'admin' | 'member' })}
+                        disabled={!canManageTeam}
+                      >
+                        <SelectTrigger className="h-7 w-24 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="admin">Admin</SelectItem>
+                          <SelectItem value="member">Member</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {canManageTeam && member.userId !== user?.id && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                          onClick={() => removeMember.mutate({ memberId: member.memberId })}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Invite form */}
+      {canManageTeam && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5" />
+              Invite Team Member
+            </CardTitle>
+            <CardDescription>
+              {isAtLimit
+                ? `You've reached your ${sub?.maxUsers}-user limit. Upgrade for more seats.`
+                : 'Add a new member to your organisation'
+              }
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleInvite} className="flex gap-3">
+              <Input
+                type="email"
+                placeholder="colleague@company.com"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                disabled={!!isAtLimit}
+                className="flex-1"
+              />
+              <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as 'member' | 'admin')} disabled={!!isAtLimit}>
+                <SelectTrigger className="w-28">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="member">Member</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button type="submit" disabled={!!isAtLimit || inviteMember.isPending || !inviteEmail.trim()}>
+                {inviteMember.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <UserPlus className="h-4 w-4" />
+                )}
+              </Button>
+            </form>
+            <p className="text-xs text-muted-foreground mt-2">
+              The user must already have an IdoYourQuotes account. They'll be added to your organisation immediately.
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

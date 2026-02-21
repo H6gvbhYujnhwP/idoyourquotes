@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { FileText, Loader2, AlertCircle } from "lucide-react";
+import { Loader2, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function Login() {
@@ -53,6 +53,9 @@ export default function Login() {
               alt="IdoYourQuotes" 
               className="h-12 object-contain"
             />
+          </Link>
+          <Link href="/pricing" className="text-sm text-muted-foreground hover:text-foreground font-medium">
+            View Pricing
           </Link>
         </div>
       </header>
@@ -113,7 +116,7 @@ export default function Login() {
               <p className="text-sm text-muted-foreground text-center">
                 Don't have an account?{" "}
                 <Link href="/register" className="text-primary hover:underline font-medium">
-                  Create one
+                  Start your free 14-day trial
                 </Link>
               </p>
             </CardFooter>

@@ -74,18 +74,21 @@ export default function Home() {
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Button size="lg" className="text-lg px-8 py-6" onClick={handleGetStarted}>
-                Start Quoting
+                Start Your Free 14-Day Trial
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
               <Button 
                 size="lg" 
                 variant="outline" 
                 className="text-lg px-8 py-6"
-                onClick={() => document.getElementById('demo-video')?.scrollIntoView({ behavior: 'smooth' })}
+                onClick={() => setLocation("/pricing")}
               >
-                See How It Works
+                View Pricing
               </Button>
             </div>
+            <p className="text-sm text-muted-foreground mt-4">
+              No credit card required. Only pay after 14 days if you're happy — we know you'll love it.
+            </p>
           </div>
         </div>
       </section>
