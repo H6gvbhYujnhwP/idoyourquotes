@@ -54,6 +54,7 @@ import {
 } from "./db";
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { TRADE_PRESETS, TradePresetKey } from "./tradePresets";
+import { subscriptionRouter } from "./services/subscriptionRouter";
 import type { ComprehensiveConfig, InsertQuote } from "../drizzle/schema";
 
 /**
@@ -72,6 +73,7 @@ async function getQuoteWithOrgAccess(quoteId: number, userId: number): Promise<A
 
 export const appRouter = router({
   system: systemRouter,
+  subscription: subscriptionRouter,
   
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
