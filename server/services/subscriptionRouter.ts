@@ -8,7 +8,7 @@
  *     subscription: subscriptionRouter,
  */
 import { z } from "zod";
-import { router, protectedProcedure, publicProcedure } from "./trpc"; // adjust import path
+import { router, protectedProcedure, publicProcedure } from "../_core/trpc";
 import {
   createCheckoutSession,
   createPortalSession,
@@ -19,8 +19,8 @@ import {
   canAddTeamMember,
   canAddCatalogItem,
   type SubscriptionTier,
-} from "./services/stripe";
-import { getUserPrimaryOrg, getOrgMembersByOrgId } from "./db";
+} from "./stripe";
+import { getUserPrimaryOrg, getOrgMembersByOrgId } from "../db";
 
 export const subscriptionRouter = router({
   // Get current subscription status for the org
