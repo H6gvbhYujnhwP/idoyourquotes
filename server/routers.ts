@@ -55,6 +55,7 @@ import {
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { TRADE_PRESETS, TradePresetKey } from "./tradePresets";
 import { subscriptionRouter } from "./services/subscriptionRouter";
+import { canCreateQuote } from "./services/stripe";
 import type { ComprehensiveConfig, InsertQuote } from "../drizzle/schema";
 
 /**
@@ -262,6 +263,20 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         // Get user's organization to set orgId
         const org = await getUserPrimaryOrg(ctx.user.id);
+        
+        // Subscription check — enforce quote limits
+        if (org) {
+          const check = canCreateQuote(org as any);
+          if (!check.allowed) {
+            throw new Error(check.reason || 'Quote limit reached. Please upgrade your plan.');
+          }
+          // Reset count if 30+ days since last reset, then increment
+          const newCount = check.shouldResetCount ? 1 : ((org as any).monthlyQuoteCount || 0) + 1;
+          await updateOrganization(org.id, {
+            monthlyQuoteCount: newCount,
+            ...(check.shouldResetCount ? { quoteCountResetAt: new Date() } : {}),
+          } as any);
+        }
         
         // Auto-populate T&C from user's default if not provided
         const terms = input?.terms || ctx.user.defaultTerms || undefined;

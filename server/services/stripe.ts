@@ -372,8 +372,9 @@ export function canCreateQuote(org: {
   subscriptionStatus: string;
   maxQuotesPerMonth: number | null;
   monthlyQuoteCount: number | null;
+  quoteCountResetAt: Date | null;
   trialEndsAt: Date | null;
-}): { allowed: boolean; reason?: string } {
+}): { allowed: boolean; reason?: string; shouldResetCount?: boolean } {
   // Check subscription is active or trialing
   if (org.subscriptionStatus === 'canceled') {
     return { allowed: false, reason: 'Your subscription has been cancelled. Please resubscribe to create quotes.' };
@@ -390,16 +391,26 @@ export function canCreateQuote(org: {
     return { allowed: false, reason: 'Your 14-day trial has expired. Choose a plan to continue.' };
   }
 
+  // Check if monthly count needs resetting (30 days since last reset)
+  let shouldResetCount = false;
+  let currentCount = org.monthlyQuoteCount ?? 0;
+  if (org.quoteCountResetAt) {
+    const daysSinceReset = (Date.now() - new Date(org.quoteCountResetAt).getTime()) / (1000 * 60 * 60 * 24);
+    if (daysSinceReset >= 30) {
+      shouldResetCount = true;
+      currentCount = 0;
+    }
+  }
+
   // Check monthly quota (-1 = unlimited)
   const max = org.maxQuotesPerMonth ?? 10;
   if (max !== -1) {
-    const count = org.monthlyQuoteCount ?? 0;
-    if (count >= max) {
+    if (currentCount >= max) {
       return { allowed: false, reason: `You've reached your monthly limit of ${max} quotes. Upgrade your plan for more.` };
     }
   }
 
-  return { allowed: true };
+  return { allowed: true, shouldResetCount };
 }
 
 /**
