@@ -8,6 +8,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import Pricing from "./pages/Pricing";
 import Dashboard from "./pages/Dashboard";
 import QuoteWorkspace from "./pages/QuoteWorkspace";
 import Catalog from "./pages/Catalog";
@@ -22,6 +23,7 @@ function Router() {
       {/* Auth pages */}
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
+      <Route path="/pricing" component={Pricing} />
       
       {/* Protected dashboard routes */}
       <Route path="/dashboard">

@@ -43,6 +43,9 @@ export default function Home() {
             />
           </div>
           <div className="flex items-center gap-4">
+            <Button variant="ghost" onClick={() => setLocation("/pricing")}>
+              Pricing
+            </Button>
             {loading ? null : user ? (
               <Button onClick={() => setLocation("/dashboard")}>
                 Go to Dashboard
@@ -268,8 +271,16 @@ export default function Home() {
               className="text-lg px-8 py-6"
               onClick={handleGetStarted}
             >
-              Get Started Free
+              Start Your Free 14-Day Trial
               <ArrowRight className="ml-2 h-5 w-5" />
+            </Button>
+            <Button 
+              size="lg" 
+              variant="ghost" 
+              className="text-lg px-8 py-6 text-primary-foreground/80 hover:text-primary-foreground"
+              onClick={() => setLocation("/pricing")}
+            >
+              View Pricing
             </Button>
           </div>
         </div>

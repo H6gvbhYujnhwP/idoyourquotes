@@ -21,7 +21,8 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Package, Settings } from "lucide-react";
+import { trpc } from "@/lib/trpc";
+import { LayoutDashboard, LogOut, PanelLeft, Package, Settings, Crown, AlertTriangle, CreditCard } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -48,6 +49,7 @@ export default function DashboardLayout({
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
   });
   const { loading, user } = useAuth();
+  const [, setLocation] = useLocation();
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
@@ -57,30 +59,10 @@ export default function DashboardLayout({
     return <DashboardLayoutSkeleton />
   }
 
+  // Redirect to home page if not logged in
   if (!user) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
-          <div className="flex flex-col items-center gap-6">
-            <h1 className="text-2xl font-semibold tracking-tight text-center">
-              Sign in to continue
-            </h1>
-            <p className="text-sm text-muted-foreground text-center max-w-sm">
-              Access to this dashboard requires authentication. Continue to launch the login flow.
-            </p>
-          </div>
-          <Button
-            onClick={() => {
-              window.location.href = "/login";
-            }}
-            size="lg"
-            className="w-full shadow-lg hover:shadow-xl transition-all"
-          >
-            Sign in
-          </Button>
-        </div>
-      </div>
-    );
+    window.location.href = "/";
+    return null;
   }
 
   return (
@@ -102,6 +84,99 @@ type DashboardLayoutContentProps = {
   children: React.ReactNode;
   setSidebarWidth: (width: number) => void;
 };
+
+function SubscriptionBanner() {
+  const [, setLocation] = useLocation();
+  const { data: sub } = trpc.subscription.status.useQuery();
+
+  if (!sub) return null;
+
+  // Trial banner
+  if (sub.tier === 'trial' && !sub.isTrialExpired && sub.trialDaysRemaining > 0) {
+    return (
+      <div className="flex items-center justify-between px-4 py-2 text-sm" style={{ backgroundColor: '#0d9488', color: 'white' }}>
+        <div className="flex items-center gap-2">
+          <Crown className="h-4 w-4" />
+          <span className="font-medium">
+            Free trial — {sub.trialDaysRemaining} day{sub.trialDaysRemaining !== 1 ? 's' : ''} remaining
+          </span>
+        </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="h-7 text-xs font-bold"
+          onClick={() => setLocation('/pricing')}
+        >
+          <CreditCard className="h-3 w-3 mr-1" />
+          Choose a plan
+        </Button>
+      </div>
+    );
+  }
+
+  // Trial expired
+  if (sub.tier === 'trial' && sub.isTrialExpired) {
+    return (
+      <div className="flex items-center justify-between px-4 py-2 text-sm bg-red-600 text-white">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4" />
+          <span className="font-medium">Your free trial has expired. Subscribe to continue using IdoYourQuotes.</span>
+        </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="h-7 text-xs font-bold"
+          onClick={() => setLocation('/pricing')}
+        >
+          Choose a plan
+        </Button>
+      </div>
+    );
+  }
+
+  // Past due
+  if (sub.status === 'past_due') {
+    return (
+      <div className="flex items-center justify-between px-4 py-2 text-sm bg-amber-600 text-white">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4" />
+          <span className="font-medium">Payment failed. Please update your payment method to avoid service interruption.</span>
+        </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="h-7 text-xs font-bold"
+          onClick={() => setLocation('/settings?tab=billing')}
+        >
+          Update payment
+        </Button>
+      </div>
+    );
+  }
+
+  // Cancelling at period end
+  if (sub.cancelAtPeriodEnd && sub.currentPeriodEnd) {
+    const endDate = new Date(sub.currentPeriodEnd).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    return (
+      <div className="flex items-center justify-between px-4 py-2 text-sm bg-gray-700 text-white">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4" />
+          <span className="font-medium">Your {sub.tierName} plan cancels on {endDate}.</span>
+        </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="h-7 text-xs font-bold"
+          onClick={() => setLocation('/settings?tab=billing')}
+        >
+          Resume plan
+        </Button>
+      </div>
+    );
+  }
+
+  return null;
+}
 
 function DashboardLayoutContent({
   children,
@@ -246,6 +321,7 @@ function DashboardLayoutContent({
       </div>
 
       <SidebarInset>
+        <SubscriptionBanner />
         {isMobile && (
           <div className="flex border-b h-14 items-center justify-between bg-background/95 px-2 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
             <div className="flex items-center gap-2">
