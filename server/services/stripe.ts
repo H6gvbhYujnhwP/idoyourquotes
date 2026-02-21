@@ -104,6 +104,7 @@ export async function createCheckoutSession(params: {
     automatic_tax: { enabled: true },
     customer_update: {
       address: 'auto',
+      name: 'auto',
     },
     tax_id_collection: { enabled: true },
     metadata: { orgId: String(params.orgId), tier: params.tier },
