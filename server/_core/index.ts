@@ -4,10 +4,11 @@ import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
-import { registerStripeWebhook } from "../services/stripeWebhook";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { registerStripeWebhook } from "../services/stripeWebhook";
+import { startEmailScheduler } from "../services/emailScheduler";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -32,7 +33,7 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
 
-  // Stripe webhook needs raw body BEFORE json parser
+  // Stripe webhook MUST be registered BEFORE body parsers (needs raw body)
   app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
   registerStripeWebhook(app);
 
@@ -66,6 +67,9 @@ async function startServer() {
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
   });
+
+  // Start automated email scheduler
+  startEmailScheduler();
 }
 
 startServer().catch(console.error);
