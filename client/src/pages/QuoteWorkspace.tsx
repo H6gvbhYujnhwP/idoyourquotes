@@ -139,6 +139,7 @@ export default function QuoteWorkspace() {
   const [originalTerms, setOriginalTerms] = useState("");
   const [voiceNoteCount, setVoiceNoteCount] = useState(0);
   const [selectedInputId, setSelectedInputId] = useState<number | null>(null);
+  const [isDictating, setIsDictating] = useState(false);
 
   // File input refs (legacy single-file refs kept for backward compat)
   const pdfInputRef = useRef<HTMLInputElement>(null);
@@ -1309,10 +1310,15 @@ export default function QuoteWorkspace() {
                 Ask AI
               </button>
               <button
-                onClick={() => setActiveTab("inputs")}
+                onClick={() => {
+                  setActiveTab("inputs");
+                  setIsDictating(prev => !prev);
+                }}
                 className={cn(
                   "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all",
-                  "text-blue-700 hover:bg-blue-100 border border-blue-200"
+                  isDictating
+                    ? "bg-blue-600 text-white font-medium shadow-md"
+                    : "text-blue-700 hover:bg-blue-100 border border-blue-200"
                 )}
               >
                 <Mic className="h-3.5 w-3.5" />
@@ -1529,13 +1535,19 @@ export default function QuoteWorkspace() {
               </div>
             </div>
 
-            {/* Voice Dictation — inside the input box */}
-            <div className="px-4 py-3" style={{ borderTop: `1px solid ${brand.border}` }}>
-              <DictationButton
-                onCommand={handleDictationCommand}
-                disabled={!storageStatus?.configured}
-              />
-            </div>
+            {/* Voice Dictation — shows transcript panel when dictating is active */}
+            {isDictating && (
+              <div className="px-4 py-3" style={{ borderTop: `1px solid ${brand.border}` }}>
+                <DictationButton
+                  onCommand={handleDictationCommand}
+                  disabled={!storageStatus?.configured}
+                  autoStart={isDictating}
+                  onListeningChange={(listening) => {
+                    if (!listening) setIsDictating(false);
+                  }}
+                />
+              </div>
+            )}
           </div>
 
           {/* Upload Queue */}

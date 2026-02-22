@@ -118,6 +118,10 @@ interface DictationButtonProps {
   variant?: "default" | "inline";
   /** Simple mode: just returns text, no command detection */
   onTranscript?: (text: string) => void;
+  /** Auto-start listening when mounted or when this value changes to true */
+  autoStart?: boolean;
+  /** Called when listening stops (Done/Cancel/error) — useful to reset parent state */
+  onListeningChange?: (isListening: boolean) => void;
 }
 
 export default function DictationButton({ 
@@ -126,6 +130,8 @@ export default function DictationButton({
   disabled = false, 
   className = "",
   variant = "default",
+  autoStart = false,
+  onListeningChange,
 }: DictationButtonProps) {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState("");
@@ -247,6 +253,18 @@ export default function DictationButton({
       }
     };
   }, []);
+
+  // Auto-start listening when autoStart prop becomes true
+  useEffect(() => {
+    if (autoStart && !isListening && !disabled) {
+      startListening();
+    }
+  }, [autoStart]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Notify parent when listening state changes
+  useEffect(() => {
+    onListeningChange?.(isListening);
+  }, [isListening]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isSupported) {
     return null;
