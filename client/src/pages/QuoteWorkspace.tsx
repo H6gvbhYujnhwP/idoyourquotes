@@ -1826,29 +1826,6 @@ export default function QuoteWorkspace() {
                   )}
                 </div>
 
-                {/* Takeoff chips */}
-                {takeoff && totalCount > 0 && (
-                  <div className="px-4 py-3 flex flex-wrap gap-2" style={{ backgroundColor: brand.white }}>
-                    {Object.entries(counts).map(([code, count]) => {
-                      const chipColor = symbolColors[code] || '#888';
-                      const desc = symbolDescs[code] || code;
-                      return (
-                        <div
-                          key={code}
-                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border"
-                          style={{ borderColor: `${chipColor}30`, backgroundColor: `${chipColor}06` }}
-                        >
-                          <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: chipColor }} />
-                          <span className="text-xs font-extrabold" style={{ color: chipColor }}>{count}</span>
-                          <span className="text-[10px] font-bold" style={{ color: brand.navyMuted }}>{code}</span>
-                          <span className="text-[10px]" style={{ color: '#cbd5e1' }}>—</span>
-                          <span className="text-[10px] font-medium" style={{ color: brand.navyMuted }}>{desc}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
                 {/* Full TakeoffPanel — drawing viewer, questions, approve/lock, chat */}
                 {selectedInput.inputType === "pdf" && selectedInput.processingStatus === "completed" && (
                   <div className="border-t" style={{ borderColor: brand.border }}>
