@@ -1518,13 +1518,15 @@ export default function QuoteWorkspace() {
                 />
               </div>
             </div>
-          </div>
 
-          {/* Voice Dictation */}
-          <DictationButton
-            onCommand={handleDictationCommand}
-            disabled={!storageStatus?.configured}
-          />
+            {/* Voice Dictation — inside the input box */}
+            <div className="px-4 py-3" style={{ borderTop: `1px solid ${brand.border}` }}>
+              <DictationButton
+                onCommand={handleDictationCommand}
+                disabled={!storageStatus?.configured}
+              />
+            </div>
+          </div>
 
           {/* Upload Queue */}
           {uploadQueue.length > 0 && (
