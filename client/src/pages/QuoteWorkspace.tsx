@@ -1,5 +1,4 @@
 import { useAuth } from "@/_core/hooks/useAuth";
-import TakeoffPanel from "@/components/TakeoffPanel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -51,14 +50,13 @@ import { useLocation, useParams } from "wouter";
 import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { brand, fileTypeConfig, symbolColors as brandSymbolColors } from "@/lib/brandTheme";
-import FileIcon from "@/components/FileIcon";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import TimelineTab from "@/components/comprehensive/TimelineTab";
 import SiteQualityTab from "@/components/comprehensive/SiteQualityTab";
 import DocumentsTab from "@/components/comprehensive/DocumentsTab";
+import DictationButton from "@/components/DictationButton";
 
 type QuoteStatus = "draft" | "sent" | "accepted" | "declined";
 
@@ -192,11 +190,8 @@ export default function QuoteWorkspace() {
 
   // Generate Draft state
   const [userPrompt, setUserPrompt] = useState(""); // For pasting email/instructions
-  const [processingInstructions, setProcessingInstructions] = useState(""); // For telling AI what to look for when analysing uploads
   const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
   const [processingInputId, setProcessingInputId] = useState<number | null>(null);
-  const [reanalyzeTriggers, setReanalyzeTriggers] = useState<Record<number, number>>({}); // per-input trigger counters
-  const [selectedInputId, setSelectedInputId] = useState<number | null>(null);
 
   // Generate Email modal state
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -232,12 +227,6 @@ export default function QuoteWorkspace() {
 
   // Fetch catalog items for quick-add
   const { data: catalogItems } = trpc.catalog.list.useQuery();
-
-  // Fetch all takeoffs for this quote to check approval status
-  const { data: allTakeoffs } = trpc.electricalTakeoff.list.useQuery(
-    { quoteId },
-    { enabled: quoteId > 0, refetchOnWindowFocus: true, staleTime: 5000 }
-  );
 
   const updateQuote = trpc.quotes.update.useMutation({
     onSuccess: () => {
@@ -480,24 +469,6 @@ export default function QuoteWorkspace() {
   };
 
   const handleGenerateDraft = () => {
-    // Check if PDF inputs with takeoffs have been approved
-    if (inputs && inputs.length > 0 && allTakeoffs && allTakeoffs.length > 0) {
-      const unapproved: string[] = [];
-      for (const takeoff of allTakeoffs as any[]) {
-        if (takeoff.status !== 'verified') {
-          const matchingInput = inputs.find((i: QuoteInput) => String(i.id) === String(takeoff.inputId));
-          unapproved.push(matchingInput?.filename || `Drawing #${takeoff.inputId}`);
-        }
-      }
-      if (unapproved.length > 0) {
-        toast.error(
-          `${unapproved.length} of ${allTakeoffs.length} drawing${unapproved.length > 1 ? 's' : ''} not approved: ${unapproved.join(', ')}. Click "Approve for Quote" on each drawing in the Inputs tab.`,
-          { duration: 6000 }
-        );
-        return;
-      }
-    }
-
     // Check if line items already exist - show confirmation dialog
     if (lineItems && lineItems.length > 0) {
       if (!window.confirm("This will replace all existing line items. Continue?")) {
@@ -558,9 +529,6 @@ export default function QuoteWorkspace() {
       if ((fullQuote.quote as any).userPrompt) {
         setUserPrompt((fullQuote.quote as any).userPrompt);
       }
-      if ((fullQuote.quote as any).processingInstructions) {
-        setProcessingInstructions((fullQuote.quote as any).processingInstructions);
-      }
     }
     if (fullQuote?.tenderContext) {
       setTenderNotes(fullQuote.tenderContext.notes || "");
@@ -585,7 +553,6 @@ export default function QuoteWorkspace() {
         terms,
         taxRate,
         userPrompt: userPrompt || null,
-        processingInstructions: processingInstructions || null,
       });
     } finally {
       setIsSaving(false);
@@ -1228,18 +1195,6 @@ export default function QuoteWorkspace() {
                 <Sparkles className="h-3.5 w-3.5" />
                 Ask AI
               </button>
-              <button
-                onClick={() => setActiveTab("instructions")}
-                className={cn(
-                  "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all",
-                  activeTab === "instructions"
-                    ? "bg-purple-600 text-white font-medium shadow-md"
-                    : "text-purple-700 hover:bg-purple-100 border border-purple-200"
-                )}
-              >
-                <Mail className="h-3.5 w-3.5" />
-                Instructions
-              </button>
             </div>
             {/* Arrow connector */}
             <div className="hidden md:flex absolute -right-3 top-1/2 -translate-y-1/2 z-10">
@@ -1353,288 +1308,352 @@ export default function QuoteWorkspace() {
           </div>
         </div>
 
-        {/* INPUTS TAB — Style C: Bold Headers + Clean Body */}
-        <TabsContent value="inputs" className="space-y-5">
-
-          {/* Storage warning */}
-          {storageStatus && !storageStatus.configured && (
-            <div className="flex items-center gap-3 p-3 rounded-xl border" style={{ backgroundColor: '#fffbeb', borderColor: '#fde68a' }}>
-              <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0" />
-              <p className="text-xs font-medium text-amber-800">File storage not configured. Contact support to enable uploads.</p>
-            </div>
-          )}
-
-          {/* Section header with teal accent bar */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-1 h-8 rounded-full" style={{ backgroundColor: brand.teal }} />
-              <div>
-                <h2 className="text-lg font-extrabold tracking-tight" style={{ color: brand.navy }}>Documents</h2>
-                <p className="text-[10px] font-medium" style={{ color: brand.navyMuted }}>
-                  {inputs?.length || 0} files{inputs && inputs.length > 0 ? ` • ${inputs.filter((i: QuoteInput) => i.processingStatus === "completed").length} analysed` : ''}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Upload + Instructions combined panel — Style D gradient */}
-          <div className="rounded-xl overflow-hidden" style={{ border: `1.5px solid ${brand.border}` }}>
-            <div className="flex items-center gap-3 px-4 py-2.5" style={{ background: `linear-gradient(135deg, ${brand.navy} 0%, #1e3a5f 100%)` }}>
-              <button
-                className="flex items-center gap-2 px-4 py-2 text-white text-xs font-bold rounded-lg shadow-sm transition-colors whitespace-nowrap"
-                style={{ backgroundColor: brand.teal }}
-                onClick={() => multiFileInputRef.current?.click()}
-                disabled={!storageStatus?.configured}
-              >
-                <Upload className="w-4 h-4" />
-                Upload Files
-              </button>
-              <div
-                className={cn(
-                  "flex-1 flex items-center gap-2 px-3 py-2 border border-dashed rounded-lg text-xs transition-all cursor-pointer",
-                  isDragging ? "border-white/40 bg-white/10" : "border-white/20 hover:border-white/40"
-                )}
-                style={{ color: 'rgba(255,255,255,0.5)' }}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onClick={() => multiFileInputRef.current?.click()}
-              >
-                <span className="font-medium">{isDragging ? "Drop files here" : "Drop files here"}</span>
-                <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>PDF, Word, Excel, Images, Audio — max 3</span>
-              </div>
-            </div>
-            <div className="px-4 py-3" style={{ backgroundColor: '#f8fafc' }}>
-              <div className="flex items-center justify-between mb-1.5">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm" style={{ color: brand.teal }}>✦</span>
-                  <span className="text-[11px] font-bold" style={{ color: brand.navy }}>Processing Instructions</span>
-                  {processingInstructions && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full" style={{ backgroundColor: `${brand.teal}15`, color: brand.teal }}>Active</span>}
+        {/* INPUTS TAB */}
+        <TabsContent value="inputs" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Upload className="h-5 w-5" />
+                Evidence & Inputs
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Upload tender documents, images, audio recordings, or add text notes.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Storage status warning */}
+              {storageStatus && !storageStatus.configured && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-medium text-amber-800">File storage not configured</p>
+                      <p className="text-sm text-amber-700 mt-1">
+                        File uploads are disabled. Contact support to enable file storage.
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                {processingInstructions && (
-                  <button
-                    className="text-[10px] font-bold px-2.5 py-1 rounded-md text-white transition-colors"
-                    style={{ backgroundColor: brand.teal }}
-                    onClick={async () => {
-                      await updateQuote.mutateAsync({ id: quoteId, processingInstructions: processingInstructions || null });
-                      const completedInputs = inputs?.filter((i: QuoteInput) => i.processingStatus === "completed") || [];
-                      const newTriggers: Record<number, number> = { ...reanalyzeTriggers };
-                      completedInputs.forEach((input: QuoteInput) => { newTriggers[input.id] = (newTriggers[input.id] || 0) + 1; });
-                      setReanalyzeTriggers(newTriggers);
-                      toast.success(`Instructions saved. Re-analysing ${completedInputs.length} input${completedInputs.length > 1 ? 's' : ''}`);
-                    }}
-                  >
-                    Apply All
-                  </button>
-                )}
+              )}
+
+              {/* Upload Tips + Drag & Drop Zone — side by side */}
+              <div className="flex gap-4 items-stretch">
+                {/* Upload Tips Banner */}
+                <Alert className="bg-blue-50 border-blue-200 flex-1 min-w-0">
+                  <AlertCircle className="h-4 w-4 text-blue-600" />
+                  <AlertTitle className="text-blue-900">Upload Tips</AlertTitle>
+                  <AlertDescription className="text-xs text-blue-800 space-y-1">
+                    <p><strong>Maximum 3 files at once</strong> to avoid rate limits.</p>
+                    <p>Large PDFs (20+ pages) are automatically split into sections and processed sequentially. This may take 30-90 seconds but ensures reliable processing.</p>
+                    <p>Large tender packages? Upload in batches of 3, wait for processing, then upload the next batch.</p>
+                  </AlertDescription>
+                </Alert>
+
+                {/* Drag & Drop Upload Zone */}
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  className={cn(
+                    "border-2 border-dashed rounded-lg p-6 text-center transition-all cursor-pointer flex-1 min-w-0 flex flex-col items-center justify-center",
+                    isDragging
+                      ? "border-primary bg-primary/5 scale-[1.01]"
+                      : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30",
+                    !storageStatus?.configured && "opacity-50 pointer-events-none"
+                  )}
+                  onClick={() => multiFileInputRef.current?.click()}
+                >
+                  <Upload className="h-10 w-10 mb-3 text-muted-foreground" />
+                  <h3 className="text-base font-semibold mb-1">
+                    {isDragging ? "Drop files here" : "Drop files here or click to browse"}
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    <strong>Select up to 3 files at once</strong> (Ctrl+Click or Shift+Click).
+                    Supports PDF, Word, Excel, Images, and Audio.
+                  </p>
+                  <div className="flex justify-center gap-4 mt-3 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5 text-red-500" /> PDF</span>
+                    <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5 text-blue-600" /> Word</span>
+                    <span className="flex items-center gap-1"><FileSpreadsheet className="h-3.5 w-3.5 text-green-600" /> Excel</span>
+                    <span className="flex items-center gap-1"><FileImage className="h-3.5 w-3.5 text-blue-500" /> Images</span>
+                    <span className="flex items-center gap-1"><Mic className="h-3.5 w-3.5 text-green-500" /> Audio</span>
+                  </div>
+                </div>
               </div>
-              <div className="flex rounded-lg overflow-hidden" style={{ border: `1.5px solid ${processingInstructions ? brand.tealBorder : brand.border}` }}>
-                <div className="w-1 flex-shrink-0" style={{ backgroundColor: brand.teal }} />
-                <textarea
-                  value={processingInstructions}
-                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setProcessingInstructions(e.target.value)}
-                  onBlur={() => {
-                    updateQuote.mutate({ id: quoteId, processingInstructions: processingInstructions || null });
-                  }}
-                  className="w-full px-3 py-2 text-sm border-0 focus:ring-0 resize-none"
-                  style={{ color: brand.navy, backgroundColor: brand.white }}
-                  rows={2}
-                  placeholder={"Tell the AI what to include or exclude when analysing drawings...\ne.g. Lighting only — exclude fire alarm, power, access control and CCTV"}
+
+              {/* Voice Dictation */}
+              <DictationButton
+                onTranscript={(text) => {
+                  createInput.mutate({
+                    quoteId,
+                    inputType: "audio",
+                    content: text,
+                    filename: `Voice Dictation — ${new Date().toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+                  });
+                  toast.success("Voice dictation saved as input");
+                }}
+                disabled={!storageStatus?.configured}
+              />
+
+              {/* Instructions / Notes for AI */}
+              <div className="space-y-3 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-5 w-5 text-purple-600" />
+                    <Label className="text-purple-900 font-medium">Instructions / Notes for AI</Label>
+                  </div>
+                  <DictationButton
+                    variant="inline"
+                    onTranscript={(text) => {
+                      setUserPrompt((prev: string) => (prev ? prev + "\n\n" : "") + text);
+                      toast.success("Voice note added to instructions");
+                    }}
+                  />
+                </div>
+                <p className="text-sm text-purple-700">
+                  Copy and paste client emails, project briefs, specifications, or any notes here. This will be used when generating the quote draft.
+                </p>
+                <Textarea
+                  placeholder="Paste client emails, project briefs, or instructions here...\n\nExample:\n'Hi, I need a quote for painting 3 bedrooms and the hallway. The rooms are roughly 12x12 each. We'd like it done in 2 weeks if possible. Thanks, John'"
+                  value={userPrompt}
+                  onChange={(e) => setUserPrompt(e.target.value)}
+                  rows={6}
+                  className="bg-white"
                 />
               </div>
-            </div>
-          </div>
 
-          {/* Upload queue — progress bars */}
-          {uploadQueue.length > 0 && (
-            <div className="space-y-1.5">
-              {uploadQueue.map((item) => (
-                <div key={item.id} className="flex items-center gap-3 px-4 py-2 rounded-xl" style={{ backgroundColor: brand.white, border: `1px solid ${brand.borderLight}` }}>
-                  <FileIcon type={item.file.type.includes('pdf') ? 'pdf' : item.file.type.includes('audio') ? 'audio' : item.file.type.includes('image') ? 'image' : 'document'} size="sm" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold truncate" style={{ color: brand.navy }}>{item.file.name}</p>
-                    {item.isRateLimitError && (
-                      <p className="text-[10px] text-amber-600 font-medium mt-0.5">Rate limited — wait {item.retryAfter ? `~${Math.ceil(item.retryAfter)}s` : '30-60s'} then retry</p>
-                    )}
-                    <div className="mt-1 w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: `${brand.teal}15` }}>
-                      <div className="h-full rounded-full transition-all duration-500" style={{
-                        width: `${item.status === 'completed' ? 100 : item.status === 'error' ? 100 : item.progress || 30}%`,
-                        backgroundColor: item.status === 'error' ? '#ef4444' : brand.teal,
-                      }} />
-                    </div>
+              {/* Upload Queue */}
+              {uploadQueue.length > 0 && (
+                <div className="space-y-2 border rounded-lg p-4 bg-muted/20">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-semibold">
+                      {uploadQueue.filter(u => u.status === "uploading" || u.status === "pending").length > 0
+                        ? `Uploading ${uploadQueue.filter(u => u.status === "completed").length} of ${uploadQueue.length} files...`
+                        : `${uploadQueue.length} file${uploadQueue.length > 1 ? "s" : ""} uploaded`}
+                    </h4>
+                    <Button variant="ghost" size="sm" onClick={clearCompletedUploads} className="text-xs h-7">
+                      Clear
+                    </Button>
                   </div>
-                  <span className="text-[10px] font-bold flex-shrink-0" style={{ color: item.status === 'error' ? '#ef4444' : item.status === 'completed' ? brand.teal : brand.navyMuted }}>
-                    {item.status === 'completed' ? '100%' : item.status === 'error' ? 'Failed' : `${item.progress || 30}%`}
-                  </span>
-                  {item.status === 'completed' && (
-                    <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${brand.teal}15` }}>
-                      <Check className="w-3 h-3" style={{ color: brand.teal }} />
-                    </div>
-                  )}
-                  {item.status === 'error' && (
-                    <button className="text-[10px] font-bold px-2 py-1 rounded-md text-amber-700 bg-amber-50" onClick={() => handleRetryUpload(item.id)}>Retry</button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* File icon grid */}
-          {inputs && inputs.length > 0 && (
-            <div className="grid grid-cols-5 gap-3">
-              {inputs.map((input: QuoteInput) => {
-                const isSelected = selectedInputId === input.id;
-                const inputType = input.inputType || 'document';
-                return (
-                  <div
-                    key={input.id}
-                    onClick={() => setSelectedInputId(isSelected ? null : input.id)}
-                    className="relative p-4 rounded-2xl cursor-pointer transition-all text-center"
-                    style={{
-                      backgroundColor: brand.white,
-                      border: `2px solid ${isSelected ? brand.teal : brand.borderLight}`,
-                      boxShadow: isSelected ? brand.shadowActive : brand.shadow,
-                    }}
-                  >
-                    <div className="absolute top-2.5 right-2.5">
-                      {input.processingStatus === "completed" && (
-                        <div className="w-5 h-5 rounded-full flex items-center justify-center" style={{ backgroundColor: `${brand.teal}12` }}>
-                          <Check className="w-3 h-3" style={{ color: brand.teal }} />
-                        </div>
-                      )}
-                      {input.processingStatus === "processing" && (
-                        <div className="w-5 h-5 rounded-full flex items-center justify-center animate-pulse" style={{ backgroundColor: `${brand.teal}12` }}>
-                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: brand.teal }} />
-                        </div>
-                      )}
-                      {input.processingStatus === "failed" && (
-                        <div className="w-5 h-5 rounded-full bg-red-50 flex items-center justify-center">
-                          <X className="w-3 h-3 text-red-400" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex justify-center mb-2.5 mt-1">
-                      <FileIcon type={inputType} size="lg" />
-                    </div>
-                    <p className="text-[11px] font-bold truncate px-0.5" style={{ color: brand.navy }}>
-                      {input.filename || `${inputType.charAt(0).toUpperCase() + inputType.slice(1)} Input`}
-                    </p>
-                    <p className="text-[9px] font-medium mt-0.5" style={{ color: brand.navyMuted }}>
-                      {input.mimeType ? input.mimeType.split('/')[1]?.toUpperCase() : inputType.toUpperCase()}
-                    </p>
-                    {input.processingStatus === "processing" && (
-                      <div className="mt-2 px-1.5">
-                        <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: `${brand.teal}15` }}>
-                          <div className="h-full rounded-full animate-pulse" style={{ width: '60%', backgroundColor: brand.teal }} />
-                        </div>
-                      </div>
-                    )}
-                    {input.processingStatus === "failed" && (
-                      <div className="mt-2"><span className="text-[9px] font-bold text-red-500">Analysis failed</span></div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Detail panel — Design A: File info in gradient header */}
-          {selectedInputId && inputs && (() => {
-            const selected = inputs.find((i: QuoteInput) => i.id === selectedInputId);
-            if (!selected) return null;
-            return (
-              <div className="rounded-2xl overflow-hidden" style={{ border: `1.5px solid ${brand.border}` }}>
-                {/* Dark gradient header with file info */}
-                <div className="px-4 py-3" style={{ background: `linear-gradient(135deg, ${brand.navy} 0%, #1e3a5f 100%)` }}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <FileIcon type={selected.inputType || 'document'} size="sm" />
-                      <div>
-                        <h4 className="text-sm font-extrabold text-white">{selected.filename || 'Input'}</h4>
-                        <p className="text-[10px] font-medium text-white/50 mt-0.5">
-                          {selected.mimeType || selected.inputType} • {selected.createdAt ? new Date(selected.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''}
-                          {selected.processingStatus === "completed" && <span className="text-teal-300 font-bold"> • Analysed</span>}
-                          {selected.processingStatus === "processing" && <span className="text-blue-300 font-bold"> • Processing</span>}
-                          {selected.processingStatus === "failed" && <span className="text-red-300 font-bold"> • Failed</span>}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {selected.processingStatus === "completed" && (
-                        <button
-                          className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-teal-300 bg-white/10 hover:bg-white/15 border border-white/15 transition-colors"
-                          onClick={async () => {
-                            await updateQuote.mutateAsync({ id: quoteId, processingInstructions: processingInstructions || null });
-                            setReanalyzeTriggers(prev => ({ ...prev, [selected.id]: (prev[selected.id] || 0) + 1 }));
-                            toast.success(`Re-analysing ${selected.filename || 'input'}...`);
-                          }}
-                        >Re-analyse</button>
-                      )}
-                      {selected.fileUrl && (
-                        <button
-                          className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white/70 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
-                          onClick={() => window.open(selected.fileUrl!, "_blank")}
-                        >Open File</button>
-                      )}
-                      {selected.processingStatus === "failed" && (
-                        <button
-                          className="text-[11px] font-bold text-white px-4 py-1.5 rounded-lg bg-red-500/80 hover:bg-red-500 transition-colors"
-                          onClick={() => handleProcessInput(selected)}
-                        >Retry</button>
-                      )}
-                      <button
-                        className="p-1.5 rounded-lg text-white/40 hover:text-red-300 hover:bg-white/10 transition-colors"
-                        onClick={() => { deleteInput.mutate({ id: selected.id, quoteId }); setSelectedInputId(null); }}
+                  <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
+                    {uploadQueue.map((item) => (
+                      <div
+                        key={item.id}
+                        className={cn(
+                          "flex items-center gap-3 p-2.5 rounded-md border bg-background",
+                          item.status === "error" && item.isRateLimitError && "border-orange-400 bg-orange-50",
+                          item.status === "error" && !item.isRateLimitError && "border-red-300 bg-red-50",
+                          item.status === "completed" && "border-green-300 bg-green-50"
+                        )}
                       >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
+                        <div className="flex-shrink-0">{getFileIcon(item.file)}</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-medium truncate">{item.file.name}</p>
+                            <div className="flex items-center gap-1.5 ml-2 flex-shrink-0">
+                              {item.status === "pending" && <span className="text-xs text-muted-foreground">Queued</span>}
+                              {item.status === "uploading" && (
+                                <span className="text-xs text-blue-600 flex items-center gap-1">
+                                  <Loader2 className="h-3 w-3 animate-spin" /> Uploading
+                                </span>
+                              )}
+                              {item.status === "processing" && (
+                                <span className="text-xs text-purple-600 flex items-center gap-1">
+                                  <Loader2 className="h-3 w-3 animate-spin" /> Processing
+                                </span>
+                              )}
+                              {item.status === "completed" && (
+                                <span className="text-xs text-green-600 flex items-center gap-1">
+                                  <CheckCircle className="h-3 w-3" /> Done
+                                </span>
+                              )}
+                              {item.status === "error" && (
+                                <span className="text-xs text-red-600">Failed</span>
+                              )}
+                              {(item.status === "completed" || item.status === "error") && (
+                                <button onClick={(e) => { e.stopPropagation(); removeFromQueue(item.id); }} className="text-muted-foreground hover:text-foreground">
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          {(item.status === "uploading" || item.status === "pending" || item.status === "processing") && (
+                            <Progress value={item.progress} className="h-1 mt-1" />
+                          )}
+
+                          {/* Rate Limit Error - special orange box with instructions */}
+                          {item.status === "error" && item.isRateLimitError && (
+                            <div className="mt-2 p-2 bg-orange-100 border border-orange-300 rounded text-xs space-y-1">
+                              <p className="font-semibold text-orange-900">Rate Limit Exceeded</p>
+                              <p className="text-orange-800">
+                                File uploaded successfully, but AI processing was delayed.
+                              </p>
+                              <div className="mt-1 space-y-0.5 text-orange-700">
+                                <p className="font-medium">What to do:</p>
+                                <ol className="list-decimal list-inside ml-2">
+                                  <li>Wait 60 seconds for the rate limit to reset</li>
+                                  <li>Click "Retry" below</li>
+                                  <li>Or click "Skip" to continue without AI processing</li>
+                                </ol>
+                              </div>
+                              <div className="mt-2 flex gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs bg-white"
+                                  onClick={(e) => { e.stopPropagation(); handleRetryUpload(item.id); }}
+                                >
+                                  <RefreshCw className="h-3 w-3 mr-1" />
+                                  Retry
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 text-xs"
+                                  onClick={(e) => { e.stopPropagation(); removeFromQueue(item.id); }}
+                                >
+                                  Skip
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Standard Error */}
+                          {item.status === "error" && !item.isRateLimitError && item.error && (
+                            <div className="mt-1">
+                              <p className="text-xs text-red-600">{item.error}</p>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs mt-1"
+                                onClick={(e) => { e.stopPropagation(); handleRetryUpload(item.id); }}
+                              >
+                                <RefreshCw className="h-3 w-3 mr-1" />
+                                Retry
+                              </Button>
+                            </div>
+                          )}
+
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            {(item.file.size / 1024 / 1024).toFixed(2)} MB
+                          </p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
+              )}
 
-                {/* Content preview */}
-                {selected.content && (
-                  <div className="px-4 py-2.5" style={{ backgroundColor: '#f8fafc', borderBottom: `1px solid ${brand.borderLight}` }}>
-                    <p className="text-xs line-clamp-2" style={{ color: brand.navyMuted }}>{selected.content}</p>
+              {/* Existing inputs */}
+              {inputs && inputs.length > 0 && (
+                <div className="space-y-3">
+                  <Label>Added Inputs ({inputs.length})</Label>
+                  <div className="space-y-2">
+                    {inputs.map((input: QuoteInput) => (
+                      <div
+                        key={input.id}
+                        className="flex items-start justify-between p-3 rounded-lg border bg-muted/30"
+                      >
+                        <div className="flex items-start gap-3 min-w-0 flex-1">
+                          {input.inputType === "text" && <FileText className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />}
+                          {input.inputType === "pdf" && <FileText className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />}
+                          {input.inputType === "image" && <FileImage className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />}
+                          {input.inputType === "audio" && <Mic className="h-5 w-5 text-green-500 shrink-0 mt-0.5" />}
+                          {input.inputType === "email" && <Mail className="h-5 w-5 text-purple-500 shrink-0 mt-0.5" />}
+                          {input.inputType === "document" && <FileText className="h-5 w-5 text-orange-500 shrink-0 mt-0.5" />}
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium">
+                              {input.filename || input.inputType.charAt(0).toUpperCase() + input.inputType.slice(1) + " Input"}
+                            </p>
+                            {input.content && (
+                              <p className="text-sm text-muted-foreground line-clamp-2 mt-1">
+                                {input.content}
+                              </p>
+                            )}
+                            {input.mimeType && (
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {input.mimeType}
+                              </p>
+                            )}
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Added {new Date(input.createdAt).toLocaleDateString("en-GB")}
+                            </p>
+                            {/* Processing status */}
+                            {input.processingStatus === "completed" && (
+                              <div className="mt-2 p-2 bg-green-50 rounded border border-green-200">
+                                <div className="flex items-center gap-1">
+                                  <Check className="h-3 w-3 text-green-500" />
+                                  <span className="text-xs text-green-700 font-medium">Document analysed</span>
+                                </div>
+                                <p className="text-xs text-green-600 mt-1">
+                                  Upload more evidence or use the prompt field above to generate your quote.
+                                </p>
+                              </div>
+                            )}
+                            {input.processingStatus === "processing" && (
+                              <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200">
+                                <div className="flex items-center gap-1">
+                                  <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />
+                                  <span className="text-xs text-blue-700 font-medium">Please wait whilst analysing your document, this can take up to a minute...</span>
+                                </div>
+                              </div>
+                            )}
+                            {input.processingStatus === "failed" && (
+                              <div className="mt-2 p-2 bg-red-50 rounded border border-red-200">
+                                <div className="flex items-center gap-1">
+                                  <AlertTriangle className="h-3 w-3 text-red-500" />
+                                  <span className="text-xs text-red-600">{input.processingError || "Analysis failed"}</span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {/* Processing status indicator */}
+                          {input.processingStatus === "processing" && (
+                            <span className="flex items-center text-xs text-blue-600">
+                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                            </span>
+                          )}
+                          {/* Retry button for failed processing */}
+                          {input.processingStatus === "failed" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs text-amber-600 border-amber-300"
+                              onClick={() => handleProcessInput(input)}
+                              disabled={processingInputId === input.id}
+                            >
+                              <AlertTriangle className="mr-1 h-3 w-3" />
+                              Retry
+                            </Button>
+                          )}
+                          {input.fileUrl && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-primary"
+                              onClick={() => window.open(input.fileUrl!, "_blank")}
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                            onClick={() => deleteInput.mutate({ id: input.id, quoteId })}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                )}
-
-                {/* Takeoff panel (for PDFs) — renders flush, no padding wrapper */}
-                {selected.inputType === "pdf" && selected.processingStatus === "completed" && (
-                  <TakeoffPanel inputId={selected.id} quoteId={quoteId} filename={selected.filename || "Drawing"} fileUrl={selected.fileUrl || undefined} processingInstructions={processingInstructions} reanalyzeTrigger={reanalyzeTriggers[selected.id] || 0} />
-                )}
-
-                {/* Non-PDF completed */}
-                {selected.inputType !== "pdf" && selected.processingStatus === "completed" && (
-                  <div className="px-4 py-3" style={{ backgroundColor: brand.white }}>
-                    <p className="text-xs font-medium" style={{ color: brand.navyMuted }}>Text extracted — ready for quote generation.</p>
-                  </div>
-                )}
-
-                {/* Failed state */}
-                {selected.processingStatus === "failed" && (
-                  <div className="px-4 py-3 flex items-center gap-2" style={{ backgroundColor: '#fef2f2' }}>
-                    <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                    <span className="text-xs font-semibold text-red-700">Analysis failed — try re-uploading or splitting the file.</span>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* Empty state */}
-          {(!inputs || inputs.length === 0) && uploadQueue.length === 0 && (
-            <div
-              className="text-center py-12 rounded-2xl border-2 border-dashed cursor-pointer transition-all hover:border-teal-400"
-              style={{ borderColor: brand.border, backgroundColor: '#f8fafc' }}
-              onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
-              onClick={() => multiFileInputRef.current?.click()}
-            >
-              <Upload className="h-10 w-10 mx-auto mb-3" style={{ color: brand.navyMuted }} />
-              <p className="text-sm font-bold" style={{ color: brand.navy }}>No documents yet</p>
-              <p className="text-xs mt-1" style={{ color: brand.navyMuted }}>Drop files here or click to upload tender documents, drawings, and specifications</p>
-            </div>
-          )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* INTERPRETATION TAB */}
@@ -1881,43 +1900,6 @@ export default function QuoteWorkspace() {
                   </p>
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* INSTRUCTIONS TAB — Quote generation instructions (tender emails, briefs etc.) */}
-        <TabsContent value="instructions" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Mail className="h-5 w-5 text-purple-600" />
-                Instructions / Notes for AI
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Paste client emails, project briefs, tender invitations, or specifications here. This content will be used when generating the quote draft.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-3 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200">
-                <Textarea
-                  placeholder={"Paste client emails, project briefs, or instructions here...\n\nExample:\n'Hi, I need a quote for painting 3 bedrooms and the hallway. The rooms are roughly 12x12 each. We'd like it done in 2 weeks if possible. Thanks, John'"}
-                  value={userPrompt}
-                  onChange={(e) => setUserPrompt(e.target.value)}
-                  rows={12}
-                  className="bg-white"
-                />
-                {userPrompt && (
-                  <p className="text-xs text-purple-600 flex items-center gap-1">
-                    <CheckCircle className="h-3 w-3" />
-                    {userPrompt.length} characters — will be included when generating your quote
-                  </p>
-                )}
-              </div>
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-                <p className="text-sm text-purple-800">
-                  <strong>Tip:</strong> The more detail you provide here, the better the AI can tailor the quote. Include scope of works, exclusions, special requirements, deadlines, and any specific instructions from the client or main contractor.
-                </p>
-              </div>
             </CardContent>
           </Card>
         </TabsContent>
