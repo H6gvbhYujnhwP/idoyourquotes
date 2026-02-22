@@ -1822,6 +1822,14 @@ export default function QuoteWorkspace() {
                           {totalCount} in scope
                         </span>
                       </div>
+                      {(takeoff as any)?.svgOverlay && (
+                        <button
+                          className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-white/15 text-white hover:bg-white/25 border border-white/20 transition-colors"
+                          onClick={(e) => { e.stopPropagation(); }}
+                        >
+                          View Marked Drawing
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1846,6 +1854,19 @@ export default function QuoteWorkspace() {
                         </div>
                       );
                     })}
+                  </div>
+                )}
+
+                {/* Full TakeoffPanel — drawing viewer, questions, approve/lock, chat */}
+                {selectedInput.inputType === "pdf" && selectedInput.processingStatus === "completed" && (
+                  <div className="border-t" style={{ borderColor: brand.border }}>
+                    <TakeoffPanel
+                      inputId={selectedInput.id}
+                      quoteId={quoteId}
+                      filename={selectedInput.filename || "Drawing"}
+                      fileUrl={selectedInput.fileUrl || undefined}
+                      processingInstructions={userPrompt}
+                    />
                   </div>
                 )}
 
