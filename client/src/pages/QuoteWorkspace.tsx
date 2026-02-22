@@ -57,6 +57,9 @@ import TimelineTab from "@/components/comprehensive/TimelineTab";
 import SiteQualityTab from "@/components/comprehensive/SiteQualityTab";
 import DocumentsTab from "@/components/comprehensive/DocumentsTab";
 import DictationButton, { type DictationCommand } from "@/components/DictationButton";
+import FileIcon from "@/components/FileIcon";
+import { brand, symbolColors } from "@/lib/brandTheme";
+import TakeoffPanel from "@/components/TakeoffPanel";
 
 type QuoteStatus = "draft" | "sent" | "accepted" | "declined";
 
@@ -135,6 +138,7 @@ export default function QuoteWorkspace() {
   const [termsModified, setTermsModified] = useState(false);
   const [originalTerms, setOriginalTerms] = useState("");
   const [voiceNoteCount, setVoiceNoteCount] = useState(0);
+  const [selectedInputId, setSelectedInputId] = useState<number | null>(null);
 
   // File input refs (legacy single-file refs kept for backward compat)
   const pdfInputRef = useRef<HTMLInputElement>(null);
@@ -228,6 +232,18 @@ export default function QuoteWorkspace() {
 
   // Fetch catalog items for quick-add
   const { data: catalogItems } = trpc.catalog.list.useQuery();
+
+  // Fetch takeoff data for all inputs on this quote
+  const { data: takeoffList } = trpc.electricalTakeoff.list.useQuery(
+    { quoteId },
+    { enabled: quoteId > 0 }
+  );
+
+  // Helper to find takeoff for a specific input
+  const getTakeoffForInput = (inputId: number) => {
+    if (!takeoffList) return null;
+    return (takeoffList as any[]).find((t: any) => t.inputId === inputId) || null;
+  };
 
   const updateQuote = trpc.quotes.update.useMutation({
     onSuccess: () => {
@@ -1406,91 +1422,81 @@ export default function QuoteWorkspace() {
         </div>
 
         {/* INPUTS TAB */}
-        <TabsContent value="inputs" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Upload className="h-5 w-5" />
-                Evidence & Inputs
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Upload tender documents, images, audio recordings, or add text notes.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Storage status warning */}
-              {storageStatus && !storageStatus.configured && (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-medium text-amber-800">File storage not configured</p>
-                      <p className="text-sm text-amber-700 mt-1">
-                        File uploads are disabled. Contact support to enable file storage.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
+        <TabsContent value="inputs" className="space-y-5">
 
-              {/* Upload Tips + Drag & Drop Zone — side by side */}
-              <div className="flex gap-4 items-stretch">
-                {/* Upload Tips Banner */}
-                <Alert className="bg-blue-50 border-blue-200 flex-1 min-w-0">
-                  <AlertCircle className="h-4 w-4 text-blue-600" />
-                  <AlertTitle className="text-blue-900">Upload Tips</AlertTitle>
-                  <AlertDescription className="text-xs text-blue-800 space-y-1">
-                    <p><strong>Maximum 3 files at once</strong> to avoid rate limits.</p>
-                    <p>Large PDFs (20+ pages) are automatically split into sections and processed sequentially. This may take 30-90 seconds but ensures reliable processing.</p>
-                    <p>Large tender packages? Upload in batches of 3, wait for processing, then upload the next batch.</p>
-                  </AlertDescription>
-                </Alert>
+          {/* Page header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-extrabold" style={{ color: brand.navy }}>Evidence & Inputs</h2>
+              <p className="text-xs mt-0.5" style={{ color: brand.navyMuted }}>Upload documents, drawings, and specifications for your quote</p>
+            </div>
+            <div className="flex items-center gap-2 text-xs" style={{ color: brand.navyMuted }}>
+              <span>{inputs?.length || 0} files</span>
+              <span>•</span>
+              <span>{inputs?.filter((i: QuoteInput) => i.processingStatus === "completed").length || 0} analysed</span>
+            </div>
+          </div>
 
-                {/* Drag & Drop Upload Zone */}
-                <div
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  className={cn(
-                    "border-2 border-dashed rounded-lg p-6 text-center transition-all cursor-pointer flex-1 min-w-0 flex flex-col items-center justify-center",
-                    isDragging
-                      ? "border-primary bg-primary/5 scale-[1.01]"
-                      : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30",
-                    !storageStatus?.configured && "opacity-50 pointer-events-none"
-                  )}
-                  onClick={() => multiFileInputRef.current?.click()}
-                >
-                  <Upload className="h-10 w-10 mb-3 text-muted-foreground" />
-                  <h3 className="text-base font-semibold mb-1">
-                    {isDragging ? "Drop files here" : "Drop files here or click to browse"}
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    <strong>Select up to 3 files at once</strong> (Ctrl+Click or Shift+Click).
-                    Supports PDF, Word, Excel, Images, and Audio.
-                  </p>
-                  <div className="flex justify-center gap-4 mt-3 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5 text-red-500" /> PDF</span>
-                    <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5 text-blue-600" /> Word</span>
-                    <span className="flex items-center gap-1"><FileSpreadsheet className="h-3.5 w-3.5 text-green-600" /> Excel</span>
-                    <span className="flex items-center gap-1"><FileImage className="h-3.5 w-3.5 text-blue-500" /> Images</span>
-                    <span className="flex items-center gap-1"><Mic className="h-3.5 w-3.5 text-green-500" /> Audio</span>
-                  </div>
-                </div>
+          {/* Storage status warning */}
+          {storageStatus && !storageStatus.configured && (
+            <div className="flex items-start gap-3 p-4 rounded-xl" style={{ backgroundColor: "#fffbeb", border: "1px solid #fde68a" }}>
+              <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" style={{ color: "#d97706" }} />
+              <div>
+                <p className="font-bold text-sm" style={{ color: "#92400e" }}>File storage not configured</p>
+                <p className="text-xs mt-0.5" style={{ color: "#a16207" }}>
+                  File uploads are disabled. Contact support to enable file storage.
+                </p>
               </div>
+            </div>
+          )}
 
-              {/* Voice Dictation */}
-              <DictationButton
-                onCommand={handleDictationCommand}
+          {/* Upload bar — dark gradient with Option B instructions */}
+          <div className="rounded-xl overflow-hidden" style={{ border: `1.5px solid ${brand.border}` }}>
+            {/* Dark gradient top bar */}
+            <div
+              className="flex items-center gap-3 px-4 py-2.5"
+              style={{ background: `linear-gradient(135deg, ${brand.navy} 0%, #1e3a5f 100%)` }}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
+              <button
+                className="flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-lg shadow-sm whitespace-nowrap"
+                style={{ backgroundColor: brand.teal, color: '#fff' }}
+                onClick={() => multiFileInputRef.current?.click()}
                 disabled={!storageStatus?.configured}
-              />
+              >
+                <Plus className="w-4 h-4" />
+                Upload Files
+              </button>
+              <div
+                className={cn(
+                  "flex-1 flex items-center gap-2 px-3 py-2 border border-dashed rounded-lg text-xs cursor-pointer transition-colors",
+                  isDragging
+                    ? "border-white/60 bg-white/10 text-white/80"
+                    : "border-white/20 text-white/50 hover:border-white/40"
+                )}
+                onClick={() => multiFileInputRef.current?.click()}
+              >
+                <Upload className="w-4 h-4" />
+                <span className="font-medium">{isDragging ? "Drop files here" : "Drop files here"}</span>
+                <span className="text-[10px] text-white/30">PDF, Word, Excel, Images, Audio — max 3</span>
+              </div>
+            </div>
 
-              {/* Instructions / Notes for AI */}
-              <div className="space-y-3 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Mail className="h-5 w-5 text-purple-600" />
-                    <Label className="text-purple-900 font-medium">Instructions / Notes for AI</Label>
-                  </div>
+            {/* Option B: Processing instructions with teal left accent */}
+            <div className="px-4 py-3" style={{ backgroundColor: '#f8fafc' }}>
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm" style={{ color: brand.teal }}>✦</span>
+                  <span className="text-[11px] font-bold" style={{ color: brand.navy }}>Processing Instructions</span>
+                  {userPrompt && (
+                    <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full" style={{ backgroundColor: `${brand.teal}15`, color: brand.teal }}>
+                      Active
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
                   <DictationButton
                     variant="inline"
                     onTranscript={(text) => {
@@ -1499,250 +1505,381 @@ export default function QuoteWorkspace() {
                     }}
                   />
                 </div>
-                <p className="text-sm text-purple-700">
-                  Copy and paste client emails, project briefs, specifications, or any notes here. This will be used when generating the quote draft.
-                </p>
+              </div>
+              <div className="flex rounded-lg overflow-hidden" style={{ border: `1.5px solid ${brand.border}` }}>
+                <div className="w-1 flex-shrink-0" style={{ backgroundColor: brand.teal }} />
                 <Textarea
-                  placeholder="Paste client emails, project briefs, or instructions here...\n\nExample:\n'Hi, I need a quote for painting 3 bedrooms and the hallway. The rooms are roughly 12x12 each. We'd like it done in 2 weeks if possible. Thanks, John'"
                   value={userPrompt}
                   onChange={(e) => setUserPrompt(e.target.value)}
-                  rows={6}
-                  className="bg-white"
+                  className="w-full px-3 py-2 text-sm border-0 focus:ring-0 resize-none rounded-none"
+                  style={{ color: brand.navy, backgroundColor: brand.white }}
+                  rows={2}
+                  placeholder={"Tell the AI what to include or exclude when analysing...\ne.g. Lighting only — exclude fire alarm, power, access control"}
                 />
               </div>
+            </div>
+          </div>
 
-              {/* Upload Queue */}
-              {uploadQueue.length > 0 && (
-                <div className="space-y-2 border rounded-lg p-4 bg-muted/20">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-sm font-semibold">
-                      {uploadQueue.filter(u => u.status === "uploading" || u.status === "pending").length > 0
-                        ? `Uploading ${uploadQueue.filter(u => u.status === "completed").length} of ${uploadQueue.length} files...`
-                        : `${uploadQueue.length} file${uploadQueue.length > 1 ? "s" : ""} uploaded`}
-                    </h4>
-                    <Button variant="ghost" size="sm" onClick={clearCompletedUploads} className="text-xs h-7">
-                      Clear
-                    </Button>
-                  </div>
-                  <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
-                    {uploadQueue.map((item) => (
-                      <div
-                        key={item.id}
-                        className={cn(
-                          "flex items-center gap-3 p-2.5 rounded-md border bg-background",
-                          item.status === "error" && item.isRateLimitError && "border-orange-400 bg-orange-50",
-                          item.status === "error" && !item.isRateLimitError && "border-red-300 bg-red-50",
-                          item.status === "completed" && "border-green-300 bg-green-50"
-                        )}
-                      >
-                        <div className="flex-shrink-0">{getFileIcon(item.file)}</div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <p className="text-sm font-medium truncate">{item.file.name}</p>
-                            <div className="flex items-center gap-1.5 ml-2 flex-shrink-0">
-                              {item.status === "pending" && <span className="text-xs text-muted-foreground">Queued</span>}
-                              {item.status === "uploading" && (
-                                <span className="text-xs text-blue-600 flex items-center gap-1">
-                                  <Loader2 className="h-3 w-3 animate-spin" /> Uploading
-                                </span>
-                              )}
-                              {item.status === "processing" && (
-                                <span className="text-xs text-purple-600 flex items-center gap-1">
-                                  <Loader2 className="h-3 w-3 animate-spin" /> Processing
-                                </span>
-                              )}
-                              {item.status === "completed" && (
-                                <span className="text-xs text-green-600 flex items-center gap-1">
-                                  <CheckCircle className="h-3 w-3" /> Done
-                                </span>
-                              )}
-                              {item.status === "error" && (
-                                <span className="text-xs text-red-600">Failed</span>
-                              )}
-                              {(item.status === "completed" || item.status === "error") && (
-                                <button onClick={(e) => { e.stopPropagation(); removeFromQueue(item.id); }} className="text-muted-foreground hover:text-foreground">
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                          {(item.status === "uploading" || item.status === "pending" || item.status === "processing") && (
-                            <Progress value={item.progress} className="h-1 mt-1" />
-                          )}
+          {/* Voice Dictation */}
+          <DictationButton
+            onCommand={handleDictationCommand}
+            disabled={!storageStatus?.configured}
+          />
 
-                          {/* Rate Limit Error - special orange box with instructions */}
-                          {item.status === "error" && item.isRateLimitError && (
-                            <div className="mt-2 p-2 bg-orange-100 border border-orange-300 rounded text-xs space-y-1">
-                              <p className="font-semibold text-orange-900">Rate Limit Exceeded</p>
-                              <p className="text-orange-800">
-                                File uploaded successfully, but AI processing was delayed.
-                              </p>
-                              <div className="mt-1 space-y-0.5 text-orange-700">
-                                <p className="font-medium">What to do:</p>
-                                <ol className="list-decimal list-inside ml-2">
-                                  <li>Wait 60 seconds for the rate limit to reset</li>
-                                  <li>Click "Retry" below</li>
-                                  <li>Or click "Skip" to continue without AI processing</li>
-                                </ol>
-                              </div>
-                              <div className="mt-2 flex gap-2">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-7 text-xs bg-white"
-                                  onClick={(e) => { e.stopPropagation(); handleRetryUpload(item.id); }}
-                                >
-                                  <RefreshCw className="h-3 w-3 mr-1" />
-                                  Retry
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-7 text-xs"
-                                  onClick={(e) => { e.stopPropagation(); removeFromQueue(item.id); }}
-                                >
-                                  Skip
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Standard Error */}
-                          {item.status === "error" && !item.isRateLimitError && item.error && (
-                            <div className="mt-1">
-                              <p className="text-xs text-red-600">{item.error}</p>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 text-xs mt-1"
-                                onClick={(e) => { e.stopPropagation(); handleRetryUpload(item.id); }}
-                              >
-                                <RefreshCw className="h-3 w-3 mr-1" />
-                                Retry
-                              </Button>
-                            </div>
-                          )}
-
-                          <p className="text-[10px] text-muted-foreground mt-0.5">
-                            {(item.file.size / 1024 / 1024).toFixed(2)} MB
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Existing inputs */}
-              {inputs && inputs.length > 0 && (
-                <div className="space-y-3">
-                  <Label>Added Inputs ({inputs.length})</Label>
-                  <div className="space-y-2">
-                    {inputs.map((input: QuoteInput) => (
-                      <div
-                        key={input.id}
-                        className="flex items-start justify-between p-3 rounded-lg border bg-muted/30"
-                      >
-                        <div className="flex items-start gap-3 min-w-0 flex-1">
-                          {input.inputType === "text" && <FileText className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />}
-                          {input.inputType === "pdf" && <FileText className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />}
-                          {input.inputType === "image" && <FileImage className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />}
-                          {input.inputType === "audio" && <Mic className="h-5 w-5 text-green-500 shrink-0 mt-0.5" />}
-                          {input.inputType === "email" && <Mail className="h-5 w-5 text-purple-500 shrink-0 mt-0.5" />}
-                          {input.inputType === "document" && <FileText className="h-5 w-5 text-orange-500 shrink-0 mt-0.5" />}
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium">
-                              {input.filename || input.inputType.charAt(0).toUpperCase() + input.inputType.slice(1) + " Input"}
-                            </p>
-                            {input.content && (
-                              <p className="text-sm text-muted-foreground line-clamp-2 mt-1">
-                                {input.content}
-                              </p>
-                            )}
-                            {input.mimeType && (
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {input.mimeType}
-                              </p>
-                            )}
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Added {new Date(input.createdAt).toLocaleDateString("en-GB")}
-                            </p>
-                            {/* Processing status */}
-                            {input.processingStatus === "completed" && (
-                              <div className="mt-2 p-2 bg-green-50 rounded border border-green-200">
-                                <div className="flex items-center gap-1">
-                                  <Check className="h-3 w-3 text-green-500" />
-                                  <span className="text-xs text-green-700 font-medium">Document analysed</span>
-                                </div>
-                                <p className="text-xs text-green-600 mt-1">
-                                  Upload more evidence or use the prompt field above to generate your quote.
-                                </p>
-                              </div>
-                            )}
-                            {input.processingStatus === "processing" && (
-                              <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200">
-                                <div className="flex items-center gap-1">
-                                  <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />
-                                  <span className="text-xs text-blue-700 font-medium">Please wait whilst analysing your document, this can take up to a minute...</span>
-                                </div>
-                              </div>
-                            )}
-                            {input.processingStatus === "failed" && (
-                              <div className="mt-2 p-2 bg-red-50 rounded border border-red-200">
-                                <div className="flex items-center gap-1">
-                                  <AlertTriangle className="h-3 w-3 text-red-500" />
-                                  <span className="text-xs text-red-600">{input.processingError || "Analysis failed"}</span>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          {/* Processing status indicator */}
-                          {input.processingStatus === "processing" && (
-                            <span className="flex items-center text-xs text-blue-600">
-                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+          {/* Upload Queue */}
+          {uploadQueue.length > 0 && (
+            <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${brand.border}` }}>
+              <div className="flex items-center justify-between px-4 py-2.5" style={{ backgroundColor: '#f8fafc' }}>
+                <span className="text-xs font-bold" style={{ color: brand.navy }}>
+                  {uploadQueue.filter(u => u.status === "uploading" || u.status === "pending").length > 0
+                    ? `Uploading ${uploadQueue.filter(u => u.status === "completed").length} of ${uploadQueue.length} files…`
+                    : `${uploadQueue.length} file${uploadQueue.length > 1 ? "s" : ""} uploaded`}
+                </span>
+                <button
+                  onClick={clearCompletedUploads}
+                  className="text-[10px] font-bold underline underline-offset-2"
+                  style={{ color: brand.navyMuted }}
+                >
+                  Clear
+                </button>
+              </div>
+              <div className="px-4 pb-3 space-y-1.5">
+                {uploadQueue.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center gap-3 p-2.5 rounded-lg"
+                    style={{
+                      border: `1px solid ${item.status === "error" && item.isRateLimitError ? "#fb923c" : item.status === "error" ? "#fca5a5" : item.status === "completed" ? "#bbf7d0" : brand.border}`,
+                      backgroundColor: item.status === "error" && item.isRateLimitError ? "#fff7ed" : item.status === "error" ? "#fef2f2" : item.status === "completed" ? "#f0fdf4" : brand.white,
+                    }}
+                  >
+                    <div className="flex-shrink-0">{getFileIcon(item.file)}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-bold truncate" style={{ color: brand.navy }}>{item.file.name}</p>
+                        <div className="flex items-center gap-1.5 ml-2 flex-shrink-0">
+                          {item.status === "pending" && <span className="text-[10px]" style={{ color: brand.navyMuted }}>Queued</span>}
+                          {item.status === "uploading" && (
+                            <span className="text-[10px] flex items-center gap-1" style={{ color: brand.teal }}>
+                              <Loader2 className="h-3 w-3 animate-spin" /> Uploading
                             </span>
                           )}
-                          {/* Retry button for failed processing */}
-                          {input.processingStatus === "failed" && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-8 text-xs text-amber-600 border-amber-300"
-                              onClick={() => handleProcessInput(input)}
-                              disabled={processingInputId === input.id}
-                            >
-                              <AlertTriangle className="mr-1 h-3 w-3" />
-                              Retry
-                            </Button>
+                          {item.status === "processing" && (
+                            <span className="text-[10px] flex items-center gap-1" style={{ color: "#7c3aed" }}>
+                              <Loader2 className="h-3 w-3 animate-spin" /> Processing
+                            </span>
                           )}
-                          {input.fileUrl && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-muted-foreground hover:text-primary"
-                              onClick={() => window.open(input.fileUrl!, "_blank")}
-                            >
-                              <ExternalLink className="h-4 w-4" />
-                            </Button>
+                          {item.status === "completed" && (
+                            <span className="text-[10px] flex items-center gap-1" style={{ color: "#16a34a" }}>
+                              <CheckCircle className="h-3 w-3" /> Done
+                            </span>
                           )}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                            onClick={() => deleteInput.mutate({ id: input.id, quoteId })}
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
+                          {item.status === "error" && (
+                            <span className="text-[10px]" style={{ color: "#dc2626" }}>Failed</span>
+                          )}
+                          {(item.status === "completed" || item.status === "error") && (
+                            <button onClick={(e) => { e.stopPropagation(); removeFromQueue(item.id); }} style={{ color: brand.navyMuted }}>
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </div>
                       </div>
-                    ))}
+                      {(item.status === "uploading" || item.status === "pending" || item.status === "processing") && (
+                        <div className="h-1.5 rounded-full overflow-hidden mt-1.5" style={{ backgroundColor: `${brand.teal}15` }}>
+                          <div className="h-full rounded-full transition-all duration-300" style={{ width: `${item.progress}%`, backgroundColor: brand.teal }} />
+                        </div>
+                      )}
+
+                      {/* Rate limit error */}
+                      {item.status === "error" && item.isRateLimitError && (
+                        <div className="mt-2 p-2 rounded text-xs space-y-1" style={{ backgroundColor: "#fff7ed", border: "1px solid #fed7aa" }}>
+                          <p className="font-bold" style={{ color: "#9a3412" }}>Rate Limit Exceeded</p>
+                          <p style={{ color: "#c2410c" }}>File uploaded but AI processing delayed. Wait 60s then retry.</p>
+                        </div>
+                      )}
+
+                      {/* Non-rate-limit error */}
+                      {item.status === "error" && !item.isRateLimitError && (
+                        <p className="text-[10px] mt-1" style={{ color: "#dc2626" }}>{item.error || "Upload failed"}</p>
+                      )}
+
+                      {item.status === "error" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-[10px] mt-1 px-2"
+                          onClick={(e) => { e.stopPropagation(); handleRetryUpload(item.id); }}
+                        >
+                          <RefreshCw className="h-3 w-3 mr-1" /> Retry
+                        </Button>
+                      )}
+
+                      <span className="text-[10px] block mt-0.5" style={{ color: brand.navyMuted }}>
+                        {(item.file.size / 1024 / 1024).toFixed(2)} MB
+                      </span>
+                    </div>
                   </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* File icon grid — 5 columns, Style C branded */}
+          {inputs && inputs.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-sm font-extrabold" style={{ color: brand.navy }}>Added Inputs</span>
+                <span
+                  className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                  style={{ backgroundColor: brand.tealBg, color: brand.teal }}
+                >
+                  {inputs.length}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                {inputs.map((input: QuoteInput) => {
+                  const isSelected = selectedInputId === input.id;
+                  const takeoff = getTakeoffForInput(input.id);
+                  const isApproved = takeoff?.status === "verified" || takeoff?.status === "locked";
+                  const totalCount = takeoff?.counts ? Object.values(takeoff.counts as Record<string, number>).reduce((s: number, v: number) => s + v, 0) : 0;
+
+                  return (
+                    <div
+                      key={input.id}
+                      onClick={() => setSelectedInputId(isSelected ? null : input.id)}
+                      className="relative p-4 rounded-xl cursor-pointer transition-all text-center group"
+                      style={{
+                        backgroundColor: isSelected ? brand.tealBg : brand.white,
+                        border: `2px solid ${isSelected ? brand.teal : 'transparent'}`,
+                        boxShadow: isSelected ? `0 4px 12px ${brand.teal}20` : '0 1px 3px rgba(0,0,0,0.06)',
+                      }}
+                    >
+                      {/* Status indicator top-right */}
+                      <div className="absolute top-2.5 right-2.5">
+                        {input.processingStatus === "completed" && !isApproved && (
+                          <span className="w-5 h-5 rounded-full flex items-center justify-center" style={{ backgroundColor: `${brand.teal}15` }}>
+                            <Check className="w-3 h-3" style={{ color: brand.teal }} />
+                          </span>
+                        )}
+                        {input.processingStatus === "processing" && (
+                          <span className="w-5 h-5 rounded-full flex items-center justify-center animate-pulse" style={{ backgroundColor: `${brand.teal}15` }}>
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: brand.teal }} />
+                          </span>
+                        )}
+                        {(input.processingStatus === "failed" || input.processingStatus === "error") && (
+                          <span className="w-5 h-5 rounded-full bg-red-100 flex items-center justify-center">
+                            <AlertTriangle className="w-3 h-3 text-red-500" />
+                          </span>
+                        )}
+                      </div>
+
+                      {/* File icon centred */}
+                      <div className="flex justify-center mb-2.5 mt-1">
+                        <FileIcon type={input.inputType} size="lg" approved={isApproved} />
+                      </div>
+
+                      {/* Filename */}
+                      <p className="text-[11px] font-extrabold truncate leading-tight px-1" style={{ color: brand.navy }}>
+                        {input.filename || input.inputType.charAt(0).toUpperCase() + input.inputType.slice(1) + " Input"}
+                      </p>
+                      <p className="text-[9px] mt-0.5" style={{ color: brand.navyMuted }}>
+                        {input.mimeType ? (input.mimeType.split("/").pop()?.toUpperCase() || "") : ""}
+                        {input.mimeType ? " • " : ""}
+                        {new Date(input.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                      </p>
+
+                      {/* Takeoff count badge */}
+                      {takeoff && totalCount > 0 && (
+                        <div className="mt-2">
+                          <span
+                            className="inline-block text-[10px] font-bold px-2.5 py-0.5 rounded-full"
+                            style={{
+                              backgroundColor: isApproved ? `${brand.teal}15` : `${brand.navy}08`,
+                              color: isApproved ? brand.teal : brand.navy,
+                            }}
+                          >
+                            {totalCount} items {isApproved ? "✓" : ""}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Processing progress */}
+                      {input.processingStatus === "processing" && (
+                        <div className="mt-2 px-2">
+                          <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: `${brand.teal}15` }}>
+                            <div className="h-full rounded-full animate-pulse" style={{ width: "60%", backgroundColor: brand.teal }} />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Failed indicator */}
+                      {(input.processingStatus === "failed" || input.processingStatus === "error") && (
+                        <div className="mt-2">
+                          <span className="text-[9px] text-red-500 font-medium">Analysis failed</span>
+                        </div>
+                      )}
+
+                      {/* Voice note content preview */}
+                      {input.content && !input.fileUrl && (
+                        <p className="text-[9px] mt-1.5 line-clamp-2 leading-tight px-1" style={{ color: brand.navyMuted }}>
+                          {input.content}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Detail panel — shown when a file is selected */}
+          {selectedInputId && inputs && (() => {
+            const selectedInput = inputs.find((i: QuoteInput) => i.id === selectedInputId);
+            if (!selectedInput) return null;
+            const takeoff = getTakeoffForInput(selectedInputId);
+            const isApproved = takeoff?.status === "verified" || takeoff?.status === "locked";
+            const counts = (takeoff?.counts || {}) as Record<string, number>;
+            const totalCount = Object.values(counts).reduce((s: number, v: number) => s + v, 0);
+            const symbolDescs = (takeoff as any)?.symbolDescriptions || {};
+
+            return (
+              <div className="rounded-2xl overflow-hidden" style={{ border: `1.5px solid ${brand.border}` }}>
+                {/* Dark gradient header */}
+                <div className="px-4 py-3" style={{ background: `linear-gradient(135deg, ${brand.navy} 0%, #1e3a5f 100%)` }}>
+                  {/* Top row — file info */}
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-3">
+                      <FileIcon type={selectedInput.inputType} size="sm" approved={isApproved} />
+                      <div>
+                        <h4 className="text-sm font-extrabold text-white">
+                          {selectedInput.filename || "Input"}
+                        </h4>
+                        <p className="text-[10px] font-medium text-white/50 mt-0.5">
+                          {selectedInput.mimeType ? selectedInput.mimeType.split("/").pop()?.toUpperCase() : ""}
+                          {" • "}
+                          {new Date(selectedInput.createdAt).toLocaleDateString("en-GB")}
+                          {selectedInput.processingStatus === "completed" && (
+                            <span className="text-teal-300 font-bold"> • Analysed</span>
+                          )}
+                          {selectedInput.processingStatus === "processing" && (
+                            <span className="text-blue-300 font-bold"> • Processing…</span>
+                          )}
+                          {(selectedInput.processingStatus === "failed" || selectedInput.processingStatus === "error") && (
+                            <span className="text-red-300 font-bold"> • Failed</span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {(selectedInput.processingStatus === "failed" || selectedInput.processingStatus === "error") && (
+                        <button
+                          onClick={() => handleProcessInput(selectedInput)}
+                          disabled={processingInputId === selectedInput.id}
+                          className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-red-300 bg-white/10 hover:bg-white/15 border border-white/15 transition-colors"
+                        >
+                          Retry
+                        </button>
+                      )}
+                      {selectedInput.processingStatus === "completed" && (
+                        <button
+                          onClick={() => handleProcessInput(selectedInput)}
+                          disabled={processingInputId === selectedInput.id}
+                          className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-teal-300 bg-white/10 hover:bg-white/15 border border-white/15 transition-colors"
+                        >
+                          Re-analyse
+                        </button>
+                      )}
+                      {selectedInput.fileUrl && (
+                        <button
+                          onClick={() => window.open(selectedInput.fileUrl!, "_blank")}
+                          className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white/70 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+                        >
+                          Open File
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          deleteInput.mutate({ id: selectedInput.id, quoteId });
+                          setSelectedInputId(null);
+                        }}
+                        className="p-1.5 rounded-lg text-white/40 hover:text-red-300 hover:bg-white/10 transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Takeoff status row */}
+                  {takeoff && totalCount > 0 && (
+                    <div className="flex items-center justify-between pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-3.5 h-3.5 text-teal-400" />
+                        <span className="text-xs font-extrabold text-white">
+                          {isApproved ? "Takeoff Approved" : "Takeoff Ready"}
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300">
+                          {totalCount} in scope
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </CardContent>
-          </Card>
+
+                {/* Takeoff chips */}
+                {takeoff && totalCount > 0 && (
+                  <div className="px-4 py-3 flex flex-wrap gap-2" style={{ backgroundColor: brand.white }}>
+                    {Object.entries(counts).map(([code, count]) => {
+                      const chipColor = symbolColors[code] || '#888';
+                      const desc = symbolDescs[code] || code;
+                      return (
+                        <div
+                          key={code}
+                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border"
+                          style={{ borderColor: `${chipColor}30`, backgroundColor: `${chipColor}06` }}
+                        >
+                          <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: chipColor }} />
+                          <span className="text-xs font-extrabold" style={{ color: chipColor }}>{count}</span>
+                          <span className="text-[10px] font-bold" style={{ color: brand.navyMuted }}>{code}</span>
+                          <span className="text-[10px]" style={{ color: '#cbd5e1' }}>—</span>
+                          <span className="text-[10px] font-medium" style={{ color: brand.navyMuted }}>{desc}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Processing state */}
+                {selectedInput.processingStatus === "processing" && (
+                  <div className="px-5 py-3 flex items-center gap-3" style={{ backgroundColor: brand.white }}>
+                    <Loader2 className="h-4 w-4 animate-spin" style={{ color: brand.teal }} />
+                    <span className="text-xs font-medium" style={{ color: brand.navy }}>Analysing document, this may take up to a minute…</span>
+                  </div>
+                )}
+
+                {/* Failed state */}
+                {(selectedInput.processingStatus === "failed" || selectedInput.processingStatus === "error") && (
+                  <div className="px-5 py-3 flex items-center gap-2" style={{ backgroundColor: '#fef2f2' }}>
+                    <AlertTriangle className="w-4 h-4 text-red-500" />
+                    <span className="text-xs text-red-700">
+                      {selectedInput.processingError || "Analysis failed — the document may be too large or corrupted. Try re-uploading."}
+                    </span>
+                  </div>
+                )}
+
+                {/* Voice/text content preview */}
+                {selectedInput.content && (
+                  <div className="px-5 py-3" style={{ backgroundColor: brand.white, borderTop: `1px solid ${brand.border}` }}>
+                    <p className="text-[11px] font-bold mb-1" style={{ color: brand.navy }}>Content</p>
+                    <p className="text-xs leading-relaxed" style={{ color: brand.navyMuted }}>
+                      {selectedInput.content}
+                    </p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
         </TabsContent>
 
         {/* INTERPRETATION TAB */}
