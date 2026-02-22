@@ -1822,14 +1822,6 @@ export default function QuoteWorkspace() {
                           {totalCount} in scope
                         </span>
                       </div>
-                      {(takeoff as any)?.svgOverlay && (
-                        <button
-                          className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-white/15 text-white hover:bg-white/25 border border-white/20 transition-colors"
-                          onClick={(e) => { e.stopPropagation(); }}
-                        >
-                          View Marked Drawing
-                        </button>
-                      )}
                     </div>
                   )}
                 </div>
