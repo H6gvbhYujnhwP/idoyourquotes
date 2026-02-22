@@ -54,8 +54,6 @@ import {
 } from "./db";
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { TRADE_PRESETS, TradePresetKey } from "./tradePresets";
-import { subscriptionRouter } from "./services/subscriptionRouter";
-import { canCreateQuote } from "./services/stripe";
 import type { ComprehensiveConfig, InsertQuote } from "../drizzle/schema";
 
 /**
@@ -74,7 +72,6 @@ async function getQuoteWithOrgAccess(quoteId: number, userId: number): Promise<A
 
 export const appRouter = router({
   system: systemRouter,
-  subscription: subscriptionRouter,
   
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
@@ -263,20 +260,6 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         // Get user's organization to set orgId
         const org = await getUserPrimaryOrg(ctx.user.id);
-        
-        // Subscription check — enforce quote limits
-        if (org) {
-          const check = canCreateQuote(org as any);
-          if (!check.allowed) {
-            throw new Error(check.reason || 'Quote limit reached. Please upgrade your plan.');
-          }
-          // Reset count if 30+ days since last reset, then increment
-          const newCount = check.shouldResetCount ? 1 : ((org as any).monthlyQuoteCount || 0) + 1;
-          await updateOrganization(org.id, {
-            monthlyQuoteCount: newCount,
-            ...(check.shouldResetCount ? { quoteCountResetAt: new Date() } : {}),
-          } as any);
-        }
         
         // Auto-populate T&C from user's default if not provided
         const terms = input?.terms || ctx.user.defaultTerms || undefined;
@@ -1005,10 +988,7 @@ Respond with valid JSON:
           console.log("[generatePDF] Generating HTML...");
           console.log("[generatePDF] Org brand colors:", org?.brandPrimaryColor, org?.brandSecondaryColor);
 
-          // Add trial watermark if org is on trial
-          const trialWatermark = org ? (org as any).subscriptionTier === 'trial' : false;
-
-          const html = generateQuoteHTML({ quote, lineItems, user, organization: org, tenderContext, trialWatermark });
+          const html = generateQuoteHTML({ quote, lineItems, user, organization: org, tenderContext });
           console.log("[generatePDF] HTML generated, length:", html.length);
           
           return { html };
@@ -2425,6 +2405,9 @@ Rules:
         // Build context from all processed inputs
         const processedEvidence: string[] = [];
         
+        // Separate voice dictations for ordered processing
+        let voiceNoteIndex = 0;
+        
         for (const inp of inputs) {
           if (inp.processedContent && inp.processingStatus === "completed") {
             const typeLabel = inp.inputType === "audio" ? "Audio Transcription"
@@ -2433,6 +2416,10 @@ Rules:
               : inp.inputType === "email" ? "Email Content"
               : "Text Note";
             processedEvidence.push(`### ${typeLabel} (${inp.filename || "untitled"}):\n${inp.processedContent}`);
+          } else if (inp.inputType === "audio" && inp.content && !inp.fileUrl) {
+            // Voice dictation (no file URL = live dictation, not uploaded audio)
+            voiceNoteIndex++;
+            processedEvidence.push(`### Voice Dictation ${voiceNoteIndex} (${inp.filename || "Voice Note"}):\n${inp.content}`);
           } else if (inp.inputType === "text" && inp.content) {
             processedEvidence.push(`### Text Note:\n${inp.content}`);
           } else if (inp.inputType === "email" && inp.content) {
@@ -2474,11 +2461,26 @@ Rules:
         // Build catalog context - structured for rate matching
         let catalogContext = "";
         if (catalogItems.length > 0) {
-          catalogContext = `\n\nCOMPANY CATALOG — USE THESE RATES (do NOT invent your own rates when a catalog match exists):
+          catalogContext = `\n\nCOMPANY CATALOG — DEFAULT RATES (can be overridden by user instructions):
 ${catalogItems.map(c => `- "${c.name}" | Rate: £${c.defaultRate}/${c.unit} | Cost: £${c.costPrice || "n/a"} | Category: ${c.category || "General"} | ${c.description || ""}`).join("\n")}
 
-IMPORTANT: When a line item from the evidence matches (or closely matches) a catalog item, you MUST use the catalog rate. Only estimate rates for items with no catalog match.`;
+IMPORTANT: Use catalog rates as defaults, but if the user's voice dictation or instructions specify a different price, markup, or rate for an item, ALWAYS use the user's stated price instead.`;
         }
+
+        // Price hierarchy instruction — added to all prompts
+        const priceHierarchyContext = `\n\nPRICE & RATE HIERARCHY — FOLLOW THIS STRICTLY:
+When determining prices, rates, markups, labour costs, and quantities, follow this priority order:
+1. HIGHEST PRIORITY — User's voice dictations and written instructions. If the user says "charge £700 per day" or "battens are £30 each" or "20% markup", USE THOSE EXACT FIGURES.
+2. SECOND PRIORITY — Company catalog rates. Use these when the user hasn't specified a price for that item.
+3. THIRD PRIORITY — Company default rates from settings (day work rates, material markup %, etc.). Use these when neither the user nor the catalog provides a rate.
+4. LOWEST PRIORITY — Your own UK market rate estimates. Only use these when no other source provides a rate.
+
+VOICE DICTATION PROCESSING:
+- Voice dictations are numbered in order. If there are multiple, process them sequentially.
+- Later voice notes override earlier ones. If Voice Note 1 says "one electrician" and Voice Note 3 says "actually make it two electricians", use two.
+- Voice dictations may contain natural speech — extract structured data: client name, job description, labour requirements, material prices, markups, sundries, location, and timeline.
+- If the user mentions a client name (e.g. "quote for ample storage"), match it to existing client data if available.
+- If the user gives a lump sum (e.g. "charge them £700 per day for 2 days"), create line items that reflect this pricing.`;
 
         // Build company defaults context from organization profile
         let companyDefaultsContext = "";
@@ -2686,7 +2688,7 @@ CRITICAL RULES:
 - When a Bill of Quantities or Trade Bill is present, extract and price each item individually — do not lump items together or create generic phases.
 - Use company catalog rates when items match. Only estimate rates for items with no catalog match.
 - Use the company defaults provided below for working hours, insurance, exclusions, signatory details, etc. Do NOT invent these values.
-${tradePromptAdditions}${boqContext}${companyDefaultsContext}${catalogContext}`;
+${tradePromptAdditions}${boqContext}${companyDefaultsContext}${catalogContext}${priceHierarchyContext}`;
         } else {
           systemPrompt = `You are a senior estimator preparing a quote from tender evidence. Extract facts from the documents provided and produce a structured draft.
 
@@ -2747,7 +2749,7 @@ CRITICAL RULES:
 - When a Bill of Quantities or Trade Bill is present, extract and price each item individually.
 - Use company catalog rates when items match. Only estimate rates for items with no catalog match.
 - Use the company defaults below for working hours, insurance, exclusions, etc. Do NOT invent these values.
-${boqContext}${companyDefaultsContext}${catalogContext}`;
+${boqContext}${companyDefaultsContext}${catalogContext}${priceHierarchyContext}`;
         }
 
         // Generate draft using LLM

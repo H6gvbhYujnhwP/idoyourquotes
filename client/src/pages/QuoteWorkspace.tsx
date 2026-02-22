@@ -56,7 +56,7 @@ import { Separator } from "@/components/ui/separator";
 import TimelineTab from "@/components/comprehensive/TimelineTab";
 import SiteQualityTab from "@/components/comprehensive/SiteQualityTab";
 import DocumentsTab from "@/components/comprehensive/DocumentsTab";
-import DictationButton from "@/components/DictationButton";
+import DictationButton, { type DictationCommand } from "@/components/DictationButton";
 
 type QuoteStatus = "draft" | "sent" | "accepted" | "declined";
 
@@ -134,6 +134,7 @@ export default function QuoteWorkspace() {
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [termsModified, setTermsModified] = useState(false);
   const [originalTerms, setOriginalTerms] = useState("");
+  const [voiceNoteCount, setVoiceNoteCount] = useState(0);
 
   // File input refs (legacy single-file refs kept for backward compat)
   const pdfInputRef = useRef<HTMLInputElement>(null);
@@ -616,6 +617,102 @@ export default function QuoteWorkspace() {
       inputType: "text",
       content: newTextInput,
     });
+  };
+
+  // Voice dictation command handler
+  const handleDictationCommand = (command: DictationCommand) => {
+    switch (command.type) {
+      case "add": {
+        const noteNum = voiceNoteCount + 1;
+        setVoiceNoteCount(noteNum);
+        createInput.mutate({
+          quoteId,
+          inputType: "audio",
+          content: command.text,
+          filename: `Voice Note ${noteNum} — ${new Date().toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+        });
+        toast.success(`Voice Note ${noteNum} saved`);
+        break;
+      }
+      case "remove": {
+        // Find the last voice dictation input and delete it
+        if (inputs && inputs.length > 0) {
+          const voiceInputs = [...inputs]
+            .filter((inp: QuoteInput) => inp.inputType === "audio" && inp.content && !inp.fileUrl)
+            .sort((a: QuoteInput, b: QuoteInput) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          
+          if (voiceInputs.length > 0) {
+            const lastVoice = voiceInputs[0];
+            deleteInput.mutate({ id: lastVoice.id, quoteId });
+            setVoiceNoteCount(Math.max(0, voiceNoteCount - 1));
+            toast.success("Last voice note removed");
+          } else {
+            toast.error("No voice notes to remove");
+          }
+        } else {
+          toast.error("No voice notes to remove");
+        }
+        break;
+      }
+      case "change": {
+        // Replace the last voice dictation with new text
+        if (inputs && inputs.length > 0) {
+          const voiceInputs = [...inputs]
+            .filter((inp: QuoteInput) => inp.inputType === "audio" && inp.content && !inp.fileUrl)
+            .sort((a: QuoteInput, b: QuoteInput) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          
+          if (voiceInputs.length > 0) {
+            const lastVoice = voiceInputs[0];
+            // Delete the old one and create a replacement
+            deleteInput.mutate({ id: lastVoice.id, quoteId });
+            createInput.mutate({
+              quoteId,
+              inputType: "audio",
+              content: command.text,
+              filename: lastVoice.filename || `Voice Note (updated) — ${new Date().toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+            });
+            toast.success("Voice note updated");
+          } else {
+            // No previous note to change — save as new
+            const noteNum = voiceNoteCount + 1;
+            setVoiceNoteCount(noteNum);
+            createInput.mutate({
+              quoteId,
+              inputType: "audio",
+              content: command.text,
+              filename: `Voice Note ${noteNum} — ${new Date().toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+            });
+            toast.success(`Voice Note ${noteNum} saved`);
+          }
+        }
+        break;
+      }
+      case "build_with_text": {
+        // Save the text first, then trigger generation
+        const noteNum = voiceNoteCount + 1;
+        setVoiceNoteCount(noteNum);
+        createInput.mutate({
+          quoteId,
+          inputType: "audio",
+          content: command.text,
+          filename: `Voice Note ${noteNum} — ${new Date().toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+        }, {
+          onSuccess: () => {
+            toast.success(`Voice Note ${noteNum} saved — generating quote...`);
+            // Small delay to let the input be indexed, then generate
+            setTimeout(() => {
+              handleGenerateDraft();
+            }, 500);
+          },
+        });
+        break;
+      }
+      case "build": {
+        toast.success("Generating your quote...");
+        handleGenerateDraft();
+        break;
+      }
+    }
   };
 
   const handleFileUpload = async (
@@ -1383,15 +1480,7 @@ export default function QuoteWorkspace() {
 
               {/* Voice Dictation */}
               <DictationButton
-                onTranscript={(text) => {
-                  createInput.mutate({
-                    quoteId,
-                    inputType: "audio",
-                    content: text,
-                    filename: `Voice Dictation — ${new Date().toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
-                  });
-                  toast.success("Voice dictation saved as input");
-                }}
+                onCommand={handleDictationCommand}
                 disabled={!storageStatus?.configured}
               />
 
