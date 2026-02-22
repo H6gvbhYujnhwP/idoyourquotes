@@ -327,8 +327,8 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
 
   return (
     <div>
-      {/* Takeoff status strip — darker slate to distinguish from file info bar above */}
-      <div className="flex items-center justify-between px-4 py-2.5" style={{ backgroundColor: '#1e293b' }}>
+      {/* Takeoff status strip — matches parent navy gradient for seamless look */}
+      <div className="flex items-center justify-between px-4 py-2.5" style={{ background: `linear-gradient(135deg, ${brand.navy} 0%, #1e3a5f 100%)` }}>
           <div className="flex items-center gap-2">
             {isVerified ? (
               <CheckCircle className="h-4 w-4 text-green-400" />

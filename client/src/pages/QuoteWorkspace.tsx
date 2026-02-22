@@ -1809,26 +1809,11 @@ export default function QuoteWorkspace() {
                       </button>
                     </div>
                   </div>
-
-                  {/* Takeoff status row */}
-                  {takeoff && totalCount > 0 && (
-                    <div className="flex items-center justify-between pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-                      <div className="flex items-center gap-2">
-                        <Sparkles className="w-3.5 h-3.5 text-teal-400" />
-                        <span className="text-xs font-extrabold text-white">
-                          {isApproved ? "Takeoff Approved" : "Takeoff Ready"}
-                        </span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300">
-                          {totalCount} in scope
-                        </span>
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 {/* Full TakeoffPanel — drawing viewer, questions, approve/lock, chat */}
                 {selectedInput.inputType === "pdf" && selectedInput.processingStatus === "completed" && (
-                  <div className="border-t" style={{ borderColor: brand.border }}>
+                  <div>
                     <TakeoffPanel
                       inputId={selectedInput.id}
                       quoteId={quoteId}
