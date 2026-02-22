@@ -1308,6 +1308,16 @@ export default function QuoteWorkspace() {
                 <Sparkles className="h-3.5 w-3.5" />
                 Ask AI
               </button>
+              <button
+                onClick={() => setActiveTab("inputs")}
+                className={cn(
+                  "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all",
+                  "text-blue-700 hover:bg-blue-100 border border-blue-200"
+                )}
+              >
+                <Mic className="h-3.5 w-3.5" />
+                Dictate
+              </button>
             </div>
             {/* Arrow connector */}
             <div className="hidden md:flex absolute -right-3 top-1/2 -translate-y-1/2 z-10">
