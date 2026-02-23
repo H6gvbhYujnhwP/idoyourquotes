@@ -1709,7 +1709,25 @@ export default function QuoteWorkspace() {
               summary={dictationSummary || { clientName: null, jobDescription: "", labour: [], materials: [], markup: null, sundries: null, contingency: null, notes: null, isTradeRelevant: true }}
               isLoading={isSummaryLoading}
               onConfirm={(editedSummary) => {
-                // Save the edited summary back to the voice note content in the database
+                // Build structured text from the edited summary
+                const parts: string[] = [];
+                parts.push(`Job: ${editedSummary.jobDescription}`);
+                if (editedSummary.clientName) parts.push(`Client: ${editedSummary.clientName}`);
+                if (editedSummary.labour.length > 0) {
+                  parts.push("Labour: " + editedSummary.labour.map(l => `${l.quantity} × ${l.role} — ${l.duration}`).join(", "));
+                }
+                if (editedSummary.materials.length > 0) {
+                  parts.push("Materials: " + editedSummary.materials.map(m => `${m.quantity} × ${m.item}${m.unitPrice ? ` @ £${m.unitPrice}` : ""}`).join(", "));
+                }
+                if (editedSummary.markup !== null) parts.push(`Markup: ${editedSummary.markup}%`);
+                if (editedSummary.sundries !== null) parts.push(`Sundries: £${editedSummary.sundries}`);
+                if (editedSummary.contingency) parts.push(`Contingency: ${editedSummary.contingency}`);
+                if (editedSummary.notes) parts.push(`Notes: ${editedSummary.notes}`);
+
+                // Update Processing Instructions with the structured summary
+                setUserPrompt(parts.join("\n"));
+
+                // Also save to the voice note content in the database
                 saveVoiceNoteSummary.mutate({
                   quoteId,
                   summary: {
@@ -1731,8 +1749,8 @@ export default function QuoteWorkspace() {
                   },
                 }, {
                   onSuccess: () => {
-                    toast.success("Voice summary saved");
-                    refetch(); // Refresh inputs to show updated content
+                    toast.success("Voice summary saved to instructions");
+                    refetch();
                   },
                   onError: () => {
                     toast.error("Failed to save summary");
