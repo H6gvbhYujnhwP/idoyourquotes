@@ -1948,6 +1948,15 @@ export default function QuoteWorkspace() {
                           Re-analyse
                         </button>
                       )}
+                      {/* Edit Summary button for voice notes */}
+                      {selectedInput.inputType === "audio" && selectedInput.content && !selectedInput.fileUrl && (
+                        <button
+                          onClick={() => triggerVoiceAnalysis()}
+                          className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-amber-300 bg-white/10 hover:bg-white/15 border border-white/15 transition-colors flex items-center gap-1.5"
+                        >
+                          Edit Summary
+                        </button>
+                      )}
                       {selectedInput.fileUrl && (
                         <button
                           onClick={() => window.open(selectedInput.fileUrl!, "_blank")}
