@@ -257,7 +257,11 @@ export default function DictationButton({
   // Auto-start listening when autoStart prop becomes true
   useEffect(() => {
     if (autoStart && !isListening && !disabled) {
-      startListening();
+      // Small delay to let React finish rendering before starting recognition
+      const timer = setTimeout(() => {
+        startListening();
+      }, 100);
+      return () => clearTimeout(timer);
     }
   }, [autoStart]); // eslint-disable-line react-hooks/exhaustive-deps
 

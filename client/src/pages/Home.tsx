@@ -52,10 +52,15 @@ export default function Home() {
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             ) : (
-              <Button onClick={handleGetStarted}>
-                Get Started
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
+              <>
+                <Button variant="ghost" onClick={() => setLocation("/auth")}>
+                  Sign In
+                </Button>
+                <Button onClick={handleGetStarted}>
+                  Get Started
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </>
             )}
           </div>
         </div>
