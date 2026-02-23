@@ -420,18 +420,25 @@ export default function QuoteDraftSummary({
                   })}
                 </div>
               ) : (
-                <div className="flex flex-wrap gap-1.5">
+                <div className="space-y-1">
                   {takeoffMaterials.map((m, i) => (
-                    <span
+                    <div
                       key={i}
-                      className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg"
-                      style={{ backgroundColor: "#f5f3ff", color: brand.navy, border: "1px solid #e9e5ff" }}
+                      className="flex items-center gap-2 text-sm font-medium py-1 px-2.5 rounded-lg"
+                      style={{ backgroundColor: "#f5f3ff", border: "1px solid #e9e5ff" }}
                     >
-                      <span className="font-bold">{m.quantity}</span>
-                      <span>×</span>
-                      <span>{m.item}</span>
-                      {m.unitPrice && <span style={{ color: brand.navyMuted }}>@ £{m.unitPrice}</span>}
-                    </span>
+                      <span className="font-extrabold" style={{ color: "#8b5cf6", minWidth: 28 }}>{m.quantity}</span>
+                      <span style={{ color: brand.navyMuted }}>×</span>
+                      <span style={{ color: brand.navy }}>{m.item}</span>
+                      {m.symbolCode && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded ml-auto" style={{ backgroundColor: "#ede9fe", color: "#8b5cf6" }}>
+                          {m.symbolCode}
+                        </span>
+                      )}
+                      {m.unitPrice != null && m.unitPrice > 0 && (
+                        <span className="text-xs" style={{ color: brand.navyMuted }}>@ £{m.unitPrice}</span>
+                      )}
+                    </div>
                   ))}
                 </div>
               )}

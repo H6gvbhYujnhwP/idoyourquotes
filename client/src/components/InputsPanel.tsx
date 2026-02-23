@@ -74,7 +74,7 @@ function getProcessingStage(input: QuoteInput, takeoff: TakeoffData | null): {
 
   // Currently processing (AI analysis stage)
   if (input.processingStatus === "processing") {
-    return { label: "AI Analysis…", color: "#3b82f6", bgColor: "#eff6ff", animate: true, icon: "spinner" };
+    return { label: "AI Analysis in progress…", color: "#3b82f6", bgColor: "#eff6ff", animate: true, icon: "spinner" };
   }
 
   // Completed analysis
@@ -83,10 +83,10 @@ function getProcessingStage(input: QuoteInput, takeoff: TakeoffData | null): {
     if (isPdf) {
       if (!takeoff) {
         // Takeoff auto-running (TakeoffPanel auto-triggers when no takeoff exists)
-        return { label: "Symbol Takeoff…", color: "#8b5cf6", bgColor: "#f5f3ff", animate: true, icon: "zap" };
+        return { label: "Symbol Takeoff in progress…", color: "#8b5cf6", bgColor: "#f5f3ff", animate: true, icon: "zap" };
       }
       if (takeoff.status === "processing" || takeoff.status === "pending") {
-        return { label: "Symbol Takeoff…", color: "#8b5cf6", bgColor: "#f5f3ff", animate: true, icon: "zap" };
+        return { label: "Symbol Takeoff in progress…", color: "#8b5cf6", bgColor: "#f5f3ff", animate: true, icon: "zap" };
       }
       if (isApproved && totalCount > 0) {
         return { label: `${totalCount} items ✓`, color: brand.teal, bgColor: `${brand.teal}12`, animate: false, icon: "check" };
@@ -105,34 +105,37 @@ function getProcessingStage(input: QuoteInput, takeoff: TakeoffData | null): {
 }
 
 // Animated status indicator for the file list
-function StatusIndicator({ input, takeoff }: { input: QuoteInput; takeoff: TakeoffData | null }) {
+function StatusIndicator({ input, takeoff, compact = false }: { input: QuoteInput; takeoff: TakeoffData | null; compact?: boolean }) {
   const stage = getProcessingStage(input, takeoff);
+
+  const iconSize = compact ? "w-3 h-3" : "w-3.5 h-3.5";
+  const textSize = compact ? "text-[10px]" : "text-[11px]";
 
   return (
     <div
-      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full"
+      className={`flex items-center gap-1.5 rounded-md ${compact ? "px-2 py-0.5" : "px-2.5 py-1"}`}
       style={{ backgroundColor: stage.bgColor }}
     >
       {stage.icon === "spinner" && (
-        <Loader2 className="w-3 h-3 animate-spin" style={{ color: stage.color }} />
+        <Loader2 className={`${iconSize} animate-spin`} style={{ color: stage.color }} />
       )}
       {stage.icon === "check" && (
-        <Check className="w-3 h-3" style={{ color: stage.color }} />
+        <Check className={iconSize} style={{ color: stage.color }} />
       )}
       {stage.icon === "warning" && (
-        <AlertTriangle className="w-3 h-3" style={{ color: stage.color }} />
+        <AlertTriangle className={iconSize} style={{ color: stage.color }} />
       )}
       {stage.icon === "zap" && (
-        <Zap className="w-3 h-3" style={{ color: stage.color }} />
+        <Zap className={iconSize} style={{ color: stage.color }} />
       )}
       {stage.icon === "mic" && (
-        <Mic className="w-3 h-3" style={{ color: stage.color }} />
+        <Mic className={iconSize} style={{ color: stage.color }} />
       )}
       {stage.icon === "dash" && (
-        <span className="w-3 h-3 flex items-center justify-center text-[8px]" style={{ color: stage.color }}>—</span>
+        <span className={`${iconSize} flex items-center justify-center text-[9px]`} style={{ color: stage.color }}>—</span>
       )}
       <span
-        className={`text-[9px] font-bold ${stage.animate ? "animate-pulse" : ""}`}
+        className={`${textSize} font-bold whitespace-nowrap ${stage.animate ? "animate-pulse" : ""}`}
         style={{ color: stage.color }}
       >
         {stage.label}

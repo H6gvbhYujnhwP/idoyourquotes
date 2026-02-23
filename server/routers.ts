@@ -1767,7 +1767,11 @@ Report facts only. Do not interpret or add commentary.`,
       .query(async ({ ctx, input }) => {
         const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
-        return getElectricalTakeoffsByQuoteId(input.quoteId);
+        const takeoffs = await getElectricalTakeoffsByQuoteId(input.quoteId);
+        return takeoffs.map(t => ({
+          ...t,
+          symbolDescriptions: SYMBOL_DESCRIPTIONS,
+        }));
       }),
 
     // Get single takeoff with SVG overlay
