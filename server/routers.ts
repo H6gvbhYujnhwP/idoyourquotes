@@ -2571,6 +2571,24 @@ STRUCTURE:
           tradePromptAdditions = `\n\nTRADE-SPECIFIC GUIDANCE:\n- Line Item Extraction: ${tradePreset.aiPrompts.lineItemExtraction}\n- Timeline Analysis: ${tradePreset.aiPrompts.timelineAnalysis}`;
         }
 
+        // Trade-relevance guardrail — prevents generating nonsense quotes for unrelated content
+        const tradeLabel = tradePresetKey || "general trades/construction";
+        const tradeRelevanceGuardrail = `\n\nTRADE RELEVANCE CHECK — IMPORTANT:
+This quote is for a business in the "${tradeLabel}" trade. Before generating the quote, assess whether the evidence provided is genuinely related to ${tradeLabel} work.
+
+If the evidence is clearly UNRELATED to ${tradeLabel} (e.g. someone asking for food items, random products, joke requests, or work that belongs to an entirely different trade):
+- Set the "title" field to "⚠️ Content Review Needed"
+- Set the "description" field to a polite message explaining: "The content provided doesn't appear to relate to ${tradeLabel} work. Please check your input and try again. If this was intentional, add more detail about how this relates to your ${tradeLabel} business."
+- Set "lineItems" to an empty array []
+- Set "assumptions" to ["The evidence provided did not appear to relate to ${tradeLabel} work"]
+- Set "exclusions" to an empty array []
+- Still extract clientName if mentioned
+
+If the evidence IS related to ${tradeLabel} (even loosely — e.g. buying materials for a job, hiring subcontractors, quoting for maintenance), proceed normally with the full quote generation.
+
+When in doubt, generate the quote but add a note in the assumptions: "Some items may not be directly related to ${tradeLabel} — please review."
+`;
+
         // Build the system prompt based on quote mode
         let systemPrompt: string;
 
@@ -2688,7 +2706,7 @@ CRITICAL RULES:
 - When a Bill of Quantities or Trade Bill is present, extract and price each item individually — do not lump items together or create generic phases.
 - Use company catalog rates when items match. Only estimate rates for items with no catalog match.
 - Use the company defaults provided below for working hours, insurance, exclusions, signatory details, etc. Do NOT invent these values.
-${tradePromptAdditions}${boqContext}${companyDefaultsContext}${catalogContext}${priceHierarchyContext}`;
+${tradePromptAdditions}${boqContext}${companyDefaultsContext}${catalogContext}${priceHierarchyContext}${tradeRelevanceGuardrail}`;
         } else {
           systemPrompt = `You are a senior estimator preparing a quote from tender evidence. Extract facts from the documents provided and produce a structured draft.
 
@@ -2749,7 +2767,7 @@ CRITICAL RULES:
 - When a Bill of Quantities or Trade Bill is present, extract and price each item individually.
 - Use company catalog rates when items match. Only estimate rates for items with no catalog match.
 - Use the company defaults below for working hours, insurance, exclusions, etc. Do NOT invent these values.
-${boqContext}${companyDefaultsContext}${catalogContext}${priceHierarchyContext}`;
+${boqContext}${companyDefaultsContext}${catalogContext}${priceHierarchyContext}${tradeRelevanceGuardrail}`;
         }
 
         // Generate draft using LLM
