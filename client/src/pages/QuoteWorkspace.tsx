@@ -58,6 +58,7 @@ import SiteQualityTab from "@/components/comprehensive/SiteQualityTab";
 import DocumentsTab from "@/components/comprehensive/DocumentsTab";
 import DictationButton, { type DictationCommand } from "@/components/DictationButton";
 import DictationSummaryCard, { type DictationSummary } from "@/components/DictationSummaryCard";
+import InputsPanel from "@/components/InputsPanel";
 import FileIcon from "@/components/FileIcon";
 import { brand, symbolColors } from "@/lib/brandTheme";
 import TakeoffPanel from "@/components/TakeoffPanel";
@@ -1771,283 +1772,23 @@ export default function QuoteWorkspace() {
             />
           )}
 
-          {/* File icon grid — 5 columns, Style C branded */}
+          {/* Split View / Accordion inputs panel */}
           {inputs && inputs.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-sm font-extrabold" style={{ color: brand.navy }}>Added Inputs</span>
-                <span
-                  className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                  style={{ backgroundColor: brand.tealBg, color: brand.teal }}
-                >
-                  {inputs.length}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                {inputs.map((input: QuoteInput) => {
-                  const isSelected = selectedInputId === input.id;
-                  const takeoff = getTakeoffForInput(input.id);
-                  const isApproved = takeoff?.status === "verified" || takeoff?.status === "locked";
-                  const totalCount = takeoff?.counts ? Object.values(takeoff.counts as Record<string, number>).reduce((s: number, v: number) => s + v, 0) : 0;
-
-                  return (
-                    <div
-                      key={input.id}
-                      onClick={() => setSelectedInputId(isSelected ? null : input.id)}
-                      className="relative p-4 rounded-xl cursor-pointer transition-all text-center group"
-                      style={{
-                        backgroundColor: isSelected ? brand.tealBg : brand.white,
-                        border: `2px solid ${isSelected ? brand.teal : 'transparent'}`,
-                        boxShadow: isSelected ? `0 4px 12px ${brand.teal}20` : '0 1px 3px rgba(0,0,0,0.06)',
-                      }}
-                    >
-                      {/* Status indicator top-right */}
-                      <div className="absolute top-2.5 right-2.5">
-                        {input.processingStatus === "completed" && !isApproved && (
-                          <span className="w-5 h-5 rounded-full flex items-center justify-center" style={{ backgroundColor: `${brand.teal}15` }}>
-                            <Check className="w-3 h-3" style={{ color: brand.teal }} />
-                          </span>
-                        )}
-                        {input.processingStatus === "processing" && (
-                          <span className="w-5 h-5 rounded-full flex items-center justify-center animate-pulse" style={{ backgroundColor: `${brand.teal}15` }}>
-                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: brand.teal }} />
-                          </span>
-                        )}
-                        {(input.processingStatus === "failed" || input.processingStatus === "error") && (
-                          <span className="w-5 h-5 rounded-full bg-red-100 flex items-center justify-center">
-                            <AlertTriangle className="w-3 h-3 text-red-500" />
-                          </span>
-                        )}
-                      </div>
-
-                      {/* File icon centred */}
-                      <div className="flex justify-center mb-2.5 mt-1">
-                        <FileIcon type={input.inputType} size="lg" approved={isApproved} />
-                      </div>
-
-                      {/* Filename */}
-                      <p className="text-[11px] font-extrabold truncate leading-tight px-1" style={{ color: brand.navy }}>
-                        {input.filename || input.inputType.charAt(0).toUpperCase() + input.inputType.slice(1) + " Input"}
-                      </p>
-                      <p className="text-[9px] mt-0.5" style={{ color: brand.navyMuted }}>
-                        {input.mimeType ? (input.mimeType.split("/").pop()?.toUpperCase() || "") : ""}
-                        {input.mimeType ? " • " : ""}
-                        {new Date(input.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
-                      </p>
-
-                      {/* Takeoff count badge */}
-                      {takeoff && totalCount > 0 && (
-                        <div className="mt-2">
-                          <span
-                            className="inline-block text-[10px] font-bold px-2.5 py-0.5 rounded-full"
-                            style={{
-                              backgroundColor: isApproved ? `${brand.teal}15` : `${brand.navy}08`,
-                              color: isApproved ? brand.teal : brand.navy,
-                            }}
-                          >
-                            {totalCount} items {isApproved ? "✓" : ""}
-                          </span>
-                        </div>
-                      )}
-
-                      {/* Processing progress */}
-                      {input.processingStatus === "processing" && (
-                        <div className="mt-2 px-2">
-                          <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: `${brand.teal}15` }}>
-                            <div className="h-full rounded-full animate-pulse" style={{ width: "60%", backgroundColor: brand.teal }} />
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Failed indicator */}
-                      {(input.processingStatus === "failed" || input.processingStatus === "error") && (
-                        <div className="mt-2">
-                          <span className="text-[9px] text-red-500 font-medium">Analysis failed</span>
-                        </div>
-                      )}
-
-                      {/* Voice note content preview */}
-                      {input.content && !input.fileUrl && (
-                        <p className="text-[9px] mt-1.5 line-clamp-2 leading-tight px-1" style={{ color: brand.navyMuted }}>
-                          {input.content}
-                        </p>
-                      )}
-
-                      {/* Voice note action buttons */}
-                      {input.inputType === "audio" && input.content && !input.fileUrl && (
-                        <div className="mt-2 flex gap-1.5 px-1">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              triggerVoiceAnalysis();
-                            }}
-                            className="flex-1 text-[9px] font-bold py-1 px-2 rounded-md transition-colors"
-                            style={{ backgroundColor: `${brand.teal}12`, color: brand.teal }}
-                          >
-                            Re-analyse
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (window.confirm("Delete this voice note?")) {
-                                deleteInput.mutate({ id: input.id, quoteId });
-                                if (selectedInputId === input.id) setSelectedInputId(null);
-                              }
-                            }}
-                            className="text-[9px] font-bold py-1 px-2 rounded-md transition-colors"
-                            style={{ backgroundColor: "#fef2f2", color: "#dc2626" }}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+            <InputsPanel
+              inputs={inputs}
+              selectedInputId={selectedInputId}
+              onSelectInput={setSelectedInputId}
+              getTakeoffForInput={getTakeoffForInput}
+              onProcessInput={handleProcessInput}
+              onDeleteInput={(input) => {
+                deleteInput.mutate({ id: input.id, quoteId });
+              }}
+              onTriggerVoiceAnalysis={triggerVoiceAnalysis}
+              processingInputId={processingInputId}
+              quoteId={quoteId}
+              userPrompt={userPrompt}
+            />
           )}
-
-          {/* Detail panel — shown when a file is selected */}
-          {selectedInputId && inputs && (() => {
-            const selectedInput = inputs.find((i: QuoteInput) => i.id === selectedInputId);
-            if (!selectedInput) return null;
-            const takeoff = getTakeoffForInput(selectedInputId);
-            const isApproved = takeoff?.status === "verified" || takeoff?.status === "locked";
-            const counts = (takeoff?.counts || {}) as Record<string, number>;
-            const totalCount = Object.values(counts).reduce((s: number, v: number) => s + v, 0);
-            const symbolDescs = (takeoff as any)?.symbolDescriptions || {};
-
-            return (
-              <div className="rounded-2xl overflow-hidden" style={{ border: `1.5px solid ${brand.border}` }}>
-                {/* Dark gradient header */}
-                <div className="px-4 py-3" style={{ background: `linear-gradient(135deg, ${brand.navy} 0%, #1e3a5f 100%)` }}>
-                  {/* Top row — file info */}
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-3">
-                      <FileIcon type={selectedInput.inputType} size="sm" approved={isApproved} />
-                      <div>
-                        <h4 className="text-sm font-extrabold text-white">
-                          {selectedInput.filename || "Input"}
-                        </h4>
-                        <p className="text-[10px] font-medium text-white/50 mt-0.5">
-                          {selectedInput.mimeType ? selectedInput.mimeType.split("/").pop()?.toUpperCase() : ""}
-                          {" • "}
-                          {new Date(selectedInput.createdAt).toLocaleDateString("en-GB")}
-                          {selectedInput.processingStatus === "completed" && (
-                            <span className="text-teal-300 font-bold"> • Analysed</span>
-                          )}
-                          {selectedInput.processingStatus === "processing" && (
-                            <span className="text-blue-300 font-bold"> • Processing…</span>
-                          )}
-                          {(selectedInput.processingStatus === "failed" || selectedInput.processingStatus === "error") && (
-                            <span className="text-red-300 font-bold"> • Failed</span>
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {(selectedInput.processingStatus === "failed" || selectedInput.processingStatus === "error") && (
-                        <button
-                          onClick={() => handleProcessInput(selectedInput)}
-                          disabled={processingInputId === selectedInput.id}
-                          className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-red-300 bg-white/10 hover:bg-white/15 border border-white/15 transition-colors"
-                        >
-                          Retry
-                        </button>
-                      )}
-                      {selectedInput.processingStatus === "completed" && (
-                        <button
-                          onClick={() => handleProcessInput(selectedInput)}
-                          disabled={processingInputId === selectedInput.id}
-                          className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-teal-300 bg-white/10 hover:bg-white/15 border border-white/15 transition-colors"
-                        >
-                          Re-analyse
-                        </button>
-                      )}
-                      {/* Edit Summary button for voice notes */}
-                      {selectedInput.inputType === "audio" && selectedInput.content && !selectedInput.fileUrl && (
-                        <button
-                          onClick={() => triggerVoiceAnalysis()}
-                          className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-amber-300 bg-white/10 hover:bg-white/15 border border-white/15 transition-colors flex items-center gap-1.5"
-                        >
-                          Edit Summary
-                        </button>
-                      )}
-                      {selectedInput.fileUrl && (
-                        <button
-                          onClick={() => window.open(selectedInput.fileUrl!, "_blank")}
-                          className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white/70 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
-                        >
-                          Open File
-                        </button>
-                      )}
-                      <button
-                        onClick={() => {
-                          if (window.confirm(`Delete "${selectedInput.filename || "this input"}"?`)) {
-                            deleteInput.mutate({ id: selectedInput.id, quoteId });
-                            setSelectedInputId(null);
-                          }
-                        }}
-                        className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-400/20 transition-colors"
-                      >
-                        Delete
-                      </button>
-                      <button
-                        onClick={() => setSelectedInputId(null)}
-                        className="p-1.5 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/10 transition-colors"
-                        title="Close panel"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Full TakeoffPanel — drawing viewer, questions, approve/lock, chat */}
-                {selectedInput.inputType === "pdf" && selectedInput.processingStatus === "completed" && (
-                  <div>
-                    <TakeoffPanel
-                      inputId={selectedInput.id}
-                      quoteId={quoteId}
-                      filename={selectedInput.filename || "Drawing"}
-                      fileUrl={selectedInput.fileUrl || undefined}
-                      processingInstructions={userPrompt}
-                    />
-                  </div>
-                )}
-
-                {/* Processing state */}
-                {selectedInput.processingStatus === "processing" && (
-                  <div className="px-5 py-3 flex items-center gap-3" style={{ backgroundColor: brand.white }}>
-                    <Loader2 className="h-4 w-4 animate-spin" style={{ color: brand.teal }} />
-                    <span className="text-xs font-medium" style={{ color: brand.navy }}>Analysing document, this may take up to a minute…</span>
-                  </div>
-                )}
-
-                {/* Failed state */}
-                {(selectedInput.processingStatus === "failed" || selectedInput.processingStatus === "error") && (
-                  <div className="px-5 py-3 flex items-center gap-2" style={{ backgroundColor: '#fef2f2' }}>
-                    <AlertTriangle className="w-4 h-4 text-red-500" />
-                    <span className="text-xs text-red-700">
-                      {selectedInput.processingError || "Analysis failed — the document may be too large or corrupted. Try re-uploading."}
-                    </span>
-                  </div>
-                )}
-
-                {/* Voice/text content preview */}
-                {selectedInput.content && (
-                  <div className="px-5 py-3" style={{ backgroundColor: brand.white, borderTop: `1px solid ${brand.border}` }}>
-                    <p className="text-[11px] font-bold mb-1" style={{ color: brand.navy }}>Content</p>
-                    <p className="text-xs leading-relaxed" style={{ color: brand.navyMuted }}>
-                      {selectedInput.content}
-                    </p>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
 
         </TabsContent>
 
