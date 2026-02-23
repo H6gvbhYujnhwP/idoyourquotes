@@ -2462,6 +2462,8 @@ Rules:
               role: "system",
               content: `You are a quote parser for a ${tradeLabel} business. Extract structured data from the user's dictation/inputs and respond ONLY with valid JSON.
 
+IMPORTANT: Voice notes are listed in chronological order. Later voice notes may AMEND earlier ones. If a later note says to "remove", "delete", "take off", or "cancel" items — those items must NOT appear in the final output. If a later note changes a quantity, use the new quantity. If a later note adds items, include them. Always produce the FINAL merged result after applying all amendments.
+
 Parse the content and extract:
 - clientName: The client or company name if mentioned (string or null)
 - jobDescription: Brief one-line summary of the work (string)
