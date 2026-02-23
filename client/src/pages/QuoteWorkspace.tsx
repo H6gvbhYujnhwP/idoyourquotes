@@ -1540,7 +1540,6 @@ export default function QuoteWorkspace() {
               <div className="px-4 py-3" style={{ borderTop: `1px solid ${brand.border}` }}>
                 <DictationButton
                   onCommand={handleDictationCommand}
-                  disabled={!storageStatus?.configured}
                   autoStart={isDictating}
                   onListeningChange={(listening) => {
                     if (!listening) setIsDictating(false);

@@ -265,9 +265,15 @@ export default function DictationButton({
     }
   }, [autoStart]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Notify parent when listening state changes
+  // Notify parent when listening state changes (skip initial mount)
+  const hasStartedRef = useRef(false);
   useEffect(() => {
-    onListeningChange?.(isListening);
+    if (isListening) {
+      hasStartedRef.current = true;
+    }
+    if (hasStartedRef.current) {
+      onListeningChange?.(isListening);
+    }
   }, [isListening]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isSupported) {
