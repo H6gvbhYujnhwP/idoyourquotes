@@ -537,7 +537,7 @@ export default function QuoteWorkspace() {
   };
 
   // Called after summary card confirm or when skipping summary
-  const proceedWithGeneration = async () => {
+  const proceedWithGeneration = async (promptOverride?: string) => {
     setShowDictationSummary(false);
     setDictationSummary(null);
 
@@ -560,7 +560,7 @@ export default function QuoteWorkspace() {
 
     generateDraft.mutate({
       quoteId,
-      userPrompt: userPrompt || undefined,
+      userPrompt: promptOverride || userPrompt || undefined,
     });
   };
 
@@ -1717,7 +1717,32 @@ export default function QuoteWorkspace() {
             <DictationSummaryCard
               summary={dictationSummary || { clientName: null, jobDescription: "", labour: [], materials: [], markup: null, sundries: null, contingency: null, notes: null, isTradeRelevant: true }}
               isLoading={isSummaryLoading}
-              onConfirm={() => proceedWithGeneration()}
+              onConfirm={(editedSummary) => {
+                // Build a structured prompt from the edited summary to override the raw transcript
+                const parts: string[] = ["USER-CONFIRMED VOICE SUMMARY (use these values as the primary source of truth):"];
+                parts.push(`Job: ${editedSummary.jobDescription}`);
+                if (editedSummary.clientName) parts.push(`Client: ${editedSummary.clientName}`);
+                if (editedSummary.labour.length > 0) {
+                  parts.push("Labour: " + editedSummary.labour.map(l => `${l.quantity} × ${l.role} — ${l.duration}`).join(", "));
+                }
+                if (editedSummary.materials.length > 0) {
+                  parts.push("Materials: " + editedSummary.materials.map(m => `${m.quantity} × ${m.item}${m.unitPrice ? ` @ £${m.unitPrice}` : ""}`).join(", "));
+                }
+                if (editedSummary.markup !== null) parts.push(`Markup: ${editedSummary.markup}%`);
+                if (editedSummary.sundries !== null) parts.push(`Sundries: £${editedSummary.sundries}`);
+                if (editedSummary.contingency) parts.push(`Contingency: ${editedSummary.contingency}`);
+                if (editedSummary.notes) parts.push(`Notes: ${editedSummary.notes}`);
+
+                const summaryPrompt = parts.join("\n");
+                // Prepend the confirmed summary to the user prompt
+                const combinedPrompt = userPrompt
+                  ? `${summaryPrompt}\n\nAdditional instructions: ${userPrompt}`
+                  : summaryPrompt;
+
+                setShowDictationSummary(false);
+                setDictationSummary(null);
+                proceedWithGeneration(combinedPrompt);
+              }}
               onEdit={() => {
                 setShowDictationSummary(false);
                 setDictationSummary(null);
@@ -1832,6 +1857,48 @@ export default function QuoteWorkspace() {
                           {input.content}
                         </p>
                       )}
+
+                      {/* Voice note action buttons */}
+                      {input.inputType === "audio" && input.content && !input.fileUrl && (
+                        <div className="mt-2 flex gap-1.5 px-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setIsSummaryLoading(true);
+                              setShowDictationSummary(true);
+                              setActiveTab("inputs");
+                              parseDictationSummary.mutateAsync({ quoteId }).then((result) => {
+                                if (result.hasSummary && result.summary) {
+                                  setDictationSummary(result.summary as DictationSummary);
+                                } else {
+                                  setShowDictationSummary(false);
+                                  toast.error("Could not parse dictation");
+                                }
+                              }).catch(() => {
+                                setShowDictationSummary(false);
+                                toast.error("Could not parse dictation");
+                              }).finally(() => setIsSummaryLoading(false));
+                            }}
+                            className="flex-1 text-[9px] font-bold py-1 px-2 rounded-md transition-colors"
+                            style={{ backgroundColor: `${brand.teal}12`, color: brand.teal }}
+                          >
+                            Analyse
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm("Delete this voice note?")) {
+                                deleteInput.mutate({ id: input.id, quoteId });
+                                if (selectedInputId === input.id) setSelectedInputId(null);
+                              }
+                            }}
+                            className="text-[9px] font-bold py-1 px-2 rounded-md transition-colors"
+                            style={{ backgroundColor: "#fef2f2", color: "#dc2626" }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1906,10 +1973,19 @@ export default function QuoteWorkspace() {
                       )}
                       <button
                         onClick={() => {
-                          deleteInput.mutate({ id: selectedInput.id, quoteId });
-                          setSelectedInputId(null);
+                          if (window.confirm(`Delete "${selectedInput.filename || "this input"}"?`)) {
+                            deleteInput.mutate({ id: selectedInput.id, quoteId });
+                            setSelectedInputId(null);
+                          }
                         }}
-                        className="p-1.5 rounded-lg text-white/40 hover:text-red-300 hover:bg-white/10 transition-colors"
+                        className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-400/20 transition-colors"
+                      >
+                        Delete
+                      </button>
+                      <button
+                        onClick={() => setSelectedInputId(null)}
+                        className="p-1.5 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/10 transition-colors"
+                        title="Close panel"
                       >
                         <X className="w-4 h-4" />
                       </button>
