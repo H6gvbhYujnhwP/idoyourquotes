@@ -1715,10 +1715,17 @@ export default function QuoteWorkspace() {
                   summary: {
                     clientName: editedSummary.clientName,
                     jobDescription: editedSummary.jobDescription,
-                    labour: editedSummary.labour,
-                    materials: editedSummary.materials,
-                    markup: editedSummary.markup,
-                    sundries: editedSummary.sundries,
+                    labour: editedSummary.labour.map(l => ({
+                      ...l,
+                      quantity: Number(l.quantity) || 1,
+                    })),
+                    materials: editedSummary.materials.map(m => ({
+                      ...m,
+                      quantity: Number(m.quantity) || 1,
+                      unitPrice: m.unitPrice != null ? Number(m.unitPrice) || 0 : null,
+                    })),
+                    markup: editedSummary.markup != null ? Number(editedSummary.markup) || 0 : null,
+                    sundries: editedSummary.sundries != null ? Number(editedSummary.sundries) || 0 : null,
                     contingency: editedSummary.contingency,
                     notes: editedSummary.notes,
                   },

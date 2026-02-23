@@ -2374,8 +2374,8 @@ Rules:
         summary: z.object({
           clientName: z.string().nullable(),
           jobDescription: z.string(),
-          labour: z.array(z.object({ role: z.string(), quantity: z.number(), duration: z.string() })),
-          materials: z.array(z.object({ item: z.string(), quantity: z.number(), unitPrice: z.number().nullable() })),
+          labour: z.array(z.object({ role: z.string(), quantity: z.number().default(1), duration: z.string() })),
+          materials: z.array(z.object({ item: z.string(), quantity: z.number().default(1), unitPrice: z.number().nullable() })),
           markup: z.number().nullable(),
           sundries: z.number().nullable(),
           contingency: z.string().nullable(),
