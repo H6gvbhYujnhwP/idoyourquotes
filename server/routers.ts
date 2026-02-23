@@ -2372,31 +2372,16 @@ Rules:
         quoteId: z.number(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const quote = await db.select().from(quotes).where(
-          and(eq(quotes.id, input.quoteId), eq(quotes.userId, ctx.userId))
-        ).then(rows => rows[0]);
-
-        if (!quote) {
-          // Try org-based access
-          const orgMembership = await db.select().from(organizationMembers)
-            .where(eq(organizationMembers.userId, ctx.userId))
-            .then(rows => rows[0]);
-
-          if (!orgMembership) throw new Error("Quote not found");
-
-          const orgQuote = await db.select().from(quotes).where(
-            and(eq(quotes.id, input.quoteId), eq(quotes.organizationId, orgMembership.organizationId))
-          ).then(rows => rows[0]);
-
-          if (!orgQuote) throw new Error("Quote not found");
-          Object.assign(quote || {}, orgQuote);
-        }
+        console.log(`[tradeRelevanceCheck] Starting for quoteId=${input.quoteId}`);
+        
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
 
         // Gather evidence summaries
-        const inputRecords = await db.select().from(quoteInputs)
-          .where(eq(quoteInputs.quoteId, input.quoteId));
+        const inputRecords = await getInputsByQuoteId(input.quoteId);
 
         if (inputRecords.length === 0) {
+          console.log(`[tradeRelevanceCheck] No inputs, skipping check`);
           return { relevant: true, message: "" }; // No evidence to check — let it proceed
         }
 
@@ -2408,11 +2393,15 @@ Rules:
           if (inp.extractedText) {
             return `Document (${inp.filename || inp.inputType}): "${inp.extractedText.substring(0, 200)}"`;
           }
+          if (inp.processedContent) {
+            return `Processed (${inp.filename || inp.inputType}): "${inp.processedContent.substring(0, 200)}"`;
+          }
           return `File: ${inp.filename || inp.inputType}`;
         }).join("\n");
 
         const tradePresetKey = (quote as any)?.tradePreset as string | null;
         const tradeLabel = tradePresetKey || "general trades/construction";
+        console.log(`[tradeRelevanceCheck] Trade: ${tradeLabel}, evidence: ${evidenceSummary.substring(0, 100)}`);
 
         const response = await invokeLLM({
           messages: [
@@ -2435,6 +2424,7 @@ If NOT relevant: {"relevant": false, "message": "Brief explanation of why this d
         });
 
         const content = response.choices[0]?.message?.content;
+        console.log(`[tradeRelevanceCheck] LLM response: ${content}`);
         if (!content) return { relevant: true, message: "" };
 
         try {
