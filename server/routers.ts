@@ -2366,6 +2366,88 @@ Rules:
         }
       }),
 
+    // Quick trade-relevance check before full generation (Option A guardrail)
+    tradeRelevanceCheck: protectedProcedure
+      .input(z.object({
+        quoteId: z.number(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const quote = await db.select().from(quotes).where(
+          and(eq(quotes.id, input.quoteId), eq(quotes.userId, ctx.userId))
+        ).then(rows => rows[0]);
+
+        if (!quote) {
+          // Try org-based access
+          const orgMembership = await db.select().from(organizationMembers)
+            .where(eq(organizationMembers.userId, ctx.userId))
+            .then(rows => rows[0]);
+
+          if (!orgMembership) throw new Error("Quote not found");
+
+          const orgQuote = await db.select().from(quotes).where(
+            and(eq(quotes.id, input.quoteId), eq(quotes.organizationId, orgMembership.organizationId))
+          ).then(rows => rows[0]);
+
+          if (!orgQuote) throw new Error("Quote not found");
+          Object.assign(quote || {}, orgQuote);
+        }
+
+        // Gather evidence summaries
+        const inputRecords = await db.select().from(quoteInputs)
+          .where(eq(quoteInputs.quoteId, input.quoteId));
+
+        if (inputRecords.length === 0) {
+          return { relevant: true, message: "" }; // No evidence to check — let it proceed
+        }
+
+        // Build a brief summary of evidence for the check
+        const evidenceSummary = inputRecords.map((inp: any) => {
+          if (inp.inputType === "audio" && inp.content && !inp.fileUrl) {
+            return `Voice note: "${inp.content.substring(0, 200)}"`;
+          }
+          if (inp.extractedText) {
+            return `Document (${inp.filename || inp.inputType}): "${inp.extractedText.substring(0, 200)}"`;
+          }
+          return `File: ${inp.filename || inp.inputType}`;
+        }).join("\n");
+
+        const tradePresetKey = (quote as any)?.tradePreset as string | null;
+        const tradeLabel = tradePresetKey || "general trades/construction";
+
+        const response = await invokeLLM({
+          messages: [
+            {
+              role: "system",
+              content: `You are a quick content classifier. Respond ONLY with valid JSON: {"relevant": true/false, "message": "string"}
+
+The user runs a "${tradeLabel}" business. Check if the following evidence relates to ${tradeLabel} work (even loosely — buying materials, quoting for maintenance, hiring subcontractors all count as relevant).
+
+If relevant: {"relevant": true, "message": ""}
+If NOT relevant: {"relevant": false, "message": "Brief explanation of why this doesn't appear to relate to ${tradeLabel} work, and what the content actually seems to be about."}`,
+            },
+            {
+              role: "user",
+              content: evidenceSummary,
+            },
+          ],
+          response_format: { type: "json_object" },
+          max_tokens: 150,
+        });
+
+        const content = response.choices[0]?.message?.content;
+        if (!content) return { relevant: true, message: "" };
+
+        try {
+          const parsed = JSON.parse(content);
+          return {
+            relevant: parsed.relevant === true,
+            message: parsed.message || "",
+          };
+        } catch {
+          return { relevant: true, message: "" }; // If parsing fails, proceed
+        }
+      }),
+
     // Generate a draft quote from all processed inputs
     generateDraft: protectedProcedure
       .input(z.object({

@@ -458,6 +458,9 @@ export default function QuoteWorkspace() {
 
   const generatePDF = trpc.quotes.generatePDF.useMutation();
 
+  // Trade relevance pre-check (Option A guardrail)
+  const tradeRelevanceCheck = trpc.ai.tradeRelevanceCheck.useMutation();
+
   const generateEmail = trpc.quotes.generateEmail.useMutation({
     onMutate: () => {
       setIsGeneratingEmail(true);
@@ -486,13 +489,33 @@ export default function QuoteWorkspace() {
     }
   };
 
-  const handleGenerateDraft = () => {
+  const handleGenerateDraft = async () => {
     // Check if line items already exist - show confirmation dialog
     if (lineItems && lineItems.length > 0) {
       if (!window.confirm("This will replace all existing line items. Continue?")) {
         return;
       }
     }
+
+    // Option A: Pre-generation trade relevance check
+    // Only check if there are inputs to validate
+    if (inputs && inputs.length > 0) {
+      try {
+        setIsGeneratingDraft(true);
+        const check = await tradeRelevanceCheck.mutateAsync({ quoteId });
+        if (!check.relevant) {
+          setIsGeneratingDraft(false);
+          const proceed = window.confirm(
+            `⚠️ This doesn't seem to relate to your trade:\n\n"${check.message}"\n\nGenerate anyway?`
+          );
+          if (!proceed) return;
+        }
+      } catch (err) {
+        // If the check fails, proceed with generation anyway
+        console.warn("[tradeRelevanceCheck] Failed, proceeding:", err);
+      }
+    }
+
     generateDraft.mutate({
       quoteId,
       userPrompt: userPrompt || undefined,

@@ -53,7 +53,7 @@ export default function Home() {
               </Button>
             ) : (
               <>
-                <Button variant="ghost" onClick={() => setLocation("/auth")}>
+                <Button variant="ghost" onClick={() => setLocation("/login")}>
                   Sign In
                 </Button>
                 <Button onClick={handleGetStarted}>
