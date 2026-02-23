@@ -57,7 +57,7 @@ import TimelineTab from "@/components/comprehensive/TimelineTab";
 import SiteQualityTab from "@/components/comprehensive/SiteQualityTab";
 import DocumentsTab from "@/components/comprehensive/DocumentsTab";
 import DictationButton, { type DictationCommand } from "@/components/DictationButton";
-import DictationSummaryCard, { type DictationSummary } from "@/components/DictationSummaryCard";
+import QuoteDraftSummary, { type QuoteDraftData } from "@/components/QuoteDraftSummary";
 import InputsPanel from "@/components/InputsPanel";
 import FileIcon from "@/components/FileIcon";
 import { brand, symbolColors } from "@/lib/brandTheme";
@@ -142,8 +142,7 @@ export default function QuoteWorkspace() {
   const [voiceNoteCount, setVoiceNoteCount] = useState(0);
   const [selectedInputId, setSelectedInputId] = useState<number | null>(null);
   const [isDictating, setIsDictating] = useState(false);
-  const [showDictationSummary, setShowDictationSummary] = useState(false);
-  const [dictationSummary, setDictationSummary] = useState<DictationSummary | null>(null);
+  const [voiceSummary, setVoiceSummary] = useState<QuoteDraftData | null>(null);
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
 
   // File input refs (legacy single-file refs kept for backward compat)
@@ -529,22 +528,29 @@ export default function QuoteWorkspace() {
     });
   };
 
-  // Auto-analyse voice notes — triggers summary card parse
+  // Analyse voice notes and update the quote draft summary
   const triggerVoiceAnalysis = async () => {
     try {
       setIsSummaryLoading(true);
-      setShowDictationSummary(true);
-      setActiveTab("inputs");
       const result = await parseDictationSummary.mutateAsync({ quoteId });
       if (result.hasSummary && result.summary) {
-        setDictationSummary(result.summary as DictationSummary);
+        // Convert to QuoteDraftData format — mark all materials as voice-sourced
+        const parsed = result.summary as any;
+        setVoiceSummary({
+          clientName: parsed.clientName || null,
+          jobDescription: parsed.jobDescription || "",
+          labour: parsed.labour || [],
+          materials: (parsed.materials || []).map((m: any) => ({ ...m, source: "voice" as const })),
+          markup: parsed.markup ?? null,
+          sundries: parsed.sundries ?? null,
+          contingency: parsed.contingency ?? null,
+          notes: parsed.notes ?? null,
+        });
       } else {
-        setShowDictationSummary(false);
         toast.error("Could not parse dictation");
       }
     } catch (err) {
       console.warn("[parseDictationSummary] Failed:", err);
-      setShowDictationSummary(false);
       toast.error("Could not parse dictation");
     } finally {
       setIsSummaryLoading(false);
@@ -1705,70 +1711,62 @@ export default function QuoteWorkspace() {
           )}
 
           {/* Dictation Summary Card — shows parsed summary before generation */}
-          {showDictationSummary && (
-            <DictationSummaryCard
-              summary={dictationSummary || { clientName: null, jobDescription: "", labour: [], materials: [], markup: null, sundries: null, contingency: null, notes: null, isTradeRelevant: true }}
+          {/* Quote Draft Summary — always visible, merges voice + takeoff data */}
+          {inputs && inputs.length > 0 && (
+            <QuoteDraftSummary
+              voiceSummary={voiceSummary}
+              takeoffs={(takeoffList || []).map((t: any) => ({
+                counts: t.counts || {},
+                symbolDescriptions: t.symbolDescriptions || {},
+                userAnswers: t.userAnswers || {},
+                status: t.status || "pending",
+              }))}
               isLoading={isSummaryLoading}
-              onConfirm={(editedSummary) => {
-                // Build structured text from the edited summary
+              hasVoiceNotes={!!(inputs && inputs.some((inp: QuoteInput) => inp.inputType === "audio" && inp.content && !inp.fileUrl))}
+              onSave={(data) => {
+                // Build structured text and update Processing Instructions
                 const parts: string[] = [];
-                parts.push(`Job: ${editedSummary.jobDescription}`);
-                if (editedSummary.clientName) parts.push(`Client: ${editedSummary.clientName}`);
-                if (editedSummary.labour.length > 0) {
-                  parts.push("Labour: " + editedSummary.labour.map(l => `${l.quantity} × ${l.role} — ${l.duration}`).join(", "));
+                if (data.jobDescription) parts.push(`Job: ${data.jobDescription}`);
+                if (data.clientName) parts.push(`Client: ${data.clientName}`);
+                if (data.labour.length > 0) {
+                  parts.push("Labour: " + data.labour.map(l => `${l.quantity} × ${l.role} — ${l.duration}`).join(", "));
                 }
-                if (editedSummary.materials.length > 0) {
-                  parts.push("Materials: " + editedSummary.materials.map(m => `${m.quantity} × ${m.item}${m.unitPrice ? ` @ £${m.unitPrice}` : ""}`).join(", "));
+                if (data.materials.length > 0) {
+                  parts.push("Materials: " + data.materials.map(m => `${m.quantity} × ${m.item}${m.unitPrice ? ` @ £${m.unitPrice}` : ""}`).join(", "));
                 }
-                if (editedSummary.markup !== null) parts.push(`Markup: ${editedSummary.markup}%`);
-                if (editedSummary.sundries !== null) parts.push(`Sundries: £${editedSummary.sundries}`);
-                if (editedSummary.contingency) parts.push(`Contingency: ${editedSummary.contingency}`);
-                if (editedSummary.notes) parts.push(`Notes: ${editedSummary.notes}`);
+                if (data.markup !== null) parts.push(`Markup: ${data.markup}%`);
+                if (data.sundries !== null) parts.push(`Sundries: £${data.sundries}`);
+                if (data.contingency) parts.push(`Contingency: ${data.contingency}`);
+                if (data.notes) parts.push(`Notes: ${data.notes}`);
 
-                // Update Processing Instructions with the structured summary
                 setUserPrompt(parts.join("\n"));
 
-                // Also save to the voice note content in the database
+                // Also save voice data to DB
                 saveVoiceNoteSummary.mutate({
                   quoteId,
                   summary: {
-                    clientName: editedSummary.clientName,
-                    jobDescription: editedSummary.jobDescription,
-                    labour: editedSummary.labour.map(l => ({
-                      ...l,
-                      quantity: Number(l.quantity) || 1,
+                    clientName: data.clientName,
+                    jobDescription: data.jobDescription,
+                    labour: data.labour,
+                    materials: data.materials.filter(m => m.source === "voice").map(m => ({
+                      item: m.item,
+                      quantity: m.quantity,
+                      unitPrice: m.unitPrice,
                     })),
-                    materials: editedSummary.materials.map(m => ({
-                      ...m,
-                      quantity: Number(m.quantity) || 1,
-                      unitPrice: m.unitPrice != null ? Number(m.unitPrice) || 0 : null,
-                    })),
-                    markup: editedSummary.markup != null ? Number(editedSummary.markup) || 0 : null,
-                    sundries: editedSummary.sundries != null ? Number(editedSummary.sundries) || 0 : null,
-                    contingency: editedSummary.contingency,
-                    notes: editedSummary.notes,
+                    markup: data.markup,
+                    sundries: data.sundries,
+                    contingency: data.contingency,
+                    notes: data.notes,
                   },
                 }, {
                   onSuccess: () => {
-                    toast.success("Voice summary saved to instructions");
+                    toast.success("Quote summary saved to instructions");
                     refetch();
                   },
-                  onError: () => {
-                    toast.error("Failed to save summary");
-                  },
+                  onError: () => toast.error("Failed to save summary"),
                 });
-                setShowDictationSummary(false);
-                setDictationSummary(null);
               }}
-              onEdit={() => {
-                setShowDictationSummary(false);
-                setDictationSummary(null);
-                setIsDictating(true); // Re-open dictation
-              }}
-              onDismiss={() => {
-                setShowDictationSummary(false);
-                setDictationSummary(null);
-              }}
+              onTriggerVoiceAnalysis={triggerVoiceAnalysis}
             />
           )}
 
