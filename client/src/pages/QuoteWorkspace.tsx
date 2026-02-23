@@ -1749,6 +1749,12 @@ export default function QuoteWorkspace() {
               isLoading={isSummaryLoading}
               hasVoiceNotes={!!(inputs && inputs.some((inp: QuoteInput) => inp.inputType === "audio" && inp.content && !inp.fileUrl))}
               onSave={(data) => {
+                // Update the voiceSummary state so the component doesn't revert
+                setVoiceSummary({
+                  ...data,
+                  materials: data.materials.filter(m => m.source === "voice"),
+                });
+
                 // Build structured text and update Processing Instructions
                 const parts: string[] = [];
                 if (data.jobDescription) parts.push(`Job: ${data.jobDescription}`);
@@ -1783,16 +1789,20 @@ export default function QuoteWorkspace() {
                   summary: {
                     clientName: data.clientName,
                     jobDescription: data.jobDescription,
-                    labour: data.labour,
+                    labour: data.labour.map(l => ({
+                      role: l.role,
+                      quantity: Number(l.quantity) || 1,
+                      duration: l.duration,
+                    })),
                     materials: data.materials.filter(m => m.source === "voice").map(m => ({
                       item: m.item,
-                      quantity: m.quantity,
-                      unitPrice: m.unitPrice,
+                      quantity: Number(m.quantity) || 1,
+                      unitPrice: m.unitPrice != null ? Number(m.unitPrice) || 0 : null,
                     })),
-                    markup: data.markup,
-                    sundries: data.sundries,
-                    contingency: data.contingency,
-                    notes: data.notes,
+                    markup: data.markup != null ? Number(data.markup) || 0 : null,
+                    sundries: data.sundries != null ? Number(data.sundries) || 0 : null,
+                    contingency: data.contingency || null,
+                    notes: data.notes || null,
                   },
                 }, {
                   onSuccess: () => {
