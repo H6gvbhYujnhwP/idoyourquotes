@@ -467,6 +467,7 @@ export default function QuoteWorkspace() {
 
   // Dictation summary parser (Option C)
   const parseDictationSummary = trpc.ai.parseDictationSummary.useMutation();
+  const saveVoiceNoteSummary = trpc.ai.saveVoiceNoteSummary.useMutation();
 
   const generateEmail = trpc.quotes.generateEmail.useMutation({
     onMutate: () => {
@@ -504,43 +505,6 @@ export default function QuoteWorkspace() {
       }
     }
 
-    // Option C: If there are voice notes, show the summary card for review first
-    const hasVoiceNotes = inputs && inputs.some(
-      (inp: QuoteInput) => inp.inputType === "audio" && inp.content && !inp.fileUrl
-    );
-
-    if (hasVoiceNotes) {
-      try {
-        setIsSummaryLoading(true);
-        setShowDictationSummary(true);
-        setActiveTab("inputs"); // Switch to inputs tab to see the card
-        const result = await parseDictationSummary.mutateAsync({ quoteId });
-        if (result.hasSummary && result.summary) {
-          setDictationSummary(result.summary as DictationSummary);
-        } else {
-          // Parsing failed — skip summary, go straight to generation
-          setShowDictationSummary(false);
-          await proceedWithGeneration();
-        }
-      } catch (err) {
-        console.warn("[parseDictationSummary] Failed, skipping summary:", err);
-        setShowDictationSummary(false);
-        await proceedWithGeneration();
-      } finally {
-        setIsSummaryLoading(false);
-      }
-      return; // Wait for user to confirm on the summary card
-    }
-
-    // No voice notes — go straight to generation with Option A check
-    await proceedWithGeneration();
-  };
-
-  // Called after summary card confirm or when skipping summary
-  const proceedWithGeneration = async (promptOverride?: string) => {
-    setShowDictationSummary(false);
-    setDictationSummary(null);
-
     // Option A: Pre-generation trade relevance check
     if (inputs && inputs.length > 0) {
       try {
@@ -560,8 +524,30 @@ export default function QuoteWorkspace() {
 
     generateDraft.mutate({
       quoteId,
-      userPrompt: promptOverride || userPrompt || undefined,
+      userPrompt: userPrompt || undefined,
     });
+  };
+
+  // Auto-analyse voice notes — triggers summary card parse
+  const triggerVoiceAnalysis = async () => {
+    try {
+      setIsSummaryLoading(true);
+      setShowDictationSummary(true);
+      setActiveTab("inputs");
+      const result = await parseDictationSummary.mutateAsync({ quoteId });
+      if (result.hasSummary && result.summary) {
+        setDictationSummary(result.summary as DictationSummary);
+      } else {
+        setShowDictationSummary(false);
+        toast.error("Could not parse dictation");
+      }
+    } catch (err) {
+      console.warn("[parseDictationSummary] Failed:", err);
+      setShowDictationSummary(false);
+      toast.error("Could not parse dictation");
+    } finally {
+      setIsSummaryLoading(false);
+    }
   };
 
   const handleGenerateEmail = () => {
@@ -712,8 +698,13 @@ export default function QuoteWorkspace() {
           inputType: "audio",
           content: command.text,
           filename: `Voice Note ${noteNum} — ${new Date().toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+        }, {
+          onSuccess: () => {
+            toast.success(`Voice Note ${noteNum} saved`);
+            // Auto-analyse after saving — small delay to let the input be indexed
+            setTimeout(() => triggerVoiceAnalysis(), 500);
+          },
         });
-        toast.success(`Voice Note ${noteNum} saved`);
         break;
       }
       case "remove": {
@@ -1718,30 +1709,30 @@ export default function QuoteWorkspace() {
               summary={dictationSummary || { clientName: null, jobDescription: "", labour: [], materials: [], markup: null, sundries: null, contingency: null, notes: null, isTradeRelevant: true }}
               isLoading={isSummaryLoading}
               onConfirm={(editedSummary) => {
-                // Build a structured prompt from the edited summary to override the raw transcript
-                const parts: string[] = ["USER-CONFIRMED VOICE SUMMARY (use these values as the primary source of truth):"];
-                parts.push(`Job: ${editedSummary.jobDescription}`);
-                if (editedSummary.clientName) parts.push(`Client: ${editedSummary.clientName}`);
-                if (editedSummary.labour.length > 0) {
-                  parts.push("Labour: " + editedSummary.labour.map(l => `${l.quantity} × ${l.role} — ${l.duration}`).join(", "));
-                }
-                if (editedSummary.materials.length > 0) {
-                  parts.push("Materials: " + editedSummary.materials.map(m => `${m.quantity} × ${m.item}${m.unitPrice ? ` @ £${m.unitPrice}` : ""}`).join(", "));
-                }
-                if (editedSummary.markup !== null) parts.push(`Markup: ${editedSummary.markup}%`);
-                if (editedSummary.sundries !== null) parts.push(`Sundries: £${editedSummary.sundries}`);
-                if (editedSummary.contingency) parts.push(`Contingency: ${editedSummary.contingency}`);
-                if (editedSummary.notes) parts.push(`Notes: ${editedSummary.notes}`);
-
-                const summaryPrompt = parts.join("\n");
-                // Prepend the confirmed summary to the user prompt
-                const combinedPrompt = userPrompt
-                  ? `${summaryPrompt}\n\nAdditional instructions: ${userPrompt}`
-                  : summaryPrompt;
-
+                // Save the edited summary back to the voice note content in the database
+                saveVoiceNoteSummary.mutate({
+                  quoteId,
+                  summary: {
+                    clientName: editedSummary.clientName,
+                    jobDescription: editedSummary.jobDescription,
+                    labour: editedSummary.labour,
+                    materials: editedSummary.materials,
+                    markup: editedSummary.markup,
+                    sundries: editedSummary.sundries,
+                    contingency: editedSummary.contingency,
+                    notes: editedSummary.notes,
+                  },
+                }, {
+                  onSuccess: () => {
+                    toast.success("Voice summary saved");
+                    refetch(); // Refresh inputs to show updated content
+                  },
+                  onError: () => {
+                    toast.error("Failed to save summary");
+                  },
+                });
                 setShowDictationSummary(false);
                 setDictationSummary(null);
-                proceedWithGeneration(combinedPrompt);
               }}
               onEdit={() => {
                 setShowDictationSummary(false);
@@ -1864,25 +1855,12 @@ export default function QuoteWorkspace() {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              setIsSummaryLoading(true);
-                              setShowDictationSummary(true);
-                              setActiveTab("inputs");
-                              parseDictationSummary.mutateAsync({ quoteId }).then((result) => {
-                                if (result.hasSummary && result.summary) {
-                                  setDictationSummary(result.summary as DictationSummary);
-                                } else {
-                                  setShowDictationSummary(false);
-                                  toast.error("Could not parse dictation");
-                                }
-                              }).catch(() => {
-                                setShowDictationSummary(false);
-                                toast.error("Could not parse dictation");
-                              }).finally(() => setIsSummaryLoading(false));
+                              triggerVoiceAnalysis();
                             }}
                             className="flex-1 text-[9px] font-bold py-1 px-2 rounded-md transition-colors"
                             style={{ backgroundColor: `${brand.teal}12`, color: brand.teal }}
                           >
-                            Analyse
+                            Re-analyse
                           </button>
                           <button
                             onClick={(e) => {

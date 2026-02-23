@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { brand } from "@/lib/brandTheme";
-import { Mic, User, Wrench, Package, Percent, PoundSterling, FileText, AlertTriangle, Loader2, X, Sparkles, Pencil } from "lucide-react";
+import { Mic, User, Wrench, Package, Percent, PoundSterling, FileText, AlertTriangle, Loader2, X, Check, Pencil } from "lucide-react";
 
 interface DictationSummary {
   clientName: string | null;
@@ -379,8 +379,8 @@ export default function DictationSummaryCard({
           className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold rounded-lg shadow-sm transition-colors"
           style={{ backgroundColor: brand.teal, color: "#fff" }}
         >
-          <Sparkles className="h-4 w-4" />
-          {isEditing ? "Save & Generate" : "Looks Good — Generate"}
+          <Check className="h-4 w-4" />
+          {isEditing ? "Save Changes" : "Confirm"}
         </button>
         <button
           onClick={onEdit}

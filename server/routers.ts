@@ -35,6 +35,7 @@ import {
   deleteInput,
   getInputById,
   updateInputProcessing,
+  updateInputContent,
   getTenderContextByQuoteId,
   upsertTenderContext,
   getInternalEstimateByQuoteId,
@@ -2364,6 +2365,56 @@ Rules:
           console.error("AI invocation error:", error);
           throw new Error("Failed to get AI response. Please try again.");
         }
+      }),
+
+    // Save edited voice summary back to the voice note content (Option C)
+    saveVoiceNoteSummary: protectedProcedure
+      .input(z.object({
+        quoteId: z.number(),
+        summary: z.object({
+          clientName: z.string().nullable(),
+          jobDescription: z.string(),
+          labour: z.array(z.object({ role: z.string(), quantity: z.number(), duration: z.string() })),
+          materials: z.array(z.object({ item: z.string(), quantity: z.number(), unitPrice: z.number().nullable() })),
+          markup: z.number().nullable(),
+          sundries: z.number().nullable(),
+          contingency: z.string().nullable(),
+          notes: z.string().nullable(),
+        }),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+
+        // Build structured text from the summary
+        const parts: string[] = [];
+        parts.push(`Job: ${input.summary.jobDescription}`);
+        if (input.summary.clientName) parts.push(`Client: ${input.summary.clientName}`);
+        if (input.summary.labour.length > 0) {
+          parts.push("Labour: " + input.summary.labour.map(l => `${l.quantity} × ${l.role} — ${l.duration}`).join(", "));
+        }
+        if (input.summary.materials.length > 0) {
+          parts.push("Materials: " + input.summary.materials.map(m => `${m.quantity} × ${m.item}${m.unitPrice ? ` @ £${m.unitPrice}` : ""}`).join(", "));
+        }
+        if (input.summary.markup !== null) parts.push(`Markup: ${input.summary.markup}%`);
+        if (input.summary.sundries !== null) parts.push(`Sundries: £${input.summary.sundries}`);
+        if (input.summary.contingency) parts.push(`Contingency: ${input.summary.contingency}`);
+        if (input.summary.notes) parts.push(`Notes: ${input.summary.notes}`);
+
+        const structuredContent = parts.join("\n");
+
+        // Find the latest voice note for this quote and update its content
+        const inputRecords = await getInputsByQuoteId(input.quoteId);
+        const voiceNotes = inputRecords
+          .filter((inp: any) => inp.inputType === "audio" && inp.content && !inp.fileUrl)
+          .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+        if (voiceNotes.length > 0) {
+          await updateInputContent(voiceNotes[0].id, structuredContent);
+          console.log(`[saveVoiceNoteSummary] Updated voice note ${voiceNotes[0].id} with structured content`);
+        }
+
+        return { success: true };
       }),
 
     // Parse voice dictation into structured summary for user review (Option C)
