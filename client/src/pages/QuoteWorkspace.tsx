@@ -57,6 +57,7 @@ import TimelineTab from "@/components/comprehensive/TimelineTab";
 import SiteQualityTab from "@/components/comprehensive/SiteQualityTab";
 import DocumentsTab from "@/components/comprehensive/DocumentsTab";
 import DictationButton, { type DictationCommand } from "@/components/DictationButton";
+import DictationSummaryCard, { type DictationSummary } from "@/components/DictationSummaryCard";
 import FileIcon from "@/components/FileIcon";
 import { brand, symbolColors } from "@/lib/brandTheme";
 import TakeoffPanel from "@/components/TakeoffPanel";
@@ -140,6 +141,9 @@ export default function QuoteWorkspace() {
   const [voiceNoteCount, setVoiceNoteCount] = useState(0);
   const [selectedInputId, setSelectedInputId] = useState<number | null>(null);
   const [isDictating, setIsDictating] = useState(false);
+  const [showDictationSummary, setShowDictationSummary] = useState(false);
+  const [dictationSummary, setDictationSummary] = useState<DictationSummary | null>(null);
+  const [isSummaryLoading, setIsSummaryLoading] = useState(false);
 
   // File input refs (legacy single-file refs kept for backward compat)
   const pdfInputRef = useRef<HTMLInputElement>(null);
@@ -461,6 +465,9 @@ export default function QuoteWorkspace() {
   // Trade relevance pre-check (Option A guardrail)
   const tradeRelevanceCheck = trpc.ai.tradeRelevanceCheck.useMutation();
 
+  // Dictation summary parser (Option C)
+  const parseDictationSummary = trpc.ai.parseDictationSummary.useMutation();
+
   const generateEmail = trpc.quotes.generateEmail.useMutation({
     onMutate: () => {
       setIsGeneratingEmail(true);
@@ -497,8 +504,44 @@ export default function QuoteWorkspace() {
       }
     }
 
+    // Option C: If there are voice notes, show the summary card for review first
+    const hasVoiceNotes = inputs && inputs.some(
+      (inp: QuoteInput) => inp.inputType === "audio" && inp.content && !inp.fileUrl
+    );
+
+    if (hasVoiceNotes) {
+      try {
+        setIsSummaryLoading(true);
+        setShowDictationSummary(true);
+        setActiveTab("inputs"); // Switch to inputs tab to see the card
+        const result = await parseDictationSummary.mutateAsync({ quoteId });
+        if (result.hasSummary && result.summary) {
+          setDictationSummary(result.summary as DictationSummary);
+        } else {
+          // Parsing failed — skip summary, go straight to generation
+          setShowDictationSummary(false);
+          await proceedWithGeneration();
+        }
+      } catch (err) {
+        console.warn("[parseDictationSummary] Failed, skipping summary:", err);
+        setShowDictationSummary(false);
+        await proceedWithGeneration();
+      } finally {
+        setIsSummaryLoading(false);
+      }
+      return; // Wait for user to confirm on the summary card
+    }
+
+    // No voice notes — go straight to generation with Option A check
+    await proceedWithGeneration();
+  };
+
+  // Called after summary card confirm or when skipping summary
+  const proceedWithGeneration = async () => {
+    setShowDictationSummary(false);
+    setDictationSummary(null);
+
     // Option A: Pre-generation trade relevance check
-    // Only check if there are inputs to validate
     if (inputs && inputs.length > 0) {
       try {
         setIsGeneratingDraft(true);
@@ -511,7 +554,6 @@ export default function QuoteWorkspace() {
           if (!proceed) return;
         }
       } catch (err) {
-        // If the check fails, proceed with generation anyway
         console.warn("[tradeRelevanceCheck] Failed, proceeding:", err);
       }
     }
@@ -1668,6 +1710,24 @@ export default function QuoteWorkspace() {
                 ))}
               </div>
             </div>
+          )}
+
+          {/* Dictation Summary Card — shows parsed summary before generation */}
+          {showDictationSummary && (
+            <DictationSummaryCard
+              summary={dictationSummary || { clientName: null, jobDescription: "", labour: [], materials: [], markup: null, sundries: null, contingency: null, notes: null, isTradeRelevant: true }}
+              isLoading={isSummaryLoading}
+              onConfirm={() => proceedWithGeneration()}
+              onEdit={() => {
+                setShowDictationSummary(false);
+                setDictationSummary(null);
+                setIsDictating(true); // Re-open dictation
+              }}
+              onDismiss={() => {
+                setShowDictationSummary(false);
+                setDictationSummary(null);
+              }}
+            />
           )}
 
           {/* File icon grid — 5 columns, Style C branded */}

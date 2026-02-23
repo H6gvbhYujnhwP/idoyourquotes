@@ -2366,6 +2366,100 @@ Rules:
         }
       }),
 
+    // Parse voice dictation into structured summary for user review (Option C)
+    parseDictationSummary: protectedProcedure
+      .input(z.object({
+        quoteId: z.number(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        console.log(`[parseDictationSummary] Starting for quoteId=${input.quoteId}`);
+
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+
+        const inputRecords = await getInputsByQuoteId(input.quoteId);
+
+        // Collect all voice notes and text content
+        const allContent: string[] = [];
+        for (const inp of inputRecords) {
+          if (inp.inputType === "audio" && inp.content && !inp.fileUrl) {
+            allContent.push(`Voice Note (${inp.filename || "untitled"}): ${inp.content}`);
+          } else if (inp.content) {
+            allContent.push(`Text Input: ${inp.content}`);
+          } else if (inp.processedContent) {
+            allContent.push(`Document (${inp.filename || inp.inputType}): ${inp.processedContent.substring(0, 500)}`);
+          }
+        }
+
+        if (allContent.length === 0) {
+          return {
+            hasSummary: false,
+            summary: null,
+          };
+        }
+
+        const tradePresetKey = (quote as any)?.tradePreset as string | null;
+        const tradeLabel = tradePresetKey || "general trades/construction";
+
+        const response = await invokeLLM({
+          messages: [
+            {
+              role: "system",
+              content: `You are a quote parser for a ${tradeLabel} business. Extract structured data from the user's dictation/inputs and respond ONLY with valid JSON.
+
+Parse the content and extract:
+- clientName: The client or company name if mentioned (string or null)
+- jobDescription: Brief one-line summary of the work (string)
+- labour: Array of {role, quantity, duration} objects. E.g. [{"role": "electrician", "quantity": 2, "duration": "half a day"}]
+- materials: Array of {item, quantity, unitPrice} objects. E.g. [{"item": "fluorescent batten", "quantity": 2, "unitPrice": 30}]
+- markup: Percentage if mentioned (number or null)
+- sundries: Amount if mentioned (number or null)
+- contingency: Amount or percentage if mentioned (string or null)
+- notes: Any other relevant details as a string (location, timeline, special requirements)
+- isTradeRelevant: Boolean — does this relate to ${tradeLabel} work?
+
+If a field is not mentioned, use null. Be precise with numbers — if they say "30 quid each" that's unitPrice: 30. If they say "half a day" keep it as "half a day". British English expected — "quid" means pounds, "sparky" means electrician.
+
+Respond with:
+{
+  "clientName": string | null,
+  "jobDescription": string,
+  "labour": [{"role": string, "quantity": number, "duration": string}],
+  "materials": [{"item": string, "quantity": number, "unitPrice": number | null}],
+  "markup": number | null,
+  "sundries": number | null,
+  "contingency": string | null,
+  "notes": string | null,
+  "isTradeRelevant": boolean
+}`,
+            },
+            {
+              role: "user",
+              content: allContent.join("\n\n"),
+            },
+          ],
+          response_format: { type: "json_object" },
+          max_tokens: 500,
+        });
+
+        const content = response.choices[0]?.message?.content;
+        console.log(`[parseDictationSummary] LLM response: ${content?.substring(0, 200)}`);
+
+        if (!content) {
+          return { hasSummary: false, summary: null };
+        }
+
+        try {
+          const parsed = JSON.parse(content);
+          return {
+            hasSummary: true,
+            summary: parsed,
+          };
+        } catch {
+          return { hasSummary: false, summary: null };
+        }
+      }),
+
     // Quick trade-relevance check before full generation (Option A guardrail)
     tradeRelevanceCheck: protectedProcedure
       .input(z.object({
