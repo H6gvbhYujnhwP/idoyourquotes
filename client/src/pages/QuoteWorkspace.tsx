@@ -239,9 +239,13 @@ export default function QuoteWorkspace() {
   const { data: catalogItems } = trpc.catalog.list.useQuery();
 
   // Fetch takeoff data for all inputs on this quote
-  const { data: takeoffList } = trpc.electricalTakeoff.list.useQuery(
+  const { data: takeoffList, refetch: refetchTakeoffs } = trpc.electricalTakeoff.list.useQuery(
     { quoteId },
-    { enabled: quoteId > 0 }
+    {
+      enabled: quoteId > 0,
+      refetchInterval: 3000, // Poll every 3s to catch takeoff updates
+      refetchOnWindowFocus: true,
+    }
   );
 
   // Helper to find takeoff for a specific input
@@ -546,6 +550,18 @@ export default function QuoteWorkspace() {
           contingency: parsed.contingency ?? null,
           notes: parsed.notes ?? null,
         });
+
+        // Auto-name the quote: ClientName — DD/MM/YYYY (if title is empty)
+        if (!title && parsed.clientName) {
+          const today = new Date().toLocaleDateString("en-GB");
+          const autoTitle = `${parsed.clientName} — ${today}`;
+          setTitle(autoTitle);
+          updateQuote.mutate({ id: quoteId, title: autoTitle, clientName: parsed.clientName });
+        } else if (parsed.clientName && !clientName) {
+          // At least save the client name
+          setClientName(parsed.clientName);
+          updateQuote.mutate({ id: quoteId, clientName: parsed.clientName });
+        }
       } else {
         toast.error("Could not parse dictation");
       }
@@ -1219,9 +1235,19 @@ export default function QuoteWorkspace() {
           </Button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold tracking-tight">
-                {quote.title || quote.reference || `Quote #${quote.id}`}
-              </h1>
+              <input
+                type="text"
+                value={title || ""}
+                onChange={(e) => setTitle(e.target.value)}
+                onBlur={() => {
+                  if (title !== (quote.title || "")) {
+                    updateQuote.mutate({ id: quoteId, title });
+                  }
+                }}
+                placeholder={quote.reference || `Quote #${quote.id}`}
+                className="text-2xl font-bold tracking-tight bg-transparent border-none outline-none focus:ring-0 p-0 w-auto min-w-[120px] placeholder:text-muted-foreground/40"
+                style={{ color: brand.navy, maxWidth: "500px" }}
+              />
               <Badge className={statusConfig[status].className}>
                 {statusConfig[status].label}
               </Badge>
@@ -1710,7 +1736,6 @@ export default function QuoteWorkspace() {
             </div>
           )}
 
-          {/* Dictation Summary Card — shows parsed summary before generation */}
           {/* Quote Draft Summary — always visible, merges voice + takeoff data */}
           {inputs && inputs.length > 0 && (
             <QuoteDraftSummary
@@ -1740,6 +1765,17 @@ export default function QuoteWorkspace() {
                 if (data.notes) parts.push(`Notes: ${data.notes}`);
 
                 setUserPrompt(parts.join("\n"));
+
+                // Auto-name if client provided and title is empty
+                if (data.clientName && !title) {
+                  const today = new Date().toLocaleDateString("en-GB");
+                  const autoTitle = `${data.clientName} — ${today}`;
+                  setTitle(autoTitle);
+                  updateQuote.mutate({ id: quoteId, title: autoTitle, clientName: data.clientName });
+                } else if (data.clientName) {
+                  setClientName(data.clientName);
+                  updateQuote.mutate({ id: quoteId, clientName: data.clientName });
+                }
 
                 // Also save voice data to DB
                 saveVoiceNoteSummary.mutate({
@@ -1782,6 +1818,7 @@ export default function QuoteWorkspace() {
                 deleteInput.mutate({ id: input.id, quoteId });
               }}
               onTriggerVoiceAnalysis={triggerVoiceAnalysis}
+              onTakeoffChanged={refetchTakeoffs}
               processingInputId={processingInputId}
               quoteId={quoteId}
               userPrompt={userPrompt}

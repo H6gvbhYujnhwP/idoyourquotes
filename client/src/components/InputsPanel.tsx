@@ -32,6 +32,7 @@ interface InputsPanelProps {
   onProcessInput: (input: QuoteInput) => void;
   onDeleteInput: (input: QuoteInput) => void;
   onTriggerVoiceAnalysis: () => void;
+  onTakeoffChanged: () => void; // Called when takeoff data changes (symbol excluded, approved, etc.)
   processingInputId: number | null;
   quoteId: number;
   userPrompt: string;
@@ -332,6 +333,7 @@ export default function InputsPanel({
   onProcessInput,
   onDeleteInput,
   onTriggerVoiceAnalysis,
+  onTakeoffChanged,
   processingInputId,
   quoteId,
   userPrompt,
