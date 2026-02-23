@@ -49,28 +49,96 @@ function useIsMobile(breakpoint = 768) {
   return isMobile;
 }
 
-// Status badge for the file list
-function StatusBadge({ input, takeoff }: { input: QuoteInput; takeoff: TakeoffData | null }) {
+// Derive the current processing stage for an input
+function getProcessingStage(input: QuoteInput, takeoff: TakeoffData | null): {
+  label: string;
+  color: string;
+  bgColor: string;
+  animate: boolean;
+  icon: "spinner" | "check" | "warning" | "zap" | "mic" | "dash";
+} {
   const isApproved = takeoff?.status === "verified" || takeoff?.status === "locked";
   const totalCount = takeoff?.counts ? Object.values(takeoff.counts).reduce((s, v) => s + v, 0) : 0;
+  const isVoiceNote = input.inputType === "audio" && input.content && !input.fileUrl;
+  const isPdf = input.inputType === "pdf";
 
-  if (isApproved && totalCount > 0) {
-    return (
-      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: `${brand.teal}15`, color: brand.teal }}>
-        {totalCount} ✓
-      </span>
-    );
+  // Voice notes — no processing needed
+  if (isVoiceNote) {
+    return { label: "Ready", color: brand.teal, bgColor: `${brand.teal}12`, animate: false, icon: "check" };
   }
-  if (input.processingStatus === "completed") {
-    return <Check className="w-3.5 h-3.5" style={{ color: brand.teal }} />;
-  }
-  if (input.processingStatus === "processing") {
-    return <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: brand.teal }} />;
-  }
+
+  // Failed
   if (input.processingStatus === "failed" || input.processingStatus === "error") {
-    return <AlertTriangle className="w-3.5 h-3.5 text-red-500" />;
+    return { label: "Analysis Failed", color: "#dc2626", bgColor: "#fef2f2", animate: false, icon: "warning" };
   }
-  return <span className="text-[9px]" style={{ color: brand.navyMuted }}>—</span>;
+
+  // Currently processing (AI analysis stage)
+  if (input.processingStatus === "processing") {
+    return { label: "AI Analysis…", color: "#3b82f6", bgColor: "#eff6ff", animate: true, icon: "spinner" };
+  }
+
+  // Completed analysis
+  if (input.processingStatus === "completed") {
+    // PDF: check takeoff state
+    if (isPdf) {
+      if (!takeoff) {
+        // Takeoff auto-running (TakeoffPanel auto-triggers when no takeoff exists)
+        return { label: "Symbol Takeoff…", color: "#8b5cf6", bgColor: "#f5f3ff", animate: true, icon: "zap" };
+      }
+      if (takeoff.status === "processing" || takeoff.status === "pending") {
+        return { label: "Symbol Takeoff…", color: "#8b5cf6", bgColor: "#f5f3ff", animate: true, icon: "zap" };
+      }
+      if (isApproved && totalCount > 0) {
+        return { label: `${totalCount} items ✓`, color: brand.teal, bgColor: `${brand.teal}12`, animate: false, icon: "check" };
+      }
+      if (totalCount > 0) {
+        return { label: `${totalCount} items — Review`, color: "#d97706", bgColor: "#fffbeb", animate: false, icon: "zap" };
+      }
+      return { label: "Analysed", color: brand.teal, bgColor: `${brand.teal}12`, animate: false, icon: "check" };
+    }
+    // Non-PDF completed
+    return { label: "Analysed", color: brand.teal, bgColor: `${brand.teal}12`, animate: false, icon: "check" };
+  }
+
+  // Not yet processed
+  return { label: "Pending", color: brand.navyMuted, bgColor: `${brand.navy}06`, animate: false, icon: "dash" };
+}
+
+// Animated status indicator for the file list
+function StatusIndicator({ input, takeoff }: { input: QuoteInput; takeoff: TakeoffData | null }) {
+  const stage = getProcessingStage(input, takeoff);
+
+  return (
+    <div
+      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full"
+      style={{ backgroundColor: stage.bgColor }}
+    >
+      {stage.icon === "spinner" && (
+        <Loader2 className="w-3 h-3 animate-spin" style={{ color: stage.color }} />
+      )}
+      {stage.icon === "check" && (
+        <Check className="w-3 h-3" style={{ color: stage.color }} />
+      )}
+      {stage.icon === "warning" && (
+        <AlertTriangle className="w-3 h-3" style={{ color: stage.color }} />
+      )}
+      {stage.icon === "zap" && (
+        <Zap className="w-3 h-3" style={{ color: stage.color }} />
+      )}
+      {stage.icon === "mic" && (
+        <Mic className="w-3 h-3" style={{ color: stage.color }} />
+      )}
+      {stage.icon === "dash" && (
+        <span className="w-3 h-3 flex items-center justify-center text-[8px]" style={{ color: stage.color }}>—</span>
+      )}
+      <span
+        className={`text-[9px] font-bold ${stage.animate ? "animate-pulse" : ""}`}
+        style={{ color: stage.color }}
+      >
+        {stage.label}
+      </span>
+    </div>
+  );
 }
 
 // Detail content shown for a selected input
@@ -314,10 +382,9 @@ export default function InputsPanel({
                     </p>
                     <p className="text-[10px] mt-0.5" style={{ color: brand.navyMuted }}>
                       {new Date(input.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
-                      {input.processingStatus === "completed" && " • Analysed"}
                     </p>
                   </div>
-                  <StatusBadge input={input} takeoff={takeoff} />
+                  <StatusIndicator input={input} takeoff={takeoff} />
                   <svg
                     width="14" height="14" viewBox="0 0 14 14"
                     className="transition-transform"
@@ -405,8 +472,6 @@ export default function InputsPanel({
                   </p>
                   <p className="text-[9px] mt-0.5" style={{ color: brand.navyMuted }}>
                     {new Date(input.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
-                    {input.processingStatus === "completed" && " • ✓"}
-                    {input.processingStatus === "processing" && " • ⏳"}
                   </p>
                   {/* Voice note content preview */}
                   {isVoiceNote && (
@@ -414,9 +479,10 @@ export default function InputsPanel({
                       {input.content}
                     </p>
                   )}
-                </div>
-                <div className="flex-shrink-0">
-                  <StatusBadge input={input} takeoff={takeoff} />
+                  {/* Status indicator */}
+                  <div className="mt-1">
+                    <StatusIndicator input={input} takeoff={takeoff} />
+                  </div>
                 </div>
               </div>
             );
