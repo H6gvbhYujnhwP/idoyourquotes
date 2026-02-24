@@ -250,10 +250,26 @@ export default function QuoteWorkspace() {
     }
   );
 
+  // Fetch containment takeoff data
+  const { data: containmentList, refetch: refetchContainment } = trpc.containmentTakeoff.list.useQuery(
+    { quoteId },
+    {
+      enabled: quoteId > 0,
+      refetchInterval: 5000,
+      refetchOnWindowFocus: true,
+    }
+  );
+
   // Helper to find takeoff for a specific input
   const getTakeoffForInput = (inputId: number) => {
     if (!takeoffList) return null;
     return (takeoffList as any[]).find((t: any) => t.inputId === inputId) || null;
+  };
+
+  // Helper to find containment takeoff for a specific input
+  const getContainmentForInput = (inputId: number) => {
+    if (!containmentList) return null;
+    return (containmentList as any[]).find((t: any) => t.inputId === inputId) || null;
   };
 
   const updateQuote = trpc.quotes.update.useMutation({

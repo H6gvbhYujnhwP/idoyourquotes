@@ -3,6 +3,7 @@ import { brand } from "@/lib/brandTheme";
 import { Check, AlertTriangle, Loader2, X, Zap, Mic, FileText } from "lucide-react";
 import FileIcon from "@/components/FileIcon";
 import TakeoffPanel from "@/components/TakeoffPanel";
+import ContainmentTakeoffPanel from "@/components/ContainmentTakeoffPanel";
 
 interface QuoteInput {
   id: number;
@@ -32,7 +33,7 @@ interface InputsPanelProps {
   onProcessInput: (input: QuoteInput) => void;
   onDeleteInput: (input: QuoteInput) => void;
   onTriggerVoiceAnalysis: () => void;
-  onTakeoffChanged: () => void; // Called when takeoff data changes (symbol excluded, approved, etc.)
+  onTakeoffChanged: () => void;
   processingInputId: number | null;
   quoteId: number;
   userPrompt: string;
@@ -272,6 +273,13 @@ function DetailContent({
             fileUrl={input.fileUrl || undefined}
             processingInstructions={userPrompt}
           />
+        )}
+
+        {/* Containment Takeoff Panel — auto-renders if containment data exists for this PDF */}
+        {input.inputType === "pdf" && input.processingStatus === "completed" && (
+          <div className="px-4 py-3">
+            <ContainmentTakeoffPanel inputId={input.id} quoteId={quoteId} />
+          </div>
         )}
 
         {/* Processing state */}

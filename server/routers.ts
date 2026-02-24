@@ -1859,6 +1859,53 @@ Report facts only. Do not interpret or add commentary.`,
           processedContent: formatTakeoffForQuoteContext(result),
           processingStatus: "completed",
         });
+
+        // Auto-detect containment drawing and run containment takeoff too
+        try {
+          const allText = (result as any).symbols?.map((s: any) => s.symbolCode).join(' ') || '';
+          const inputText = inputRecord.processedContent || inputRecord.filename || '';
+          const combinedText = allText + ' ' + inputText;
+          if (isContainmentDrawing(combinedText) || isContainmentDrawing(inputRecord.filename || '')) {
+            console.log(`[Electrical Takeoff] Containment drawing detected, auto-running containment takeoff`);
+            const containmentResult = await performContainmentTakeoff(
+              pdfBuffer,
+              inputRecord.filename || 'Unknown',
+              extractWithPdfJs,
+            );
+            const containmentSvg = generateContainmentSvgOverlay(
+              containmentResult.trayRuns,
+              containmentResult.pageWidth,
+              containmentResult.pageHeight,
+            );
+            const defaultUserInputs = {
+              trayFilter: "LV", trayDuty: "medium",
+              extraDropPerFitting: 2.0, firstPointRunLength: 15.0,
+              numberOfCircuits: 0, additionalCablePercent: 10,
+            };
+            const cableSummary = calculateCableSummary(containmentResult.trayRuns, defaultUserInputs);
+            await createContainmentTakeoff({
+              quoteId: input.quoteId,
+              inputId: input.inputId,
+              drawingRef: containmentResult.drawingRef,
+              status: containmentResult.questions.length > 0 ? "questions" : "draft",
+              pageWidth: containmentResult.pageWidth.toString(),
+              pageHeight: containmentResult.pageHeight.toString(),
+              detectedScale: containmentResult.detectedScale,
+              paperSize: containmentResult.paperSize,
+              trayRuns: containmentResult.trayRuns as any,
+              fittingSummary: containmentResult.fittingSummary as any,
+              userInputs: defaultUserInputs as any,
+              cableSummary: cableSummary as any,
+              questions: containmentResult.questions as any,
+              userAnswers: {},
+              drawingNotes: containmentResult.drawingNotes,
+              svgOverlay: containmentSvg,
+            });
+            console.log(`[Electrical Takeoff] Containment takeoff created: ${containmentResult.trayRuns.length} tray runs`);
+          }
+        } catch (containmentErr: any) {
+          console.warn(`[Electrical Takeoff] Containment auto-detection failed (non-fatal):`, containmentErr.message);
+        }
         
         return {
           takeoff,
