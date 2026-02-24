@@ -1861,11 +1861,14 @@ Report facts only. Do not interpret or add commentary.`,
         });
 
         // Auto-detect containment drawing and run containment takeoff too
+        // Extract actual PDF text for detection (symbol codes alone don't contain tray keywords)
         try {
-          const allText = (result as any).symbols?.map((s: any) => s.symbolCode).join(' ') || '';
-          const inputText = inputRecord.processedContent || inputRecord.filename || '';
-          const combinedText = allText + ' ' + inputText;
-          if (isContainmentDrawing(combinedText) || isContainmentDrawing(inputRecord.filename || '')) {
+          let pdfTextForDetection = inputRecord.filename || '';
+          try {
+            const pdfExtract = await extractWithPdfJs(pdfBuffer);
+            pdfTextForDetection = pdfExtract.words.map((w: any) => w.text).join(' ') + ' ' + pdfTextForDetection;
+          } catch { /* If text extraction fails, fall back to filename only */ }
+          if (isContainmentDrawing(pdfTextForDetection)) {
             console.log(`[Electrical Takeoff] Containment drawing detected, auto-running containment takeoff`);
             const containmentResult = await performContainmentTakeoff(
               pdfBuffer,
