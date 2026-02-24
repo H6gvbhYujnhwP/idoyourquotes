@@ -9,8 +9,14 @@
  * 
  * Uses PDF text extraction (same as electrical takeoff) to find:
  * - Tray annotations: "NEW 100 LV TRAY @12500"
+ * - Combined annotations: "NEW 100 ELV, 100 LV AND 50 FA TRAY @12500" → 3 entries
  * - Scale indicators: "1:100 @ A0"
- * - Drop annotations: "DROPS TO LOWER LEVEL"
+ * - Drop annotations: "DROPS TO LOWER LEVEL", "DROP TO CABINET", etc.
+ * 
+ * Filters:
+ * - Only includes annotations containing "NEW" (or no EX/EXISTING prefix)
+ * - Flags "EX" / "EXISTING" annotations as ambiguity questions
+ * - Adds 2m cable per drop annotation (user-configurable)
  */
 
 // ---- Constants ----
@@ -25,6 +31,7 @@ export const TRAY_DUTY_TYPES = ["light", "medium", "heavy"] as const;
 export type TrayDuty = typeof TRAY_DUTY_TYPES[number];
 
 export const WHOLESALER_LENGTH_METRES = 3;
+export const DEFAULT_DROP_METRES = 2; // Default cable drop per drop annotation
 
 // Colour scheme for tray sizes on marked drawings
 export const TRAY_SIZE_COLOURS: Record<number, { stroke: string; fill: string; label: string }> = {
@@ -125,28 +132,110 @@ interface ExtractedWord {
   height: number;
 }
 
+/** Parsed result from a single tray entry within an annotation */
+interface ParsedTrayEntry {
+  size: number;
+  type: string;
+  height: number | null;
+  isNew: boolean;       // true = NEW or no prefix, false = EX/EXISTING
+  isExisting: boolean;  // true = explicitly marked EX/EXISTING
+  rawText: string;      // original annotation text for questions
+}
+
 /**
- * Parse tray annotation text like "NEW 100 LV TRAY @12500"
- * Returns { size, type, height } or null
+ * Parse tray annotation text — handles COMBINED annotations.
+ * 
+ * Single:    "NEW 100 LV TRAY @12500" → [{size:100, type:LV, height:12.5}]
+ * Combined:  "NEW 100 ELV, 100 LV AND 50 FA TRAY @12500" → 3 entries
+ * Existing:  "EX 150 LV TRAY @6000" → [{..., isExisting:true}]
+ * Ladder:    "SUB LADDER = 300MM @2.6M" → [{size:300, type:SUB, height:2.6}]
+ * Purlin:    "LV TRAY = 150MM RAN IN PURLINS @6M EX" → [{..., isExisting:true}]
+ * 
+ * Returns array of parsed entries (empty if no match).
  */
-function parseTrayAnnotation(text: string): { size: number; type: string; height: number | null } | null {
-  // Match patterns like: "100 LV TRAY", "NEW 150 LV TRAY @12500", "50 FA TRAY"
-  const match = text.match(/(?:NEW\s+)?(\d+)\s+(LV|FA|ELV|SUB)\s+(?:CABLE\s+)?TRAY/i);
-  if (!match) return null;
+function parseTrayAnnotations(text: string): ParsedTrayEntry[] {
+  const upper = text.toUpperCase().trim();
+  const results: ParsedTrayEntry[] = [];
 
-  const size = parseInt(match[1], 10);
-  if (!TRAY_SIZES.includes(size as TraySize)) return null;
+  // Detect if annotation is explicitly marked as existing
+  const hasExPrefix = /\bEX\b/.test(upper) || /\bEXISTING\b/.test(upper);
+  const hasNewPrefix = /\bNEW\b/.test(upper);
 
-  const type = match[2].toUpperCase();
+  // Determine new/existing status:
+  // - "NEW ..." → isNew=true
+  // - "EX ..." or "EXISTING ..." → isExisting=true
+  // - No prefix → assume new (isNew=true) but don't flag as explicitly new
+  const isExisting = hasExPrefix && !hasNewPrefix;
+  const isNew = !isExisting;
 
-  // Extract height if present: @12500 = 12.5m, @2600 = 2.6m
-  const heightMatch = text.match(/@(\d+)/);
+  // Extract height from @12500 or @2.6M or @6M patterns
   let height: number | null = null;
-  if (heightMatch) {
-    height = parseInt(heightMatch[1], 10) / 1000; // Convert mm to metres
+  const heightMatchMm = upper.match(/@(\d{3,6})\b/); // @12500 = mm
+  const heightMatchM = upper.match(/@(\d+(?:\.\d+)?)\s*M\b/); // @2.6M = metres
+  if (heightMatchMm) {
+    height = parseInt(heightMatchMm[1], 10) / 1000;
+  } else if (heightMatchM) {
+    height = parseFloat(heightMatchM[1]);
   }
 
-  return { size, type, height };
+  // --- Pattern 1: Combined annotations ---
+  // "NEW 100 ELV, 100 LV AND 50 FA TRAY @12500"
+  // "100 ELV, 100 LV AND 50 FA TRAY"
+  // Split on commas and "AND" to find individual entries
+  const combinedPattern = /(\d+)\s+(LV|FA|ELV|SUB)/gi;
+  const matches = [...upper.matchAll(combinedPattern)];
+
+  if (matches.length > 0 && (upper.includes("TRAY") || upper.includes("LADDER") || upper.includes("BASKET"))) {
+    for (const m of matches) {
+      const size = parseInt(m[1], 10);
+      if (!TRAY_SIZES.includes(size as TraySize)) continue;
+      const type = m[2].toUpperCase();
+
+      results.push({
+        size,
+        type,
+        height,
+        isNew,
+        isExisting,
+        rawText: text,
+      });
+    }
+  }
+
+  // --- Pattern 2: "LV TRAY = 150MM" or "SUB LADDER = 300MM" ---
+  if (results.length === 0) {
+    const equalsPattern = upper.match(/(LV|FA|ELV|SUB)\s+(?:CABLE\s+)?(?:TRAY|LADDER|BASKET)\s*=\s*(\d+)\s*MM/i);
+    if (equalsPattern) {
+      const type = equalsPattern[1].toUpperCase();
+      const size = parseInt(equalsPattern[2], 10);
+      if (TRAY_SIZES.includes(size as TraySize)) {
+        results.push({ size, type, height, isNew, isExisting, rawText: text });
+      }
+    }
+  }
+
+  // --- Pattern 3: Standalone "SUB LADDER = 300MM @2.6M" ---
+  if (results.length === 0) {
+    const ladderPattern = upper.match(/(?:SUB\s+)?LADDER\s*=\s*(\d+)\s*MM/i);
+    if (ladderPattern) {
+      const size = parseInt(ladderPattern[1], 10);
+      if (TRAY_SIZES.includes(size as TraySize)) {
+        results.push({ size, type: "SUB", height, isNew, isExisting, rawText: text });
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Legacy single-result wrapper (kept for backward compat if needed)
+ */
+function parseTrayAnnotation(text: string): { size: number; type: string; height: number | null } | null {
+  const entries = parseTrayAnnotations(text);
+  if (entries.length === 0) return null;
+  const first = entries.find(e => e.isNew) || entries[0];
+  return { size: first.size, type: first.type, height: first.height };
 }
 
 /**
@@ -167,23 +256,74 @@ function detectScale(words: ExtractedWord[]): { scale: string | null; paperSize:
   return { scale, paperSize };
 }
 
-/**
- * Detect drop annotations
- * Looks for "DROPS TO LOWER LEVEL", "DROPS FROM HIGH LEVEL", etc.
- */
-function detectDropAnnotations(words: ExtractedWord[]): Array<{ x: number; y: number; text: string }> {
-  const drops: Array<{ x: number; y: number; text: string }> = [];
-  const allText = words.map(w => ({ text: w.text, x: w.x, y: w.y }));
+/** A detected drop annotation with type classification */
+interface DropAnnotation {
+  x: number;
+  y: number;
+  text: string;
+  dropType: "column" | "cabinet" | "cctv" | "access_control" | "general";
+  defaultMetres: number;
+}
 
-  for (let i = 0; i < allText.length - 2; i++) {
-    const phrase = `${allText[i].text} ${allText[i + 1]?.text || ""} ${allText[i + 2]?.text || ""}`.toUpperCase();
-    if (phrase.includes("DROP") && (phrase.includes("LEVEL") || phrase.includes("COLUMN"))) {
-      drops.push({
-        x: allText[i].x,
-        y: allText[i].y,
-        text: phrase.trim(),
-      });
+/**
+ * Detect drop annotations — improved parser
+ * Catches many more patterns:
+ * - "DROPS FROM HIGH LEVEL TO LOW LEVEL"
+ * - "DROP TO CABINET"
+ * - "CCTV DROP"
+ * - "ACCESS CONTROL DROP"
+ * - "DROPS TO LOWER LEVEL"
+ * - Single-word "DROP" or "DROPS" near tray context
+ */
+function detectDropAnnotations(words: ExtractedWord[]): DropAnnotation[] {
+  const drops: DropAnnotation[] = [];
+  const seenPositions = new Set<string>(); // Prevent duplicates
+
+  // Build phrases from consecutive words (same as tray parsing)
+  const sortedWords = [...words].sort((a, b) => a.y - b.y || a.x - b.x);
+  const phrases: Array<{ text: string; x: number; y: number }> = [];
+
+  let currentPhrase = { text: "", x: 0, y: 0, endX: 0 };
+  for (const word of sortedWords) {
+    if (
+      currentPhrase.text &&
+      Math.abs(word.y - currentPhrase.y) < 5 &&
+      word.x - currentPhrase.endX < 30
+    ) {
+      currentPhrase.text += " " + word.text;
+      currentPhrase.endX = word.x + (word.width || 10);
+    } else {
+      if (currentPhrase.text) phrases.push({ text: currentPhrase.text, x: currentPhrase.x, y: currentPhrase.y });
+      currentPhrase = { text: word.text, x: word.x, y: word.y, endX: word.x + (word.width || 10) };
     }
+  }
+  if (currentPhrase.text) phrases.push({ text: currentPhrase.text, x: currentPhrase.x, y: currentPhrase.y });
+
+  for (const phrase of phrases) {
+    const upper = phrase.text.toUpperCase();
+
+    // Must contain "DROP" or "DROPS"
+    if (!upper.includes("DROP")) continue;
+
+    // Classify the drop type
+    const posKey = `${Math.round(phrase.x)},${Math.round(phrase.y)}`;
+    if (seenPositions.has(posKey)) continue;
+    seenPositions.add(posKey);
+
+    let dropType: DropAnnotation["dropType"] = "general";
+    if (upper.includes("COLUMN")) dropType = "column";
+    else if (upper.includes("CABINET") || upper.includes("DB") || upper.includes("BOARD")) dropType = "cabinet";
+    else if (upper.includes("CCTV") || upper.includes("CAMERA")) dropType = "cctv";
+    else if (upper.includes("ACCESS") || upper.includes("INTERCOM") || upper.includes("READER")) dropType = "access_control";
+    else if (upper.includes("LEVEL") || upper.includes("HIGH") || upper.includes("LOW")) dropType = "column";
+
+    drops.push({
+      x: phrase.x,
+      y: phrase.y,
+      text: phrase.text.trim(),
+      dropType,
+      defaultMetres: DEFAULT_DROP_METRES,
+    });
   }
 
   return drops;
@@ -316,40 +456,69 @@ export async function performContainmentTakeoff(
   }
   if (currentPhrase.text) phrases.push(currentPhrase);
 
-  // Step 4: Parse tray annotations from phrases
+  // Step 4: Parse tray annotations from phrases — handles combined + NEW/EX filtering
   interface TrayAnnotation {
     size: number;
     type: string;
     height: number | null;
+    isNew: boolean;
+    isExisting: boolean;
+    rawText: string;
     x: number;
     y: number;
     endX: number;
   }
 
-  const trayAnnotations: TrayAnnotation[] = [];
+  const allTrayAnnotations: TrayAnnotation[] = [];
+  const existingAnnotations: TrayAnnotation[] = []; // Tracked for ambiguity questions
+  const combinedAnnotationPhrases: string[] = [];   // Tracked for ambiguity questions
+
   for (const phrase of phrases) {
-    const parsed = parseTrayAnnotation(phrase.text);
-    if (parsed) {
-      trayAnnotations.push({
-        ...parsed,
+    const entries = parseTrayAnnotations(phrase.text);
+    if (entries.length === 0) continue;
+
+    // Track combined annotations (more than 1 entry from single phrase)
+    if (entries.length > 1) {
+      combinedAnnotationPhrases.push(phrase.text.trim());
+    }
+
+    for (const entry of entries) {
+      const annotation: TrayAnnotation = {
+        size: entry.size,
+        type: entry.type,
+        height: entry.height,
+        isNew: entry.isNew,
+        isExisting: entry.isExisting,
+        rawText: entry.rawText,
         x: phrase.x,
         y: phrase.y,
         endX: phrase.endX,
-      });
+      };
+
+      if (entry.isExisting) {
+        existingAnnotations.push(annotation);
+      } else {
+        allTrayAnnotations.push(annotation);
+      }
     }
   }
 
-  console.log(`[Containment Takeoff] Found ${trayAnnotations.length} tray annotations`);
+  // Only use NEW annotations for the takeoff
+  const trayAnnotations = allTrayAnnotations;
 
-  // Step 5: Detect drops
+  console.log(`[Containment Takeoff] Found ${trayAnnotations.length} NEW tray annotations, ${existingAnnotations.length} EXISTING (excluded)`);
+  if (combinedAnnotationPhrases.length > 0) {
+    console.log(`[Containment Takeoff] ${combinedAnnotationPhrases.length} combined annotations expanded into multiple entries`);
+  }
+
+  // Step 5: Detect drops (improved)
   const dropAnnotations = detectDropAnnotations(words);
   console.log(`[Containment Takeoff] Found ${dropAnnotations.length} drop annotations`);
+  for (const d of dropAnnotations) {
+    console.log(`  Drop: "${d.text}" type=${d.dropType} at (${Math.round(d.x)}, ${Math.round(d.y)})`);
+  }
 
   // Step 6: Group annotations by tray size + type and estimate run lengths
-  // For now, we use annotation positions to estimate tray routes
-  // Annotations along the same tray run will be at similar Y positions (horizontal runs)
-  // or similar X positions (vertical runs)
-
   const trayGroups: Map<string, TrayAnnotation[]> = new Map();
   for (const ann of trayAnnotations) {
     const key = `${ann.size}-${ann.type}`;
@@ -358,8 +527,6 @@ export async function performContainmentTakeoff(
   }
 
   // Step 7: Estimate lengths from annotation spacing
-  // Each annotation marks a section of tray. The distance between consecutive annotations
-  // on the same line gives us the tray length for that section.
   const trayRuns: TrayRun[] = [];
   let runId = 0;
 
@@ -372,7 +539,7 @@ export async function performContainmentTakeoff(
     annotations.sort((a, b) => a.y - b.y || a.x - b.x);
 
     // Estimate total length from the bounding area of annotations
-    // This is an approximation — the AI vision analysis will refine this
+    // This is an approximation — vector extraction (Option B) will refine this
     let totalLengthMetres = 0;
     const segments: TraySegment[] = [];
 
@@ -405,10 +572,7 @@ export async function performContainmentTakeoff(
     totalLengthMetres = Math.round(totalLengthMetres * 10) / 10;
     const wholesalerLengths = Math.ceil(totalLengthMetres / WHOLESALER_LENGTH_METRES);
 
-    // Count fittings: estimate from the number of direction changes in annotations
-    // T-pieces: where a perpendicular tray meets this one
-    // Cross-pieces: where this tray crosses another
-    // 90° bends: where the annotation path changes direction significantly
+    // Count fittings: estimate from direction changes in annotations
     let tPieces = 0;
     let crossPieces = 0;
     let bends90 = 0;
@@ -423,7 +587,6 @@ export async function performContainmentTakeoff(
       const dx2 = next.x - curr.x;
       const dy2 = next.y - curr.y;
 
-      // Check for direction change (potential bend)
       const angle = Math.abs(Math.atan2(dy2, dx2) - Math.atan2(dy1, dx1));
       if (angle > Math.PI / 4) {
         bends90++;
@@ -432,7 +595,6 @@ export async function performContainmentTakeoff(
 
     // Count drops near this tray type
     const drops = dropAnnotations.filter(d => {
-      // Check if drop annotation is near any of this tray's annotations
       return annotations.some(a =>
         Math.abs(d.x - a.x) < 100 && Math.abs(d.y - a.y) < 100
       );
@@ -470,7 +632,64 @@ export async function performContainmentTakeoff(
   // Step 9: Build questions for user
   const questions: ContainmentTakeoffResult["questions"] = [];
 
-  // Ask which tray types to include
+  // Q: Existing tray annotations found — ask if they should be excluded
+  if (existingAnnotations.length > 0) {
+    const exSummary = existingAnnotations
+      .map(a => `${a.size}mm ${a.type}`)
+      .filter((v, i, arr) => arr.indexOf(v) === i) // unique
+      .join(", ");
+    questions.push({
+      id: "existing-tray",
+      question: `Found ${existingAnnotations.length} EXISTING tray annotation(s): ${exSummary}. These have been excluded from the takeoff. Is that correct?`,
+      context: `Annotations marked "EX" or "EXISTING" are assumed to be pre-installed tray that doesn't need quoting. The excluded annotations are:\n${existingAnnotations.map(a => `"${a.rawText.substring(0, 80)}"`).join("\n")}`,
+      options: [
+        { label: "Yes, exclude existing", value: "exclude" },
+        { label: "No, include them (they are new)", value: "include" },
+      ],
+      defaultValue: "exclude",
+    });
+  }
+
+  // Q: Combined annotations detected — confirm expansion
+  if (combinedAnnotationPhrases.length > 0) {
+    questions.push({
+      id: "combined-annotations",
+      question: `Found ${combinedAnnotationPhrases.length} combined annotation(s) — expanded into multiple tray entries. Confirm this is correct?`,
+      context: `Combined annotations create multiple tray entries from a single label:\n${combinedAnnotationPhrases.map(p => `"${p.substring(0, 100)}"`).join("\n")}`,
+      options: [
+        { label: "Yes, all entries are correct", value: "confirm" },
+        { label: "No, needs manual review", value: "review" },
+      ],
+      defaultValue: "confirm",
+    });
+  }
+
+  // Q: Drop allowances
+  if (dropAnnotations.length > 0) {
+    const totalDropMetres = dropAnnotations.length * DEFAULT_DROP_METRES;
+    const dropTypeBreakdown = dropAnnotations.reduce((acc, d) => {
+      acc[d.dropType] = (acc[d.dropType] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    const breakdownStr = Object.entries(dropTypeBreakdown)
+      .map(([type, count]) => `${count} x ${type}`)
+      .join(", ");
+
+    questions.push({
+      id: "drop-allowance",
+      question: `Found ${dropAnnotations.length} drop annotation(s) (${breakdownStr}). Allow ${DEFAULT_DROP_METRES}m cable per drop (${totalDropMetres}m total)?`,
+      context: `Each drop annotation adds cable for the vertical run from tray to the equipment below. The default is ${DEFAULT_DROP_METRES}m per drop. Drop locations:\n${dropAnnotations.map(d => `"${d.text.substring(0, 60)}" (${d.dropType})`).join("\n")}`,
+      options: [
+        { label: `Yes, ${DEFAULT_DROP_METRES}m per drop`, value: String(DEFAULT_DROP_METRES) },
+        { label: "3m per drop", value: "3" },
+        { label: "1.5m per drop", value: "1.5" },
+        { label: "No drop allowance", value: "0" },
+      ],
+      defaultValue: String(DEFAULT_DROP_METRES),
+    });
+  }
+
+  // Q: Which tray types to include
   const trayTypesFound = [...new Set(trayAnnotations.map(a => a.type))];
   if (trayTypesFound.length > 1) {
     questions.push({
@@ -486,7 +705,7 @@ export async function performContainmentTakeoff(
     });
   }
 
-  // Ask about tray duty
+  // Q: Tray duty
   questions.push({
     id: "tray-duty",
     question: "What duty rating is the cable tray?",
@@ -503,10 +722,16 @@ export async function performContainmentTakeoff(
   const drawingNotes: string[] = [];
   if (detectedScale) drawingNotes.push(`Scale detected: ${detectedScale}`);
   if (paperSize) drawingNotes.push(`Paper size: ${paperSize}`);
-  drawingNotes.push(`Found ${trayAnnotations.length} tray annotations across ${trayRuns.length} tray runs`);
-  drawingNotes.push(`Found ${dropAnnotations.length} column drop annotations`);
+  drawingNotes.push(`Found ${trayAnnotations.length} NEW tray annotations across ${trayRuns.length} tray runs`);
+  if (existingAnnotations.length > 0) {
+    drawingNotes.push(`Excluded ${existingAnnotations.length} EXISTING tray annotations`);
+  }
+  if (combinedAnnotationPhrases.length > 0) {
+    drawingNotes.push(`Expanded ${combinedAnnotationPhrases.length} combined annotations into separate entries`);
+  }
+  drawingNotes.push(`Found ${dropAnnotations.length} drop annotations (${dropAnnotations.length * DEFAULT_DROP_METRES}m cable allowance)`);
   for (const run of trayRuns) {
-    drawingNotes.push(`${run.sizeMillimetres}mm ${run.trayType}: ${run.lengthMetres}m (${run.wholesalerLengths} × 3m lengths)`);
+    drawingNotes.push(`${run.sizeMillimetres}mm ${run.trayType}: ${run.lengthMetres}m (${run.wholesalerLengths} x 3m lengths) @ ${run.heightMetres}m`);
   }
 
   console.log(`[Containment Takeoff] Complete: ${trayRuns.length} runs, ${Object.keys(fittingSummary).length} sizes`);
@@ -530,6 +755,7 @@ export async function performContainmentTakeoff(
 
 /**
  * Calculate cable requirements from tray runs + user inputs
+ * Now includes drop cable allowance from detected drop annotations
  */
 export function calculateCableSummary(
   trayRuns: TrayRun[],
@@ -542,7 +768,7 @@ export function calculateCableSummary(
 
   const trayRouteLengthMetres = filteredRuns.reduce((sum, r) => sum + r.lengthMetres, 0);
 
-  // Total fittings (for drop calculation)
+  // Total drops — each drop adds cable for the vertical run
   const totalDrops = filteredRuns.reduce((sum, r) => sum + r.drops, 0);
   const dropAllowanceMetres = totalDrops * userInputs.extraDropPerFitting;
 
@@ -669,7 +895,7 @@ export function formatContainmentForQuoteContext(
   // Tray runs
   lines.push("\n### Cable Tray Runs");
   for (const run of trayRuns) {
-    lines.push(`- ${run.sizeMillimetres}mm ${run.trayType} tray: ${run.lengthMetres}m (${run.wholesalerLengths} × 3m lengths) at ${run.heightMetres}m height`);
+    lines.push(`- ${run.sizeMillimetres}mm ${run.trayType} tray: ${run.lengthMetres}m (${run.wholesalerLengths} x 3m lengths) at ${run.heightMetres}m height`);
   }
 
   // Fittings
@@ -678,7 +904,7 @@ export function formatContainmentForQuoteContext(
     const parts: string[] = [];
     if (fittings.tPieces > 0) parts.push(`${fittings.tPieces} T-pieces`);
     if (fittings.crossPieces > 0) parts.push(`${fittings.crossPieces} cross-pieces`);
-    if (fittings.bends90 > 0) parts.push(`${fittings.bends90} × 90° bends`);
+    if (fittings.bends90 > 0) parts.push(`${fittings.bends90} x 90 degree bends`);
     if (fittings.drops > 0) parts.push(`${fittings.drops} drops`);
     if (fittings.couplers > 0) parts.push(`${fittings.couplers} couplers`);
     if (parts.length > 0) {
@@ -693,7 +919,7 @@ export function formatContainmentForQuoteContext(
     lines.push(`- Drop allowance: ${cableSummary.dropAllowanceMetres}m`);
     lines.push(`- First point runs: ${cableSummary.firstPointMetres}m`);
     lines.push(`- Additional allowance: ${cableSummary.additionalAllowanceMetres}m`);
-    lines.push(`- **Total cable: ${cableSummary.totalCableMetres}m** (${cableSummary.cableDrums} × 100m drums)`);
+    lines.push(`- **Total cable: ${cableSummary.totalCableMetres}m** (${cableSummary.cableDrums} x 100m drums)`);
   }
 
   if (userInputs) {
