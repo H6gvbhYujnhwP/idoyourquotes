@@ -286,6 +286,38 @@ export type ElectricalTakeoff = typeof electricalTakeoffs.$inferSelect;
 export type InsertElectricalTakeoff = typeof electricalTakeoffs.$inferInsert;
 
 /**
+ * Containment Takeoffs — tray/cable run measurements from containment drawings
+ */
+export const containmentTakeoffs = pgTable("containment_takeoffs", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  quoteId: bigint("quote_id", { mode: "number" }).notNull(),
+  inputId: bigint("input_id", { mode: "number" }).notNull(),
+  drawingRef: varchar("drawing_ref", { length: 255 }),
+  status: varchar("status", { length: 20 }).default("draft").notNull(),
+  pageWidth: decimal("page_width", { precision: 10, scale: 2 }),
+  pageHeight: decimal("page_height", { precision: 10, scale: 2 }),
+  detectedScale: varchar("detected_scale", { length: 50 }),
+  paperSize: varchar("paper_size", { length: 10 }),
+  trayRuns: json("tray_runs"),
+  fittingSummary: json("fitting_summary"),
+  userInputs: json("user_inputs"),
+  cableSummary: json("cable_summary"),
+  questions: json("questions"),
+  userAnswers: json("user_answers"),
+  drawingNotes: json("drawing_notes"),
+  svgOverlay: text("svg_overlay"),
+  markupImageUrl: text("markup_image_url"),
+  verifiedAt: timestamp("verified_at"),
+  verifiedBy: bigint("verified_by", { mode: "number" }),
+  revision: integer("revision").default(1),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ContainmentTakeoff = typeof containmentTakeoffs.$inferSelect;
+export type InsertContainmentTakeoff = typeof containmentTakeoffs.$inferInsert;
+
+/**
  * Product/Service Catalog - reusable items for quotes
  * Now owned by organization
  * IMPORTANT: Column names use snake_case to match PostgreSQL
