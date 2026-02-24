@@ -174,6 +174,20 @@ export default function QuoteDraftSummary({
     });
   };
 
+  const removeMaterial = (index: number) => {
+    setEdited((prev) => ({
+      ...prev,
+      materials: prev.materials.filter((_, i) => i !== index),
+    }));
+  };
+
+  const removeLabour = (index: number) => {
+    setEdited((prev) => ({
+      ...prev,
+      labour: prev.labour.filter((_, i) => i !== index),
+    }));
+  };
+
   const startEditing = () => {
     setEdited({ ...mergedData });
     setIsEditing(true);
@@ -341,6 +355,7 @@ export default function QuoteDraftSummary({
                 <div className="space-y-1.5">
                   {edited.labour.map((l, i) => (
                     <div key={i} className="flex gap-1.5 items-center">
+                      <button onClick={() => removeLabour(i)} className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-red-100 text-red-400 hover:text-red-600 flex-shrink-0 transition-colors" title="Remove item"><X className="h-3 w-3" /></button>
                       <input type="number" value={l.quantity} onChange={(e) => updateLabour(i, "quantity", parseInt(e.target.value) || 0)} className="w-14 text-sm font-medium px-2 py-1 rounded-md text-center outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
                       <span className="text-sm" style={{ color: brand.navyMuted }}>×</span>
                       <input type="text" value={l.role} onChange={(e) => updateLabour(i, "role", e.target.value)} className="flex-1 text-sm font-medium px-2 py-1 rounded-md outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
@@ -375,6 +390,7 @@ export default function QuoteDraftSummary({
                     if (m.source !== "voice") return null;
                     return (
                       <div key={i} className="flex gap-1.5 items-center">
+                        <button onClick={() => removeMaterial(i)} className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-red-100 text-red-400 hover:text-red-600 flex-shrink-0 transition-colors" title="Remove item"><X className="h-3 w-3" /></button>
                         <input type="number" value={m.quantity} onChange={(e) => updateMaterial(i, "quantity", parseInt(e.target.value) || 0)} className="w-14 text-sm font-medium px-2 py-1 rounded-md text-center outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
                         <span className="text-sm" style={{ color: brand.navyMuted }}>×</span>
                         <input type="text" value={m.item} onChange={(e) => updateMaterial(i, "item", e.target.value)} className="flex-1 text-sm font-medium px-2 py-1 rounded-md outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
@@ -413,6 +429,7 @@ export default function QuoteDraftSummary({
                     if (m.source !== "takeoff") return null;
                     return (
                       <div key={i} className="flex gap-1.5 items-center">
+                        <button onClick={() => removeMaterial(i)} className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-red-100 text-red-400 hover:text-red-600 flex-shrink-0 transition-colors" title="Remove item"><X className="h-3 w-3" /></button>
                         <input type="number" value={m.quantity} onChange={(e) => updateMaterial(i, "quantity", parseInt(e.target.value) || 0)} className="w-14 text-sm font-medium px-2 py-1 rounded-md text-center outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
                         <span className="text-sm" style={{ color: brand.navyMuted }}>×</span>
                         <input type="text" value={m.item} onChange={(e) => updateMaterial(i, "item", e.target.value)} className="flex-1 text-sm font-medium px-2 py-1 rounded-md outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
@@ -472,6 +489,7 @@ export default function QuoteDraftSummary({
                     if (m.source !== "containment") return null;
                     return (
                       <div key={i} className="flex gap-1.5 items-center">
+                        <button onClick={() => removeMaterial(i)} className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-red-100 text-red-400 hover:text-red-600 flex-shrink-0 transition-colors" title="Remove item"><X className="h-3 w-3" /></button>
                         <input type="number" value={m.quantity} onChange={(e) => updateMaterial(i, "quantity", parseInt(e.target.value) || 0)} className="w-14 text-sm font-medium px-2 py-1 rounded-md text-center outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
                         <span className="text-sm" style={{ color: brand.navyMuted }}>×</span>
                         <input type="text" value={m.item} onChange={(e) => updateMaterial(i, "item", e.target.value)} className="flex-1 text-sm font-medium px-2 py-1 rounded-md outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />

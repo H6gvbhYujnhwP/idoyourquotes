@@ -36,10 +36,29 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
   );
 
   // Fetch containment takeoff for this input (for drawing viewer chips)
-  const { data: containmentData } = trpc.containmentTakeoff.getByInputId.useQuery(
+  const { data: containmentData, refetch: refetchContainment } = trpc.containmentTakeoff.getByInputId.useQuery(
     { inputId },
     { enabled: !!inputId }
   );
+
+  // Containment excluded codes (chip toggle in drawing viewer)
+  const [containmentExcludedCodes, setContainmentExcludedCodes] = useState<Set<string>>(new Set());
+  const saveContainmentExcludedMutation = trpc.containmentTakeoff.updateExcludedCodes.useMutation({
+    onSuccess: () => refetchContainment(),
+  });
+
+  // Load persisted containment excluded codes
+  useEffect(() => {
+    if (containmentData) {
+      const ct = containmentData as any;
+      const answers = ct.userAnswers as Record<string, string> | undefined;
+      if (answers?._excludedCodes) {
+        try {
+          setContainmentExcludedCodes(new Set(JSON.parse(answers._excludedCodes) as string[]));
+        } catch {}
+      }
+    }
+  }, [containmentData]);
 
   // Mutations
   const analyzeMutation = trpc.electricalTakeoff.analyze.useMutation({
@@ -532,10 +551,21 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
             }
             return d;
           })()}
+          containmentExcludedCodes={containmentExcludedCodes}
+          onContainmentToggle={(code) => {
+            setContainmentExcludedCodes(prev => {
+              const next = new Set(prev);
+              next.has(code) ? next.delete(code) : next.add(code);
+              const ct = containmentData as any;
+              if (ct?.id) {
+                saveContainmentExcludedMutation.mutate({ takeoffId: ct.id, excludedCodes: Array.from(next) });
+              }
+              return next;
+            });
+          }}
           onClose={() => setShowViewer(false)}
           onSave={() => { refetch(); setShowViewer(false); }}
         />
-      )}
       )}
     </div>
   );
@@ -905,6 +935,8 @@ interface DrawingViewerModalProps {
   initialHiddenCodes?: Set<string>;
   containmentCounts?: Record<string, number>; // tray run counts from containment takeoff
   containmentDescriptions?: Record<string, string>;
+  containmentExcludedCodes?: Set<string>; // persisted excluded containment codes
+  onContainmentToggle?: (code: string) => void; // callback when user toggles a containment chip
   onClose: () => void;
   onSave?: () => void;
 }
@@ -924,6 +956,8 @@ function DrawingViewerModal({
   initialHiddenCodes,
   containmentCounts,
   containmentDescriptions,
+  containmentExcludedCodes,
+  onContainmentToggle,
   onClose,
   onSave,
 }: DrawingViewerModalProps) {
@@ -1374,16 +1408,28 @@ function DrawingViewerModal({
         {containmentCounts && Object.keys(containmentCounts).length > 0 && (
           <>
             <div className="w-px h-4 bg-gray-300 mx-1" />
-            {Object.entries(containmentCounts).sort(([a], [b]) => a.localeCompare(b)).map(([code, count]) => (
-              <div
-                key={`ct-${code}`}
-                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-teal-50 border border-teal-200 text-teal-700"
-                title={containmentDescriptions?.[code] || code}
-              >
-                <span className="w-2 h-2 rounded-full bg-teal-500" />
-                {count} × {containmentDescriptions?.[code]?.replace(/ \(3m lengths\)/, '') || code}
-              </div>
-            ))}
+            {Object.entries(containmentCounts).sort(([a], [b]) => a.localeCompare(b)).map(([code, count]) => {
+              const isExcluded = containmentExcludedCodes?.has(code);
+              return (
+                <button
+                  key={`ct-${code}`}
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border transition-all ${
+                    isExcluded
+                      ? 'bg-gray-100 text-gray-400 border-gray-200 line-through'
+                      : 'bg-teal-50 border-teal-200 text-teal-700 hover:bg-teal-100'
+                  }`}
+                  title={`${isExcluded ? 'Include' : 'Exclude'} ${containmentDescriptions?.[code] || code} from quote`}
+                  onClick={() => onContainmentToggle?.(code)}
+                >
+                  <span
+                    className="w-2 h-2 rounded-full"
+                    style={{ backgroundColor: isExcluded ? '#ccc' : '#14b8a6' }}
+                  />
+                  {count} × {containmentDescriptions?.[code]?.replace(/ \(3m lengths\)/, '') || code}
+                  {isExcluded && <EyeOff className="h-2.5 w-2.5 ml-0.5" />}
+                </button>
+              );
+            })}
           </>
         )}
         {hasChanges && (

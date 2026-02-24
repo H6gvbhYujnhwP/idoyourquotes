@@ -2457,6 +2457,29 @@ Report facts only. Do not interpret or add commentary.`,
 
         return { unlocked: true, takeoff: updated };
       }),
+
+    // Update excluded containment codes (user toggles in drawing viewer)
+    updateExcludedCodes: protectedProcedure
+      .input(z.object({
+        takeoffId: z.number(),
+        excludedCodes: z.array(z.string()),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const takeoff = await getContainmentTakeoffById(input.takeoffId);
+        if (!takeoff) throw new Error("Takeoff not found");
+
+        const quote = await getQuoteWithOrgAccess(takeoff.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Access denied");
+
+        const userAnswers = (takeoff.userAnswers || {}) as Record<string, any>;
+        userAnswers._excludedCodes = JSON.stringify(input.excludedCodes);
+
+        const updated = await updateContainmentTakeoff(takeoff.id, {
+          userAnswers: userAnswers as any,
+        });
+
+        return { updated: true, takeoff: updated };
+      }),
   }),
 
   // ============ TENDER CONTEXT ============
