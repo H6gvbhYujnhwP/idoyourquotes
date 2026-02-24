@@ -555,14 +555,13 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
           containmentColours={(() => {
             if (!containmentData) return undefined;
             const ct = containmentData as any;
-            const colours = ct.traySizeColours as Record<string, { stroke: string }> | undefined;
-            if (!colours) return undefined;
             const trayRuns = (ct.trayRuns || []) as any[];
+            if (trayRuns.length === 0) return undefined;
             const c: Record<string, string> = {};
             for (const run of trayRuns) {
               const key = `tray-${run.sizeMillimetres}mm-${run.trayType}`;
-              const sizeColour = colours[run.sizeMillimetres];
-              c[key] = sizeColour?.stroke || '#14b8a6';
+              // Use the colour extracted from the PDF (set by backend), with fallback
+              c[key] = run.colour || '#888888';
             }
             return c;
           })()}

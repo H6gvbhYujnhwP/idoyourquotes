@@ -74,6 +74,7 @@ export interface TrayRun {
   bends90: number;
   drops: number;
   segments: TraySegment[];
+  colour?: string; // Hex colour extracted from PDF line nearest to this tray annotation
 }
 
 export interface FittingSummaryBySize {
@@ -357,6 +358,227 @@ function getMetresPerPdfUnit(scale: string | null, paperSize: string | null, pag
   return (actualPaperWidth / pageWidth) * scaleRatio / 1000;
 }
 
+// ---- PDF Vector Colour Extraction ----
+
+interface ColouredLine {
+  x: number;  // midpoint x
+  y: number;  // midpoint y
+  colour: string; // hex colour e.g. "#3b82f6"
+}
+
+/**
+ * Extract coloured lines from PDF vector data using pdfjs-dist operator list.
+ * Returns an array of coloured line midpoints with their stroke colour.
+ * Ignores black/near-black lines (likely building structure) and very light lines.
+ */
+async function extractLineColoursFromPdf(pdfBuffer: Buffer, pageHeight: number): Promise<ColouredLine[]> {
+  let pdfjsLib: any;
+  try {
+    pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  } catch {
+    try {
+      pdfjsLib = await import('pdfjs-dist');
+    } catch {
+      console.log('[Containment Colours] pdfjs-dist not available, skipping colour extraction');
+      return [];
+    }
+  }
+
+  try {
+    const data = new Uint8Array(pdfBuffer);
+    const getDocument = pdfjsLib.getDocument || pdfjsLib.default?.getDocument;
+    if (!getDocument) return [];
+
+    const doc = await getDocument({ data }).promise;
+    const page = await doc.getPage(1);
+    const ops = await page.getOperatorList();
+    const OPS = pdfjsLib.OPS || pdfjsLib.default?.OPS;
+    if (!OPS) {
+      console.log('[Containment Colours] OPS constants not available');
+      return [];
+    }
+
+    const colouredLines: ColouredLine[] = [];
+    let currentStrokeR = 0, currentStrokeG = 0, currentStrokeB = 0;
+    let pathPoints: Array<{ x: number; y: number }> = [];
+
+    for (let i = 0; i < ops.fnArray.length; i++) {
+      const fn = ops.fnArray[i];
+      const args = ops.argsArray[i];
+
+      // setStrokeRGBColor
+      if (fn === OPS.setStrokeRGBColor) {
+        currentStrokeR = args[0];
+        currentStrokeG = args[1];
+        currentStrokeB = args[2];
+      }
+
+      // setStrokeColorN (for CMYK/deviceN - approximate)
+      if (fn === OPS.setStrokeColorN && args.length >= 3) {
+        currentStrokeR = args[0];
+        currentStrokeG = args[1];
+        currentStrokeB = args[2];
+      }
+
+      // moveTo
+      if (fn === OPS.moveTo) {
+        pathPoints = [{ x: args[0], y: args[1] }];
+      }
+
+      // lineTo
+      if (fn === OPS.lineTo) {
+        pathPoints.push({ x: args[0], y: args[1] });
+      }
+
+      // constructPath (batched path commands)
+      if (fn === OPS.constructPath) {
+        const subOps = args[0]; // array of sub-operations
+        const subArgs = args[1]; // array of coordinates
+        let argIdx = 0;
+        for (const subOp of subOps) {
+          if (subOp === OPS.moveTo) {
+            pathPoints = [{ x: subArgs[argIdx], y: subArgs[argIdx + 1] }];
+            argIdx += 2;
+          } else if (subOp === OPS.lineTo) {
+            pathPoints.push({ x: subArgs[argIdx], y: subArgs[argIdx + 1] });
+            argIdx += 2;
+          } else if (subOp === OPS.curveTo || subOp === OPS.curveTo2 || subOp === OPS.curveTo3) {
+            // Bezier curves - take endpoint
+            const numArgs = subOp === OPS.curveTo ? 6 : 4;
+            if (argIdx + numArgs <= subArgs.length) {
+              pathPoints.push({ x: subArgs[argIdx + numArgs - 2], y: subArgs[argIdx + numArgs - 1] });
+            }
+            argIdx += numArgs;
+          } else if (subOp === OPS.rectangle) {
+            argIdx += 4; // skip rectangles
+          } else if (subOp === OPS.closePath) {
+            // no args
+          } else {
+            // Unknown sub-op, try to skip safely
+            argIdx += 2;
+          }
+        }
+      }
+
+      // stroke — record the line with its colour
+      if (fn === OPS.stroke || fn === OPS.closeStroke || fn === OPS.strokePath) {
+        const r = Math.round(currentStrokeR * 255);
+        const g = Math.round(currentStrokeG * 255);
+        const b = Math.round(currentStrokeB * 255);
+
+        // Skip black/near-black (building lines) and white/near-white
+        const brightness = (r + g + b) / 3;
+        if (brightness > 20 && brightness < 240 && pathPoints.length >= 2) {
+          // Only record if the colour is distinct (not grey)
+          const maxChannel = Math.max(r, g, b);
+          const minChannel = Math.min(r, g, b);
+          const saturation = maxChannel > 0 ? (maxChannel - minChannel) / maxChannel : 0;
+
+          if (saturation > 0.15) { // Must have some colour saturation
+            const hex = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+
+            // Calculate midpoint of path (average of all points)
+            const midX = pathPoints.reduce((s, p) => s + p.x, 0) / pathPoints.length;
+            const midY = pathPoints.reduce((s, p) => s + p.y, 0) / pathPoints.length;
+
+            // Convert Y from PDF bottom-up to top-down
+            colouredLines.push({
+              x: midX,
+              y: pageHeight - midY,
+              colour: hex,
+            });
+          }
+        }
+        pathPoints = [];
+      }
+    }
+
+    console.log(`[Containment Colours] Extracted ${colouredLines.length} coloured line segments`);
+
+    return colouredLines;
+  } catch (err: any) {
+    console.log(`[Containment Colours] Extraction failed (non-fatal): ${err.message}`);
+    return [];
+  }
+}
+
+/**
+ * Find the dominant colour near a given (x, y) position from extracted coloured lines.
+ * Uses a search radius and picks the most common colour.
+ */
+function findNearbyColour(
+  x: number,
+  y: number,
+  colouredLines: ColouredLine[],
+  searchRadius: number = 80,
+): string | null {
+  const nearby = colouredLines.filter(line => {
+    const dx = line.x - x;
+    const dy = line.y - y;
+    return Math.sqrt(dx * dx + dy * dy) < searchRadius;
+  });
+
+  if (nearby.length === 0) return null;
+
+  // Count occurrences of each colour
+  const colourCounts: Record<string, number> = {};
+  for (const line of nearby) {
+    colourCounts[line.colour] = (colourCounts[line.colour] || 0) + 1;
+  }
+
+  // Return the most common colour
+  let bestColour = '';
+  let bestCount = 0;
+  for (const [colour, count] of Object.entries(colourCounts)) {
+    if (count > bestCount) {
+      bestCount = count;
+      bestColour = colour;
+    }
+  }
+
+  return bestColour || null;
+}
+
+/**
+ * For a group of tray annotations of the same size+type, find the consensus colour
+ * by checking all annotation positions and picking the most common nearby colour.
+ */
+function findGroupColour(
+  annotations: Array<{ x: number; y: number; endX: number }>,
+  colouredLines: ColouredLine[],
+): string | null {
+  const colourCounts: Record<string, number> = {};
+
+  for (const ann of annotations) {
+    // Check a few points along the annotation (start, mid, end)
+    const points = [
+      { x: ann.x, y: ann.y },
+      { x: (ann.x + ann.endX) / 2, y: ann.y },
+      { x: ann.endX, y: ann.y },
+    ];
+
+    for (const pt of points) {
+      const colour = findNearbyColour(pt.x, pt.y, colouredLines);
+      if (colour) {
+        colourCounts[colour] = (colourCounts[colour] || 0) + 1;
+      }
+    }
+  }
+
+  if (Object.keys(colourCounts).length === 0) return null;
+
+  let bestColour = '';
+  let bestCount = 0;
+  for (const [colour, count] of Object.entries(colourCounts)) {
+    if (count > bestCount) {
+      bestCount = count;
+      bestColour = colour;
+    }
+  }
+
+  return bestColour || null;
+}
+
 // ---- Main Analysis Function ----
 
 /**
@@ -406,6 +628,15 @@ export async function performContainmentTakeoff(
       totalTextElements: 0,
     };
   }
+
+  // Step 1b: Extract coloured lines from PDF vector data (for chip colours)
+  let colouredLines: ColouredLine[] = [];
+  try {
+    colouredLines = await extractLineColoursFromPdf(pdfBuffer, pageHeight);
+  } catch (err: any) {
+    console.log(`[Containment Takeoff] Colour extraction failed (non-fatal): ${err.message}`);
+  }
+  const hasColouredLines = colouredLines.length > 0;
 
   if (words.length === 0) {
     return {
@@ -612,6 +843,10 @@ export async function performContainmentTakeoff(
       bends90,
       drops,
       segments,
+      // Assign colour: use detected PDF line colour if available, otherwise use TRAY_SIZE_COLOURS fallback
+      colour: hasColouredLines
+        ? (findGroupColour(annotations, colouredLines) || TRAY_SIZE_COLOURS[size]?.stroke || '#888888')
+        : (TRAY_SIZE_COLOURS[size]?.stroke || '#888888'),
     });
   }
 
