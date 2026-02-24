@@ -1822,19 +1822,82 @@ export default function QuoteWorkspace() {
           {inputs && inputs.length > 0 && (
             <QuoteDraftSummary
               voiceSummary={voiceSummary}
-              takeoffs={(takeoffList || []).map((t: any) => ({
-                counts: t.counts || {},
-                symbolDescriptions: t.symbolDescriptions || {},
-                userAnswers: t.userAnswers || {},
-                status: t.status || "pending",
-              }))}
+              takeoffs={[
+                // Symbol takeoff materials
+                ...(takeoffList || []).map((t: any) => ({
+                  counts: t.counts || {},
+                  symbolDescriptions: t.symbolDescriptions || {},
+                  userAnswers: t.userAnswers || {},
+                  status: t.status || "pending",
+                  source: "takeoff" as const,
+                })),
+                // Containment takeoff materials (tray runs + fittings + cable)
+                ...(containmentList || []).map((ct: any) => {
+                  const counts: Record<string, number> = {};
+                  const descriptions: Record<string, string> = {};
+                  const trayRuns = (ct.trayRuns || []) as any[];
+                  const fittingSummary = (ct.fittingSummary || {}) as Record<string, any>;
+                  const cableSummary = ct.cableSummary as any;
+
+                  // Tray runs → material lines (3m lengths)
+                  for (const run of trayRuns) {
+                    const key = `tray-${run.sizeMillimetres}mm-${run.trayType}`;
+                    counts[key] = (counts[key] || 0) + run.wholesalerLengths;
+                    descriptions[key] = `${run.sizeMillimetres}mm ${run.trayType} Cable Tray (3m lengths)`;
+                  }
+
+                  // Fittings → material lines
+                  for (const [sizeKey, fittings] of Object.entries(fittingSummary)) {
+                    const f = fittings as any;
+                    if (f.bends90 > 0) {
+                      const key = `fitting-${sizeKey}-bend90`;
+                      counts[key] = f.bends90;
+                      descriptions[key] = `${sizeKey} 90° Flat Bend`;
+                    }
+                    if (f.tPieces > 0) {
+                      const key = `fitting-${sizeKey}-tpiece`;
+                      counts[key] = f.tPieces;
+                      descriptions[key] = `${sizeKey} T-Piece`;
+                    }
+                    if (f.crossPieces > 0) {
+                      const key = `fitting-${sizeKey}-cross`;
+                      counts[key] = f.crossPieces;
+                      descriptions[key] = `${sizeKey} Cross Piece`;
+                    }
+                    if (f.drops > 0) {
+                      const key = `fitting-${sizeKey}-drop`;
+                      counts[key] = f.drops;
+                      descriptions[key] = `${sizeKey} Column Drop`;
+                    }
+                    if (f.couplers > 0) {
+                      const key = `fitting-${sizeKey}-coupler`;
+                      counts[key] = f.couplers;
+                      descriptions[key] = `${sizeKey} Coupler`;
+                    }
+                  }
+
+                  // Cable estimate → drums
+                  if (cableSummary && cableSummary.cableDrums > 0) {
+                    counts["cable-drums"] = cableSummary.cableDrums;
+                    descriptions["cable-drums"] = `100m Cable Drum (${cableSummary.totalCableMetres}m total)`;
+                  }
+
+                  return {
+                    counts,
+                    symbolDescriptions: descriptions,
+                    userAnswers: ct.userAnswers || {},
+                    status: ct.status || "draft",
+                    source: "containment" as const,
+                  };
+                }),
+              ]}
               takeoffOverrides={takeoffOverrides}
               isLoading={isSummaryLoading}
               hasVoiceNotes={!!(inputs && inputs.some((inp: QuoteInput) => inp.inputType === "audio" && inp.content && !inp.fileUrl))}
               onSave={(data) => {
-                // Store takeoff material overrides (user edits to quantities/names)
+                // Store takeoff + containment material overrides (user edits to quantities/names)
                 const overrides: Record<string, { quantity?: number; item?: string; unitPrice?: number | null }> = {};
-                data.materials.filter(m => m.source === "takeoff" && m.symbolCode).forEach(m => {
+                data.materials.filter(m => (m.source === "takeoff" || m.source === "containment") && m.symbolCode).forEach(m => {
                   overrides[m.symbolCode!] = {
                     quantity: m.quantity,
                     item: m.item,

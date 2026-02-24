@@ -17,8 +17,8 @@ interface MaterialItem {
   item: string;
   quantity: number;
   unitPrice: number | null;
-  source: "voice" | "takeoff" | "document";
-  symbolCode?: string; // for takeoff items
+  source: "voice" | "takeoff" | "containment" | "document";
+  symbolCode?: string; // for takeoff and containment items
 }
 
 export interface QuoteDraftData {
@@ -37,6 +37,7 @@ interface TakeoffInfo {
   symbolDescriptions: Record<string, string>;
   userAnswers?: Record<string, string>;
   status: string;
+  source?: "takeoff" | "containment"; // defaults to "takeoff"
 }
 
 interface QuoteDraftSummaryProps {
@@ -75,8 +76,9 @@ function mergeSummaryWithTakeoffs(
         notes: null,
       };
 
-  // Add takeoff materials (excluding excluded symbols)
+  // Add takeoff and containment materials (excluding excluded symbols)
   for (const takeoff of takeoffs) {
+    const materialSource = takeoff.source || "takeoff";
     const excludedCodes = new Set<string>();
     if (takeoff.userAnswers?._excludedCodes) {
       try {
@@ -92,9 +94,9 @@ function mergeSummaryWithTakeoffs(
       const desc = takeoff.symbolDescriptions[code] || code;
       const override = takeoffOverrides[code];
 
-      // Check if this material already exists (from voice or previous takeoff)
+      // Check if this material already exists (from same source with same code)
       const existing = base.materials.find(
-        (m) => m.source === "takeoff" && m.symbolCode === code
+        (m) => m.source === materialSource && m.symbolCode === code
       );
       if (existing) {
         existing.quantity = override?.quantity ?? count;
@@ -105,7 +107,7 @@ function mergeSummaryWithTakeoffs(
           item: override?.item ?? desc,
           quantity: override?.quantity ?? count,
           unitPrice: override?.unitPrice ?? null,
-          source: "takeoff",
+          source: materialSource,
           symbolCode: code,
         });
       }
@@ -147,6 +149,7 @@ export default function QuoteDraftSummary({
   const hasLabour = data.labour.length > 0;
   const voiceMaterials = data.materials.filter((m) => m.source === "voice");
   const takeoffMaterials = data.materials.filter((m) => m.source === "takeoff");
+  const containmentMaterials = data.materials.filter((m) => m.source === "containment");
   const hasMaterials = data.materials.length > 0;
   const hasFinancials = data.markup !== null || data.sundries !== null || data.contingency !== null;
   const isEmpty = !data.jobDescription && !hasLabour && !hasMaterials && !data.notes && !data.clientName;
@@ -439,6 +442,65 @@ export default function QuoteDraftSummary({
                       <span style={{ color: brand.navy }}>{m.item}</span>
                       {m.symbolCode && (
                         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded ml-auto" style={{ backgroundColor: "#ede9fe", color: "#8b5cf6" }}>
+                          {m.symbolCode}
+                        </span>
+                      )}
+                      {m.unitPrice != null && m.unitPrice > 0 && (
+                        <span className="text-xs" style={{ color: brand.navyMuted }}>@ £{m.unitPrice}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Materials — from containment takeoff (tray runs, fittings, cable) */}
+        {containmentMaterials.length > 0 && (
+          <div className="flex items-start gap-3">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5" style={{ backgroundColor: "#f0fdfa" }}>
+              <Package className="h-3.5 w-3.5" style={{ color: brand.teal }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: brand.navyMuted }}>
+                Containment <span className="text-[8px] font-medium">(from containment takeoff)</span>
+              </p>
+              {isEditing ? (
+                <div className="space-y-1.5">
+                  {edited.materials.map((m, i) => {
+                    if (m.source !== "containment") return null;
+                    return (
+                      <div key={i} className="flex gap-1.5 items-center">
+                        <input type="number" value={m.quantity} onChange={(e) => updateMaterial(i, "quantity", parseInt(e.target.value) || 0)} className="w-14 text-sm font-medium px-2 py-1 rounded-md text-center outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
+                        <span className="text-sm" style={{ color: brand.navyMuted }}>×</span>
+                        <input type="text" value={m.item} onChange={(e) => updateMaterial(i, "item", e.target.value)} className="flex-1 text-sm font-medium px-2 py-1 rounded-md outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
+                        {m.symbolCode && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#f0fdfa", color: brand.teal }}>
+                            {m.symbolCode}
+                          </span>
+                        )}
+                        <div className="flex items-center gap-0.5">
+                          <span className="text-sm" style={{ color: brand.navyMuted }}>£</span>
+                          <input type="number" value={m.unitPrice ?? ""} onChange={(e) => updateMaterial(i, "unitPrice", e.target.value ? parseFloat(e.target.value) : null)} placeholder="—" className="w-20 text-sm font-medium px-2 py-1 rounded-md outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {containmentMaterials.map((m, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-2 text-sm font-medium py-1 px-2.5 rounded-lg"
+                      style={{ backgroundColor: "#f0fdfa", border: "1px solid #ccfbf1" }}
+                    >
+                      <span className="font-extrabold" style={{ color: brand.teal, minWidth: 28 }}>{m.quantity}</span>
+                      <span style={{ color: brand.navyMuted }}>×</span>
+                      <span style={{ color: brand.navy }}>{m.item}</span>
+                      {m.symbolCode && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded ml-auto" style={{ backgroundColor: "#ccfbf1", color: brand.teal }}>
                           {m.symbolCode}
                         </span>
                       )}
