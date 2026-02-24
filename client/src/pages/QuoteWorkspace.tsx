@@ -551,16 +551,34 @@ export default function QuoteWorkspace() {
           notes: parsed.notes ?? null,
         });
 
-        // Auto-name the quote: ClientName — DD/MM/YYYY (if title is empty)
-        if (!title && parsed.clientName) {
-          const today = new Date().toLocaleDateString("en-GB");
-          const autoTitle = `${parsed.clientName} — ${today}`;
-          setTitle(autoTitle);
-          updateQuote.mutate({ id: quoteId, title: autoTitle, clientName: parsed.clientName });
-        } else if (parsed.clientName && !clientName) {
-          // At least save the client name
+        // Auto-fill client details from parsed data
+        const updateFields: Record<string, string> = {};
+
+        if (parsed.clientName && !clientName) {
           setClientName(parsed.clientName);
-          updateQuote.mutate({ id: quoteId, clientName: parsed.clientName });
+          updateFields.clientName = parsed.clientName;
+        }
+        if (parsed.clientEmail && !clientEmail) {
+          setClientEmail(parsed.clientEmail);
+          updateFields.clientEmail = parsed.clientEmail;
+        }
+        if (parsed.clientPhone && !clientPhone) {
+          setClientPhone(parsed.clientPhone);
+          updateFields.clientPhone = parsed.clientPhone;
+        }
+
+        // Auto-name the quote: ClientName — DD/MM/YYYY (if title is empty)
+        if (!title && (parsed.clientName || clientName)) {
+          const name = parsed.clientName || clientName;
+          const today = new Date().toLocaleDateString("en-GB");
+          const autoTitle = `${name} — ${today}`;
+          setTitle(autoTitle);
+          updateFields.title = autoTitle;
+        }
+
+        // Save all auto-filled fields in one mutation
+        if (Object.keys(updateFields).length > 0) {
+          updateQuote.mutate({ id: quoteId, ...updateFields });
         }
       } else {
         toast.error("Could not parse dictation");
@@ -1244,8 +1262,9 @@ export default function QuoteWorkspace() {
                     updateQuote.mutate({ id: quoteId, title });
                   }
                 }}
+                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
                 placeholder={quote.reference || `Quote #${quote.id}`}
-                className="text-2xl font-bold tracking-tight bg-transparent border-none outline-none focus:ring-0 p-0 w-auto min-w-[120px] placeholder:text-muted-foreground/40"
+                className="text-2xl font-bold tracking-tight bg-transparent outline-none p-0 min-w-[120px] placeholder:text-muted-foreground/40 border-b-2 border-transparent hover:border-dashed hover:border-gray-300 focus:border-solid focus:border-teal-400 transition-colors"
                 style={{ color: brand.navy, maxWidth: "500px" }}
               />
               <Badge className={statusConfig[status].className}>
@@ -1257,14 +1276,55 @@ export default function QuoteWorkspace() {
                 </Badge>
               )}
             </div>
-            <p className="text-muted-foreground">
-              {quote.clientName || "No client specified"}
+            {/* Client details row — inline editable */}
+            <div className="flex items-center gap-3 mt-1 flex-wrap">
+              <input
+                type="text"
+                value={clientName || ""}
+                onChange={(e) => setClientName(e.target.value)}
+                onBlur={() => {
+                  if (clientName !== (quote.clientName || "")) {
+                    updateQuote.mutate({ id: quoteId, clientName });
+                  }
+                }}
+                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                placeholder="Client / Company name"
+                className="text-sm bg-transparent outline-none p-0 min-w-[140px] placeholder:text-muted-foreground/40 text-muted-foreground border-b border-transparent hover:border-dashed hover:border-gray-300 focus:border-solid focus:border-teal-400 transition-colors"
+              />
+              <span className="text-muted-foreground/30">|</span>
+              <input
+                type="email"
+                value={clientEmail || ""}
+                onChange={(e) => setClientEmail(e.target.value)}
+                onBlur={() => {
+                  if (clientEmail !== (quote.clientEmail || "")) {
+                    updateQuote.mutate({ id: quoteId, clientEmail });
+                  }
+                }}
+                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                placeholder="Email"
+                className="text-sm bg-transparent outline-none p-0 min-w-[100px] placeholder:text-muted-foreground/40 text-muted-foreground border-b border-transparent hover:border-dashed hover:border-gray-300 focus:border-solid focus:border-teal-400 transition-colors"
+              />
+              <span className="text-muted-foreground/30">|</span>
+              <input
+                type="tel"
+                value={clientPhone || ""}
+                onChange={(e) => setClientPhone(e.target.value)}
+                onBlur={() => {
+                  if (clientPhone !== (quote.clientPhone || "")) {
+                    updateQuote.mutate({ id: quoteId, clientPhone });
+                  }
+                }}
+                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                placeholder="Phone"
+                className="text-sm bg-transparent outline-none p-0 min-w-[80px] placeholder:text-muted-foreground/40 text-muted-foreground border-b border-transparent hover:border-dashed hover:border-gray-300 focus:border-solid focus:border-teal-400 transition-colors"
+              />
               {isComprehensive && (quote as any).tradePreset && (
-                <span className="ml-2 text-xs bg-muted px-2 py-0.5 rounded capitalize">
+                <span className="text-xs bg-muted px-2 py-0.5 rounded capitalize">
                   {((quote as any).tradePreset || "").replace(/_/g, " ")}
                 </span>
               )}
-            </p>
+            </div>
           </div>
         </div>
         <div className="flex gap-2">
@@ -1616,6 +1676,10 @@ export default function QuoteWorkspace() {
                 <Textarea
                   value={userPrompt}
                   onChange={(e) => setUserPrompt(e.target.value)}
+                  onBlur={() => {
+                    // Auto-save processing instructions on blur
+                    updateQuote.mutate({ id: quoteId, userPrompt: userPrompt || null });
+                  }}
                   className="w-full px-3 py-2 text-sm border-0 focus:ring-0 resize-none rounded-none"
                   style={{ color: brand.navy, backgroundColor: brand.white }}
                   rows={2}

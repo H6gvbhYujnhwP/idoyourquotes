@@ -2466,6 +2466,8 @@ IMPORTANT: Voice notes are listed in chronological order. Later voice notes may 
 
 Parse the content and extract:
 - clientName: The client or company name if mentioned (string or null)
+- clientEmail: The client's email address if mentioned (string or null)
+- clientPhone: The client's phone number if mentioned (string or null)
 - jobDescription: Brief one-line summary of the work (string)
 - labour: Array of {role, quantity, duration} objects. E.g. [{"role": "electrician", "quantity": 2, "duration": "half a day"}]
 - materials: Array of {item, quantity, unitPrice} objects. E.g. [{"item": "fluorescent batten", "quantity": 2, "unitPrice": 30}]
@@ -2480,6 +2482,8 @@ If a field is not mentioned, use null. Be precise with numbers — if they say "
 Respond with:
 {
   "clientName": string | null,
+  "clientEmail": string | null,
+  "clientPhone": string | null,
   "jobDescription": string,
   "labour": [{"role": string, "quantity": number, "duration": string}],
   "materials": [{"item": string, "quantity": number, "unitPrice": number | null}],
