@@ -10,9 +10,11 @@ import { isOpenAIConfigured } from "./_core/openai";
 import { extractUrls, scrapeUrls, formatScrapedContentForAI } from "./_core/webScraper";
 import { extractBrandColors } from "./services/colorExtractor";
 import { parseWordDocument, isWordDocument } from "./services/wordParser";
-import { performElectricalTakeoff, applyUserAnswers, formatTakeoffForQuoteContext, SYMBOL_STYLES, SYMBOL_DESCRIPTIONS } from "./services/electricalTakeoff";
+import { performElectricalTakeoff, applyUserAnswers, formatTakeoffForQuoteContext, SYMBOL_STYLES, SYMBOL_DESCRIPTIONS, extractWithPdfJs } from "./services/electricalTakeoff";
+import { performContainmentTakeoff, calculateCableSummary, generateContainmentSvgOverlay, isContainmentDrawing, formatContainmentForQuoteContext, TRAY_SIZE_COLOURS } from "./services/containmentTakeoff";
 import { generateSvgOverlay } from "./services/takeoffMarkup";
 import { createElectricalTakeoff, getElectricalTakeoffsByQuoteId, getElectricalTakeoffById, getElectricalTakeoffByInputId, updateElectricalTakeoff } from "./db";
+import { createContainmentTakeoff, getContainmentTakeoffsByQuoteId, getContainmentTakeoffById, getContainmentTakeoffByInputId, updateContainmentTakeoff } from "./db";
 import { parseSpreadsheet, isSpreadsheet, formatSpreadsheetForAI } from "./services/excelParser";
 import { generateQuoteHTML } from "./pdfGenerator";
 import {
@@ -2111,6 +2113,299 @@ Report facts only. Do not interpret or add commentary.`,
           counts: newCounts,
           symbolCount: updatedSymbols.filter(s => !s.isStatusMarker).length,
         };
+      }),
+  }),
+
+  // ============ CONTAINMENT TAKEOFF (Tray/Cable Measurement) ============
+  containmentTakeoff: router({
+    // Get all containment takeoffs for a quote
+    list: protectedProcedure
+      .input(z.object({ quoteId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+        const takeoffs = await getContainmentTakeoffsByQuoteId(input.quoteId);
+        return takeoffs.map(t => ({
+          ...t,
+          traySizeColours: TRAY_SIZE_COLOURS,
+        }));
+      }),
+
+    // Get single containment takeoff
+    get: protectedProcedure
+      .input(z.object({ takeoffId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const takeoff = await getContainmentTakeoffById(input.takeoffId);
+        if (!takeoff) throw new Error("Takeoff not found");
+
+        const quote = await getQuoteWithOrgAccess(takeoff.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Access denied");
+
+        return {
+          ...takeoff,
+          traySizeColours: TRAY_SIZE_COLOURS,
+        };
+      }),
+
+    // Get containment takeoff for a specific input (drawing)
+    getByInputId: protectedProcedure
+      .input(z.object({ inputId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const takeoff = await getContainmentTakeoffByInputId(input.inputId);
+        if (!takeoff) return null;
+
+        const quote = await getQuoteWithOrgAccess(takeoff.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Access denied");
+
+        return {
+          ...takeoff,
+          traySizeColours: TRAY_SIZE_COLOURS,
+        };
+      }),
+
+    // Run containment takeoff analysis on a drawing
+    analyze: protectedProcedure
+      .input(z.object({
+        inputId: z.number(),
+        quoteId: z.number(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+
+        const inputRecord = await getInputById(input.inputId);
+        if (!inputRecord || !inputRecord.fileKey) {
+          throw new Error("Input file not found");
+        }
+
+        // Download PDF from R2
+        const pdfBuffer = await getFileBuffer(inputRecord.fileKey);
+
+        // Run containment takeoff extraction
+        const result = await performContainmentTakeoff(
+          pdfBuffer,
+          inputRecord.filename || "Unknown",
+          extractWithPdfJs,
+        );
+
+        // Generate SVG overlay for marked drawing
+        const svgOverlay = generateContainmentSvgOverlay(
+          result.trayRuns,
+          result.pageWidth,
+          result.pageHeight,
+        );
+
+        // Default user inputs
+        const defaultUserInputs = {
+          trayFilter: "LV",
+          trayDuty: "medium",
+          extraDropPerFitting: 2.0,
+          firstPointRunLength: 15.0,
+          numberOfCircuits: 0,
+          additionalCablePercent: 10,
+        };
+
+        // Calculate initial cable summary
+        const cableSummary = calculateCableSummary(result.trayRuns, defaultUserInputs);
+
+        // Save to database
+        const takeoff = await createContainmentTakeoff({
+          quoteId: input.quoteId,
+          inputId: input.inputId,
+          drawingRef: result.drawingRef,
+          status: result.questions.length > 0 ? "questions" : "draft",
+          pageWidth: result.pageWidth.toString(),
+          pageHeight: result.pageHeight.toString(),
+          detectedScale: result.detectedScale,
+          paperSize: result.paperSize,
+          trayRuns: result.trayRuns as any,
+          fittingSummary: result.fittingSummary as any,
+          userInputs: defaultUserInputs as any,
+          cableSummary: cableSummary as any,
+          questions: result.questions as any,
+          userAnswers: {},
+          drawingNotes: result.drawingNotes,
+          svgOverlay,
+        });
+
+        // Update input's processed content with containment context
+        await updateInputProcessing(input.inputId, {
+          processedContent: formatContainmentForQuoteContext(
+            result.trayRuns,
+            result.fittingSummary,
+            cableSummary,
+            defaultUserInputs,
+          ),
+          processingStatus: "completed",
+        });
+
+        return {
+          takeoff,
+          traySizeColours: TRAY_SIZE_COLOURS,
+        };
+      }),
+
+    // Update user inputs and recalculate cable summary
+    updateUserInputs: protectedProcedure
+      .input(z.object({
+        takeoffId: z.number(),
+        userInputs: z.object({
+          trayFilter: z.string(),
+          trayDuty: z.string(),
+          extraDropPerFitting: z.number(),
+          firstPointRunLength: z.number(),
+          numberOfCircuits: z.number(),
+          additionalCablePercent: z.number(),
+        }),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const takeoff = await getContainmentTakeoffById(input.takeoffId);
+        if (!takeoff) throw new Error("Takeoff not found");
+
+        const quote = await getQuoteWithOrgAccess(takeoff.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Access denied");
+
+        // Recalculate cable summary with new inputs
+        const trayRuns = (takeoff.trayRuns || []) as any[];
+        const cableSummary = calculateCableSummary(trayRuns, input.userInputs);
+
+        // Filter tray runs by type if needed
+        const filteredRuns = input.userInputs.trayFilter === "all"
+          ? trayRuns
+          : trayRuns.filter((r: any) => r.trayType === input.userInputs.trayFilter);
+
+        // Regenerate SVG overlay with filtered runs
+        const svgOverlay = generateContainmentSvgOverlay(
+          filteredRuns,
+          Number(takeoff.pageWidth) || 0,
+          Number(takeoff.pageHeight) || 0,
+        );
+
+        const updated = await updateContainmentTakeoff(takeoff.id, {
+          userInputs: input.userInputs as any,
+          cableSummary: cableSummary as any,
+          svgOverlay,
+        });
+
+        // Update input processed content
+        if (takeoff.inputId) {
+          await updateInputProcessing(Number(takeoff.inputId), {
+            processedContent: formatContainmentForQuoteContext(
+              filteredRuns,
+              (takeoff.fittingSummary || {}) as any,
+              cableSummary,
+              input.userInputs,
+            ),
+          });
+        }
+
+        return {
+          takeoff: updated,
+          traySizeColours: TRAY_SIZE_COLOURS,
+        };
+      }),
+
+    // Update tray run measurements manually (user corrections)
+    updateTrayRuns: protectedProcedure
+      .input(z.object({
+        takeoffId: z.number(),
+        trayRuns: z.array(z.object({
+          id: z.string(),
+          sizeMillimetres: z.number(),
+          trayType: z.string(),
+          lengthMetres: z.number(),
+          heightMetres: z.number(),
+          tPieces: z.number(),
+          crossPieces: z.number(),
+          bends90: z.number(),
+          drops: z.number(),
+        })),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const takeoff = await getContainmentTakeoffById(input.takeoffId);
+        if (!takeoff) throw new Error("Takeoff not found");
+
+        const quote = await getQuoteWithOrgAccess(takeoff.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Access denied");
+
+        // Merge user edits with existing segment data
+        const existingRuns = (takeoff.trayRuns || []) as any[];
+        const updatedRuns = input.trayRuns.map(edited => {
+          const existing = existingRuns.find((r: any) => r.id === edited.id);
+          return {
+            ...existing,
+            ...edited,
+            wholesalerLengths: Math.ceil(edited.lengthMetres / 3),
+            segments: existing?.segments || [],
+          };
+        });
+
+        // Rebuild fitting summary
+        const fittingSummary: Record<string, any> = {};
+        for (const run of updatedRuns) {
+          const sizeKey = `${run.sizeMillimetres}mm`;
+          if (!fittingSummary[sizeKey]) {
+            fittingSummary[sizeKey] = { tPieces: 0, crossPieces: 0, bends90: 0, drops: 0, couplers: 0 };
+          }
+          fittingSummary[sizeKey].tPieces += run.tPieces;
+          fittingSummary[sizeKey].crossPieces += run.crossPieces;
+          fittingSummary[sizeKey].bends90 += run.bends90;
+          fittingSummary[sizeKey].drops += run.drops;
+          fittingSummary[sizeKey].couplers += Math.max(0, run.wholesalerLengths - 1);
+        }
+
+        // Recalculate cable summary
+        const userInputs = (takeoff.userInputs || {}) as any;
+        const cableSummary = calculateCableSummary(updatedRuns, userInputs);
+
+        const updated = await updateContainmentTakeoff(takeoff.id, {
+          trayRuns: updatedRuns as any,
+          fittingSummary: fittingSummary as any,
+          cableSummary: cableSummary as any,
+        });
+
+        return {
+          takeoff: updated,
+          traySizeColours: TRAY_SIZE_COLOURS,
+        };
+      }),
+
+    // Verify containment takeoff (lock measurements)
+    verify: protectedProcedure
+      .input(z.object({ takeoffId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const takeoff = await getContainmentTakeoffById(input.takeoffId);
+        if (!takeoff) throw new Error("Takeoff not found");
+
+        const quote = await getQuoteWithOrgAccess(takeoff.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Access denied");
+
+        const updated = await updateContainmentTakeoff(takeoff.id, {
+          status: "verified",
+          verifiedAt: new Date(),
+          verifiedBy: BigInt(ctx.user.id) as any,
+        });
+
+        return { verified: true, takeoff: updated };
+      }),
+
+    // Unlock a verified containment takeoff
+    unlock: protectedProcedure
+      .input(z.object({ takeoffId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const takeoff = await getContainmentTakeoffById(input.takeoffId);
+        if (!takeoff) throw new Error("Takeoff not found");
+
+        const quote = await getQuoteWithOrgAccess(takeoff.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Access denied");
+
+        const updated = await updateContainmentTakeoff(takeoff.id, {
+          status: "draft",
+          verifiedAt: null,
+          verifiedBy: null,
+        });
+
+        return { unlocked: true, takeoff: updated };
       }),
   }),
 

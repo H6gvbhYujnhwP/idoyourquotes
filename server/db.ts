@@ -36,6 +36,9 @@ import {
   electricalTakeoffs,
   ElectricalTakeoff,
   InsertElectricalTakeoff,
+  containmentTakeoffs,
+  ContainmentTakeoff,
+  InsertContainmentTakeoff,
 } from "../drizzle/schema";
 
 /**
@@ -664,21 +667,6 @@ export async function updateInputProcessing(
   return result;
 }
 
-export async function updateInputContent(
-  inputId: number,
-  content: string,
-): Promise<QuoteInput | undefined> {
-  const db = await getDb();
-  if (!db) return undefined;
-
-  const [result] = await db.update(quoteInputs)
-    .set({ content })
-    .where(eq(quoteInputs.id, inputId))
-    .returning();
-
-  return result;
-}
-
 export async function getInputById(inputId: number): Promise<QuoteInput | undefined> {
   const db = await getDb();
   if (!db) return undefined;
@@ -916,6 +904,59 @@ export async function updateElectricalTakeoff(
   const [result] = await db.update(electricalTakeoffs)
     .set({ ...data, updatedAt: new Date() })
     .where(eq(electricalTakeoffs.id, id))
+    .returning();
+  return result;
+}
+
+// ---- Containment Takeoffs ----
+
+export async function createContainmentTakeoff(data: InsertContainmentTakeoff): Promise<ContainmentTakeoff> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const [result] = await db.insert(containmentTakeoffs).values(data).returning();
+  return result;
+}
+
+export async function getContainmentTakeoffsByQuoteId(quoteId: number): Promise<ContainmentTakeoff[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select().from(containmentTakeoffs)
+    .where(eq(containmentTakeoffs.quoteId, quoteId))
+    .orderBy(desc(containmentTakeoffs.createdAt));
+}
+
+export async function getContainmentTakeoffById(id: number): Promise<ContainmentTakeoff | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const [result] = await db.select().from(containmentTakeoffs)
+    .where(eq(containmentTakeoffs.id, id))
+    .limit(1);
+  return result;
+}
+
+export async function getContainmentTakeoffByInputId(inputId: number): Promise<ContainmentTakeoff | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const [result] = await db.select().from(containmentTakeoffs)
+    .where(eq(containmentTakeoffs.inputId, inputId))
+    .limit(1);
+  return result;
+}
+
+export async function updateContainmentTakeoff(
+  id: number,
+  data: Partial<InsertContainmentTakeoff>
+): Promise<ContainmentTakeoff | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const [result] = await db.update(containmentTakeoffs)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(containmentTakeoffs.id, id))
     .returning();
   return result;
 }

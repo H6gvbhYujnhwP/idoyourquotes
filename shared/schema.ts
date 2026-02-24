@@ -306,6 +306,98 @@ export type ElectricalTakeoff = typeof electricalTakeoffs.$inferSelect;
 export type InsertElectricalTakeoff = typeof electricalTakeoffs.$inferInsert;
 
 /**
+ * Containment Takeoffs — tray/cable run measurements from containment drawings
+ * Measures tray lengths by size, counts fittings (T-pieces, crosses, bends, drops)
+ * Calculates cable requirements based on tray routes + user inputs
+ */
+export const containmentTakeoffs = pgTable("containment_takeoffs", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  quoteId: bigint("quote_id", { mode: "number" }).notNull(),
+  inputId: bigint("input_id", { mode: "number" }).notNull(),
+  drawingRef: varchar("drawing_ref", { length: 255 }),
+  status: varchar("status", { length: 20 }).default("draft").notNull(), // draft | processing | ready | verified | locked
+
+  // Drawing metadata
+  pageWidth: decimal("page_width", { precision: 10, scale: 2 }),
+  pageHeight: decimal("page_height", { precision: 10, scale: 2 }),
+  detectedScale: varchar("detected_scale", { length: 50 }), // e.g. "1:100"
+  paperSize: varchar("paper_size", { length: 10 }), // e.g. "A0", "A1", "A3"
+
+  // AI-measured tray runs: array of { size, type, lengthMetres, height, tPieces, crossPieces, bends90, drops }
+  trayRuns: json("tray_runs").$type<Array<{
+    id: string;
+    sizeMillimetres: number;   // 50, 75, 100, 150, 225, 300, 450, 600
+    trayType: string;          // "LV", "FA", "ELV", "SUB"
+    lengthMetres: number;      // measured length in metres
+    heightMetres: number;      // installation height (e.g. 12.5)
+    wholesalerLengths: number; // ceil(lengthMetres / 3)
+    tPieces: number;
+    crossPieces: number;
+    bends90: number;
+    drops: number;
+    segments: Array<{          // individual line segments for SVG overlay
+      x1: number; y1: number;
+      x2: number; y2: number;
+      lengthMetres: number;
+    }>;
+  }>>(),
+
+  // Fitting summary (aggregated from tray runs, for cross-pieces use larger size rule)
+  fittingSummary: json("fitting_summary").$type<Record<string, {
+    tPieces: number;
+    crossPieces: number;
+    bends90: number;
+    drops: number;
+    couplers: number; // one per joint = wholesalerLengths - 1
+  }>>(),
+
+  // User-editable inputs for cable calculation
+  userInputs: json("user_inputs").$type<{
+    trayFilter: string;           // "LV" | "all" | custom
+    trayDuty: string;             // "light" | "medium" | "heavy"
+    extraDropPerFitting: number;  // metres of cable per fitting drop
+    firstPointRunLength: number;  // metres from DB to first tray point
+    numberOfCircuits: number;
+    additionalCablePercent: number; // e.g. 10 for 10%
+  }>(),
+
+  // Derived cable calculation
+  cableSummary: json("cable_summary").$type<{
+    trayRouteLengthMetres: number;
+    dropAllowanceMetres: number;
+    firstPointMetres: number;
+    additionalAllowanceMetres: number;
+    totalCableMetres: number;
+    cableDrums: number; // ceil(total / 100)
+  }>(),
+
+  // Questions for user (like electrical takeoff)
+  questions: json("questions").$type<Array<{
+    id: string; question: string; context: string;
+    options: Array<{ label: string; value: string }>;
+    defaultValue?: string;
+  }>>(),
+  userAnswers: json("user_answers").$type<Record<string, string>>(),
+
+  // Drawing notes extracted
+  drawingNotes: json("drawing_notes").$type<string[]>(),
+
+  // SVG overlay for marked drawing
+  svgOverlay: text("svg_overlay"),
+  markupImageUrl: text("markup_image_url"),
+
+  // Verification
+  verifiedAt: timestamp("verified_at"),
+  verifiedBy: bigint("verified_by", { mode: "number" }),
+  revision: integer("revision").default(1),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ContainmentTakeoff = typeof containmentTakeoffs.$inferSelect;
+export type InsertContainmentTakeoff = typeof containmentTakeoffs.$inferInsert;
+
+/**
  * Product/Service Catalog - reusable items for quotes
  * Now owned by organization
  * IMPORTANT: Column names use snake_case to match PostgreSQL

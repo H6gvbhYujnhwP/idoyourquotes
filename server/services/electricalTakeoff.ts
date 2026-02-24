@@ -141,7 +141,7 @@ export const SYMBOL_DESCRIPTIONS: Record<string, string> = {
  * Extract text with positions using pdfjs-dist.
  * This gives us character-level coordinate data needed for compound symbol matching.
  */
-async function extractWithPdfJs(pdfBuffer: Buffer): Promise<{
+export async function extractWithPdfJs(pdfBuffer: Buffer): Promise<{
   chars: ExtractedChar[];
   words: ExtractedWord[];
   pageWidth: number;
