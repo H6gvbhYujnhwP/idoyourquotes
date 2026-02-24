@@ -144,6 +144,8 @@ export default function QuoteWorkspace() {
   const [isDictating, setIsDictating] = useState(false);
   const [voiceSummary, setVoiceSummary] = useState<QuoteDraftData | null>(null);
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
+  // User overrides for takeoff material quantities/names (persists across re-merges)
+  const [takeoffOverrides, setTakeoffOverrides] = useState<Record<string, { quantity?: number; item?: string; unitPrice?: number | null }>>({}); 
 
   // File input refs (legacy single-file refs kept for backward compat)
   const pdfInputRef = useRef<HTMLInputElement>(null);
@@ -1810,10 +1812,22 @@ export default function QuoteWorkspace() {
                 userAnswers: t.userAnswers || {},
                 status: t.status || "pending",
               }))}
+              takeoffOverrides={takeoffOverrides}
               isLoading={isSummaryLoading}
               hasVoiceNotes={!!(inputs && inputs.some((inp: QuoteInput) => inp.inputType === "audio" && inp.content && !inp.fileUrl))}
               onSave={(data) => {
-                // Update the voiceSummary state so the component doesn't revert
+                // Store takeoff material overrides (user edits to quantities/names)
+                const overrides: Record<string, { quantity?: number; item?: string; unitPrice?: number | null }> = {};
+                data.materials.filter(m => m.source === "takeoff" && m.symbolCode).forEach(m => {
+                  overrides[m.symbolCode!] = {
+                    quantity: m.quantity,
+                    item: m.item,
+                    unitPrice: m.unitPrice,
+                  };
+                });
+                setTakeoffOverrides(overrides);
+
+                // Update the voiceSummary state with voice-only materials
                 setVoiceSummary({
                   ...data,
                   materials: data.materials.filter(m => m.source === "voice"),

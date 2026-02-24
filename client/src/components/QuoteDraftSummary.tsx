@@ -44,6 +44,8 @@ interface QuoteDraftSummaryProps {
   voiceSummary: QuoteDraftData | null;
   // Takeoff data from all PDFs
   takeoffs: TakeoffInfo[];
+  // User overrides for takeoff material quantities/names
+  takeoffOverrides: Record<string, { quantity?: number; item?: string; unitPrice?: number | null }>;
   // Loading state
   isLoading: boolean;
   // Whether any voice notes exist
@@ -57,7 +59,8 @@ interface QuoteDraftSummaryProps {
 
 function mergeSummaryWithTakeoffs(
   voiceSummary: QuoteDraftData | null,
-  takeoffs: TakeoffInfo[]
+  takeoffs: TakeoffInfo[],
+  takeoffOverrides: Record<string, { quantity?: number; item?: string; unitPrice?: number | null }>
 ): QuoteDraftData {
   const base: QuoteDraftData = voiceSummary
     ? { ...voiceSummary, materials: [...voiceSummary.materials] }
@@ -87,18 +90,21 @@ function mergeSummaryWithTakeoffs(
       if (excludedCodes.has(code)) continue;
 
       const desc = takeoff.symbolDescriptions[code] || code;
+      const override = takeoffOverrides[code];
 
       // Check if this material already exists (from voice or previous takeoff)
       const existing = base.materials.find(
         (m) => m.source === "takeoff" && m.symbolCode === code
       );
       if (existing) {
-        existing.quantity = count; // Update with latest count
+        existing.quantity = override?.quantity ?? count;
+        if (override?.item) existing.item = override.item;
+        if (override?.unitPrice !== undefined) existing.unitPrice = override.unitPrice;
       } else {
         base.materials.push({
-          item: desc,
-          quantity: count,
-          unitPrice: null,
+          item: override?.item ?? desc,
+          quantity: override?.quantity ?? count,
+          unitPrice: override?.unitPrice ?? null,
           source: "takeoff",
           symbolCode: code,
         });
@@ -114,6 +120,7 @@ function mergeSummaryWithTakeoffs(
 export default function QuoteDraftSummary({
   voiceSummary,
   takeoffs,
+  takeoffOverrides,
   isLoading,
   hasVoiceNotes,
   onSave,
@@ -121,10 +128,10 @@ export default function QuoteDraftSummary({
 }: QuoteDraftSummaryProps) {
   const [isEditing, setIsEditing] = useState(false);
 
-  // Merge voice summary + takeoff data
+  // Merge voice summary + takeoff data + user overrides
   const mergedData = useMemo(
-    () => mergeSummaryWithTakeoffs(voiceSummary, takeoffs),
-    [voiceSummary, takeoffs]
+    () => mergeSummaryWithTakeoffs(voiceSummary, takeoffs, takeoffOverrides),
+    [voiceSummary, takeoffs, takeoffOverrides]
   );
 
   const [edited, setEdited] = useState<QuoteDraftData>({ ...mergedData });
