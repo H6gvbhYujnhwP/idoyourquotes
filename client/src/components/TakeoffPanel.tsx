@@ -35,6 +35,12 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
     { enabled: !!inputId }
   );
 
+  // Fetch containment takeoff for this input (for drawing viewer chips)
+  const { data: containmentData } = trpc.containmentTakeoff.getByInputId.useQuery(
+    { inputId },
+    { enabled: !!inputId }
+  );
+
   // Mutations
   const analyzeMutation = trpc.electricalTakeoff.analyze.useMutation({
     onSuccess: () => {
@@ -502,9 +508,34 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
           drawingRef={takeoff.drawingRef || filename}
           isVerified={isVerified}
           initialHiddenCodes={allExcludedCodes}
+          containmentCounts={(() => {
+            if (!containmentData) return undefined;
+            const ct = containmentData as any;
+            const trayRuns = (ct.trayRuns || []) as any[];
+            if (trayRuns.length === 0) return undefined;
+            const c: Record<string, number> = {};
+            for (const run of trayRuns) {
+              const key = `${run.sizeMillimetres}mm-${run.trayType}`;
+              c[key] = (c[key] || 0) + run.wholesalerLengths;
+            }
+            return c;
+          })()}
+          containmentDescriptions={(() => {
+            if (!containmentData) return undefined;
+            const ct = containmentData as any;
+            const trayRuns = (ct.trayRuns || []) as any[];
+            if (trayRuns.length === 0) return undefined;
+            const d: Record<string, string> = {};
+            for (const run of trayRuns) {
+              const key = `${run.sizeMillimetres}mm-${run.trayType}`;
+              d[key] = `${run.sizeMillimetres}mm ${run.trayType} Cable Tray (3m lengths)`;
+            }
+            return d;
+          })()}
           onClose={() => setShowViewer(false)}
           onSave={() => { refetch(); setShowViewer(false); }}
         />
+      )}
       )}
     </div>
   );
@@ -872,6 +903,8 @@ interface DrawingViewerModalProps {
   drawingRef: string;
   isVerified?: boolean;
   initialHiddenCodes?: Set<string>;
+  containmentCounts?: Record<string, number>; // tray run counts from containment takeoff
+  containmentDescriptions?: Record<string, string>;
   onClose: () => void;
   onSave?: () => void;
 }
@@ -889,6 +922,8 @@ function DrawingViewerModal({
   drawingRef,
   isVerified = false,
   initialHiddenCodes,
+  containmentCounts,
+  containmentDescriptions,
   onClose,
   onSave,
 }: DrawingViewerModalProps) {
@@ -1335,6 +1370,22 @@ function DrawingViewerModal({
         <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-gray-100 text-gray-700">
           Showing: {visibleTotal}/{totalItems}
         </div>
+        {/* Containment tray run chips */}
+        {containmentCounts && Object.keys(containmentCounts).length > 0 && (
+          <>
+            <div className="w-px h-4 bg-gray-300 mx-1" />
+            {Object.entries(containmentCounts).sort(([a], [b]) => a.localeCompare(b)).map(([code, count]) => (
+              <div
+                key={`ct-${code}`}
+                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-teal-50 border border-teal-200 text-teal-700"
+                title={containmentDescriptions?.[code] || code}
+              >
+                <span className="w-2 h-2 rounded-full bg-teal-500" />
+                {count} × {containmentDescriptions?.[code]?.replace(/ \(3m lengths\)/, '') || code}
+              </div>
+            ))}
+          </>
+        )}
         {hasChanges && (
           <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700">
             Unsaved changes
