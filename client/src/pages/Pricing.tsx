@@ -13,6 +13,7 @@ import {
   Crown,
   Loader2,
   ArrowLeft,
+  Shield,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -188,7 +189,7 @@ export default function Pricing() {
     },
   });
 
-  const handleSelectTier = (tier: 'solo' | 'pro' | 'business') => {
+  const handleSelectTier = (tier: 'solo' | 'pro' | 'team' | 'business') => {
     if (!user) {
       setLocation("/register");
       return;
@@ -251,7 +252,7 @@ export default function Pricing() {
 
       {/* Tier Cards */}
       <section className="pb-20 px-4">
-        <div className="max-w-6xl mx-auto grid md:grid-cols-3 gap-6">
+        <div className="max-w-7xl mx-auto grid md:grid-cols-2 lg:grid-cols-4 gap-6">
           <TierCard
             name="Solo"
             price={59}
@@ -313,13 +314,13 @@ export default function Pricing() {
             whoItsFor={[
               "Small to medium contractors",
               "Trade businesses tendering regularly",
-              "2–3 user teams",
+              "2-user teams",
               "Commercial project work",
             ]}
             limits={[
-              "Up to 3 users",
-              "Unlimited AI processing",
-              "Unlimited quotes",
+              "Up to 2 users",
+              "Up to 15 AI quotes per month",
+              "Unlimited manual quotes",
             ]}
             buildFrom={[
               "📄 PDF drawings (scaled plans supported)",
@@ -339,11 +340,53 @@ export default function Pricing() {
               "Multi-user collaboration",
               "Priority email support",
             ]}
-            popular
             currentTier={currentTier === 'pro'}
             onSelect={() => handleSelectTier('pro')}
             loading={loadingTier === 'pro'}
             buttonLabel="Upgrade to Pro"
+          />
+
+          <TierCard
+            name="Team"
+            price={159}
+            priceWithVat={190.80}
+            tagline="For busy teams that quote frequently"
+            icon={<Shield className="h-7 w-7 text-emerald-300" />}
+            color="#059669"
+            borderColor="#059669"
+            bgGradient="linear-gradient(135deg, #1e3a5f 0%, #065f46 100%)"
+            popular
+            whoItsFor={[
+              "Medium-sized contractors",
+              "Multi-trade teams",
+              "High-volume tendering",
+              "Growing commercial operations",
+            ]}
+            limits={[
+              "Up to 5 users",
+              "Up to 50 AI quotes per month",
+              "Unlimited manual quotes",
+            ]}
+            buildFrom={[
+              "📄 PDF drawings (scaled plans supported)",
+              "📧 Full tender email threads",
+              "📝 Multi-document specifications",
+              "🖼 Technical drawings & site images",
+              "🎤 Voice notes & structured dictation",
+              "📎 Combined multi-file uploads",
+            ]}
+            includes={[
+              "Everything in Pro",
+              "5 team members with role management",
+              "Advanced modelling logic",
+              "Higher monthly quota (50 quotes)",
+              "Shared team catalogue (unlimited)",
+              "Priority email support",
+            ]}
+            currentTier={currentTier === 'team'}
+            onSelect={() => handleSelectTier('team')}
+            loading={loadingTier === 'team'}
+            buttonLabel="Upgrade to Team"
           />
 
           <TierCard
@@ -363,7 +406,7 @@ export default function Pricing() {
             ]}
             limits={[
               "Up to 10 users",
-              "Unlimited AI usage (fair use policy)",
+              "Unlimited AI quotes",
               "Advanced project modelling",
             ]}
             buildFrom={[
@@ -375,8 +418,8 @@ export default function Pricing() {
               "📂 Bulk file uploads & structured folders",
             ]}
             includes={[
-              "Everything in Pro",
-              "Advanced modelling logic (multi-floor, routing)",
+              "Everything in Team",
+              "Unlimited AI quotes",
               "Priority AI processing queue",
               "Custom branded proposals",
               "Advanced reporting (future-ready)",

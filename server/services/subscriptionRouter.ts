@@ -18,9 +18,14 @@ import {
   canCreateQuote,
   canAddTeamMember,
   canAddCatalogItem,
+  getUpgradeSuggestion,
   type SubscriptionTier,
 } from "./stripe";
 import { getUserPrimaryOrg, getOrgMembersByOrgId, getUserByEmail, addOrgMember, getDb } from "../db";
+import { sendLimitWarningEmail, sendTierChangeEmail } from "./emailService";
+
+const PAID_TIERS = ['solo', 'pro', 'team', 'business'] as const;
+type PaidTier = typeof PAID_TIERS[number];
 
 export const subscriptionRouter = router({
   // Get current subscription status for the org
@@ -31,6 +36,10 @@ export const subscriptionRouter = router({
     const members = await getOrgMembersByOrgId(org.id);
     const tier = (org as any).subscriptionTier as SubscriptionTier || 'trial';
     const config = TIER_CONFIG[tier] || TIER_CONFIG.trial;
+
+    // Calculate quote usage
+    const quoteCheck = canCreateQuote(org as any);
+    const memberCheck = canAddTeamMember(org as any, members.length);
 
     return {
       tier,
@@ -47,6 +56,13 @@ export const subscriptionRouter = router({
       maxCatalogItems: config.maxCatalogItems,
       currentUsers: members.length,
       currentQuoteCount: (org as any).monthlyQuoteCount || 0,
+      // Usage checks for frontend limit alerts
+      quoteUsage: quoteCheck.usage || null,
+      canCreateQuote: quoteCheck.allowed,
+      quoteBlockReason: quoteCheck.reason || null,
+      canAddTeamMember: memberCheck.allowed,
+      teamBlockReason: memberCheck.reason || null,
+      teamUsage: memberCheck.usage || null,
       // Stripe IDs (for frontend logic)
       hasStripeCustomer: !!(org as any).stripeCustomerId,
       hasActiveSubscription: !!(org as any).stripeSubscriptionId,
@@ -69,10 +85,19 @@ export const subscriptionRouter = router({
         name: 'Pro',
         price: 99,
         priceWithVat: 118.80,
-        maxUsers: 3,
-        maxQuotesPerMonth: -1,
+        maxUsers: 2,
+        maxQuotesPerMonth: 15,
         maxCatalogItems: -1,
         features: TIER_CONFIG.pro.features,
+      },
+      team: {
+        name: 'Team',
+        price: 159,
+        priceWithVat: 190.80,
+        maxUsers: 5,
+        maxQuotesPerMonth: 50,
+        maxCatalogItems: -1,
+        features: TIER_CONFIG.team.features,
       },
       business: {
         name: 'Business',
@@ -89,7 +114,7 @@ export const subscriptionRouter = router({
   // Create checkout session for subscribing
   createCheckout: protectedProcedure
     .input(z.object({
-      tier: z.enum(['solo', 'pro', 'business']),
+      tier: z.enum(['solo', 'pro', 'team', 'business']),
     }))
     .mutation(async ({ ctx, input }) => {
       const org = await getUserPrimaryOrg(ctx.user.id);
@@ -131,7 +156,7 @@ export const subscriptionRouter = router({
     return { url };
   }),
 
-  // Check if user can perform a specific action
+  // Check if user can perform a specific action — also triggers email warnings
   canPerform: protectedProcedure
     .input(z.object({
       action: z.enum(['create_quote', 'add_team_member', 'add_catalog_item']),
@@ -140,19 +165,80 @@ export const subscriptionRouter = router({
       const org = await getUserPrimaryOrg(ctx.user.id);
       if (!org) return { allowed: false, reason: 'No organization found' };
 
+      const tier = (org as any).subscriptionTier as SubscriptionTier || 'trial';
+
       switch (input.action) {
-        case 'create_quote':
-          return canCreateQuote(org as any);
+        case 'create_quote': {
+          const check = canCreateQuote(org as any);
+
+          // Send email warning at 80% or 100% of limit
+          if (check.usage && check.usage.max > 0) {
+            const pct = check.usage.percentUsed;
+            // Only email once per threshold — use a simple flag in metadata
+            // For now, fire at 80% and 100% 
+            if (pct >= 80) {
+              const suggestion = getUpgradeSuggestion(tier, 'quotes');
+              sendLimitWarningEmail({
+                to: (org as any).billingEmail || ctx.user.email,
+                name: ctx.user.name || undefined,
+                limitType: 'quotes',
+                currentUsage: check.usage.current,
+                maxAllowed: check.usage.max,
+                currentTierName: TIER_CONFIG[tier]?.name || tier,
+                suggestedTierName: suggestion?.tierName,
+                suggestedTierPrice: suggestion?.price,
+                newLimit: suggestion?.newLimit,
+                isHardLimit: pct >= 100,
+              }).catch(err => console.error('[Subscription] Failed to send limit email:', err));
+            }
+          }
+
+          return {
+            ...check,
+            upgradeSuggestion: !check.allowed ? getUpgradeSuggestion(tier, 'quotes') : null,
+          };
+        }
         case 'add_team_member': {
           const members = await getOrgMembersByOrgId(org.id);
-          return canAddTeamMember(org as any, members.length);
+          const check = canAddTeamMember(org as any, members.length);
+
+          if (!check.allowed) {
+            const suggestion = getUpgradeSuggestion(tier, 'users');
+            sendLimitWarningEmail({
+              to: (org as any).billingEmail || ctx.user.email,
+              name: ctx.user.name || undefined,
+              limitType: 'users',
+              currentUsage: members.length,
+              maxAllowed: (org as any).maxUsers || 1,
+              currentTierName: TIER_CONFIG[tier]?.name || tier,
+              suggestedTierName: suggestion?.tierName,
+              suggestedTierPrice: suggestion?.price,
+              newLimit: suggestion?.newLimit,
+              isHardLimit: true,
+            }).catch(err => console.error('[Subscription] Failed to send limit email:', err));
+
+            return { ...check, upgradeSuggestion: suggestion };
+          }
+          return { ...check, upgradeSuggestion: null };
         }
         case 'add_catalog_item':
           // Would need catalog count — for now just check tier
-          return { allowed: true };
+          return { allowed: true, upgradeSuggestion: null };
         default:
-          return { allowed: true };
+          return { allowed: true, upgradeSuggestion: null };
       }
+    }),
+
+  // Get upgrade suggestion for the current tier and limit type
+  getUpgrade: protectedProcedure
+    .input(z.object({
+      limitType: z.enum(['quotes', 'users', 'catalog']),
+    }))
+    .query(async ({ ctx, input }) => {
+      const org = await getUserPrimaryOrg(ctx.user.id);
+      if (!org) return null;
+      const tier = (org as any).subscriptionTier as SubscriptionTier || 'trial';
+      return getUpgradeSuggestion(tier, input.limitType);
     }),
 
   // ============ TEAM MANAGEMENT ============

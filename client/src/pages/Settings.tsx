@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase, Shield, Clock, PoundSterling, CreditCard, Users, Crown, AlertTriangle, Trash2, Mail, UserPlus, Check } from "lucide-react";
+import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase, Shield, Clock, PoundSterling, CreditCard, Users, Crown, AlertTriangle, Trash2, Mail, UserPlus, Check, ArrowRight } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TRADE_SECTOR_OPTIONS } from "@/lib/tradeSectors";
 import { useState, useEffect, useRef } from "react";
@@ -737,6 +737,7 @@ function BillingTab() {
     trial: '#0d9488',
     solo: '#0d9488',
     pro: '#3b82f6',
+    team: '#059669',
     business: '#d97706',
   };
 
@@ -773,6 +774,76 @@ function BillingTab() {
               {sub.tier === 'trial' || sub.isTrialExpired ? 'Choose a Plan' : 'Change Plan'}
             </Button>
           </div>
+
+          {/* Limit warning alert */}
+          {sub.maxQuotesPerMonth !== -1 && sub.currentQuoteCount >= sub.maxQuotesPerMonth && (
+            <div className="flex items-start gap-3 p-4 rounded-xl bg-red-50 border-2 border-red-200">
+              <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-red-800">
+                  You've reached your monthly quote limit
+                </p>
+                <p className="text-xs text-red-600 mt-1">
+                  You've used all {sub.maxQuotesPerMonth} quotes included in your {sub.tierName} plan this month. 
+                  Upgrade to create more quotes.
+                </p>
+                <Button
+                  size="sm"
+                  className="mt-2 text-xs"
+                  style={{ backgroundColor: '#0d9488' }}
+                  onClick={() => setLocation('/pricing')}
+                >
+                  Upgrade Plan <ArrowRight className="h-3 w-3 ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Approaching limit warning (80%+) */}
+          {sub.maxQuotesPerMonth !== -1 && sub.currentQuoteCount >= Math.floor(sub.maxQuotesPerMonth * 0.8) && sub.currentQuoteCount < sub.maxQuotesPerMonth && (
+            <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200">
+              <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-amber-800">
+                  You're approaching your monthly quote limit
+                </p>
+                <p className="text-xs text-amber-600 mt-1">
+                  {sub.currentQuoteCount} of {sub.maxQuotesPerMonth} quotes used. Consider upgrading to avoid interruption.
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-2 text-xs"
+                  onClick={() => setLocation('/pricing')}
+                >
+                  View Plans
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Team member limit warning */}
+          {sub.currentUsers >= sub.maxUsers && sub.maxUsers > 1 && (
+            <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200">
+              <Users className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-amber-800">
+                  All team seats are taken
+                </p>
+                <p className="text-xs text-amber-600 mt-1">
+                  {sub.currentUsers} of {sub.maxUsers} seats used. Upgrade to add more team members.
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-2 text-xs"
+                  onClick={() => setLocation('/pricing')}
+                >
+                  View Plans
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* Usage */}
           {sub.maxQuotesPerMonth !== -1 && (
@@ -925,7 +996,7 @@ function TeamTab() {
                   {sub.tier === 'trial' ? 'Trial' : 'Solo'} plan — single user only
                 </p>
                 <p className="text-xs text-amber-600 mt-1">
-                  Upgrade to Pro (up to 3 users) or Business (up to 10 users) to invite team members.
+                  Upgrade to Pro (2 users), Team (5 users), or Business (10 users) to invite team members.
                 </p>
                 <Button
                   size="sm"

@@ -341,3 +341,238 @@ export async function sendTrialExpiryReminder(params: {
     return false;
   }
 }
+
+/**
+ * Send limit reached / approaching warning email
+ */
+export async function sendLimitWarningEmail(params: {
+  to: string;
+  name?: string;
+  limitType: 'quotes' | 'users' | 'catalog';
+  currentUsage: number;
+  maxAllowed: number;
+  currentTierName: string;
+  suggestedTierName?: string;
+  suggestedTierPrice?: number;
+  newLimit?: string;
+  isHardLimit: boolean; // true = at limit, false = approaching (80%+)
+}): Promise<boolean> {
+  const firstName = params.name?.split(' ')[0] || 'there';
+  
+  const limitLabels: Record<string, string> = {
+    quotes: 'monthly quotes',
+    users: 'team members',
+    catalog: 'catalogue items',
+  };
+  const limitLabel = limitLabels[params.limitType] || params.limitType;
+
+  const subject = params.isHardLimit
+    ? `You've reached your ${limitLabel} limit — IdoYourQuotes`
+    : `You're approaching your ${limitLabel} limit — IdoYourQuotes`;
+
+  const headline = params.isHardLimit
+    ? `You've hit your ${limitLabel} limit`
+    : `You're running low on ${limitLabel}`;
+
+  const description = params.isHardLimit
+    ? `You've used all <strong>${params.maxAllowed} ${limitLabel}</strong> included in your <strong>${params.currentTierName}</strong> plan this month.`
+    : `You've used <strong>${params.currentUsage} of ${params.maxAllowed} ${limitLabel}</strong> on your <strong>${params.currentTierName}</strong> plan.`;
+
+  const upgradeBlock = params.suggestedTierName
+    ? `
+      <div style="background: #f0fdfa; border-radius: 8px; padding: 16px; margin-top: 16px;">
+        <p style="font-size: 13px; color: #0d9488; font-weight: 600; margin: 0 0 8px;">Upgrade to ${params.suggestedTierName}</p>
+        <p style="font-size: 13px; color: #475569; line-height: 1.6; margin: 0;">
+          Get ${params.newLimit || 'higher limits'} for just <strong>£${params.suggestedTierPrice || '—'}/month</strong>. 
+          Upgrade instantly from your settings — no data lost.
+        </p>
+      </div>
+      <div style="text-align: center; margin: 28px 0;">
+        <a href="${APP_URL}/pricing" style="display: inline-block; background-color: #0d9488; color: white; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 8px;">
+          View Plans & Upgrade
+        </a>
+      </div>`
+    : `
+      <div style="text-align: center; margin: 28px 0;">
+        <a href="${APP_URL}/settings?tab=billing" style="display: inline-block; background-color: #1a2b4a; color: white; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 8px;">
+          Manage Billing
+        </a>
+      </div>`;
+
+  try {
+    const { error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: params.to,
+      subject,
+      html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f8fafc;">
+  <div style="max-width: 480px; margin: 0 auto; padding: 40px 20px;">
+    
+    <div style="text-align: center; margin-bottom: 32px;">
+      <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png" alt="IdoYourQuotes" style="height: 48px;" />
+    </div>
+
+    <div style="background: white; border-radius: 12px; padding: 32px; border: 1px solid #e2e8f0;">
+      <div style="background: ${params.isHardLimit ? '#fef2f2' : '#fef3c7'}; border-radius: 8px; padding: 12px 16px; margin-bottom: 24px;">
+        <p style="font-size: 14px; font-weight: 600; color: ${params.isHardLimit ? '#991b1b' : '#92400e'}; margin: 0;">
+          ${params.isHardLimit ? '🚫' : '⚠️'} ${params.currentUsage} of ${params.maxAllowed} ${limitLabel} used
+        </p>
+      </div>
+
+      <h1 style="font-size: 22px; font-weight: 700; color: #1a2b4a; margin: 0 0 16px;">
+        ${headline}
+      </h1>
+      <p style="font-size: 15px; color: #475569; line-height: 1.6; margin: 0 0 16px;">
+        Hey ${firstName}, ${description}
+      </p>
+      ${params.isHardLimit ? `<p style="font-size: 15px; color: #475569; line-height: 1.6; margin: 0 0 24px;">
+        You won't be able to create new ${limitLabel === 'monthly quotes' ? 'quotes' : limitLabel} until your limit resets or you upgrade to a higher plan.
+      </p>` : `<p style="font-size: 15px; color: #475569; line-height: 1.6; margin: 0 0 24px;">
+        You're getting close to your limit. Consider upgrading to avoid any interruption.
+      </p>`}
+
+      ${upgradeBlock}
+
+      <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 24px;">
+        <p style="font-size: 13px; color: #64748b; margin: 0 0 4px; font-weight: 600;">Questions?</p>
+        <p style="font-size: 13px; color: #64748b; margin: 0;">
+          Email us at <a href="mailto:support@idoyourquotes.com" style="color: #0d9488; text-decoration: none;">support@idoyourquotes.com</a>
+        </p>
+      </div>
+    </div>
+
+    <div style="text-align: center; margin-top: 24px;">
+      <p style="font-size: 12px; color: #94a3b8;">
+        &copy; ${new Date().getFullYear()} IdoYourQuotes. All rights reserved.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`,
+    });
+
+    if (error) {
+      console.error('[Email] Limit warning send failed:', error);
+      return false;
+    }
+
+    console.log(`[Email] Limit warning (${params.limitType}, hard=${params.isHardLimit}) sent to ${params.to}`);
+    return true;
+  } catch (err) {
+    console.error('[Email] Limit warning send error:', err);
+    return false;
+  }
+}
+
+/**
+ * Send tier change confirmation email (upgrade or downgrade)
+ */
+export async function sendTierChangeEmail(params: {
+  to: string;
+  name?: string;
+  oldTierName: string;
+  newTierName: string;
+  isUpgrade: boolean;
+  newMaxQuotes: number;
+  newMaxUsers: number;
+  newPrice: number;
+}): Promise<boolean> {
+  const firstName = params.name?.split(' ')[0] || 'there';
+  const quotesLabel = params.newMaxQuotes === -1 ? 'Unlimited' : String(params.newMaxQuotes);
+
+  const subject = params.isUpgrade
+    ? `Welcome to ${params.newTierName} — you're upgraded!`
+    : `Your plan has changed to ${params.newTierName}`;
+
+  const headline = params.isUpgrade
+    ? `You've upgraded to ${params.newTierName}!`
+    : `Your plan is now ${params.newTierName}`;
+
+  const body = params.isUpgrade
+    ? `Great news — your plan has been upgraded from <strong>${params.oldTierName}</strong> to <strong>${params.newTierName}</strong>. Your new limits are active immediately.`
+    : `Your plan has changed from <strong>${params.oldTierName}</strong> to <strong>${params.newTierName}</strong>. Your new limits are now in effect.`;
+
+  try {
+    const { error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: params.to,
+      subject,
+      html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f8fafc;">
+  <div style="max-width: 480px; margin: 0 auto; padding: 40px 20px;">
+    
+    <div style="text-align: center; margin-bottom: 32px;">
+      <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png" alt="IdoYourQuotes" style="height: 48px;" />
+    </div>
+
+    <div style="background: white; border-radius: 12px; padding: 32px; border: 1px solid #e2e8f0;">
+      <div style="background: ${params.isUpgrade ? '#f0fdfa' : '#fef3c7'}; border-radius: 8px; padding: 12px 16px; margin-bottom: 24px;">
+        <p style="font-size: 14px; font-weight: 600; color: ${params.isUpgrade ? '#065f46' : '#92400e'}; margin: 0;">
+          ${params.isUpgrade ? '🎉' : 'ℹ️'} ${params.oldTierName} → ${params.newTierName}
+        </p>
+      </div>
+
+      <h1 style="font-size: 22px; font-weight: 700; color: #1a2b4a; margin: 0 0 16px;">
+        ${headline}
+      </h1>
+      <p style="font-size: 15px; color: #475569; line-height: 1.6; margin: 0 0 24px;">
+        Hey ${firstName}, ${body}
+      </p>
+
+      <div style="background: #f8fafc; border-radius: 8px; padding: 16px;">
+        <p style="font-size: 13px; color: #1a2b4a; font-weight: 600; margin: 0 0 12px;">Your ${params.newTierName} plan:</p>
+        <table style="width: 100%; font-size: 13px; color: #475569;">
+          <tr><td style="padding: 4px 0;">Monthly quotes</td><td style="padding: 4px 0; text-align: right; font-weight: 600;">${quotesLabel}</td></tr>
+          <tr><td style="padding: 4px 0;">Team members</td><td style="padding: 4px 0; text-align: right; font-weight: 600;">Up to ${params.newMaxUsers}</td></tr>
+          <tr><td style="padding: 4px 0;">Price</td><td style="padding: 4px 0; text-align: right; font-weight: 600;">£${params.newPrice}/month + VAT</td></tr>
+        </table>
+      </div>
+
+      ${!params.isUpgrade ? `
+      <div style="background: #fef3c7; border-radius: 8px; padding: 12px 16px; margin-top: 16px;">
+        <p style="font-size: 13px; color: #92400e; margin: 0;">
+          <strong>Note:</strong> If you currently have more team members than your new plan allows, existing members won't be removed but you won't be able to add new ones until you're within the limit.
+        </p>
+      </div>` : ''}
+
+      <div style="text-align: center; margin: 28px 0;">
+        <a href="${APP_URL}/dashboard" style="display: inline-block; background-color: #1a2b4a; color: white; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 8px;">
+          Go to Dashboard
+        </a>
+      </div>
+    </div>
+
+    <div style="text-align: center; margin-top: 24px;">
+      <p style="font-size: 12px; color: #94a3b8;">
+        &copy; ${new Date().getFullYear()} IdoYourQuotes. All rights reserved.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`,
+    });
+
+    if (error) {
+      console.error('[Email] Tier change send failed:', error);
+      return false;
+    }
+
+    console.log(`[Email] Tier change (${params.isUpgrade ? 'upgrade' : 'downgrade'}) sent to ${params.to}`);
+    return true;
+  } catch (err) {
+    console.error('[Email] Tier change send error:', err);
+    return false;
+  }
+}

@@ -36,11 +36,20 @@ export const TIER_CONFIG = {
   pro: {
     name: 'Pro',
     priceId: process.env.STRIPE_PRICE_PRO || '',
-    maxUsers: 3,
-    maxQuotesPerMonth: -1, // unlimited
+    maxUsers: 2,
+    maxQuotesPerMonth: 15,
     maxCatalogItems: -1, // unlimited
     monthlyPrice: 9900,
     features: ['ai_takeoff', 'quote_generation', 'pdf_export', 'shared_catalog', 'team_collaboration', 'scope_control', 'timeline_planning', 'priority_support'],
+  },
+  team: {
+    name: 'Team',
+    priceId: process.env.STRIPE_PRICE_TEAM || 'price_1T4ifqPMGUpLvQsyi3YnQo5k',
+    maxUsers: 5,
+    maxQuotesPerMonth: 50,
+    maxCatalogItems: -1,
+    monthlyPrice: 15900,
+    features: ['ai_takeoff', 'quote_generation', 'pdf_export', 'shared_catalog', 'team_collaboration', 'scope_control', 'timeline_planning', 'priority_support', 'advanced_modelling'],
   },
   business: {
     name: 'Business',
@@ -54,6 +63,17 @@ export const TIER_CONFIG = {
 } as const;
 
 export type SubscriptionTier = keyof typeof TIER_CONFIG;
+
+// Ordered tiers from cheapest to most expensive (for upgrade/downgrade comparison)
+const TIER_ORDER: SubscriptionTier[] = ['trial', 'solo', 'pro', 'team', 'business'];
+
+export function getTierRank(tier: SubscriptionTier): number {
+  return TIER_ORDER.indexOf(tier);
+}
+
+export function isUpgrade(fromTier: SubscriptionTier, toTier: SubscriptionTier): boolean {
+  return getTierRank(toTier) > getTierRank(fromTier);
+}
 
 // Reverse lookup: Stripe price ID → tier name
 export function getTierByPriceId(priceId: string): SubscriptionTier | null {
@@ -70,7 +90,7 @@ export function getTierByPriceId(priceId: string): SubscriptionTier | null {
  */
 export async function createCheckoutSession(params: {
   orgId: number;
-  tier: 'solo' | 'pro' | 'business';
+  tier: 'solo' | 'pro' | 'team' | 'business';
   customerEmail: string;
   stripeCustomerId?: string;
   successUrl: string;
@@ -137,7 +157,7 @@ export async function createPortalSession(params: {
  */
 export async function changeSubscriptionTier(params: {
   stripeSubscriptionId: string;
-  newTier: 'solo' | 'pro' | 'business';
+  newTier: 'solo' | 'pro' | 'team' | 'business';
   orgId: number;
 }): Promise<void> {
   const newConfig = TIER_CONFIG[params.newTier];
@@ -147,7 +167,7 @@ export async function changeSubscriptionTier(params: {
   const currentPriceId = subscription.items.data[0]?.price.id;
   const currentConfig = getTierByPriceId(currentPriceId || '');
   
-  const isUpgrade = currentConfig
+  const upgrading = currentConfig
     ? (TIER_CONFIG[currentConfig]?.monthlyPrice || 0) < newConfig.monthlyPrice
     : true;
 
@@ -158,7 +178,7 @@ export async function changeSubscriptionTier(params: {
     }],
     // Upgrades: charge immediately with proration
     // Downgrades: take effect at next billing period
-    proration_behavior: isUpgrade ? 'create_prorations' : 'none',
+    proration_behavior: upgrading ? 'create_prorations' : 'none',
     metadata: { orgId: String(params.orgId), tier: params.newTier },
   });
 
@@ -366,6 +386,7 @@ export function trialDaysRemaining(trialEndsAt: Date | null): number {
 
 /**
  * Check if the org can create a new quote (within monthly limit)
+ * Returns usage info for frontend limit alerts
  */
 export function canCreateQuote(org: {
   subscriptionTier: string;
@@ -374,7 +395,7 @@ export function canCreateQuote(org: {
   monthlyQuoteCount: number | null;
   quoteCountResetAt: Date | null;
   trialEndsAt: Date | null;
-}): { allowed: boolean; reason?: string; shouldResetCount?: boolean } {
+}): { allowed: boolean; reason?: string; shouldResetCount?: boolean; usage?: { current: number; max: number; percentUsed: number } } {
   // Check subscription is active or trialing
   if (org.subscriptionStatus === 'canceled') {
     return { allowed: false, reason: 'Your subscription has been cancelled. Please resubscribe to create quotes.' };
@@ -405,9 +426,15 @@ export function canCreateQuote(org: {
   // Check monthly quota (-1 = unlimited)
   const max = org.maxQuotesPerMonth ?? 10;
   if (max !== -1) {
+    const percentUsed = max > 0 ? Math.round((currentCount / max) * 100) : 0;
     if (currentCount >= max) {
-      return { allowed: false, reason: `You've reached your monthly limit of ${max} quotes. Upgrade your plan for more.` };
+      return {
+        allowed: false,
+        reason: `You've reached your monthly limit of ${max} quotes. Upgrade your plan for more.`,
+        usage: { current: currentCount, max, percentUsed: 100 },
+      };
     }
+    return { allowed: true, shouldResetCount, usage: { current: currentCount, max, percentUsed } };
   }
 
   return { allowed: true, shouldResetCount };
@@ -418,12 +445,16 @@ export function canCreateQuote(org: {
  */
 export function canAddTeamMember(org: {
   maxUsers: number | null;
-}, currentMemberCount: number): { allowed: boolean; reason?: string } {
+}, currentMemberCount: number): { allowed: boolean; reason?: string; usage?: { current: number; max: number } } {
   const max = org.maxUsers ?? 1;
   if (currentMemberCount >= max) {
-    return { allowed: false, reason: `Your plan allows up to ${max} user${max > 1 ? 's' : ''}. Upgrade to add more team members.` };
+    return {
+      allowed: false,
+      reason: `Your plan allows up to ${max} user${max > 1 ? 's' : ''}. Upgrade to add more team members.`,
+      usage: { current: currentMemberCount, max },
+    };
   }
-  return { allowed: true };
+  return { allowed: true, usage: { current: currentMemberCount, max } };
 }
 
 /**
@@ -437,4 +468,31 @@ export function canAddCatalogItem(org: {
     return { allowed: false, reason: `Your plan allows up to ${max} catalogue items. Upgrade for unlimited.` };
   }
   return { allowed: true };
+}
+
+/**
+ * Get a human-readable upgrade suggestion based on current tier
+ */
+export function getUpgradeSuggestion(currentTier: string, limitType: 'quotes' | 'users' | 'catalog'): { suggestedTier: SubscriptionTier; tierName: string; price: number; newLimit: string } | null {
+  const rank = getTierRank(currentTier as SubscriptionTier);
+  // Find the next tier up
+  for (let i = rank + 1; i < TIER_ORDER.length; i++) {
+    const nextTier = TIER_ORDER[i];
+    const config = TIER_CONFIG[nextTier];
+    let newLimit = '';
+    if (limitType === 'quotes') {
+      newLimit = config.maxQuotesPerMonth === -1 ? 'unlimited quotes' : `${config.maxQuotesPerMonth} quotes/month`;
+    } else if (limitType === 'users') {
+      newLimit = `${config.maxUsers} team members`;
+    } else {
+      newLimit = config.maxCatalogItems === -1 ? 'unlimited catalogue items' : `${config.maxCatalogItems} items`;
+    }
+    return {
+      suggestedTier: nextTier,
+      tierName: config.name,
+      price: config.monthlyPrice / 100,
+      newLimit,
+    };
+  }
+  return null; // Already on highest tier
 }

@@ -4,6 +4,8 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { invokeLLM } from "./_core/llm";
+import { subscriptionRouter } from "./services/subscriptionRouter";
+import { canCreateQuote, getUpgradeSuggestion, TIER_CONFIG, type SubscriptionTier } from "./services/stripe";
 import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured, getFileBuffer } from "./r2Storage";
 import { analyzePdfWithClaude, analyzePdfWithOpenAI, analyzeImageWithClaude, isClaudeConfigured } from "./_core/claude";
 import { isOpenAIConfigured } from "./_core/openai";
@@ -289,6 +291,23 @@ export const appRouter = router({
           };
         }
         
+        // ── Quota check: enforce monthly quote limit ──
+        if (org) {
+          const quotaCheck = canCreateQuote(org as any);
+          if (!quotaCheck.allowed) {
+            const tier = (org as any).subscriptionTier as SubscriptionTier || 'trial';
+            const suggestion = getUpgradeSuggestion(tier, 'quotes');
+            const upgradeMsg = suggestion
+              ? ` Upgrade to ${suggestion.tierName} (£${suggestion.price}/month) for ${suggestion.newLimit}.`
+              : '';
+            throw new Error(`${quotaCheck.reason}${upgradeMsg}`);
+          }
+          // Reset count if needed
+          if (quotaCheck.shouldResetCount) {
+            await updateOrganization(org.id, { monthlyQuoteCount: 0, quoteCountResetAt: new Date() } as any);
+          }
+        }
+
         const quote = await createQuote({
           userId: ctx.user.id,
           orgId: org?.id,
@@ -298,6 +317,12 @@ export const appRouter = router({
           tradePreset: tradePreset || undefined,
           comprehensiveConfig: comprehensiveConfig as any,
         });
+
+        // ── Increment monthly quote count ──
+        if (org) {
+          const currentCount = ((org as any).monthlyQuoteCount ?? 0) + 1;
+          await updateOrganization(org.id, { monthlyQuoteCount: currentCount } as any);
+        }
         
         return quote;
       }),
@@ -2616,6 +2641,9 @@ Report facts only. Do not interpret or add commentary.`,
         return { success: true };
       }),
   }),
+
+  // ============ SUBSCRIPTION (real router with Stripe integration) ============
+  subscription: subscriptionRouter,
 
   // ============ AI ASSISTANT ============
   ai: router({

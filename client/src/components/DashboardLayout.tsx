@@ -220,6 +220,51 @@ function SubscriptionBanner() {
     );
   }
 
+  // Quote limit reached — big red banner
+  if (sub.maxQuotesPerMonth !== -1 && sub.currentQuoteCount >= sub.maxQuotesPerMonth) {
+    return (
+      <div className="flex items-center justify-between px-4 py-2.5 text-sm bg-red-600 text-white">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4" />
+          <span className="font-medium">
+            You've used all {sub.maxQuotesPerMonth} quotes this month on your {sub.tierName} plan. Upgrade to keep quoting.
+          </span>
+        </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="h-7 text-xs font-bold"
+          onClick={() => setLocation('/pricing')}
+        >
+          Upgrade Now
+        </Button>
+      </div>
+    );
+  }
+
+  // Quote limit approaching (80%+) — amber warning
+  if (sub.maxQuotesPerMonth !== -1 && sub.maxQuotesPerMonth > 0 && sub.currentQuoteCount >= Math.floor(sub.maxQuotesPerMonth * 0.8)) {
+    const remaining = sub.maxQuotesPerMonth - sub.currentQuoteCount;
+    return (
+      <div className="flex items-center justify-between px-4 py-2 text-sm bg-amber-500 text-white">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4" />
+          <span className="font-medium">
+            {remaining} quote{remaining !== 1 ? 's' : ''} remaining this month on your {sub.tierName} plan.
+          </span>
+        </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="h-7 text-xs font-bold"
+          onClick={() => setLocation('/pricing')}
+        >
+          View Plans
+        </Button>
+      </div>
+    );
+  }
+
   return null;
 }
 
