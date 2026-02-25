@@ -10,7 +10,7 @@ import { isOpenAIConfigured } from "./_core/openai";
 import { extractUrls, scrapeUrls, formatScrapedContentForAI } from "./_core/webScraper";
 import { extractBrandColors } from "./services/colorExtractor";
 import { parseWordDocument, isWordDocument } from "./services/wordParser";
-import { performElectricalTakeoff, applyUserAnswers, formatTakeoffForQuoteContext, SYMBOL_STYLES, SYMBOL_DESCRIPTIONS, extractWithPdfJs } from "./services/electricalTakeoff";
+import { performElectricalTakeoff, applyUserAnswers, formatTakeoffForQuoteContext, SYMBOL_STYLES, SYMBOL_DESCRIPTIONS, extractWithPdfJs, extractPdfLineColours } from "./services/electricalTakeoff";
 import { performContainmentTakeoff, calculateCableSummary, generateContainmentSvgOverlay, isContainmentDrawing, formatContainmentForQuoteContext, TRAY_SIZE_COLOURS } from "./services/containmentTakeoff";
 import { generateSvgOverlay } from "./services/takeoffMarkup";
 import { createElectricalTakeoff, getElectricalTakeoffsByQuoteId, getElectricalTakeoffById, getElectricalTakeoffByInputId, updateElectricalTakeoff } from "./db";
@@ -1874,6 +1874,7 @@ Report facts only. Do not interpret or add commentary.`,
               pdfBuffer,
               inputRecord.filename || 'Unknown',
               extractWithPdfJs,
+              extractPdfLineColours,
             );
             const containmentSvg = generateContainmentSvgOverlay(
               containmentResult.trayRuns,
@@ -2236,6 +2237,7 @@ Report facts only. Do not interpret or add commentary.`,
           pdfBuffer,
           inputRecord.filename || "Unknown",
           extractWithPdfJs,
+          extractPdfLineColours,
         );
 
         // Generate SVG overlay for marked drawing

@@ -367,177 +367,6 @@ interface ColouredLine {
 }
 
 /**
- * Extract coloured lines from PDF vector data using pdfjs-dist operator list.
- * Returns an array of coloured line midpoints with their stroke colour.
- * Ignores black/near-black lines (likely building structure) and very light lines.
- */
-async function extractLineColoursFromPdf(pdfBuffer: Buffer, pageHeight: number): Promise<ColouredLine[]> {
-  let pdfjsLib: any;
-  try {
-    pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  } catch {
-    try {
-      pdfjsLib = await import('pdfjs-dist');
-    } catch {
-      console.log('[Containment Colours] pdfjs-dist not available, skipping colour extraction');
-      return [];
-    }
-  }
-
-  try {
-    const data = new Uint8Array(pdfBuffer);
-    const getDocument = pdfjsLib.getDocument || pdfjsLib.default?.getDocument;
-    if (!getDocument) return [];
-
-    const doc = await getDocument({ data }).promise;
-    const page = await doc.getPage(1);
-    const ops = await page.getOperatorList();
-    const OPS = pdfjsLib.OPS || pdfjsLib.default?.OPS;
-    if (!OPS) {
-      console.log('[Containment Colours] OPS constants not available');
-      return [];
-    }
-
-    // Build reverse lookup: OPS value -> name
-    const opsNameMap: Record<number, string> = {};
-    for (const [name, val] of Object.entries(OPS)) {
-      if (typeof val === 'number') opsNameMap[val] = name;
-    }
-
-    const colouredLines: ColouredLine[] = [];
-    let currentStrokeR = 0, currentStrokeG = 0, currentStrokeB = 0;
-    let pathPoints: Array<{ x: number; y: number }> = [];
-
-    // Log what colour ops we encounter for debugging
-    const colourOpsFound = new Set<string>();
-
-    for (let i = 0; i < ops.fnArray.length; i++) {
-      const fn = ops.fnArray[i];
-      const args = ops.argsArray[i];
-      const opName = opsNameMap[fn] || '';
-
-      // Handle ALL stroke colour setting operations
-      if (opName === 'setStrokeRGBColor' && args.length >= 3) {
-        currentStrokeR = args[0];
-        currentStrokeG = args[1];
-        currentStrokeB = args[2];
-        colourOpsFound.add(opName);
-      } else if (opName === 'setStrokeGray') {
-        currentStrokeR = currentStrokeG = currentStrokeB = args[0];
-        colourOpsFound.add(opName);
-      } else if (opName === 'setStrokeColorN' && args.length >= 3) {
-        currentStrokeR = args[0];
-        currentStrokeG = args[1];
-        currentStrokeB = args[2];
-        colourOpsFound.add(opName);
-      } else if (opName === 'setStrokeColor' && args.length >= 3) {
-        // Generic setStrokeColor — treat as RGB
-        currentStrokeR = args[0];
-        currentStrokeG = args[1];
-        currentStrokeB = args[2];
-        colourOpsFound.add(opName);
-      } else if (opName === 'setStrokeColor' && args.length === 1) {
-        // Single value — grayscale
-        currentStrokeR = currentStrokeG = currentStrokeB = args[0];
-        colourOpsFound.add(opName + '_gray');
-      } else if ((opName === 'setStrokeCMYKColor' || opName === 'setStrokeColorN') && args.length === 4) {
-        // CMYK → approximate RGB
-        const c = args[0], m = args[1], y = args[2], k = args[3];
-        currentStrokeR = (1 - c) * (1 - k);
-        currentStrokeG = (1 - m) * (1 - k);
-        currentStrokeB = (1 - y) * (1 - k);
-        colourOpsFound.add(opName + '_cmyk');
-      }
-
-      // Path construction
-      if (opName === 'constructPath' && args && args[0] && args[1]) {
-        const subOps = args[0];
-        const subArgs = args[1];
-        let argIdx = 0;
-        pathPoints = [];
-
-        for (let j = 0; j < subOps.length; j++) {
-          const subOpName = opsNameMap[subOps[j]] || '';
-
-          if (subOpName === 'moveTo' && argIdx + 1 < subArgs.length) {
-            pathPoints.push({ x: subArgs[argIdx], y: subArgs[argIdx + 1] });
-            argIdx += 2;
-          } else if (subOpName === 'lineTo' && argIdx + 1 < subArgs.length) {
-            pathPoints.push({ x: subArgs[argIdx], y: subArgs[argIdx + 1] });
-            argIdx += 2;
-          } else if (subOpName === 'curveTo' && argIdx + 5 < subArgs.length) {
-            pathPoints.push({ x: subArgs[argIdx + 4], y: subArgs[argIdx + 5] });
-            argIdx += 6;
-          } else if ((subOpName === 'curveTo2' || subOpName === 'curveTo3') && argIdx + 3 < subArgs.length) {
-            pathPoints.push({ x: subArgs[argIdx + 2], y: subArgs[argIdx + 3] });
-            argIdx += 4;
-          } else if (subOpName === 'rectangle') {
-            argIdx += 4;
-          } else if (subOpName === 'closePath') {
-            // no args
-          } else {
-            // Unknown sub-op — skip 2 args as safe guess
-            argIdx = Math.min(argIdx + 2, subArgs.length);
-          }
-        }
-      }
-
-      // Standalone moveTo/lineTo (not inside constructPath)
-      if (opName === 'moveTo' && args.length >= 2) {
-        pathPoints = [{ x: args[0], y: args[1] }];
-      }
-      if (opName === 'lineTo' && args.length >= 2) {
-        pathPoints.push({ x: args[0], y: args[1] });
-      }
-
-      // Stroke operations — record the line with its colour
-      if (opName === 'stroke' || opName === 'closeStroke' || opName === 'paintStroke') {
-        const r = Math.round(currentStrokeR * 255);
-        const g = Math.round(currentStrokeG * 255);
-        const b = Math.round(currentStrokeB * 255);
-
-        // Skip black/near-black and white/near-white
-        const brightness = (r + g + b) / 3;
-        if (brightness > 20 && brightness < 240 && pathPoints.length >= 2) {
-          const maxChannel = Math.max(r, g, b);
-          const minChannel = Math.min(r, g, b);
-          const saturation = maxChannel > 0 ? (maxChannel - minChannel) / maxChannel : 0;
-
-          if (saturation > 0.15) {
-            const hex = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-            const midX = pathPoints.reduce((s, p) => s + p.x, 0) / pathPoints.length;
-            const midY = pathPoints.reduce((s, p) => s + p.y, 0) / pathPoints.length;
-
-            colouredLines.push({
-              x: midX,
-              y: pageHeight - midY,
-              colour: hex,
-            });
-          }
-        }
-        pathPoints = [];
-      }
-    }
-
-    console.log(`[Containment Colours] Extracted ${colouredLines.length} coloured line segments. Colour ops used: ${Array.from(colourOpsFound).join(', ') || 'none'}`);
-
-    // Log unique colours found for debugging
-    const uniqueColours: Record<string, number> = {};
-    for (const line of colouredLines) {
-      uniqueColours[line.colour] = (uniqueColours[line.colour] || 0) + 1;
-    }
-    for (const [c, count] of Object.entries(uniqueColours).sort((a, b) => b[1] - a[1]).slice(0, 10)) {
-      console.log(`[Containment Colours]   ${c} x${count}`);
-    }
-
-    return colouredLines;
-  } catch (err: any) {
-    console.log(`[Containment Colours] Extraction failed (non-fatal): ${err.message}`);
-    return [];
-  }
-}
-
-/**
  * Find the dominant colour near a given (x, y) position from extracted coloured lines.
  * Uses a search radius and picks the most common colour.
  */
@@ -625,6 +454,7 @@ export async function performContainmentTakeoff(
   pdfBuffer: Buffer,
   drawingRef: string = "Unknown",
   extractWithPdfJs: (buffer: Buffer) => Promise<{ chars: any[]; words: ExtractedWord[]; pageWidth: number; pageHeight: number }>,
+  extractLineColours?: (buffer: Buffer) => Promise<Array<{ x: number; y: number; colour: string }>>,
 ): Promise<ContainmentTakeoffResult> {
   console.log(`[Containment Takeoff] Starting extraction for: ${drawingRef}`);
 
@@ -666,10 +496,14 @@ export async function performContainmentTakeoff(
 
   // Step 1b: Extract coloured lines from PDF vector data (for chip colours)
   let colouredLines: ColouredLine[] = [];
-  try {
-    colouredLines = await extractLineColoursFromPdf(pdfBuffer, pageHeight);
-  } catch (err: any) {
-    console.log(`[Containment Takeoff] Colour extraction failed (non-fatal): ${err.message}`);
+  if (extractLineColours) {
+    try {
+      const rawLines = await extractLineColours(pdfBuffer);
+      colouredLines = rawLines.map(l => ({ x: l.x, y: l.y, colour: l.colour }));
+      console.log(`[Containment Takeoff] Received ${colouredLines.length} coloured line segments from PDF`);
+    } catch (err: any) {
+      console.log(`[Containment Takeoff] Colour extraction failed (non-fatal): ${err.message}`);
+    }
   }
   const hasColouredLines = colouredLines.length > 0;
 

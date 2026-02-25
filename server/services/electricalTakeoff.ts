@@ -212,6 +212,143 @@ export async function extractWithPdfJs(pdfBuffer: Buffer): Promise<{
 }
 
 /**
+ * Extract coloured line segments from PDF vector data.
+ * Uses the same pdfjs-dist import path as extractWithPdfJs (proven to work on server).
+ * Returns an array of { x, y, colour } for coloured (non-black, non-grey) stroked paths.
+ * Completely non-fatal — returns empty array on any error.
+ */
+export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Array<{ x: number; y: number; colour: string }>> {
+  let pdfjsLib: any;
+  try {
+    pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  } catch {
+    try {
+      pdfjsLib = await import('pdfjs-dist');
+    } catch {
+      console.log('[PDF Colours] pdfjs-dist not available');
+      return [];
+    }
+  }
+
+  try {
+    const data = new Uint8Array(pdfBuffer);
+    const getDocument = pdfjsLib.getDocument || pdfjsLib.default?.getDocument;
+    if (!getDocument) return [];
+
+    const OPS = pdfjsLib.OPS || pdfjsLib.default?.OPS;
+    if (!OPS) {
+      console.log('[PDF Colours] OPS constants not available');
+      return [];
+    }
+
+    const doc = await getDocument({ data }).promise;
+    const page = await doc.getPage(1);
+    const viewport = page.getViewport({ scale: 1.0 });
+    const pageHeight = viewport.height;
+    const ops = await page.getOperatorList();
+
+    // Build reverse lookup: OPS value -> name
+    const opsNameMap: Record<number, string> = {};
+    for (const [name, val] of Object.entries(OPS)) {
+      if (typeof val === 'number') opsNameMap[val] = name;
+    }
+
+    const results: Array<{ x: number; y: number; colour: string }> = [];
+    let sR = 0, sG = 0, sB = 0; // current stroke colour (0-1 range)
+    let pathPoints: Array<{ x: number; y: number }> = [];
+    const colourOpsUsed = new Set<string>();
+
+    for (let i = 0; i < ops.fnArray.length; i++) {
+      const fn = ops.fnArray[i];
+      const args = ops.argsArray[i];
+      const opName = opsNameMap[fn] || '';
+
+      // --- Stroke colour setters ---
+      if (opName === 'setStrokeRGBColor' && args?.length >= 3) {
+        sR = args[0]; sG = args[1]; sB = args[2];
+        colourOpsUsed.add(opName);
+      } else if (opName === 'setStrokeGray' && args?.length >= 1) {
+        sR = sG = sB = args[0];
+        colourOpsUsed.add(opName);
+      } else if (opName === 'setStrokeColorN' && args?.length >= 3) {
+        // Could be RGB or CMYK
+        if (args.length === 4) {
+          // CMYK → RGB
+          const c = args[0], m = args[1], y = args[2], k = args[3];
+          sR = (1 - c) * (1 - k); sG = (1 - m) * (1 - k); sB = (1 - y) * (1 - k);
+        } else {
+          sR = args[0]; sG = args[1]; sB = args[2];
+        }
+        colourOpsUsed.add(opName);
+      } else if (opName === 'setStrokeColor') {
+        if (args?.length >= 3) { sR = args[0]; sG = args[1]; sB = args[2]; }
+        else if (args?.length === 1) { sR = sG = sB = args[0]; }
+        colourOpsUsed.add(opName);
+      } else if (opName === 'setStrokeCMYKColor' && args?.length >= 4) {
+        const c = args[0], m = args[1], y = args[2], k = args[3];
+        sR = (1 - c) * (1 - k); sG = (1 - m) * (1 - k); sB = (1 - y) * (1 - k);
+        colourOpsUsed.add(opName);
+      }
+
+      // --- Path construction ---
+      if (opName === 'constructPath' && args?.[0] && args?.[1]) {
+        const subOps = args[0];
+        const subArgs = args[1];
+        let ai = 0;
+        pathPoints = [];
+        for (let j = 0; j < subOps.length; j++) {
+          const sn = opsNameMap[subOps[j]] || '';
+          if (sn === 'moveTo' && ai + 1 < subArgs.length) {
+            pathPoints.push({ x: subArgs[ai], y: subArgs[ai + 1] }); ai += 2;
+          } else if (sn === 'lineTo' && ai + 1 < subArgs.length) {
+            pathPoints.push({ x: subArgs[ai], y: subArgs[ai + 1] }); ai += 2;
+          } else if (sn === 'curveTo' && ai + 5 < subArgs.length) {
+            pathPoints.push({ x: subArgs[ai + 4], y: subArgs[ai + 5] }); ai += 6;
+          } else if ((sn === 'curveTo2' || sn === 'curveTo3') && ai + 3 < subArgs.length) {
+            pathPoints.push({ x: subArgs[ai + 2], y: subArgs[ai + 3] }); ai += 4;
+          } else if (sn === 'rectangle') { ai += 4; }
+          else if (sn === 'closePath') { /* no args */ }
+          else { ai = Math.min(ai + 2, subArgs.length); }
+        }
+      }
+      if (opName === 'moveTo' && args?.length >= 2) { pathPoints = [{ x: args[0], y: args[1] }]; }
+      if (opName === 'lineTo' && args?.length >= 2) { pathPoints.push({ x: args[0], y: args[1] }); }
+
+      // --- Stroke: record coloured line ---
+      if (opName === 'stroke' || opName === 'closeStroke' || opName === 'paintStroke') {
+        if (pathPoints.length >= 2) {
+          const r = Math.round(sR * 255), g = Math.round(sG * 255), b = Math.round(sB * 255);
+          const brightness = (r + g + b) / 3;
+          const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
+          const sat = maxC > 0 ? (maxC - minC) / maxC : 0;
+
+          // Only keep clearly coloured lines (not black, grey, or white)
+          if (brightness > 20 && brightness < 240 && sat > 0.15) {
+            const hex = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+            const midX = pathPoints.reduce((s, p) => s + p.x, 0) / pathPoints.length;
+            const midY = pathPoints.reduce((s, p) => s + p.y, 0) / pathPoints.length;
+            results.push({ x: midX, y: pageHeight - midY, colour: hex });
+          }
+        }
+        pathPoints = [];
+      }
+    }
+
+    console.log(`[PDF Colours] Extracted ${results.length} coloured segments. Ops used: ${Array.from(colourOpsUsed).join(', ') || 'none'}`);
+    const uniq: Record<string, number> = {};
+    for (const r of results) uniq[r.colour] = (uniq[r.colour] || 0) + 1;
+    for (const [c, n] of Object.entries(uniq).sort((a, b) => b[1] - a[1]).slice(0, 8)) {
+      console.log(`[PDF Colours]   ${c} x${n}`);
+    }
+
+    return results;
+  } catch (err: any) {
+    console.log(`[PDF Colours] Extraction failed (non-fatal): ${err.message}`);
+    return [];
+  }
+}
+
+/**
  * Fallback extraction using pdf-parse (simpler, no coordinates but gets text).
  * Used to detect if the PDF has a text layer at all.
  */
