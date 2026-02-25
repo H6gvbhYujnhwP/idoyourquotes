@@ -398,90 +398,116 @@ async function extractLineColoursFromPdf(pdfBuffer: Buffer, pageHeight: number):
       return [];
     }
 
+    // Build reverse lookup: OPS value -> name
+    const opsNameMap: Record<number, string> = {};
+    for (const [name, val] of Object.entries(OPS)) {
+      if (typeof val === 'number') opsNameMap[val] = name;
+    }
+
     const colouredLines: ColouredLine[] = [];
     let currentStrokeR = 0, currentStrokeG = 0, currentStrokeB = 0;
     let pathPoints: Array<{ x: number; y: number }> = [];
 
+    // Log what colour ops we encounter for debugging
+    const colourOpsFound = new Set<string>();
+
     for (let i = 0; i < ops.fnArray.length; i++) {
       const fn = ops.fnArray[i];
       const args = ops.argsArray[i];
+      const opName = opsNameMap[fn] || '';
 
-      // setStrokeRGBColor
-      if (fn === OPS.setStrokeRGBColor) {
+      // Handle ALL stroke colour setting operations
+      if (opName === 'setStrokeRGBColor' && args.length >= 3) {
         currentStrokeR = args[0];
         currentStrokeG = args[1];
         currentStrokeB = args[2];
-      }
-
-      // setStrokeColorN (for CMYK/deviceN - approximate)
-      if (fn === OPS.setStrokeColorN && args.length >= 3) {
+        colourOpsFound.add(opName);
+      } else if (opName === 'setStrokeGray') {
+        currentStrokeR = currentStrokeG = currentStrokeB = args[0];
+        colourOpsFound.add(opName);
+      } else if (opName === 'setStrokeColorN' && args.length >= 3) {
         currentStrokeR = args[0];
         currentStrokeG = args[1];
         currentStrokeB = args[2];
+        colourOpsFound.add(opName);
+      } else if (opName === 'setStrokeColor' && args.length >= 3) {
+        // Generic setStrokeColor — treat as RGB
+        currentStrokeR = args[0];
+        currentStrokeG = args[1];
+        currentStrokeB = args[2];
+        colourOpsFound.add(opName);
+      } else if (opName === 'setStrokeColor' && args.length === 1) {
+        // Single value — grayscale
+        currentStrokeR = currentStrokeG = currentStrokeB = args[0];
+        colourOpsFound.add(opName + '_gray');
+      } else if ((opName === 'setStrokeCMYKColor' || opName === 'setStrokeColorN') && args.length === 4) {
+        // CMYK → approximate RGB
+        const c = args[0], m = args[1], y = args[2], k = args[3];
+        currentStrokeR = (1 - c) * (1 - k);
+        currentStrokeG = (1 - m) * (1 - k);
+        currentStrokeB = (1 - y) * (1 - k);
+        colourOpsFound.add(opName + '_cmyk');
       }
 
-      // moveTo
-      if (fn === OPS.moveTo) {
-        pathPoints = [{ x: args[0], y: args[1] }];
-      }
-
-      // lineTo
-      if (fn === OPS.lineTo) {
-        pathPoints.push({ x: args[0], y: args[1] });
-      }
-
-      // constructPath (batched path commands)
-      if (fn === OPS.constructPath) {
-        const subOps = args[0]; // array of sub-operations
-        const subArgs = args[1]; // array of coordinates
+      // Path construction
+      if (opName === 'constructPath' && args && args[0] && args[1]) {
+        const subOps = args[0];
+        const subArgs = args[1];
         let argIdx = 0;
-        for (const subOp of subOps) {
-          if (subOp === OPS.moveTo) {
-            pathPoints = [{ x: subArgs[argIdx], y: subArgs[argIdx + 1] }];
-            argIdx += 2;
-          } else if (subOp === OPS.lineTo) {
+        pathPoints = [];
+
+        for (let j = 0; j < subOps.length; j++) {
+          const subOpName = opsNameMap[subOps[j]] || '';
+
+          if (subOpName === 'moveTo' && argIdx + 1 < subArgs.length) {
             pathPoints.push({ x: subArgs[argIdx], y: subArgs[argIdx + 1] });
             argIdx += 2;
-          } else if (subOp === OPS.curveTo || subOp === OPS.curveTo2 || subOp === OPS.curveTo3) {
-            // Bezier curves - take endpoint
-            const numArgs = subOp === OPS.curveTo ? 6 : 4;
-            if (argIdx + numArgs <= subArgs.length) {
-              pathPoints.push({ x: subArgs[argIdx + numArgs - 2], y: subArgs[argIdx + numArgs - 1] });
-            }
-            argIdx += numArgs;
-          } else if (subOp === OPS.rectangle) {
-            argIdx += 4; // skip rectangles
-          } else if (subOp === OPS.closePath) {
+          } else if (subOpName === 'lineTo' && argIdx + 1 < subArgs.length) {
+            pathPoints.push({ x: subArgs[argIdx], y: subArgs[argIdx + 1] });
+            argIdx += 2;
+          } else if (subOpName === 'curveTo' && argIdx + 5 < subArgs.length) {
+            pathPoints.push({ x: subArgs[argIdx + 4], y: subArgs[argIdx + 5] });
+            argIdx += 6;
+          } else if ((subOpName === 'curveTo2' || subOpName === 'curveTo3') && argIdx + 3 < subArgs.length) {
+            pathPoints.push({ x: subArgs[argIdx + 2], y: subArgs[argIdx + 3] });
+            argIdx += 4;
+          } else if (subOpName === 'rectangle') {
+            argIdx += 4;
+          } else if (subOpName === 'closePath') {
             // no args
           } else {
-            // Unknown sub-op, try to skip safely
-            argIdx += 2;
+            // Unknown sub-op — skip 2 args as safe guess
+            argIdx = Math.min(argIdx + 2, subArgs.length);
           }
         }
       }
 
-      // stroke — record the line with its colour
-      if (fn === OPS.stroke || fn === OPS.closeStroke || fn === OPS.strokePath) {
+      // Standalone moveTo/lineTo (not inside constructPath)
+      if (opName === 'moveTo' && args.length >= 2) {
+        pathPoints = [{ x: args[0], y: args[1] }];
+      }
+      if (opName === 'lineTo' && args.length >= 2) {
+        pathPoints.push({ x: args[0], y: args[1] });
+      }
+
+      // Stroke operations — record the line with its colour
+      if (opName === 'stroke' || opName === 'closeStroke' || opName === 'paintStroke') {
         const r = Math.round(currentStrokeR * 255);
         const g = Math.round(currentStrokeG * 255);
         const b = Math.round(currentStrokeB * 255);
 
-        // Skip black/near-black (building lines) and white/near-white
+        // Skip black/near-black and white/near-white
         const brightness = (r + g + b) / 3;
         if (brightness > 20 && brightness < 240 && pathPoints.length >= 2) {
-          // Only record if the colour is distinct (not grey)
           const maxChannel = Math.max(r, g, b);
           const minChannel = Math.min(r, g, b);
           const saturation = maxChannel > 0 ? (maxChannel - minChannel) / maxChannel : 0;
 
-          if (saturation > 0.15) { // Must have some colour saturation
+          if (saturation > 0.15) {
             const hex = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-
-            // Calculate midpoint of path (average of all points)
             const midX = pathPoints.reduce((s, p) => s + p.x, 0) / pathPoints.length;
             const midY = pathPoints.reduce((s, p) => s + p.y, 0) / pathPoints.length;
 
-            // Convert Y from PDF bottom-up to top-down
             colouredLines.push({
               x: midX,
               y: pageHeight - midY,
@@ -493,7 +519,16 @@ async function extractLineColoursFromPdf(pdfBuffer: Buffer, pageHeight: number):
       }
     }
 
-    console.log(`[Containment Colours] Extracted ${colouredLines.length} coloured line segments`);
+    console.log(`[Containment Colours] Extracted ${colouredLines.length} coloured line segments. Colour ops used: ${Array.from(colourOpsFound).join(', ') || 'none'}`);
+
+    // Log unique colours found for debugging
+    const uniqueColours: Record<string, number> = {};
+    for (const line of colouredLines) {
+      uniqueColours[line.colour] = (uniqueColours[line.colour] || 0) + 1;
+    }
+    for (const [c, count] of Object.entries(uniqueColours).sort((a, b) => b[1] - a[1]).slice(0, 10)) {
+      console.log(`[Containment Colours]   ${c} x${count}`);
+    }
 
     return colouredLines;
   } catch (err: any) {
