@@ -218,12 +218,15 @@ export async function extractWithPdfJs(pdfBuffer: Buffer): Promise<{
  * Completely non-fatal — returns empty array on any error.
  */
 export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Array<{ x: number; y: number; colour: string }>> {
+  console.log(`[PDF Colours] Function called, buffer size: ${pdfBuffer?.length || 0}`);
   let pdfjsLib: any;
   try {
     pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    console.log('[PDF Colours] Loaded pdfjs-dist/legacy/build/pdf.mjs');
   } catch {
     try {
       pdfjsLib = await import('pdfjs-dist');
+      console.log('[PDF Colours] Loaded pdfjs-dist (fallback)');
     } catch {
       console.log('[PDF Colours] pdfjs-dist not available');
       return [];
@@ -233,13 +236,17 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Array<{ 
   try {
     const data = new Uint8Array(pdfBuffer);
     const getDocument = pdfjsLib.getDocument || pdfjsLib.default?.getDocument;
-    if (!getDocument) return [];
+    if (!getDocument) {
+      console.log('[PDF Colours] getDocument not found on pdfjsLib');
+      return [];
+    }
 
     const OPS = pdfjsLib.OPS || pdfjsLib.default?.OPS;
     if (!OPS) {
       console.log('[PDF Colours] OPS constants not available');
       return [];
     }
+    console.log('[PDF Colours] pdfjs loaded OK, parsing document...');
 
     const doc = await getDocument({ data }).promise;
     const page = await doc.getPage(1);

@@ -496,6 +496,7 @@ export async function performContainmentTakeoff(
 
   // Step 1b: Extract coloured lines from PDF vector data (for chip colours)
   let colouredLines: ColouredLine[] = [];
+  console.log(`[Containment Takeoff] extractLineColours parameter: ${typeof extractLineColours}`);
   if (extractLineColours) {
     try {
       const rawLines = await extractLineColours(pdfBuffer);
