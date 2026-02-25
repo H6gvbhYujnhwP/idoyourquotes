@@ -347,11 +347,26 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Array<{ 
           else if (sn === 'closePath') { /* no args */ }
           else { ai = Math.min(ai + 2, subArgs.length); }
         }
+        // In some pdfjs versions, constructPath IS the final painting op (no separate stroke)
+        // Record coloured path immediately after constructPath
+        if (pathPoints.length >= 2) {
+          const r = Math.round(sR * 255), g = Math.round(sG * 255), b = Math.round(sB * 255);
+          const brightness = (r + g + b) / 3;
+          const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
+          const sat = maxC > 0 ? (maxC - minC) / maxC : 0;
+          if (brightness > 20 && brightness < 240 && sat > 0.15) {
+            const hex = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+            const midX = pathPoints.reduce((s, p) => s + p.x, 0) / pathPoints.length;
+            const midY = pathPoints.reduce((s, p) => s + p.y, 0) / pathPoints.length;
+            results.push({ x: midX, y: pageHeight - midY, colour: hex });
+            colourOpsUsed.add('constructPath+stroke');
+          }
+        }
       }
       if (opName === 'moveTo' && args?.length >= 2) { pathPoints = [{ x: args[0], y: args[1] }]; }
       if (opName === 'lineTo' && args?.length >= 2) { pathPoints.push({ x: args[0], y: args[1] }); }
 
-      // --- Stroke: record coloured line ---
+      // --- Stroke: record coloured line (for pdfjs versions with separate stroke ops) ---
       if (opName === 'stroke' || opName === 'closeStroke' || opName === 'paintStroke') {
         if (pathPoints.length >= 2) {
           const r = Math.round(sR * 255), g = Math.round(sG * 255), b = Math.round(sB * 255);
