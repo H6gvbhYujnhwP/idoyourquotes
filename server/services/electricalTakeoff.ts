@@ -272,16 +272,36 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Array<{ 
     }
     console.log(`[PDF Colours] Total ops: ${ops.fnArray.length}. Unique op names: ${Array.from(allOpNames).sort().join(', ')}`);
 
-    // DEBUG: Log first colour/stroke-related ops with args
-    let debugCount = 0;
-    for (let i = 0; i < ops.fnArray.length && debugCount < 30; i++) {
-      const opName = opsNameMap[ops.fnArray[i]] || `unknown_${ops.fnArray[i]}`;
-      const lc = opName.toLowerCase();
-      if (lc.includes('color') || lc.includes('stroke') || lc.includes('rgb') ||
-          lc.includes('gray') || lc.includes('cmyk') || lc.includes('fill')) {
-        console.log(`[PDF Colours] Op[${i}]: ${opName} args=${JSON.stringify(ops.argsArray[i])}`);
-        debugCount++;
+    // Helper: parse colour args which may be hex string "#RRGGBB" or numeric floats (0-1)
+    function parseStrokeColour(args: any[]): { r: number; g: number; b: number } | null {
+      if (!args || args.length === 0) return null;
+      // pdfjs may return a single hex string like "#636466"
+      if (typeof args[0] === 'string' && args[0].startsWith('#')) {
+        const hex = args[0];
+        const r = parseInt(hex.slice(1, 3), 16) / 255;
+        const g = parseInt(hex.slice(3, 5), 16) / 255;
+        const b = parseInt(hex.slice(5, 7), 16) / 255;
+        return { r, g, b };
       }
+      // Numeric floats (0-1 range) — 3 args = RGB, 1 arg = grayscale
+      if (typeof args[0] === 'number') {
+        if (args.length >= 3) return { r: args[0], g: args[1], b: args[2] };
+        if (args.length === 1) return { r: args[0], g: args[0], b: args[0] };
+      }
+      return null;
+    }
+
+    function parseCMYK(args: any[]): { r: number; g: number; b: number } | null {
+      if (!args || args.length < 4) return null;
+      if (typeof args[0] === 'string' && args[0].startsWith('#')) {
+        // If pdfjs already converted to hex, just parse it
+        return parseStrokeColour(args);
+      }
+      if (typeof args[0] === 'number') {
+        const c = args[0], m = args[1], y = args[2], k = args[3];
+        return { r: (1 - c) * (1 - k), g: (1 - m) * (1 - k), b: (1 - y) * (1 - k) };
+      }
+      return null;
     }
 
     for (let i = 0; i < ops.fnArray.length; i++) {
@@ -290,30 +310,21 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Array<{ 
       const opName = opsNameMap[fn] || '';
 
       // --- Stroke colour setters ---
-      if (opName === 'setStrokeRGBColor' && args?.length >= 3) {
-        sR = args[0]; sG = args[1]; sB = args[2];
-        colourOpsUsed.add(opName);
-      } else if (opName === 'setStrokeGray' && args?.length >= 1) {
-        sR = sG = sB = args[0];
-        colourOpsUsed.add(opName);
-      } else if (opName === 'setStrokeColorN' && args?.length >= 3) {
-        // Could be RGB or CMYK
-        if (args.length === 4) {
-          // CMYK → RGB
-          const c = args[0], m = args[1], y = args[2], k = args[3];
-          sR = (1 - c) * (1 - k); sG = (1 - m) * (1 - k); sB = (1 - y) * (1 - k);
-        } else {
-          sR = args[0]; sG = args[1]; sB = args[2];
-        }
-        colourOpsUsed.add(opName);
+      if (opName === 'setStrokeRGBColor') {
+        const c = parseStrokeColour(args);
+        if (c) { sR = c.r; sG = c.g; sB = c.b; colourOpsUsed.add(opName); }
+      } else if (opName === 'setStrokeGray') {
+        const c = parseStrokeColour(args);
+        if (c) { sR = c.r; sG = c.g; sB = c.b; colourOpsUsed.add(opName); }
+      } else if (opName === 'setStrokeColorN') {
+        const c = (args?.length === 4) ? parseCMYK(args) : parseStrokeColour(args);
+        if (c) { sR = c.r; sG = c.g; sB = c.b; colourOpsUsed.add(opName); }
       } else if (opName === 'setStrokeColor') {
-        if (args?.length >= 3) { sR = args[0]; sG = args[1]; sB = args[2]; }
-        else if (args?.length === 1) { sR = sG = sB = args[0]; }
-        colourOpsUsed.add(opName);
-      } else if (opName === 'setStrokeCMYKColor' && args?.length >= 4) {
-        const c = args[0], m = args[1], y = args[2], k = args[3];
-        sR = (1 - c) * (1 - k); sG = (1 - m) * (1 - k); sB = (1 - y) * (1 - k);
-        colourOpsUsed.add(opName);
+        const c = parseStrokeColour(args);
+        if (c) { sR = c.r; sG = c.g; sB = c.b; colourOpsUsed.add(opName); }
+      } else if (opName === 'setStrokeCMYKColor') {
+        const c = parseCMYK(args);
+        if (c) { sR = c.r; sG = c.g; sB = c.b; colourOpsUsed.add(opName); }
       }
 
       // --- Path construction ---
