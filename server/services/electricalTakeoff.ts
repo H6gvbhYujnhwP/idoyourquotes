@@ -265,6 +265,25 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Array<{ 
     let pathPoints: Array<{ x: number; y: number }> = [];
     const colourOpsUsed = new Set<string>();
 
+    // DEBUG: Log ALL unique operator names in this PDF
+    const allOpNames = new Set<string>();
+    for (let i = 0; i < ops.fnArray.length; i++) {
+      allOpNames.add(opsNameMap[ops.fnArray[i]] || `unknown_${ops.fnArray[i]}`);
+    }
+    console.log(`[PDF Colours] Total ops: ${ops.fnArray.length}. Unique op names: ${Array.from(allOpNames).sort().join(', ')}`);
+
+    // DEBUG: Log first colour/stroke-related ops with args
+    let debugCount = 0;
+    for (let i = 0; i < ops.fnArray.length && debugCount < 30; i++) {
+      const opName = opsNameMap[ops.fnArray[i]] || `unknown_${ops.fnArray[i]}`;
+      const lc = opName.toLowerCase();
+      if (lc.includes('color') || lc.includes('stroke') || lc.includes('rgb') ||
+          lc.includes('gray') || lc.includes('cmyk') || lc.includes('fill')) {
+        console.log(`[PDF Colours] Op[${i}]: ${opName} args=${JSON.stringify(ops.argsArray[i])}`);
+        debugCount++;
+      }
+    }
+
     for (let i = 0; i < ops.fnArray.length; i++) {
       const fn = ops.fnArray[i];
       const args = ops.argsArray[i];
