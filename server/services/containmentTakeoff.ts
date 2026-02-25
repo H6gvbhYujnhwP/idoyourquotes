@@ -45,6 +45,20 @@ export const TRAY_SIZE_COLOURS: Record<number, { stroke: string; fill: string; l
   600: { stroke: "#f97316", fill: "#f9731620", label: "600mm" },
 };
 
+// Standard CAD colour conventions by tray system type
+// These match common electrical drawing colour standards
+// and provide reliable chip colours when PDF vector extraction can't read layer colours
+export const TRAY_TYPE_COLOURS: Record<string, string> = {
+  'LV':       '#4146fd',  // Blue — Low Voltage
+  'ELV':      '#f8d731',  // Yellow — Extra Low Voltage
+  'FA':       '#cc1f26',  // Red — Fire Alarm
+  'SUBMAIN':  '#22c55e',  // Green — Submain
+  'LTG & PWR':'#3b82f6',  // Light Blue — Lighting & Power
+  'DATA':     '#8b5cf6',  // Purple — Data
+  'COMMS':    '#06b6d4',  // Cyan — Communications
+  'SECURITY': '#f59e0b',  // Amber — Security
+};
+
 // Fitting symbols for SVG overlay
 export const FITTING_SYMBOLS = {
   tPiece: "T",
@@ -713,10 +727,12 @@ export async function performContainmentTakeoff(
       bends90,
       drops,
       segments,
-      // Assign colour: use detected PDF line colour if available, otherwise use TRAY_SIZE_COLOURS fallback
+      // Assign colour: use detected PDF line colour if available,
+      // then try type-based colour (matches common CAD conventions),
+      // finally fall back to size-based colours
       colour: hasColouredLines
-        ? (findGroupColour(annotations, colouredLines) || TRAY_SIZE_COLOURS[size]?.stroke || '#888888')
-        : (TRAY_SIZE_COLOURS[size]?.stroke || '#888888'),
+        ? (findGroupColour(annotations, colouredLines) || TRAY_TYPE_COLOURS[type] || TRAY_SIZE_COLOURS[size]?.stroke || '#888888')
+        : (TRAY_TYPE_COLOURS[type] || TRAY_SIZE_COLOURS[size]?.stroke || '#888888'),
     });
   }
 
