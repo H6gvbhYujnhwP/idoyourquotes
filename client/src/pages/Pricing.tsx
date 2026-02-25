@@ -204,7 +204,7 @@ export default function Pricing() {
     <div className="min-h-screen bg-gray-50">
       {/* Nav */}
       <nav className="border-b bg-white sticky top-0 z-50">
-        <div className="container flex h-16 items-center justify-between">
+        <div className="container flex h-36 items-center justify-between">
           <div className="flex items-center gap-4">
             {user && (
               <Button variant="ghost" size="sm" onClick={() => setLocation("/dashboard")}>
@@ -214,7 +214,7 @@ export default function Pricing() {
             <img
               src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png"
               alt="IdoYourQuotes"
-              className="h-10 object-contain cursor-pointer"
+              className="h-32 object-contain cursor-pointer"
               onClick={() => setLocation("/")}
             />
           </div>
