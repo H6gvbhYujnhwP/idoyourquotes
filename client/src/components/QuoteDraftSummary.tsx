@@ -40,6 +40,14 @@ interface TakeoffInfo {
   source?: "takeoff" | "containment"; // defaults to "takeoff"
 }
 
+interface CatalogItemRef {
+  name: string;
+  defaultRate: string | null;
+  costPrice: string | null;
+  unit: string | null;
+  category: string | null;
+}
+
 interface QuoteDraftSummaryProps {
   // Data from voice parse
   voiceSummary: QuoteDraftData | null;
@@ -47,6 +55,10 @@ interface QuoteDraftSummaryProps {
   takeoffs: TakeoffInfo[];
   // User overrides for takeoff material quantities/names
   takeoffOverrides: Record<string, { quantity?: number; item?: string; unitPrice?: number | null }>;
+  // Catalog items for auto-matching prices
+  catalogItems: CatalogItemRef[];
+  // Default markup % from org settings (dayWorkRates.materialMarkup)
+  defaultMarkup: number | null;
   // Loading state
   isLoading: boolean;
   // Whether any voice notes exist
@@ -58,10 +70,66 @@ interface QuoteDraftSummaryProps {
 
 // ---- Helpers ----
 
+/**
+ * Fuzzy match an item description against catalog items.
+ * Returns the best matching catalog item's defaultRate, or null if no match.
+ * Matching strategy: normalise both strings, check for substring containment or word overlap.
+ */
+function matchCatalogPrice(
+  itemDescription: string,
+  catalogItems: CatalogItemRef[],
+): { rate: number; catalogName: string } | null {
+  if (!catalogItems.length || !itemDescription) return null;
+
+  const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
+  const itemNorm = normalise(itemDescription);
+  const itemWords = new Set(itemNorm.split(/\s+/).filter(w => w.length > 2));
+
+  let bestMatch: { rate: number; catalogName: string; score: number } | null = null;
+
+  for (const cat of catalogItems) {
+    const rate = parseFloat(cat.defaultRate || "0");
+    if (rate <= 0) continue; // Skip items with no price
+
+    const catNorm = normalise(cat.name);
+
+    // Exact match (after normalisation)
+    if (catNorm === itemNorm) {
+      return { rate, catalogName: cat.name };
+    }
+
+    // Substring match (catalog name within item description or vice versa)
+    if (catNorm.length > 3 && (itemNorm.includes(catNorm) || catNorm.includes(itemNorm))) {
+      const score = catNorm.length; // Longer match = better
+      if (!bestMatch || score > bestMatch.score) {
+        bestMatch = { rate, catalogName: cat.name, score };
+      }
+      continue;
+    }
+
+    // Word overlap (at least 60% of catalog words found in item)
+    const catWords = catNorm.split(/\s+/).filter(w => w.length > 2);
+    if (catWords.length > 0) {
+      const overlap = catWords.filter(w => itemWords.has(w)).length;
+      const overlapRatio = overlap / catWords.length;
+      if (overlapRatio >= 0.6 && overlap >= 2) {
+        const score = overlap;
+        if (!bestMatch || score > bestMatch.score) {
+          bestMatch = { rate, catalogName: cat.name, score };
+        }
+      }
+    }
+  }
+
+  return bestMatch ? { rate: bestMatch.rate, catalogName: bestMatch.catalogName } : null;
+}
+
 function mergeSummaryWithTakeoffs(
   voiceSummary: QuoteDraftData | null,
   takeoffs: TakeoffInfo[],
-  takeoffOverrides: Record<string, { quantity?: number; item?: string; unitPrice?: number | null }>
+  takeoffOverrides: Record<string, { quantity?: number; item?: string; unitPrice?: number | null }>,
+  catalogItems: CatalogItemRef[],
+  defaultMarkup: number | null,
 ): QuoteDraftData {
   const base: QuoteDraftData = voiceSummary
     ? { ...voiceSummary, materials: [...voiceSummary.materials] }
@@ -75,6 +143,11 @@ function mergeSummaryWithTakeoffs(
         contingency: null,
         notes: null,
       };
+
+  // Apply default markup from org settings if voice didn't specify one
+  if (base.markup === null && defaultMarkup !== null && defaultMarkup > 0) {
+    base.markup = defaultMarkup;
+  }
 
   // Add takeoff and containment materials (excluding excluded symbols)
   for (const takeoff of takeoffs) {
@@ -98,15 +171,29 @@ function mergeSummaryWithTakeoffs(
       const existing = base.materials.find(
         (m) => m.source === materialSource && m.symbolCode === code
       );
+
+      // Auto-match catalog price if no override price exists
+      let autoPrice: number | null = null;
+      if (override?.unitPrice === undefined || override?.unitPrice === null) {
+        const catalogMatch = matchCatalogPrice(override?.item ?? desc, catalogItems);
+        if (catalogMatch) {
+          autoPrice = catalogMatch.rate;
+        }
+      }
+
       if (existing) {
         existing.quantity = override?.quantity ?? count;
         if (override?.item) existing.item = override.item;
-        if (override?.unitPrice !== undefined) existing.unitPrice = override.unitPrice;
+        if (override?.unitPrice !== undefined) {
+          existing.unitPrice = override.unitPrice;
+        } else if (autoPrice !== null) {
+          existing.unitPrice = autoPrice;
+        }
       } else {
         base.materials.push({
           item: override?.item ?? desc,
           quantity: override?.quantity ?? count,
-          unitPrice: override?.unitPrice ?? null,
+          unitPrice: override?.unitPrice ?? autoPrice,
           source: materialSource,
           symbolCode: code,
         });
@@ -123,6 +210,8 @@ export default function QuoteDraftSummary({
   voiceSummary,
   takeoffs,
   takeoffOverrides,
+  catalogItems,
+  defaultMarkup,
   isLoading,
   hasVoiceNotes,
   onSave,
@@ -130,10 +219,10 @@ export default function QuoteDraftSummary({
 }: QuoteDraftSummaryProps) {
   const [isEditing, setIsEditing] = useState(false);
 
-  // Merge voice summary + takeoff data + user overrides
+  // Merge voice summary + takeoff data + user overrides + catalog prices
   const mergedData = useMemo(
-    () => mergeSummaryWithTakeoffs(voiceSummary, takeoffs, takeoffOverrides),
-    [voiceSummary, takeoffs, takeoffOverrides]
+    () => mergeSummaryWithTakeoffs(voiceSummary, takeoffs, takeoffOverrides, catalogItems, defaultMarkup),
+    [voiceSummary, takeoffs, takeoffOverrides, catalogItems, defaultMarkup]
   );
 
   const [edited, setEdited] = useState<QuoteDraftData>({ ...mergedData });

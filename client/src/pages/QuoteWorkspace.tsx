@@ -237,6 +237,9 @@ export default function QuoteWorkspace() {
 
   const { data: storageStatus } = trpc.inputs.storageStatus.useQuery();
 
+  // Fetch org profile for default markup and company settings
+  const { data: orgProfile } = trpc.auth.orgProfile.useQuery();
+
   // Fetch catalog items for quick-add
   const { data: catalogItems } = trpc.catalog.list.useQuery();
 
@@ -1892,6 +1895,18 @@ export default function QuoteWorkspace() {
                 }),
               ]}
               takeoffOverrides={takeoffOverrides}
+              catalogItems={(catalogItems || []).map((c: any) => ({
+                name: c.name,
+                defaultRate: c.defaultRate,
+                costPrice: c.costPrice,
+                unit: c.unit,
+                category: c.category,
+              }))}
+              defaultMarkup={(() => {
+                // Extract materialMarkup from org profile settings
+                const dw = (orgProfile as any)?.defaultDayWorkRates as any;
+                return dw?.materialMarkup ?? null;
+              })()}
               isLoading={isSummaryLoading}
               hasVoiceNotes={!!(inputs && inputs.some((inp: QuoteInput) => inp.inputType === "audio" && inp.content && !inp.fileUrl))}
               onSave={(data) => {
@@ -1913,6 +1928,7 @@ export default function QuoteWorkspace() {
                 });
 
                 // Build structured text and update Processing Instructions
+                // This feeds into the AI quote generation as high-priority evidence
                 const parts: string[] = [];
                 if (data.jobDescription) parts.push(`Job: ${data.jobDescription}`);
                 if (data.clientName) parts.push(`Client: ${data.clientName}`);
@@ -1920,9 +1936,20 @@ export default function QuoteWorkspace() {
                   parts.push("Labour: " + data.labour.map(l => `${l.quantity} × ${l.role} — ${l.duration}`).join(", "));
                 }
                 if (data.materials.length > 0) {
-                  parts.push("Materials: " + data.materials.map(m => `${m.quantity} × ${m.item}${m.unitPrice ? ` @ £${m.unitPrice}` : ""}`).join(", "));
+                  // Separate priced vs unpriced materials for the AI
+                  const pricedMaterials = data.materials.filter(m => m.unitPrice != null && m.unitPrice > 0);
+                  const unpricedMaterials = data.materials.filter(m => !m.unitPrice || m.unitPrice <= 0);
+                  
+                  if (pricedMaterials.length > 0) {
+                    parts.push("USER-CONFIRMED PRICED MATERIALS (use these EXACT prices):\n" + 
+                      pricedMaterials.map(m => `  ${m.quantity} × ${m.item} @ £${m.unitPrice} each = £${(m.quantity * (m.unitPrice || 0)).toFixed(2)}`).join("\n"));
+                  }
+                  if (unpricedMaterials.length > 0) {
+                    parts.push("Materials (need pricing from catalog or estimate):\n" + 
+                      unpricedMaterials.map(m => `  ${m.quantity} × ${m.item}`).join("\n"));
+                  }
                 }
-                if (data.markup !== null) parts.push(`Markup: ${data.markup}%`);
+                if (data.markup !== null) parts.push(`Material Markup: ${data.markup}%`);
                 if (data.sundries !== null) parts.push(`Sundries: £${data.sundries}`);
                 if (data.contingency) parts.push(`Contingency: ${data.contingency}`);
                 if (data.notes) parts.push(`Notes: ${data.notes}`);

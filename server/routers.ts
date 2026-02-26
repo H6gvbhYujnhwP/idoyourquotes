@@ -3208,17 +3208,23 @@ IMPORTANT: Use catalog rates as defaults, but if the user's voice dictation or i
         // Price hierarchy instruction — added to all prompts
         const priceHierarchyContext = `\n\nPRICE & RATE HIERARCHY — FOLLOW THIS STRICTLY:
 When determining prices, rates, markups, labour costs, and quantities, follow this priority order:
-1. HIGHEST PRIORITY — User's voice dictations and written instructions. If the user says "charge £700 per day" or "battens are £30 each" or "20% markup", USE THOSE EXACT FIGURES.
-2. SECOND PRIORITY — Company catalog rates. Use these when the user hasn't specified a price for that item.
-3. THIRD PRIORITY — Company default rates from settings (day work rates, material markup %, etc.). Use these when neither the user nor the catalog provides a rate.
-4. LOWEST PRIORITY — Your own UK market rate estimates. Only use these when no other source provides a rate.
+1. HIGHEST PRIORITY — "USER-CONFIRMED PRICED MATERIALS" from the user's instructions/draft summary. These are prices the user has reviewed and confirmed in the Quote Draft Summary. Use these EXACT prices — do not override them.
+2. SECOND PRIORITY — User's voice dictations and written instructions. If the user says "charge £700 per day" or "battens are £30 each" or "20% markup", USE THOSE EXACT FIGURES.
+3. THIRD PRIORITY — Company catalog rates. Use these when the user hasn't specified a price for that item.
+4. FOURTH PRIORITY — Company default rates from settings (day work rates, material markup %, etc.). Use these when neither the user nor the catalog provides a rate.
+5. LOWEST PRIORITY — Your own UK market rate estimates. Only use these when no other source provides a rate. If you must estimate a rate, set it to 0 and flag it in assumptions so the user can fill it in.
 
 VOICE DICTATION PROCESSING:
 - Voice dictations are numbered in order. If there are multiple, process them sequentially.
 - Later voice notes override earlier ones. If Voice Note 1 says "one electrician" and Voice Note 3 says "actually make it two electricians", use two.
 - Voice dictations may contain natural speech — extract structured data: client name, job description, labour requirements, material prices, markups, sundries, location, and timeline.
 - If the user mentions a client name (e.g. "quote for ample storage"), match it to existing client data if available.
-- If the user gives a lump sum (e.g. "charge them £700 per day for 2 days"), create line items that reflect this pricing.`;
+- If the user gives a lump sum (e.g. "charge them £700 per day for 2 days"), create line items that reflect this pricing.
+
+DRAFT SUMMARY MATERIALS:
+- If the user instructions contain "USER-CONFIRMED PRICED MATERIALS", these are items the user has explicitly priced in the Quote Draft Summary.
+- Create a line item for EACH of these with the EXACT quantity and price shown.
+- If the user instructions contain "Materials (need pricing from catalog or estimate)", these items need pricing — check the catalog first, then estimate.`;
 
         // Build company defaults context from organization profile
         let companyDefaultsContext = "";
