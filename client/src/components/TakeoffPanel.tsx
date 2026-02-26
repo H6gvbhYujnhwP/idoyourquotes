@@ -66,8 +66,12 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
       refetch();
       refetchContainment(); // Containment auto-created during electrical analysis
       setIsAnalyzing(false);
+      setAutoRunTriggered(true); // Prevent further auto-runs after success
     },
-    onError: () => setIsAnalyzing(false),
+    onError: () => {
+      setIsAnalyzing(false);
+      // Don't set autoRunTriggered — allow retry on next refetch cycle
+    },
   });
 
   const answerMutation = trpc.electricalTakeoff.answerQuestions.useMutation({
@@ -84,20 +88,27 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
 
   const handleRunTakeoff = () => {
     setIsAnalyzing(true);
-    analyzeMutation.mutate({ inputId, quoteId });
+    analyzeMutation.mutate({ inputId, quoteId, force: true });
   };
 
   // Re-run takeoff when parent triggers re-analysis (skip if locked/verified)
   const [lastTrigger, setLastTrigger] = useState(0);
   const [userExcludedCodes, setUserExcludedCodes] = useState<Set<string>>(new Set());
 
-  // Auto-run takeoff when no takeoff exists yet (electrical drawing detected but not yet analysed)
+  // Auto-run takeoff as FALLBACK when no takeoff exists yet.
+  // The server now auto-runs takeoffs during PDF upload, so this is a safety net
+  // for cases where the server-side auto-run failed or for older inputs.
   const [autoRunTriggered, setAutoRunTriggered] = useState(false);
   useEffect(() => {
     if (isFetched && takeoffData === null && !autoRunTriggered && !isAnalyzing && !analyzeMutation.isPending) {
       setAutoRunTriggered(true);
       setIsAnalyzing(true);
-      analyzeMutation.mutate({ inputId, quoteId });
+      analyzeMutation.mutate({ inputId, quoteId }); // No force — returns existing if server already created one
+    }
+    // If takeoff data arrives (e.g. server created it), mark auto-run as done
+    if (takeoffData) {
+      setAutoRunTriggered(true);
+      setIsAnalyzing(false);
     }
   }, [isFetched, takeoffData, autoRunTriggered, isAnalyzing, analyzeMutation.isPending, inputId, quoteId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -121,7 +132,7 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
     if (reanalyzeTrigger && reanalyzeTrigger > lastTrigger && takeoffData && takeoffData.status !== 'verified') {
       setLastTrigger(reanalyzeTrigger);
       setIsAnalyzing(true);
-      analyzeMutation.mutate({ inputId, quoteId });
+      analyzeMutation.mutate({ inputId, quoteId, force: true });
     }
   }, [reanalyzeTrigger]);
 

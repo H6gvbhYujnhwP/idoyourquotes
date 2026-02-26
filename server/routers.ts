@@ -1514,6 +1514,104 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
               }
 
               console.log(`[Auto-analyze] Successfully processed ${input.inputType} input ${inputRecord.id}`);
+
+              // ── Auto-run electrical takeoff for PDFs (server-side) ──
+              // This ensures takeoffs run regardless of which input is selected in the UI.
+              // Previously, takeoffs only ran when TakeoffPanel mounted (required the PDF to be selected).
+              if (input.inputType === "pdf") {
+                try {
+                  // Check if a takeoff already exists for this input (avoid duplicates)
+                  const existingTakeoff = await getElectricalTakeoffByInputId(inputRecord.id);
+                  if (!existingTakeoff) {
+                    console.log(`[Auto-takeoff] Running electrical takeoff for input ${inputRecord.id}`);
+                    const pdfBuf = await getFileBuffer(key);
+                    const takeoffResult = await performElectricalTakeoff(pdfBuf, input.filename || 'Unknown');
+                    const svgOverlay = generateSvgOverlay(takeoffResult);
+
+                    await createElectricalTakeoff({
+                      quoteId: input.quoteId,
+                      inputId: inputRecord.id,
+                      drawingRef: takeoffResult.drawingRef,
+                      status: takeoffResult.questions.length > 0 ? 'questions' : 'draft',
+                      pageWidth: takeoffResult.pageWidth.toString(),
+                      pageHeight: takeoffResult.pageHeight.toString(),
+                      symbols: takeoffResult.symbols,
+                      counts: takeoffResult.counts,
+                      questions: takeoffResult.questions,
+                      userAnswers: {},
+                      drawingNotes: takeoffResult.notes,
+                      dbCircuits: takeoffResult.dbCircuits,
+                      hasTextLayer: takeoffResult.hasTextLayer,
+                      totalTextElements: takeoffResult.totalTextElements,
+                      svgOverlay,
+                    });
+
+                    // Update processedContent with takeoff summary (richer than OpenAI extraction)
+                    await updateInputProcessing(inputRecord.id, {
+                      processedContent: formatTakeoffForQuoteContext(takeoffResult),
+                      processingStatus: "completed",
+                    });
+
+                    console.log(`[Auto-takeoff] Electrical takeoff complete: ${Object.keys(takeoffResult.counts).length} symbol types`);
+
+                    // Auto-detect containment drawing and run containment takeoff
+                    try {
+                      let pdfTextForDetection = input.filename || '';
+                      try {
+                        const pdfExtract = await extractWithPdfJs(pdfBuf);
+                        pdfTextForDetection = pdfExtract.words.map((w: any) => w.text).join(' ') + ' ' + pdfTextForDetection;
+                      } catch { /* If text extraction fails, fall back to filename only */ }
+
+                      if (isContainmentDrawing(pdfTextForDetection)) {
+                        console.log(`[Auto-takeoff] Containment drawing detected, auto-running containment takeoff`);
+                        const containmentResult = await performContainmentTakeoff(
+                          pdfBuf,
+                          input.filename || 'Unknown',
+                          extractWithPdfJs,
+                          extractPdfLineColours,
+                        );
+                        const containmentSvg = generateContainmentSvgOverlay(
+                          containmentResult.trayRuns,
+                          containmentResult.pageWidth,
+                          containmentResult.pageHeight,
+                        );
+                        const defaultUserInputs = {
+                          trayFilter: "LV", trayDuty: "medium",
+                          extraDropPerFitting: 2.0, firstPointRunLength: 15.0,
+                          numberOfCircuits: 0, additionalCablePercent: 10,
+                        };
+                        const cableSummary = calculateCableSummary(containmentResult.trayRuns, defaultUserInputs);
+                        await createContainmentTakeoff({
+                          quoteId: input.quoteId,
+                          inputId: inputRecord.id,
+                          drawingRef: containmentResult.drawingRef,
+                          status: containmentResult.questions.length > 0 ? "questions" : "draft",
+                          pageWidth: containmentResult.pageWidth.toString(),
+                          pageHeight: containmentResult.pageHeight.toString(),
+                          detectedScale: containmentResult.detectedScale,
+                          paperSize: containmentResult.paperSize,
+                          trayRuns: containmentResult.trayRuns as any,
+                          fittingSummary: containmentResult.fittingSummary as any,
+                          userInputs: defaultUserInputs as any,
+                          cableSummary: cableSummary as any,
+                          questions: containmentResult.questions as any,
+                          userAnswers: {},
+                          drawingNotes: containmentResult.drawingNotes,
+                          svgOverlay: containmentSvg,
+                        });
+                        console.log(`[Auto-takeoff] Containment takeoff created: ${containmentResult.trayRuns.length} tray runs`);
+                      }
+                    } catch (containmentErr: any) {
+                      console.warn(`[Auto-takeoff] Containment auto-detection failed (non-fatal):`, containmentErr.message);
+                    }
+                  } else {
+                    console.log(`[Auto-takeoff] Takeoff already exists for input ${inputRecord.id}, skipping`);
+                  }
+                } catch (takeoffErr: any) {
+                  // Non-fatal — the takeoff can still be triggered manually via the UI
+                  console.warn(`[Auto-takeoff] Electrical takeoff failed (non-fatal):`, takeoffErr.message);
+                }
+              }
             } catch (error) {
               console.error(`[Auto-analyze] Failed to process ${input.inputType} input ${inputRecord.id}:`, error);
               await updateInputProcessing(inputRecord.id, {
@@ -1840,6 +1938,7 @@ Report facts only. Do not interpret or add commentary.`,
       .input(z.object({
         inputId: z.number(),
         quoteId: z.number(),
+        force: z.boolean().optional(), // true = re-analyse (skip duplicate check)
       }))
       .mutation(async ({ ctx, input }) => {
         const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
@@ -1849,6 +1948,20 @@ Report facts only. Do not interpret or add commentary.`,
         const inputRecord = await getInputById(input.inputId);
         if (!inputRecord || !inputRecord.fileKey) {
           throw new Error("Input file not found");
+        }
+
+        // Unless force=true (re-analyse), check if a takeoff already exists.
+        // The server auto-creates takeoffs during PDF upload, so the frontend auto-run
+        // may fire before it knows the takeoff exists. Return the existing one to avoid duplicates.
+        if (!input.force) {
+          const existingTakeoff = await getElectricalTakeoffByInputId(input.inputId);
+          if (existingTakeoff) {
+            return {
+              takeoff: existingTakeoff,
+              symbolStyles: SYMBOL_STYLES,
+              symbolDescriptions: SYMBOL_DESCRIPTIONS,
+            };
+          }
         }
         
         // Download PDF from R2
