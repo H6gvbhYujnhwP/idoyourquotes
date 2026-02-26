@@ -569,6 +569,9 @@ export default function QuoteWorkspace() {
           markup: parsed.markup ?? null,
           sundries: parsed.sundries ?? null,
           contingency: parsed.contingency ?? null,
+          preliminaries: parsed.preliminaries ?? null,
+          labourRate: parsed.labourRate ?? null,
+          plantMarkup: parsed.plantMarkup ?? null,
           notes: parsed.notes ?? null,
         });
 
@@ -1907,6 +1910,14 @@ export default function QuoteWorkspace() {
                 const dw = (orgProfile as any)?.defaultDayWorkRates as any;
                 return dw?.materialMarkup ?? null;
               })()}
+              defaultLabourRate={(() => {
+                const dw = (orgProfile as any)?.defaultDayWorkRates as any;
+                return dw?.labourRate ?? null;
+              })()}
+              defaultPlantMarkup={(() => {
+                const dw = (orgProfile as any)?.defaultDayWorkRates as any;
+                return dw?.plantMarkup ?? null;
+              })()}
               isLoading={isSummaryLoading}
               hasVoiceNotes={!!(inputs && inputs.some((inp: QuoteInput) => inp.inputType === "audio" && inp.content && !inp.fileUrl))}
               onSave={(data) => {
@@ -1950,7 +1961,10 @@ export default function QuoteWorkspace() {
                   }
                 }
                 if (data.markup !== null) parts.push(`Material Markup: ${data.markup}%`);
+                if (data.plantMarkup !== null) parts.push(`Plant Markup: ${data.plantMarkup}%`);
+                if (data.labourRate !== null) parts.push(`Labour Rate: £${data.labourRate}/hr`);
                 if (data.sundries !== null) parts.push(`Sundries: £${data.sundries}`);
+                if (data.preliminaries !== null) parts.push(`Preliminaries: ${data.preliminaries}% of total project value`);
                 if (data.contingency) parts.push(`Contingency: ${data.contingency}`);
                 if (data.notes) parts.push(`Notes: ${data.notes}`);
 
@@ -1986,6 +2000,9 @@ export default function QuoteWorkspace() {
                     markup: data.markup != null ? Number(data.markup) || 0 : null,
                     sundries: data.sundries != null ? Number(data.sundries) || 0 : null,
                     contingency: data.contingency || null,
+                    preliminaries: data.preliminaries != null ? Number(data.preliminaries) || 0 : null,
+                    labourRate: data.labourRate != null ? Number(data.labourRate) || 0 : null,
+                    plantMarkup: data.plantMarkup != null ? Number(data.plantMarkup) || 0 : null,
                     notes: data.notes || null,
                   },
                 }, {

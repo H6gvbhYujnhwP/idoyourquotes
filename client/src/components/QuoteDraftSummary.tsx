@@ -29,6 +29,9 @@ export interface QuoteDraftData {
   markup: number | null;
   sundries: number | null;
   contingency: string | null;
+  preliminaries: number | null;
+  labourRate: number | null;
+  plantMarkup: number | null;
   notes: string | null;
 }
 
@@ -57,8 +60,10 @@ interface QuoteDraftSummaryProps {
   takeoffOverrides: Record<string, { quantity?: number; item?: string; unitPrice?: number | null }>;
   // Catalog items for auto-matching prices
   catalogItems: CatalogItemRef[];
-  // Default markup % from org settings (dayWorkRates.materialMarkup)
+  // Default values from org settings (dayWorkRates)
   defaultMarkup: number | null;
+  defaultLabourRate: number | null;
+  defaultPlantMarkup: number | null;
   // Loading state
   isLoading: boolean;
   // Whether any voice notes exist
@@ -130,6 +135,8 @@ function mergeSummaryWithTakeoffs(
   takeoffOverrides: Record<string, { quantity?: number; item?: string; unitPrice?: number | null }>,
   catalogItems: CatalogItemRef[],
   defaultMarkup: number | null,
+  defaultLabourRate: number | null,
+  defaultPlantMarkup: number | null,
 ): QuoteDraftData {
   const base: QuoteDraftData = voiceSummary
     ? { ...voiceSummary, materials: [...voiceSummary.materials] }
@@ -141,12 +148,26 @@ function mergeSummaryWithTakeoffs(
         markup: null,
         sundries: null,
         contingency: null,
+        preliminaries: null,
+        labourRate: null,
+        plantMarkup: null,
         notes: null,
       };
 
-  // Apply default markup from org settings if voice didn't specify one
+  // Ensure new fields exist (backward compat with voice summaries that lack them)
+  if (base.preliminaries === undefined) base.preliminaries = null;
+  if (base.labourRate === undefined) base.labourRate = null;
+  if (base.plantMarkup === undefined) base.plantMarkup = null;
+
+  // Apply defaults from org settings if voice didn't specify them
   if (base.markup === null && defaultMarkup !== null && defaultMarkup > 0) {
     base.markup = defaultMarkup;
+  }
+  if (base.labourRate === null && defaultLabourRate !== null && defaultLabourRate > 0) {
+    base.labourRate = defaultLabourRate;
+  }
+  if (base.plantMarkup === null && defaultPlantMarkup !== null && defaultPlantMarkup > 0) {
+    base.plantMarkup = defaultPlantMarkup;
   }
 
   // Add takeoff and containment materials (excluding excluded symbols)
@@ -212,6 +233,8 @@ export default function QuoteDraftSummary({
   takeoffOverrides,
   catalogItems,
   defaultMarkup,
+  defaultLabourRate,
+  defaultPlantMarkup,
   isLoading,
   hasVoiceNotes,
   onSave,
@@ -221,8 +244,8 @@ export default function QuoteDraftSummary({
 
   // Merge voice summary + takeoff data + user overrides + catalog prices
   const mergedData = useMemo(
-    () => mergeSummaryWithTakeoffs(voiceSummary, takeoffs, takeoffOverrides, catalogItems, defaultMarkup),
-    [voiceSummary, takeoffs, takeoffOverrides, catalogItems, defaultMarkup]
+    () => mergeSummaryWithTakeoffs(voiceSummary, takeoffs, takeoffOverrides, catalogItems, defaultMarkup, defaultLabourRate, defaultPlantMarkup),
+    [voiceSummary, takeoffs, takeoffOverrides, catalogItems, defaultMarkup, defaultLabourRate, defaultPlantMarkup]
   );
 
   const [edited, setEdited] = useState<QuoteDraftData>({ ...mergedData });
@@ -240,7 +263,7 @@ export default function QuoteDraftSummary({
   const takeoffMaterials = data.materials.filter((m) => m.source === "takeoff");
   const containmentMaterials = data.materials.filter((m) => m.source === "containment");
   const hasMaterials = data.materials.length > 0;
-  const hasFinancials = data.markup !== null || data.sundries !== null || data.contingency !== null;
+  const hasFinancials = data.markup !== null || data.sundries !== null || data.contingency !== null || data.preliminaries !== null || data.labourRate !== null || data.plantMarkup !== null;
   const isEmpty = !data.jobDescription && !hasLabour && !hasMaterials && !data.notes && !data.clientName;
 
   const updateField = <K extends keyof QuoteDraftData>(key: K, value: QuoteDraftData[K]) => {
@@ -299,6 +322,9 @@ export default function QuoteDraftSummary({
       })),
       markup: edited.markup != null ? Number(edited.markup) || 0 : null,
       sundries: edited.sundries != null ? Number(edited.sundries) || 0 : null,
+      preliminaries: edited.preliminaries != null ? Number(edited.preliminaries) || 0 : null,
+      labourRate: edited.labourRate != null ? Number(edited.labourRate) || 0 : null,
+      plantMarkup: edited.plantMarkup != null ? Number(edited.plantMarkup) || 0 : null,
     };
     onSave(sanitized);
     setIsEditing(false);
@@ -624,47 +650,101 @@ export default function QuoteDraftSummary({
 
         {/* Financials row */}
         {(hasFinancials || isEditing) && (
-          <div className="flex flex-wrap gap-3">
-            {(data.markup !== null || isEditing) && (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ backgroundColor: `${brand.teal}08`, border: `1px solid ${brand.teal}20` }}>
-                <Percent className="h-3 w-3" style={{ color: brand.teal }} />
-                {isEditing ? (
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs font-bold" style={{ color: brand.navy }}>Markup:</span>
-                    <input type="number" value={edited.markup ?? ""} onChange={(e) => updateField("markup", e.target.value ? parseFloat(e.target.value) : null)} className="w-16 text-xs font-bold px-1.5 py-0.5 rounded outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
-                    <span className="text-xs" style={{ color: brand.navyMuted }}>%</span>
-                  </div>
-                ) : (
-                  <span className="text-xs font-bold" style={{ color: brand.navy }}>Markup: {data.markup}%</span>
-                )}
-              </div>
-            )}
-            {(data.sundries !== null || isEditing) && (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ backgroundColor: `${brand.navy}06`, border: `1px solid ${brand.navy}12` }}>
-                <PoundSterling className="h-3 w-3" style={{ color: brand.navy }} />
-                {isEditing ? (
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs font-bold" style={{ color: brand.navy }}>Sundries: £</span>
-                    <input type="number" value={edited.sundries ?? ""} onChange={(e) => updateField("sundries", e.target.value ? parseFloat(e.target.value) : null)} className="w-16 text-xs font-bold px-1.5 py-0.5 rounded outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
-                  </div>
-                ) : (
-                  <span className="text-xs font-bold" style={{ color: brand.navy }}>Sundries: £{data.sundries}</span>
-                )}
-              </div>
-            )}
-            {(data.contingency !== null || isEditing) && (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ backgroundColor: "#fef9ee", border: "1px solid #fde68a" }}>
-                <PoundSterling className="h-3 w-3" style={{ color: "#d97706" }} />
-                {isEditing ? (
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs font-bold" style={{ color: brand.navy }}>Contingency:</span>
-                    <input type="text" value={edited.contingency ?? ""} onChange={(e) => updateField("contingency", e.target.value || null)} className="w-24 text-xs font-bold px-1.5 py-0.5 rounded outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
-                  </div>
-                ) : (
-                  <span className="text-xs font-bold" style={{ color: brand.navy }}>Contingency: {data.contingency}</span>
-                )}
-              </div>
-            )}
+          <div>
+            <div className="flex flex-wrap gap-2">
+              {/* Labour Rate */}
+              {(data.labourRate !== null || isEditing) && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ backgroundColor: "#eff6ff", border: "1px solid #bfdbfe" }}>
+                  <PoundSterling className="h-3 w-3" style={{ color: "#3b82f6" }} />
+                  {isEditing ? (
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs font-bold" style={{ color: brand.navy }}>Labour: £</span>
+                      <input type="number" value={edited.labourRate ?? ""} onChange={(e) => updateField("labourRate", e.target.value ? parseFloat(e.target.value) : null)} className="w-16 text-xs font-bold px-1.5 py-0.5 rounded outline-none focus:ring-1 focus:ring-blue-300" style={inputStyle} />
+                      <span className="text-xs" style={{ color: brand.navyMuted }}>/hr</span>
+                    </div>
+                  ) : (
+                    <span className="text-xs font-bold" style={{ color: brand.navy }}>Labour: £{data.labourRate}/hr</span>
+                  )}
+                </div>
+              )}
+              {/* Material Markup */}
+              {(data.markup !== null || isEditing) && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ backgroundColor: `${brand.teal}08`, border: `1px solid ${brand.teal}20` }}>
+                  <Percent className="h-3 w-3" style={{ color: brand.teal }} />
+                  {isEditing ? (
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs font-bold" style={{ color: brand.navy }}>Material Markup:</span>
+                      <input type="number" value={edited.markup ?? ""} onChange={(e) => updateField("markup", e.target.value ? parseFloat(e.target.value) : null)} className="w-16 text-xs font-bold px-1.5 py-0.5 rounded outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
+                      <span className="text-xs" style={{ color: brand.navyMuted }}>%</span>
+                    </div>
+                  ) : (
+                    <span className="text-xs font-bold" style={{ color: brand.navy }}>Material Markup: {data.markup}%</span>
+                  )}
+                </div>
+              )}
+              {/* Plant Markup */}
+              {(data.plantMarkup !== null || isEditing) && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ backgroundColor: "#fef9ee", border: "1px solid #fde68a" }}>
+                  <Percent className="h-3 w-3" style={{ color: "#d97706" }} />
+                  {isEditing ? (
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs font-bold" style={{ color: brand.navy }}>Plant Markup:</span>
+                      <input type="number" value={edited.plantMarkup ?? ""} onChange={(e) => updateField("plantMarkup", e.target.value ? parseFloat(e.target.value) : null)} className="w-16 text-xs font-bold px-1.5 py-0.5 rounded outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
+                      <span className="text-xs" style={{ color: brand.navyMuted }}>%</span>
+                    </div>
+                  ) : (
+                    <span className="text-xs font-bold" style={{ color: brand.navy }}>Plant Markup: {data.plantMarkup}%</span>
+                  )}
+                </div>
+              )}
+              {/* Sundries */}
+              {(data.sundries !== null || isEditing) && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ backgroundColor: `${brand.navy}06`, border: `1px solid ${brand.navy}12` }}>
+                  <PoundSterling className="h-3 w-3" style={{ color: brand.navy }} />
+                  {isEditing ? (
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs font-bold" style={{ color: brand.navy }}>Sundries: £</span>
+                      <input type="number" value={edited.sundries ?? ""} onChange={(e) => updateField("sundries", e.target.value ? parseFloat(e.target.value) : null)} className="w-16 text-xs font-bold px-1.5 py-0.5 rounded outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
+                    </div>
+                  ) : (
+                    <span className="text-xs font-bold" style={{ color: brand.navy }}>Sundries: £{data.sundries}</span>
+                  )}
+                </div>
+              )}
+              {/* Preliminaries */}
+              {(data.preliminaries !== null || isEditing) && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+                  <Percent className="h-3 w-3" style={{ color: "#16a34a" }} />
+                  {isEditing ? (
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs font-bold" style={{ color: brand.navy }}>Prelims:</span>
+                      <input type="number" value={edited.preliminaries ?? ""} onChange={(e) => updateField("preliminaries", e.target.value ? parseFloat(e.target.value) : null)} className="w-16 text-xs font-bold px-1.5 py-0.5 rounded outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
+                      <span className="text-xs" style={{ color: brand.navyMuted }}>%</span>
+                    </div>
+                  ) : (
+                    <span className="text-xs font-bold" style={{ color: brand.navy }}>Prelims: {data.preliminaries}%</span>
+                  )}
+                </div>
+              )}
+              {/* Contingency */}
+              {(data.contingency !== null || isEditing) && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ backgroundColor: "#fef9ee", border: "1px solid #fde68a" }}>
+                  <PoundSterling className="h-3 w-3" style={{ color: "#d97706" }} />
+                  {isEditing ? (
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs font-bold" style={{ color: brand.navy }}>Contingency:</span>
+                      <input type="text" value={edited.contingency ?? ""} onChange={(e) => updateField("contingency", e.target.value || null)} className="w-24 text-xs font-bold px-1.5 py-0.5 rounded outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
+                    </div>
+                  ) : (
+                    <span className="text-xs font-bold" style={{ color: brand.navy }}>Contingency: {data.contingency}</span>
+                  )}
+                </div>
+              )}
+            </div>
+            {/* Settings hint */}
+            <p className="text-[9px] mt-1.5 ml-1" style={{ color: brand.navyMuted }}>
+              Defaults loaded from Settings — update in <a href="/settings" className="underline hover:no-underline" style={{ color: brand.teal }}>Settings</a> to change defaults
+            </p>
           </div>
         )}
 
