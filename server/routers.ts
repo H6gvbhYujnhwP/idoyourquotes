@@ -3231,12 +3231,11 @@ DRAFT SUMMARY MATERIALS:
 INSTALLATION LABOUR FROM MATERIALS:
 - If materials include "[install: Xhrs/unit]", this means each unit requires X hours of labour to install.
 - If materials include "[labour: £Y]", this is the pre-calculated total labour cost for that material line.
-- You MUST create SEPARATE labour line items for installation work. For example:
+- ONLY when "[install: Xhrs/unit]" is present, create SEPARATE line items for supply and installation. For example:
   * "89 × Linear LED Light @ £19 [install: 2hrs/unit] [labour: £10680.00]" should produce TWO line items:
     1. "Supply Linear LED Light" — qty: 89, rate: £19, unit: each
     2. "Install Linear LED Light" — qty: 178 (89 × 2hrs), rate: £60/hr (use the Labour Rate), unit: hr
-  * This ensures material costs and labour costs are separated on the quote.
-- If no install time is specified for a material, just create one "Supply and install" line item as normal.
+- If a material does NOT have "[install: Xhrs/unit]", create ONE combined "Supply and install" line item as normal. Do NOT estimate or invent installation times — only use times explicitly provided in the data.
 - The Labour Rate from company settings should be used for all installation labour calculations.`;
 
         // Build company defaults context from organization profile
