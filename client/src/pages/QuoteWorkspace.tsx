@@ -2403,6 +2403,9 @@ export default function QuoteWorkspace() {
                         <th className="text-left p-3 font-medium w-20">Unit</th>
                         <th className="text-right p-3 font-medium w-24">Rate</th>
                         <th className="text-right p-3 font-medium w-24">Total</th>
+                        <th className="text-right p-3 font-medium w-28">
+                          <span className="text-green-600" title="Internal only — not shown on PDF">Margin</span>
+                        </th>
                         <th className="w-12"></th>
                       </tr>
                     </thead>
@@ -2497,6 +2500,30 @@ export default function QuoteWorkspace() {
                           </td>
                           {/* Total - calculated, not editable */}
                           <td className="p-3 text-right font-medium">£{parseFloat(item.total || "0").toFixed(2)}</td>
+                          {/* Margin - internal only, calculated from catalog costPrice */}
+                          <td className="p-3 text-right text-xs">
+                            {(() => {
+                              const rate = parseFloat(item.rate || "0");
+                              const qty = parseFloat(item.quantity || "0");
+                              if (rate <= 0 || qty <= 0) return <span className="text-muted-foreground">—</span>;
+                              // Try to find catalog cost price by matching description
+                              const desc = (item.description || "").toLowerCase();
+                              const catalogMatch = (catalogItems || []).find((c: any) => {
+                                const catName = (c.name || "").toLowerCase();
+                                return catName && desc.includes(catName.toLowerCase()) || catName.includes(desc);
+                              });
+                              const costPrice = catalogMatch?.costPrice ? parseFloat(catalogMatch.costPrice) : null;
+                              if (!costPrice || costPrice <= 0) return <span className="text-muted-foreground">—</span>;
+                              const marginPerUnit = rate - costPrice;
+                              const totalMargin = marginPerUnit * qty;
+                              const marginPct = (marginPerUnit / rate * 100).toFixed(0);
+                              return (
+                                <span className={totalMargin >= 0 ? "text-green-600 font-medium" : "text-red-500 font-medium"}>
+                                  £{totalMargin.toFixed(2)} ({marginPct}%)
+                                </span>
+                              );
+                            })()}
+                          </td>
                           <td className="p-3">
                             <Button
                               variant="ghost"
@@ -2511,6 +2538,43 @@ export default function QuoteWorkspace() {
                       ))}
                     </tbody>
                   </table>
+
+                  {/* Total Margin Summary — internal only */}
+                  {(() => {
+                    let totalRevenue = 0;
+                    let totalCost = 0;
+                    let matchedItems = 0;
+                    (lineItems || []).forEach((item: LineItem) => {
+                      const rate = parseFloat(item.rate || "0");
+                      const qty = parseFloat(item.quantity || "0");
+                      if (rate <= 0 || qty <= 0) return;
+                      totalRevenue += rate * qty;
+                      const desc = (item.description || "").toLowerCase();
+                      const catalogMatch = (catalogItems || []).find((c: any) => {
+                        const catName = (c.name || "").toLowerCase();
+                        return catName && (desc.includes(catName) || catName.includes(desc));
+                      });
+                      const costPrice = catalogMatch?.costPrice ? parseFloat(catalogMatch.costPrice) : null;
+                      if (costPrice && costPrice > 0) {
+                        totalCost += costPrice * qty;
+                        matchedItems++;
+                      }
+                    });
+                    if (matchedItems === 0) return null;
+                    const totalMargin = totalRevenue - totalCost;
+                    const marginPct = totalRevenue > 0 ? (totalMargin / totalRevenue * 100).toFixed(1) : "0";
+                    return (
+                      <div className="flex items-center justify-end gap-4 px-3 py-2 bg-green-50 border-t border-green-200 rounded-b-lg">
+                        <span className="text-xs text-muted-foreground">
+                          Margin on {matchedItems} priced item{matchedItems !== 1 ? "s" : ""}
+                        </span>
+                        <span className="text-sm font-bold text-green-700">
+                          Total Margin: £{totalMargin.toFixed(2)} ({marginPct}%)
+                        </span>
+                        <span className="text-[9px] italic text-muted-foreground">Internal only — not on PDF</span>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 

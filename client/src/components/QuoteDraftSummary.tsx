@@ -17,6 +17,7 @@ interface MaterialItem {
   item: string;
   quantity: number;
   unitPrice: number | null;
+  costPrice: number | null; // buy-in price from catalog (for margin calculation)
   installTimeHrs: number | null; // hours per unit (from catalog or manual)
   labourCost: number | null; // calculated: installTimeHrs × labourRate × quantity
   source: "voice" | "takeoff" | "containment" | "document";
@@ -86,14 +87,14 @@ interface QuoteDraftSummaryProps {
 function matchCatalogPrice(
   itemDescription: string,
   catalogItems: CatalogItemRef[],
-): { rate: number; catalogName: string; installTimeHrs: number | null } | null {
+): { rate: number; costPrice: number | null; catalogName: string; installTimeHrs: number | null } | null {
   if (!catalogItems.length || !itemDescription) return null;
 
   const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
   const itemNorm = normalise(itemDescription);
   const itemWords = new Set(itemNorm.split(/\s+/).filter(w => w.length > 2));
 
-  let bestMatch: { rate: number; catalogName: string; installTimeHrs: number | null; score: number } | null = null;
+  let bestMatch: { rate: number; costPrice: number | null; catalogName: string; installTimeHrs: number | null; score: number } | null = null;
 
   for (const cat of catalogItems) {
     const rate = parseFloat(cat.defaultRate || "0");
@@ -101,17 +102,18 @@ function matchCatalogPrice(
 
     const catNorm = normalise(cat.name);
     const installTime = cat.installTimeHrs ? parseFloat(cat.installTimeHrs) : null;
+    const costPrice = cat.costPrice ? parseFloat(cat.costPrice) : null;
 
     // Exact match (after normalisation)
     if (catNorm === itemNorm) {
-      return { rate, catalogName: cat.name, installTimeHrs: installTime };
+      return { rate, costPrice, catalogName: cat.name, installTimeHrs: installTime };
     }
 
     // Substring match (catalog name within item description or vice versa)
     if (catNorm.length > 3 && (itemNorm.includes(catNorm) || catNorm.includes(itemNorm))) {
       const score = catNorm.length; // Longer match = better
       if (!bestMatch || score > bestMatch.score) {
-        bestMatch = { rate, catalogName: cat.name, installTimeHrs: installTime, score };
+        bestMatch = { rate, costPrice, catalogName: cat.name, installTimeHrs: installTime, score };
       }
       continue;
     }
@@ -124,13 +126,13 @@ function matchCatalogPrice(
       if (overlapRatio >= 0.6 && overlap >= 2) {
         const score = overlap;
         if (!bestMatch || score > bestMatch.score) {
-          bestMatch = { rate, catalogName: cat.name, installTimeHrs: installTime, score };
+          bestMatch = { rate, costPrice, catalogName: cat.name, installTimeHrs: installTime, score };
         }
       }
     }
   }
 
-  return bestMatch ? { rate: bestMatch.rate, catalogName: bestMatch.catalogName, installTimeHrs: bestMatch.installTimeHrs } : null;
+  return bestMatch ? { rate: bestMatch.rate, costPrice: bestMatch.costPrice, catalogName: bestMatch.catalogName, installTimeHrs: bestMatch.installTimeHrs } : null;
 }
 
 function mergeSummaryWithTakeoffs(
@@ -219,6 +221,7 @@ function mergeSummaryWithTakeoffs(
 
       const itemQty = override?.quantity ?? count;
       const itemInstallTime = autoInstallTime;
+      const itemCostPrice = catalogMatch?.costPrice ?? null;
       const itemLabourCost = (itemInstallTime && itemInstallTime > 0 && base.labourRate)
         ? itemInstallTime * base.labourRate * itemQty
         : null;
@@ -231,6 +234,7 @@ function mergeSummaryWithTakeoffs(
         } else if (autoPrice !== null) {
           existing.unitPrice = autoPrice;
         }
+        existing.costPrice = itemCostPrice;
         existing.installTimeHrs = itemInstallTime;
         // Recalculate labour cost
         existing.labourCost = (existing.installTimeHrs && existing.installTimeHrs > 0 && base.labourRate)
@@ -241,6 +245,7 @@ function mergeSummaryWithTakeoffs(
           item: override?.item ?? desc,
           quantity: itemQty,
           unitPrice: override?.unitPrice ?? autoPrice,
+          costPrice: itemCostPrice,
           installTimeHrs: itemInstallTime,
           labourCost: itemLabourCost,
           source: materialSource,
@@ -639,6 +644,11 @@ export default function QuoteDraftSummary({
                       {m.labourCost != null && m.labourCost > 0 && (
                         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#dbeafe", color: "#1d4ed8" }}>
                           Labour: £{m.labourCost.toFixed(2)}
+                        </span>
+                      )}
+                      {m.unitPrice != null && m.costPrice != null && m.unitPrice > 0 && m.costPrice > 0 && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#f0fdf4", color: "#16a34a" }}>
+                          Margin: £{((m.unitPrice - m.costPrice) * m.quantity).toFixed(2)} ({((m.unitPrice - m.costPrice) / m.unitPrice * 100).toFixed(0)}%)
                         </span>
                       )}
                     </div>
