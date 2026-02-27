@@ -484,11 +484,11 @@ export default function QuoteDraftSummary({
                           <input type="text" value={m.unit || "each"} onChange={(e) => updateMaterial(i, "unit", e.target.value)} className="w-16 text-sm px-2 py-1 rounded outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
                         </div>
                         <div className="flex items-center gap-1">
-                          <span className="text-[10px] font-bold" style={{ color: brand.navyMuted }}>RATE £</span>
+                          <span className="text-[10px] font-bold" style={{ color: brand.navyMuted }}>SELL £</span>
                           <input type="number" value={m.unitPrice ?? ""} onChange={(e) => updateMaterial(i, "unitPrice", e.target.value ? parseFloat(e.target.value) : null)} placeholder="—" className="w-20 text-sm font-medium px-2 py-1 rounded outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
                         </div>
                         <div className="flex items-center gap-1">
-                          <span className="text-[10px] font-bold" style={{ color: brand.navyMuted }}>COST £</span>
+                          <span className="text-[10px] font-bold" style={{ color: brand.navyMuted }}>BUY-IN £</span>
                           <input type="number" value={m.costPrice ?? ""} onChange={(e) => updateMaterial(i, "costPrice", e.target.value ? parseFloat(e.target.value) : null)} placeholder="—" className="w-20 text-sm font-medium px-2 py-1 rounded outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
                         </div>
                         {lineTotal > 0 && <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ backgroundColor: "#f0f9ff", color: brand.navy }}>= £{fmtGBP(lineTotal)}</span>}
@@ -514,7 +514,7 @@ export default function QuoteDraftSummary({
                       <th className="text-left text-[10px] font-bold uppercase tracking-wider py-1.5 px-2" style={{ color: brand.navyMuted }}>Item</th>
                       <th className="text-right text-[10px] font-bold uppercase tracking-wider py-1.5 px-2" style={{ color: brand.navyMuted }}>Qty</th>
                       <th className="text-left text-[10px] font-bold uppercase tracking-wider py-1.5 px-2" style={{ color: brand.navyMuted }}>Unit</th>
-                      <th className="text-right text-[10px] font-bold uppercase tracking-wider py-1.5 px-2" style={{ color: brand.navyMuted }}>Rate</th>
+                      <th className="text-right text-[10px] font-bold uppercase tracking-wider py-1.5 px-2" style={{ color: brand.navyMuted }}>Sell Price</th>
                       <th className="text-right text-[10px] font-bold uppercase tracking-wider py-1.5 px-2" style={{ color: brand.navyMuted }}>Total</th>
                       <th className="text-right text-[10px] font-bold uppercase tracking-wider py-1.5 px-2" style={{ color: "#0d9488" }}>Margin</th>
                     </tr>
