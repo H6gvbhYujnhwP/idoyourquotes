@@ -145,7 +145,7 @@ export default function QuoteWorkspace() {
   const [voiceSummary, setVoiceSummary] = useState<QuoteDraftData | null>(null);
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
   // User overrides for takeoff material quantities/names (persists across re-merges)
-  const [takeoffOverrides, setTakeoffOverrides] = useState<Record<string, { quantity?: number; item?: string; unitPrice?: number | null }>>({}); 
+  const [takeoffOverrides, setTakeoffOverrides] = useState<Record<string, { quantity?: number; item?: string; unitPrice?: number | null; installTimeHrs?: number | null }>>({}); 
 
   // File input refs (legacy single-file refs kept for backward compat)
   const pdfInputRef = useRef<HTMLInputElement>(null);
@@ -1927,13 +1927,14 @@ export default function QuoteWorkspace() {
               isLoading={isSummaryLoading}
               hasVoiceNotes={!!(inputs && inputs.some((inp: QuoteInput) => inp.inputType === "audio" && inp.content && !inp.fileUrl))}
               onSave={(data) => {
-                // Store takeoff + containment material overrides (user edits to quantities/names)
-                const overrides: Record<string, { quantity?: number; item?: string; unitPrice?: number | null }> = {};
+                // Store takeoff + containment material overrides (user edits to quantities/names/prices/install time)
+                const overrides: Record<string, { quantity?: number; item?: string; unitPrice?: number | null; installTimeHrs?: number | null }> = {};
                 data.materials.filter(m => (m.source === "takeoff" || m.source === "containment") && m.symbolCode).forEach(m => {
                   overrides[m.symbolCode!] = {
                     quantity: m.quantity,
                     item: m.item,
                     unitPrice: m.unitPrice,
+                    installTimeHrs: m.installTimeHrs,
                   };
                 });
                 setTakeoffOverrides(overrides);

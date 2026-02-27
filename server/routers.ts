@@ -3226,7 +3226,18 @@ VOICE DICTATION PROCESSING:
 DRAFT SUMMARY MATERIALS:
 - If the user instructions contain "USER-CONFIRMED PRICED MATERIALS", these are items the user has explicitly priced in the Quote Draft Summary.
 - Create a line item for EACH of these with the EXACT quantity and price shown.
-- If the user instructions contain "Materials (need pricing from catalog or estimate)", these items need pricing — check the catalog first, then estimate.`;
+- If the user instructions contain "Materials (need pricing from catalog or estimate)", these items need pricing — check the catalog first, then estimate.
+
+INSTALLATION LABOUR FROM MATERIALS:
+- If materials include "[install: Xhrs/unit]", this means each unit requires X hours of labour to install.
+- If materials include "[labour: £Y]", this is the pre-calculated total labour cost for that material line.
+- You MUST create SEPARATE labour line items for installation work. For example:
+  * "89 × Linear LED Light @ £19 [install: 2hrs/unit] [labour: £10680.00]" should produce TWO line items:
+    1. "Supply Linear LED Light" — qty: 89, rate: £19, unit: each
+    2. "Install Linear LED Light" — qty: 178 (89 × 2hrs), rate: £60/hr (use the Labour Rate), unit: hr
+  * This ensures material costs and labour costs are separated on the quote.
+- If no install time is specified for a material, just create one "Supply and install" line item as normal.
+- The Labour Rate from company settings should be used for all installation labour calculations.`;
 
         // Build company defaults context from organization profile
         let companyDefaultsContext = "";

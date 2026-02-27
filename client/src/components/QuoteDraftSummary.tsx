@@ -60,7 +60,7 @@ interface QuoteDraftSummaryProps {
   // Takeoff data from all PDFs
   takeoffs: TakeoffInfo[];
   // User overrides for takeoff material quantities/names
-  takeoffOverrides: Record<string, { quantity?: number; item?: string; unitPrice?: number | null }>;
+  takeoffOverrides: Record<string, { quantity?: number; item?: string; unitPrice?: number | null; installTimeHrs?: number | null }>;
   // Catalog items for auto-matching prices
   catalogItems: CatalogItemRef[];
   // Default values from org settings (dayWorkRates)
@@ -136,7 +136,7 @@ function matchCatalogPrice(
 function mergeSummaryWithTakeoffs(
   voiceSummary: QuoteDraftData | null,
   takeoffs: TakeoffInfo[],
-  takeoffOverrides: Record<string, { quantity?: number; item?: string; unitPrice?: number | null }>,
+  takeoffOverrides: Record<string, { quantity?: number; item?: string; unitPrice?: number | null; installTimeHrs?: number | null }>,
   catalogItems: CatalogItemRef[],
   defaultMarkup: number | null,
   defaultLabourRate: number | null,
@@ -200,23 +200,26 @@ function mergeSummaryWithTakeoffs(
       // Auto-match catalog price and install time if no override price exists
       let autoPrice: number | null = null;
       let autoInstallTime: number | null = null;
+      
+      // Always try catalog match for defaults
+      const catalogMatch = matchCatalogPrice(override?.item ?? desc, catalogItems);
+      
       if (override?.unitPrice === undefined || override?.unitPrice === null) {
-        const catalogMatch = matchCatalogPrice(override?.item ?? desc, catalogItems);
         if (catalogMatch) {
           autoPrice = catalogMatch.rate;
-          autoInstallTime = catalogMatch.installTimeHrs;
         }
-      } else {
-        // Even if price is overridden, still try to get install time from catalog
-        const catalogMatch = matchCatalogPrice(override?.item ?? desc, catalogItems);
-        if (catalogMatch) {
-          autoInstallTime = catalogMatch.installTimeHrs;
-        }
+      }
+      
+      // Install time: override > catalog
+      if (override?.installTimeHrs !== undefined && override?.installTimeHrs !== null) {
+        autoInstallTime = override.installTimeHrs;
+      } else if (catalogMatch) {
+        autoInstallTime = catalogMatch.installTimeHrs;
       }
 
       const itemQty = override?.quantity ?? count;
       const itemInstallTime = autoInstallTime;
-      const itemLabourCost = (itemInstallTime && base.labourRate)
+      const itemLabourCost = (itemInstallTime && itemInstallTime > 0 && base.labourRate)
         ? itemInstallTime * base.labourRate * itemQty
         : null;
 
@@ -228,11 +231,9 @@ function mergeSummaryWithTakeoffs(
         } else if (autoPrice !== null) {
           existing.unitPrice = autoPrice;
         }
-        if (existing.installTimeHrs === undefined || existing.installTimeHrs === null) {
-          existing.installTimeHrs = itemInstallTime;
-        }
+        existing.installTimeHrs = itemInstallTime;
         // Recalculate labour cost
-        existing.labourCost = (existing.installTimeHrs && base.labourRate)
+        existing.labourCost = (existing.installTimeHrs && existing.installTimeHrs > 0 && base.labourRate)
           ? existing.installTimeHrs * base.labourRate * existing.quantity
           : null;
       } else {
