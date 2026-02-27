@@ -2446,7 +2446,10 @@ export default function QuoteWorkspace() {
                                 className="cursor-pointer hover:bg-muted/50 px-2 py-1 rounded inline-block"
                                 onClick={() => handleStartEdit(item.id, "quantity", item.quantity || "1")}
                               >
-                                {item.quantity || "1"}
+                                {(() => {
+                                  const qty = parseFloat(item.quantity || "1");
+                                  return qty % 1 === 0 ? qty.toFixed(0) : qty.toFixed(2);
+                                })()}
                               </span>
                             )}
                           </td>

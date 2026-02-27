@@ -42,6 +42,11 @@ function formatCurrency(value: string | number | null | undefined): string {
   }).format(num);
 }
 
+function formatQuantity(value: string | number | null | undefined): string {
+  const num = typeof value === "number" ? value : parseFloat(value || "1");
+  return num % 1 === 0 ? num.toFixed(0) : num.toFixed(2);
+}
+
 function formatDate(date: Date | string | null | undefined): string {
   if (!date) return "";
   return new Date(date).toLocaleDateString("en-GB", {
@@ -697,7 +702,7 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
       <tr>
         <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; font-size: 10pt;">${index + 1}</td>
         <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; font-size: 10pt;">${escapeHtml(item.description || "")}</td>
-        <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; text-align: center; font-size: 10pt;">${item.quantity || "1"}</td>
+        <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; text-align: center; font-size: 10pt;">${formatQuantity(item.quantity)}</td>
         <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; text-align: center; font-size: 10pt;">${item.unit || "each"}</td>
         <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; text-align: right; font-size: 10pt;">${formatCurrency(item.rate)}</td>
         <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; text-align: right; font-weight: 600; font-size: 10pt;">${formatCurrency(item.total)}</td>
@@ -1472,7 +1477,7 @@ function renderLineItemsTable(items: QuoteLineItem[], colors: BrandColors): stri
         <tr>
           <td style="font-size: 10pt;">${idx + 1}</td>
           <td style="font-size: 10pt;">${escapeHtml(item.description || "")}</td>
-          <td style="text-align: center; font-size: 10pt;">${item.quantity || "1"}</td>
+          <td style="text-align: center; font-size: 10pt;">${formatQuantity(item.quantity)}</td>
           <td style="text-align: center; font-size: 10pt;">${item.unit || "each"}</td>
           <td style="text-align: right; font-size: 10pt;">${formatCurrency(item.rate)}</td>
           <td style="text-align: right; font-weight: 600; font-size: 10pt;">${formatCurrency(item.total)}</td>
