@@ -1994,7 +1994,10 @@ export default function QuoteWorkspace() {
                     parts.push("USER-CONFIRMED PRICED MATERIALS (use these EXACT prices):\n" + 
                       pricedMaterials.map(m => {
                         let line = `  ${m.quantity} × ${m.item} @ £${m.unitPrice} each = £${(m.quantity * (m.unitPrice || 0)).toFixed(2)}`;
-                        if (m.installTimeHrs && m.installTimeHrs > 0) {
+                        // Only include [install:] tags for takeoff/containment items (physical products).
+                        // Voice-sourced items may be services/labour — install tags cause AI to
+                        // duplicate them into separate "supply" + "install" lines.
+                        if (m.installTimeHrs && m.installTimeHrs > 0 && (m.source === "takeoff" || m.source === "containment")) {
                           line += ` [install: ${m.installTimeHrs}hrs/unit]`;
                           if (m.labourCost && m.labourCost > 0) {
                             line += ` [labour: £${m.labourCost.toFixed(2)}]`;
@@ -2007,7 +2010,7 @@ export default function QuoteWorkspace() {
                     parts.push("Materials (need pricing from catalog or estimate):\n" + 
                       unpricedMaterials.map(m => {
                         let line = `  ${m.quantity} × ${m.item}`;
-                        if (m.installTimeHrs && m.installTimeHrs > 0) {
+                        if (m.installTimeHrs && m.installTimeHrs > 0 && (m.source === "takeoff" || m.source === "containment")) {
                           line += ` [install: ${m.installTimeHrs}hrs/unit]`;
                         }
                         return line;

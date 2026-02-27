@@ -198,7 +198,7 @@ function fmtGBP(value: number): string {
 const sourceBadgeStyles: Record<string, { bg: string; color: string }> = {
   takeoff: { bg: "#f5f3ff", color: "#8b5cf6" },
   containment: { bg: "#f0fdfa", color: "#0d9488" },
-  voice: { bg: "#f0fdf4", color: "#16a34a" },
+  voice: { bg: "#f0fdf4", color: "#0f766e" },
   document: { bg: "#fff7ed", color: "#ea580c" },
   catalog: { bg: "#eff6ff", color: "#3b82f6" },
 };
@@ -492,7 +492,7 @@ export default function QuoteDraftSummary({
                           <input type="number" value={m.costPrice ?? ""} onChange={(e) => updateMaterial(i, "costPrice", e.target.value ? parseFloat(e.target.value) : null)} placeholder="—" className="w-20 text-sm font-medium px-2 py-1 rounded outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
                         </div>
                         {lineTotal > 0 && <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ backgroundColor: "#f0f9ff", color: brand.navy }}>= £{fmtGBP(lineTotal)}</span>}
-                        {marginAmt != null && marginPct != null && <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ backgroundColor: marginAmt >= 0 ? "#f0fdf4" : "#fef2f2", color: marginAmt >= 0 ? "#16a34a" : "#dc2626" }}>Margin: £{fmtGBP(marginAmt)} ({marginPct.toFixed(0)}%)</span>}
+                        {marginAmt != null && marginPct != null && <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ backgroundColor: marginAmt >= 0 ? "#f0fdf4" : "#fef2f2", color: marginAmt >= 0 ? "#0f766e" : "#dc2626" }}>Margin: £{fmtGBP(marginAmt)} ({marginPct.toFixed(0)}%)</span>}
                       </div>
                       {/* Row 4: install time + labour */}
                       <div className="flex items-center gap-2 ml-7 mt-1.5">
@@ -516,7 +516,7 @@ export default function QuoteDraftSummary({
                       <th className="text-left text-[10px] font-bold uppercase tracking-wider py-1.5 px-2" style={{ color: brand.navyMuted }}>Unit</th>
                       <th className="text-right text-[10px] font-bold uppercase tracking-wider py-1.5 px-2" style={{ color: brand.navyMuted }}>Rate</th>
                       <th className="text-right text-[10px] font-bold uppercase tracking-wider py-1.5 px-2" style={{ color: brand.navyMuted }}>Total</th>
-                      <th className="text-right text-[10px] font-bold uppercase tracking-wider py-1.5 px-2" style={{ color: "#16a34a" }}>Margin</th>
+                      <th className="text-right text-[10px] font-bold uppercase tracking-wider py-1.5 px-2" style={{ color: "#0f766e" }}>Margin</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -546,7 +546,7 @@ export default function QuoteDraftSummary({
                           <td className="text-right py-2 px-2 align-top text-[13px] font-bold" style={{ color: lineTotal ? brand.navy : brand.navyMuted }}>{lineTotal ? `£${fmtGBP(lineTotal)}` : "—"}</td>
                           <td className="text-right py-2 px-2 align-top">
                             {marginAmt != null && marginPct != null ? (
-                              <span className="text-xs font-semibold" style={{ color: marginAmt >= 0 ? "#16a34a" : "#dc2626" }}>£{fmtGBP(marginAmt)} ({marginPct.toFixed(0)}%)</span>
+                              <span className="text-xs font-semibold" style={{ color: marginAmt >= 0 ? "#0f766e" : "#dc2626" }}>£{fmtGBP(marginAmt)} ({marginPct.toFixed(0)}%)</span>
                             ) : <span className="text-[13px]" style={{ color: brand.navyMuted }}>—</span>}
                           </td>
                         </tr>
@@ -569,9 +569,9 @@ export default function QuoteDraftSummary({
             {!isEditing && totalMargin.pricedCount > 0 && (
               <div className="mt-2 px-3 py-2 rounded-lg flex items-center justify-between flex-wrap gap-2" style={{ backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0" }}>
                 <div>
-                  <span className="text-xs font-medium" style={{ color: "#16a34a" }}>Total Margin: </span>
-                  <span className="text-sm font-bold" style={{ color: "#16a34a" }}>£{fmtGBP(totalMargin.amount)} ({totalMargin.percent.toFixed(1)}%)</span>
-                  <span className="block text-[10px]" style={{ color: "#86efac" }}>Margin on {totalMargin.pricedCount} priced item{totalMargin.pricedCount !== 1 ? "s" : ""} · Internal only — not on PDF</span>
+                  <span className="text-xs font-medium" style={{ color: "#0f766e" }}>Total Margin: </span>
+                  <span className="text-sm font-bold" style={{ color: "#0f766e" }}>£{fmtGBP(totalMargin.amount)} ({totalMargin.percent.toFixed(1)}%)</span>
+                  <span className="block text-[10px]" style={{ color: "#5b8a7a" }}>Margin on {totalMargin.pricedCount} priced item{totalMargin.pricedCount !== 1 ? "s" : ""} · Internal only — not on PDF</span>
                 </div>
                 {totalLabourCost > 0 && (
                   <span className="text-[10px] font-bold px-2 py-1 rounded" style={{ backgroundColor: "#dbeafe", color: "#1d4ed8" }}>Total Install Labour: £{fmtGBP(totalLabourCost)}</span>
@@ -601,7 +601,7 @@ export default function QuoteDraftSummary({
                       <div className="flex items-center gap-1"><span className="text-[10px]" style={{ color: brand.navyMuted }}>Cost £</span><input type="number" step="0.01" value={p.costPrice ?? ""} onChange={(e) => updatePlantHire(i, "costPrice", e.target.value ? parseFloat(e.target.value) : null)} placeholder="—" className="w-20 text-sm px-2 py-1.5 rounded outline-none focus:ring-1 focus:ring-amber-300" style={inputStyle} /></div>
                       <div className="flex items-center gap-1"><span className="text-[10px]" style={{ color: brand.navyMuted }}>Sell £</span><input type="number" step="0.01" value={p.sellPrice ?? ""} onChange={(e) => updatePlantHire(i, "sellPrice", e.target.value ? parseFloat(e.target.value) : null)} placeholder="—" className="w-20 text-sm px-2 py-1.5 rounded outline-none focus:ring-1 focus:ring-amber-300" style={inputStyle} /></div>
                       {p.costPrice != null && p.sellPrice != null && p.sellPrice > 0 && p.costPrice > 0 && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ backgroundColor: "#f0fdf4", color: "#16a34a" }}>Margin: £{fmtGBP((p.sellPrice - p.costPrice) * p.quantity)} ({((p.sellPrice - p.costPrice) / p.sellPrice * 100).toFixed(0)}%)</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ backgroundColor: "#f0fdf4", color: "#0f766e" }}>Margin: £{fmtGBP((p.sellPrice - p.costPrice) * p.quantity)} ({((p.sellPrice - p.costPrice) / p.sellPrice * 100).toFixed(0)}%)</span>
                       )}
                     </div>
                   ))}
@@ -617,7 +617,7 @@ export default function QuoteDraftSummary({
                       {p.duration && <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ backgroundColor: "#fef3c7", color: "#92400e" }}>{p.duration}</span>}
                       {p.sellPrice != null && p.sellPrice > 0 && <span className="text-xs" style={{ color: brand.navyMuted }}>@ £{fmtGBP(p.sellPrice)}</span>}
                       {p.costPrice != null && p.sellPrice != null && p.sellPrice > 0 && p.costPrice > 0 && (
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#f0fdf4", color: "#16a34a" }}>Margin: £{fmtGBP((p.sellPrice - p.costPrice) * p.quantity)} ({((p.sellPrice - p.costPrice) / p.sellPrice * 100).toFixed(0)}%)</span>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#f0fdf4", color: "#0f766e" }}>Margin: £{fmtGBP((p.sellPrice - p.costPrice) * p.quantity)} ({((p.sellPrice - p.costPrice) / p.sellPrice * 100).toFixed(0)}%)</span>
                       )}
                     </div>
                   ))}
@@ -657,7 +657,7 @@ export default function QuoteDraftSummary({
               )}
               {(data.preliminaries !== null || isEditing) && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0" }}>
-                  <Percent className="h-3.5 w-3.5" style={{ color: "#16a34a" }} />
+                  <Percent className="h-3.5 w-3.5" style={{ color: "#0f766e" }} />
                   {isEditing ? (<div className="flex items-center gap-1"><span className="text-sm font-bold" style={{ color: brand.navy }}>Prelims:</span><input type="number" value={edited.preliminaries ?? ""} onChange={(e) => updateField("preliminaries", e.target.value ? parseFloat(e.target.value) : null)} className="w-16 text-sm font-bold px-2 py-1 rounded outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} /><span className="text-sm" style={{ color: brand.navyMuted }}>%</span></div>) : (<span className="text-sm font-bold" style={{ color: brand.navy }}>Prelims: {data.preliminaries}%</span>)}
                 </div>
               )}
