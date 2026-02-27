@@ -1320,6 +1320,20 @@ export default function QuoteWorkspace() {
               />
               <span className="text-muted-foreground/30">|</span>
               <input
+                type="text"
+                value={contactName || ""}
+                onChange={(e) => setContactName(e.target.value)}
+                onBlur={() => {
+                  if (contactName !== ((quote as any).contactName || "")) {
+                    updateQuote.mutate({ id: quoteId, contactName } as any);
+                  }
+                }}
+                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                placeholder="Contact"
+                className="text-sm bg-transparent outline-none p-0 min-w-[100px] placeholder:text-muted-foreground/40 text-muted-foreground border-b border-transparent hover:border-dashed hover:border-gray-300 focus:border-solid focus:border-teal-400 transition-colors"
+              />
+              <span className="text-muted-foreground/30">|</span>
+              <input
                 type="email"
                 value={clientEmail || ""}
                 onChange={(e) => setClientEmail(e.target.value)}

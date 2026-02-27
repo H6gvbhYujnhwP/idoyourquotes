@@ -2972,7 +2972,8 @@ Rules:
         }
 
         const tradePresetKey = (quote as any)?.tradePreset as string | null;
-        const tradeLabel = tradePresetKey || "general trades/construction";
+        const userTradeSector = ctx.user.defaultTradeSector || null;
+        const tradeLabel = tradePresetKey || userTradeSector || "general trades/construction";
 
         const response = await invokeLLM({
           messages: [
@@ -3073,8 +3074,10 @@ Respond with:
         }).join("\n");
 
         const tradePresetKey = (quote as any)?.tradePreset as string | null;
-        const tradeLabel = tradePresetKey || "general trades/construction";
-        console.log(`[tradeRelevanceCheck] Trade: ${tradeLabel}, evidence: ${evidenceSummary.substring(0, 100)}`);
+        // Fall back to user's default trade sector if not set on quote
+        const userTradeSector = ctx.user.defaultTradeSector || null;
+        const tradeLabel = tradePresetKey || userTradeSector || "general trades/construction";
+        console.log(`[tradeRelevanceCheck] Trade: ${tradeLabel} (quote: ${tradePresetKey}, user: ${userTradeSector}), evidence: ${evidenceSummary.substring(0, 100)}`);
 
         const response = await invokeLLM({
           messages: [
@@ -3340,7 +3343,8 @@ STRUCTURE:
         }
 
         // Trade-relevance guardrail — prevents generating nonsense quotes for unrelated content
-        const tradeLabel = tradePresetKey || "general trades/construction";
+        const userTradeSectorForGuardrail = ctx.user.defaultTradeSector || null;
+        const tradeLabel = tradePresetKey || userTradeSectorForGuardrail || "general trades/construction";
         const tradeRelevanceGuardrail = `\n\nTRADE RELEVANCE CHECK — IMPORTANT:
 This quote is for a business in the "${tradeLabel}" trade. Before generating the quote, assess whether the evidence provided is genuinely related to ${tradeLabel} work.
 
