@@ -3245,7 +3245,7 @@ DRAFT SUMMARY MATERIALS:
             if (dw.labourRate) dwParts.push(`Labour: £${dw.labourRate}/hr`);
             if (dw.materialMarkup) dwParts.push(`Material: cost + ${dw.materialMarkup}%`);
             if (dw.plantMarkup) dwParts.push(`Plant: cost + ${dw.plantMarkup}%`);
-            if (dwParts.length > 0) parts.push(`Day Work Rates: ${dwParts.join(", ")}`);
+            if (dwParts.length > 0) parts.push(`Work Rates: ${dwParts.join(", ")}`);
           }
           if (orgDefaults.surfaceTreatment) parts.push(`Surface Treatment: ${orgDefaults.surfaceTreatment}`);
           if (orgDefaults.returnVisitRate) parts.push(`Return Visit Rate: ${orgDefaults.returnVisitRate}`);

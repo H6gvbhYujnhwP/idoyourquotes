@@ -1435,6 +1435,11 @@ export default function QuoteWorkspace() {
         </div>
       </div>
 
+      {/* AI disclaimer */}
+      <p className="text-[10px] italic text-center -mt-2 mb-2" style={{ color: "#94a3b8" }}>
+        AI-generated quotes are estimates — always review all line items, quantities, and pricing before sending to clients
+      </p>
+
       {/* Main Content with Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         {/* Grouped Tab Navigation - Visual Flow */}

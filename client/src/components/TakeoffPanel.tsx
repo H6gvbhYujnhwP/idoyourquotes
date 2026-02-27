@@ -465,6 +465,13 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
           })}
         </div>
 
+        {/* AI disclaimer */}
+        <div className="px-4 pb-2">
+          <p className="text-[9px] italic" style={{ color: brand.navyMuted }}>
+            AI-assisted counts — always verify quantities against your drawings before quoting
+          </p>
+        </div>
+
       {/* Expandable Chat / Q&A Section */}
       <div className="border-t overflow-hidden" style={{ borderColor: brand.border }}>
         <button

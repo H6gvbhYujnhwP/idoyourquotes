@@ -210,7 +210,7 @@ export default function Catalog() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="defaultRate">Default Rate (£)</Label>
+                  <Label htmlFor="defaultRate">Sell Price (£)</Label>
                   <Input
                     id="defaultRate"
                     type="number"
@@ -221,7 +221,7 @@ export default function Catalog() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="costPrice">Cost Price (£)</Label>
+                  <Label htmlFor="costPrice">Buy-in Price (£)</Label>
                   <Input
                     id="costPrice"
                     type="number"
@@ -294,7 +294,7 @@ export default function Catalog() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="edit-defaultRate">Default Rate (£)</Label>
+                <Label htmlFor="edit-defaultRate">Sell Price (£)</Label>
                 <Input
                   id="edit-defaultRate"
                   type="number"
@@ -304,7 +304,7 @@ export default function Catalog() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit-costPrice">Cost Price (£)</Label>
+                <Label htmlFor="edit-costPrice">Buy-in Price (£)</Label>
                 <Input
                   id="edit-costPrice"
                   type="number"

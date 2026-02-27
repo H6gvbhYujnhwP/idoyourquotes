@@ -410,6 +410,11 @@ export default function QuoteDraftSummary({
       {/* Content */}
       <div className="px-5 py-4 space-y-3" style={{ backgroundColor: brand.white }}>
 
+        {/* AI disclaimer */}
+        <p className="text-[9px] italic px-1 -mb-1" style={{ color: brand.navyMuted }}>
+          AI-assisted summary — review all details, quantities, and prices before generating your quote
+        </p>
+
         {/* Job description */}
         {(data.jobDescription || isEditing) && (
           <div className="flex items-start gap-3">
