@@ -108,6 +108,9 @@ export default function Dashboard() {
     },
   });
 
+  // Subscription usage
+  const { data: subStatus } = trpc.subscription.status.useQuery();
+
   const deleteQuote = trpc.quotes.delete.useMutation({
     onSuccess: (data) => {
       toast.success(`Quote deleted${data.deletedFilesCount > 0 ? ` (${data.deletedFilesCount} files removed)` : ""}`);
@@ -190,10 +193,17 @@ export default function Dashboard() {
             Welcome back, {user?.name || "there"}. Manage your quotes here.
           </p>
         </div>
-        <Button onClick={handleCreateQuote} disabled={createQuote.isPending}>
-          <Plus className="mr-2 h-4 w-4" />
-          New Quote
-        </Button>
+        <div className="flex items-center gap-3">
+          {subStatus?.quoteUsage && subStatus.quoteUsage.max > 0 && (
+            <span className="text-xs text-muted-foreground">
+              {subStatus.quoteUsage.current} of {subStatus.quoteUsage.max} quotes used
+            </span>
+          )}
+          <Button onClick={handleCreateQuote} disabled={createQuote.isPending || (subStatus?.canCreateQuote === false)}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Quote
+          </Button>
+        </div>
       </div>
 
       {/* Stats Cards */}
