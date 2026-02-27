@@ -28,6 +28,8 @@ interface MaterialItem {
   costPrice: number | null; // buy-in price from catalog (for margin calculation)
   installTimeHrs: number | null; // hours per unit (from catalog or manual)
   labourCost: number | null; // calculated: installTimeHrs × labourRate × quantity
+  unit?: string; // each, page, metre, hour, etc.
+  description?: string; // brief description of the line item
   source: "voice" | "takeoff" | "containment" | "document";
   symbolCode?: string; // for takeoff and containment items
   catalogName?: string; // matched catalog item name
@@ -584,33 +586,57 @@ export default function QuoteDraftSummary({
               <Package className="h-3.5 w-3.5" style={{ color: "#22c55e" }} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: brand.navyMuted }}>
+              <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: brand.navyMuted }}>
                 Materials <span className="text-[8px] font-medium">(from voice)</span>
               </p>
               {isEditing ? (
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   {edited.materials.map((m, i) => {
                     if (m.source !== "voice") return null;
                     const labourRate = edited.labourRate || 0;
                     const calcLabour = (m.installTimeHrs && labourRate) ? m.installTimeHrs * labourRate * m.quantity : null;
+                    const lineTotal = (m.unitPrice ?? 0) * m.quantity;
+                    const marginAmt = (m.unitPrice && m.costPrice && m.unitPrice > 0 && m.costPrice > 0) ? (m.unitPrice - m.costPrice) * m.quantity : null;
+                    const marginPct = (m.unitPrice && m.costPrice && m.unitPrice > 0) ? ((m.unitPrice - m.costPrice) / m.unitPrice * 100) : null;
                     return (
-                      <div key={i} className="space-y-0.5">
-                        <div className="flex gap-1.5 items-center">
+                      <div key={i} className="rounded-lg p-2" style={{ backgroundColor: "#f8fffe", border: "1px solid #e5e7eb" }}>
+                        <div className="flex gap-1.5 items-center mb-1">
                           <button onClick={() => removeMaterial(i)} className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-red-100 text-red-400 hover:text-red-600 flex-shrink-0 transition-colors" title="Remove item"><X className="h-3 w-3" /></button>
-                          <input type="number" value={m.quantity} onChange={(e) => updateMaterial(i, "quantity", parseInt(e.target.value) || 0)} className="w-14 text-sm font-medium px-2 py-1 rounded-md text-center outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
-                          <span className="text-sm" style={{ color: brand.navyMuted }}>×</span>
-                          <input type="text" value={m.item} onChange={(e) => updateMaterial(i, "item", e.target.value)} className="flex-1 text-sm font-medium px-2 py-1 rounded-md outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
+                          <input type="text" value={m.item} onChange={(e) => updateMaterial(i, "item", e.target.value)} className="flex-1 text-sm font-bold px-2 py-1 rounded-md outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} placeholder="Item name" />
                           {m.catalogName && (
                             <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#f0fdf4", color: "#22c55e" }}>
                               {m.catalogName}
                             </span>
                           )}
-                          <div className="flex items-center gap-0.5">
-                            <span className="text-sm" style={{ color: brand.navyMuted }}>£</span>
-                            <input type="number" value={m.unitPrice ?? ""} onChange={(e) => updateMaterial(i, "unitPrice", e.target.value ? parseFloat(e.target.value) : null)} placeholder="—" className="w-20 text-sm font-medium px-2 py-1 rounded-md outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
-                          </div>
                         </div>
-                        <div className="flex items-center gap-1.5 ml-7">
+                        {m.description && (
+                          <p className="text-[10px] ml-7 mb-1" style={{ color: brand.navyMuted }}>{m.description}</p>
+                        )}
+                        <div className="flex items-center gap-2 ml-7 flex-wrap">
+                          <div className="flex items-center gap-1">
+                            <span className="text-[9px]" style={{ color: brand.navyMuted }}>QTY</span>
+                            <input type="number" value={m.quantity} onChange={(e) => updateMaterial(i, "quantity", parseInt(e.target.value) || 0)} className="w-12 text-xs font-medium px-1.5 py-0.5 rounded text-center outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[9px]" style={{ color: brand.navyMuted }}>UNIT</span>
+                            <input type="text" value={m.unit || "each"} onChange={(e) => updateMaterial(i, "unit", e.target.value)} className="w-14 text-xs px-1.5 py-0.5 rounded outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[9px]" style={{ color: brand.navyMuted }}>RATE £</span>
+                            <input type="number" value={m.unitPrice ?? ""} onChange={(e) => updateMaterial(i, "unitPrice", e.target.value ? parseFloat(e.target.value) : null)} placeholder="—" className="w-16 text-xs font-medium px-1.5 py-0.5 rounded outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
+                          </div>
+                          {lineTotal > 0 && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#f0f9ff", color: brand.navy }}>
+                              Total: £{lineTotal.toFixed(2)}
+                            </span>
+                          )}
+                          {marginAmt != null && marginPct != null && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: marginAmt >= 0 ? "#f0fdf4" : "#fef2f2", color: marginAmt >= 0 ? "#16a34a" : "#dc2626" }}>
+                              Margin: £{marginAmt.toFixed(2)} ({marginPct.toFixed(0)}%)
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 ml-7 mt-1">
                           <span className="text-[9px]" style={{ color: brand.navyMuted }}>INSTALL:</span>
                           <input type="number" step="0.5" value={m.installTimeHrs ?? ""} onChange={(e) => updateMaterial(i, "installTimeHrs", e.target.value ? parseFloat(e.target.value) : null)} placeholder="hrs" className="w-14 text-[11px] px-1.5 py-0.5 rounded outline-none focus:ring-1 focus:ring-blue-300" style={inputStyle} />
                           <span className="text-[9px]" style={{ color: brand.navyMuted }}>hrs/unit</span>
@@ -625,36 +651,63 @@ export default function QuoteDraftSummary({
                   })}
                 </div>
               ) : (
-                voiceMaterials.map((m, i) => (
-                  <div key={i} className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-extrabold" style={{ color: brand.navy }}>{m.quantity}</span>
-                    <span className="text-sm" style={{ color: brand.navyMuted }}>×</span>
-                    <span className="text-sm font-medium" style={{ color: brand.navy }}>{m.item}</span>
-                    {m.catalogName && (
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#f0fdf4", color: "#22c55e" }}>
-                        {m.catalogName}
-                      </span>
-                    )}
-                    {m.unitPrice != null && m.unitPrice > 0 && (
-                      <span className="text-xs" style={{ color: brand.navyMuted }}>@ £{m.unitPrice}</span>
-                    )}
-                    {m.installTimeHrs != null && m.installTimeHrs > 0 && (
-                      <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ backgroundColor: "#eff6ff", color: "#3b82f6" }}>
-                        {m.installTimeHrs}hrs
-                      </span>
-                    )}
-                    {m.labourCost != null && m.labourCost > 0 && (
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#dbeafe", color: "#1d4ed8" }}>
-                        Labour: £{m.labourCost.toFixed(2)}
-                      </span>
-                    )}
-                    {m.unitPrice != null && m.costPrice != null && m.unitPrice > 0 && m.costPrice > 0 && (
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#f0fdf4", color: "#16a34a" }}>
-                        Margin: £{((m.unitPrice - m.costPrice) * m.quantity).toFixed(2)} ({((m.unitPrice - m.costPrice) / m.unitPrice * 100).toFixed(0)}%)
-                      </span>
-                    )}
-                  </div>
-                ))
+                <div className="space-y-1.5">
+                  {voiceMaterials.map((m, i) => {
+                    const lineTotal = (m.unitPrice ?? 0) * m.quantity;
+                    const marginAmt = (m.unitPrice && m.costPrice && m.unitPrice > 0 && m.costPrice > 0) ? (m.unitPrice - m.costPrice) * m.quantity : null;
+                    const marginPct = (m.unitPrice && m.costPrice && m.unitPrice > 0) ? ((m.unitPrice - m.costPrice) / m.unitPrice * 100) : null;
+                    return (
+                      <div key={i} className="rounded-lg px-2.5 py-1.5" style={{ backgroundColor: "#f8fffe", border: "1px solid #e5e7eb" }}>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-bold" style={{ color: brand.navy }}>{m.item}</span>
+                          {m.catalogName && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#f0fdf4", color: "#22c55e" }}>
+                              {m.catalogName}
+                            </span>
+                          )}
+                        </div>
+                        {m.description && (
+                          <p className="text-[10px] mt-0.5" style={{ color: brand.navyMuted }}>{m.description}</p>
+                        )}
+                        <div className="flex items-center gap-3 mt-1 flex-wrap">
+                          <span className="text-[10px]" style={{ color: brand.navyMuted }}>
+                            Qty: <span className="font-bold" style={{ color: brand.navy }}>{m.quantity}</span>
+                          </span>
+                          {m.unit && (
+                            <span className="text-[10px]" style={{ color: brand.navyMuted }}>
+                              Unit: <span className="font-bold" style={{ color: brand.navy }}>{m.unit}</span>
+                            </span>
+                          )}
+                          {m.unitPrice != null && m.unitPrice > 0 && (
+                            <span className="text-[10px]" style={{ color: brand.navyMuted }}>
+                              Rate: <span className="font-bold" style={{ color: brand.navy }}>£{m.unitPrice}</span>
+                            </span>
+                          )}
+                          {lineTotal > 0 && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#f0f9ff", color: brand.navy }}>
+                              Total: £{lineTotal.toFixed(2)}
+                            </span>
+                          )}
+                          {m.installTimeHrs != null && m.installTimeHrs > 0 && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ backgroundColor: "#eff6ff", color: "#3b82f6" }}>
+                              {m.installTimeHrs}hrs/unit
+                            </span>
+                          )}
+                          {m.labourCost != null && m.labourCost > 0 && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#dbeafe", color: "#1d4ed8" }}>
+                              Labour: £{m.labourCost.toFixed(2)}
+                            </span>
+                          )}
+                          {marginAmt != null && marginPct != null && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: marginAmt >= 0 ? "#f0fdf4" : "#fef2f2", color: marginAmt >= 0 ? "#16a34a" : "#dc2626" }}>
+                              Margin: £{marginAmt.toFixed(2)} ({marginPct.toFixed(0)}%)
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </div>

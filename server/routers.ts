@@ -3026,6 +3026,10 @@ ${catalogContext}
 
 If a field is not mentioned, use null. Be precise with numbers — if they say "30 quid each" that's unitPrice: 30. If they say "half a day" keep it as "half a day". British English expected — "quid" means pounds, "sparky" means electrician.
 
+IMPORTANT for jobDescription: Write a detailed 2-3 sentence description of the full scope of work. Include ALL deliverables mentioned. Don't just summarise — capture the specifics. E.g. instead of "Build a website and IT setup" write "Build an eight-page website including design and development. On-site engineer for one day to install and configure email system. Half-day workshop to set up and configure a new server."
+
+IMPORTANT for materials: Include a "unit" field matching the catalog unit or sensible default (each, page, metre, hour, etc). Include a "description" field with a brief explanation of what this line item covers.
+
 Respond with:
 {
   "clientName": string | null,
@@ -3033,7 +3037,7 @@ Respond with:
   "clientPhone": string | null,
   "jobDescription": string,
   "labour": [{"role": string, "quantity": number, "duration": string}],
-  "materials": [{"item": string, "quantity": number, "unitPrice": number | null}],
+  "materials": [{"item": string, "quantity": number, "unitPrice": number | null, "unit": string, "description": string}],
   "markup": number | null,
   "sundries": number | null,
   "contingency": string | null,
