@@ -2975,6 +2975,19 @@ Rules:
         const userTradeSector = ctx.user.defaultTradeSector || null;
         const tradeLabel = tradePresetKey || userTradeSector || "general trades/construction";
 
+        // Fetch catalog items so the AI can match dictated items to catalog products/services
+        const catalogItems = await getCatalogItemsByUserId(ctx.user.id);
+        let catalogContext = "";
+        if (catalogItems.length > 0) {
+          catalogContext = `\n\nCOMPANY CATALOG — use these to identify materials/products/services the user is referring to:
+${catalogItems.map(c => `- "${c.name}" | £${c.defaultRate}/${c.unit}${c.description ? ` | ${c.description}` : ""}`).join("\n")}
+
+IMPORTANT: When the user mentions items that match catalog entries, extract them as materials with the catalog price. For example:
+- If catalog has "Website" at £99/Per Page and user says "seven page website", extract: {"item": "Website", "quantity": 7, "unitPrice": 99}
+- If catalog has "Double Socket" at £29/each and user says "six double sockets", extract: {"item": "double socket", "quantity": 6, "unitPrice": 29}
+- Services, deliverables, and products from the catalog should ALL be treated as materials, not just physical items.`
+        }
+
         const response = await invokeLLM({
           messages: [
             {
@@ -2989,12 +3002,20 @@ Parse the content and extract:
 - clientPhone: The client's phone number if mentioned (string or null)
 - jobDescription: Brief one-line summary of the work (string)
 - labour: Array of {role, quantity, duration} objects. E.g. [{"role": "electrician", "quantity": 2, "duration": "half a day"}]
-- materials: Array of {item, quantity, unitPrice} objects. E.g. [{"item": "fluorescent batten", "quantity": 2, "unitPrice": 30}]
+- materials: Array of {item, quantity, unitPrice} objects. This includes ALL billable items — physical materials, products, services, and deliverables. E.g. [{"item": "fluorescent batten", "quantity": 2, "unitPrice": 30}] or [{"item": "Website", "quantity": 7, "unitPrice": 99}]
 - markup: Percentage if mentioned (number or null)
 - sundries: Amount if mentioned (number or null)
 - contingency: Amount or percentage if mentioned (string or null)
 - notes: Any other relevant details as a string (location, timeline, special requirements)
 - isTradeRelevant: Boolean — does this relate to ${tradeLabel} work?
+
+CRITICAL RULES FOR MATERIALS:
+- "materials" means ANY billable item, product, service, or deliverable — not just physical goods.
+- If the user mentions something that matches a catalog item, extract it as a material with the catalog price.
+- If the user states a specific price, always use the user's price over the catalog price.
+- If the user mentions a quantity of a service (e.g. "seven page website"), extract it as a material with that quantity.
+- Labour/time-based items (e.g. "3 hours for email setup") should go in BOTH labour AND materials if they are billable deliverables.
+${catalogContext}
 
 If a field is not mentioned, use null. Be precise with numbers — if they say "30 quid each" that's unitPrice: 30. If they say "half a day" keep it as "half a day". British English expected — "quid" means pounds, "sparky" means electrician.
 
@@ -3019,7 +3040,7 @@ Respond with:
             },
           ],
           response_format: { type: "json_object" },
-          max_tokens: 500,
+          max_tokens: 800,
         });
 
         const content = response.choices[0]?.message?.content;
