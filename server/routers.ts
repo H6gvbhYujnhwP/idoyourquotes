@@ -2939,7 +2939,7 @@ Rules:
         return { success: true };
       }),
 
-    // Parse voice dictation into structured summary for user review (Option C)
+    // Parse all inputs (voice, documents, text) into structured summary for QDS
     parseDictationSummary: protectedProcedure
       .input(z.object({
         quoteId: z.number(),
@@ -2952,15 +2952,22 @@ Rules:
 
         const inputRecords = await getInputsByQuoteId(input.quoteId);
 
-        // Collect all voice notes and text content
+        // Collect all voice notes, text content, and processed document content
         const allContent: string[] = [];
         for (const inp of inputRecords) {
           if (inp.inputType === "audio" && inp.content && !inp.fileUrl) {
             allContent.push(`Voice Note (${inp.filename || "untitled"}): ${inp.content}`);
-          } else if (inp.content) {
+          } else if (inp.inputType === "audio" && inp.content && inp.fileUrl) {
+            // Transcribed audio file
+            allContent.push(`Audio Transcription (${inp.filename || "untitled"}): ${inp.content}`);
+          } else if (inp.content && !inp.fileUrl) {
             allContent.push(`Text Input: ${inp.content}`);
-          } else if (inp.processedContent) {
-            allContent.push(`Document (${inp.filename || inp.inputType}): ${inp.processedContent.substring(0, 500)}`);
+          }
+          // Also include processed/extracted content from documents
+          if (inp.processedContent) {
+            allContent.push(`Document (${inp.filename || inp.inputType}): ${inp.processedContent.substring(0, 2000)}`);
+          } else if (inp.extractedText) {
+            allContent.push(`Extracted Text (${inp.filename || inp.inputType}): ${inp.extractedText.substring(0, 2000)}`);
           }
         }
 

@@ -227,14 +227,29 @@ export default function QuoteWorkspace() {
   );
 
   // Update processing state whenever fullQuote changes
+  // Auto-trigger DQS analysis when input processing completes
+  const prevProcessingRef = useRef(false);
   useEffect(() => {
     if (fullQuote?.inputs) {
       const isProcessing = fullQuote.inputs.some(
         (input: QuoteInput) => input.processingStatus === "processing"
       );
+      const wasProcessing = prevProcessingRef.current;
+      prevProcessingRef.current = isProcessing;
       setHasProcessingInputs(isProcessing);
+
+      // When processing just finished (was processing → no longer processing)
+      // Auto-trigger DQS analysis to extract structured data from all inputs
+      if (wasProcessing && !isProcessing && fullQuote.inputs.length > 0) {
+        const hasCompletedInputs = fullQuote.inputs.some(
+          (input: QuoteInput) => input.processingStatus === "completed"
+        );
+        if (hasCompletedInputs) {
+          setTimeout(() => triggerVoiceAnalysis(), 500);
+        }
+      }
     }
-  }, [fullQuote?.inputs]);
+  }, [fullQuote?.inputs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: storageStatus } = trpc.inputs.storageStatus.useQuery();
 
