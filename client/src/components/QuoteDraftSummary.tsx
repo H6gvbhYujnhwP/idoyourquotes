@@ -643,7 +643,7 @@ export default function QuoteDraftSummary({
                     </div>
                   ))}
                 </div>
-              )}}
+              )}
             </div>
           </div>
         )}
