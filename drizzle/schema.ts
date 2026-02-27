@@ -345,6 +345,7 @@ export const catalogItems = pgTable("catalog_items", {
   unit: varchar("unit", { length: 50 }).default("each"),
   defaultRate: decimal("default_rate", { precision: 12, scale: 2 }).default("0.00"),
   costPrice: decimal("cost_price", { precision: 12, scale: 2 }),
+  installTimeHrs: decimal("install_time_hrs", { precision: 6, scale: 2 }),
   isActive: integer("is_active").default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

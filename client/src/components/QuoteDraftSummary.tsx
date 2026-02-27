@@ -17,6 +17,8 @@ interface MaterialItem {
   item: string;
   quantity: number;
   unitPrice: number | null;
+  installTimeHrs: number | null; // hours per unit (from catalog or manual)
+  labourCost: number | null; // calculated: installTimeHrs × labourRate × quantity
   source: "voice" | "takeoff" | "containment" | "document";
   symbolCode?: string; // for takeoff and containment items
 }
@@ -47,6 +49,7 @@ interface CatalogItemRef {
   name: string;
   defaultRate: string | null;
   costPrice: string | null;
+  installTimeHrs: string | null;
   unit: string | null;
   category: string | null;
 }
@@ -77,37 +80,38 @@ interface QuoteDraftSummaryProps {
 
 /**
  * Fuzzy match an item description against catalog items.
- * Returns the best matching catalog item's defaultRate, or null if no match.
+ * Returns the best matching catalog item's defaultRate and installTimeHrs, or null if no match.
  * Matching strategy: normalise both strings, check for substring containment or word overlap.
  */
 function matchCatalogPrice(
   itemDescription: string,
   catalogItems: CatalogItemRef[],
-): { rate: number; catalogName: string } | null {
+): { rate: number; catalogName: string; installTimeHrs: number | null } | null {
   if (!catalogItems.length || !itemDescription) return null;
 
   const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
   const itemNorm = normalise(itemDescription);
   const itemWords = new Set(itemNorm.split(/\s+/).filter(w => w.length > 2));
 
-  let bestMatch: { rate: number; catalogName: string; score: number } | null = null;
+  let bestMatch: { rate: number; catalogName: string; installTimeHrs: number | null; score: number } | null = null;
 
   for (const cat of catalogItems) {
     const rate = parseFloat(cat.defaultRate || "0");
     if (rate <= 0) continue; // Skip items with no price
 
     const catNorm = normalise(cat.name);
+    const installTime = cat.installTimeHrs ? parseFloat(cat.installTimeHrs) : null;
 
     // Exact match (after normalisation)
     if (catNorm === itemNorm) {
-      return { rate, catalogName: cat.name };
+      return { rate, catalogName: cat.name, installTimeHrs: installTime };
     }
 
     // Substring match (catalog name within item description or vice versa)
     if (catNorm.length > 3 && (itemNorm.includes(catNorm) || catNorm.includes(itemNorm))) {
       const score = catNorm.length; // Longer match = better
       if (!bestMatch || score > bestMatch.score) {
-        bestMatch = { rate, catalogName: cat.name, score };
+        bestMatch = { rate, catalogName: cat.name, installTimeHrs: installTime, score };
       }
       continue;
     }
@@ -120,13 +124,13 @@ function matchCatalogPrice(
       if (overlapRatio >= 0.6 && overlap >= 2) {
         const score = overlap;
         if (!bestMatch || score > bestMatch.score) {
-          bestMatch = { rate, catalogName: cat.name, score };
+          bestMatch = { rate, catalogName: cat.name, installTimeHrs: installTime, score };
         }
       }
     }
   }
 
-  return bestMatch ? { rate: bestMatch.rate, catalogName: bestMatch.catalogName } : null;
+  return bestMatch ? { rate: bestMatch.rate, catalogName: bestMatch.catalogName, installTimeHrs: bestMatch.installTimeHrs } : null;
 }
 
 function mergeSummaryWithTakeoffs(
@@ -193,28 +197,51 @@ function mergeSummaryWithTakeoffs(
         (m) => m.source === materialSource && m.symbolCode === code
       );
 
-      // Auto-match catalog price if no override price exists
+      // Auto-match catalog price and install time if no override price exists
       let autoPrice: number | null = null;
+      let autoInstallTime: number | null = null;
       if (override?.unitPrice === undefined || override?.unitPrice === null) {
         const catalogMatch = matchCatalogPrice(override?.item ?? desc, catalogItems);
         if (catalogMatch) {
           autoPrice = catalogMatch.rate;
+          autoInstallTime = catalogMatch.installTimeHrs;
+        }
+      } else {
+        // Even if price is overridden, still try to get install time from catalog
+        const catalogMatch = matchCatalogPrice(override?.item ?? desc, catalogItems);
+        if (catalogMatch) {
+          autoInstallTime = catalogMatch.installTimeHrs;
         }
       }
 
+      const itemQty = override?.quantity ?? count;
+      const itemInstallTime = autoInstallTime;
+      const itemLabourCost = (itemInstallTime && base.labourRate)
+        ? itemInstallTime * base.labourRate * itemQty
+        : null;
+
       if (existing) {
-        existing.quantity = override?.quantity ?? count;
+        existing.quantity = itemQty;
         if (override?.item) existing.item = override.item;
         if (override?.unitPrice !== undefined) {
           existing.unitPrice = override.unitPrice;
         } else if (autoPrice !== null) {
           existing.unitPrice = autoPrice;
         }
+        if (existing.installTimeHrs === undefined || existing.installTimeHrs === null) {
+          existing.installTimeHrs = itemInstallTime;
+        }
+        // Recalculate labour cost
+        existing.labourCost = (existing.installTimeHrs && base.labourRate)
+          ? existing.installTimeHrs * base.labourRate * existing.quantity
+          : null;
       } else {
         base.materials.push({
           item: override?.item ?? desc,
-          quantity: override?.quantity ?? count,
+          quantity: itemQty,
           unitPrice: override?.unitPrice ?? autoPrice,
+          installTimeHrs: itemInstallTime,
+          labourCost: itemLabourCost,
           source: materialSource,
           symbolCode: code,
         });
@@ -319,6 +346,10 @@ export default function QuoteDraftSummary({
         ...m,
         quantity: Number(m.quantity) || 1,
         unitPrice: m.unitPrice != null ? Number(m.unitPrice) || 0 : null,
+        installTimeHrs: m.installTimeHrs != null ? Number(m.installTimeHrs) || 0 : null,
+        labourCost: (m.installTimeHrs && edited.labourRate)
+          ? Number(m.installTimeHrs) * Number(edited.labourRate) * (Number(m.quantity) || 1)
+          : null,
       })),
       markup: edited.markup != null ? Number(edited.markup) || 0 : null,
       sundries: edited.sundries != null ? Number(edited.sundries) || 0 : null,
@@ -547,20 +578,34 @@ export default function QuoteDraftSummary({
                 <div className="space-y-1.5">
                   {edited.materials.map((m, i) => {
                     if (m.source !== "takeoff") return null;
+                    const labourRate = edited.labourRate || 0;
+                    const calcLabour = (m.installTimeHrs && labourRate) ? m.installTimeHrs * labourRate * m.quantity : null;
                     return (
-                      <div key={i} className="flex gap-1.5 items-center">
-                        <button onClick={() => removeMaterial(i)} className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-red-100 text-red-400 hover:text-red-600 flex-shrink-0 transition-colors" title="Remove item"><X className="h-3 w-3" /></button>
-                        <input type="number" value={m.quantity} onChange={(e) => updateMaterial(i, "quantity", parseInt(e.target.value) || 0)} className="w-14 text-sm font-medium px-2 py-1 rounded-md text-center outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
-                        <span className="text-sm" style={{ color: brand.navyMuted }}>×</span>
-                        <input type="text" value={m.item} onChange={(e) => updateMaterial(i, "item", e.target.value)} className="flex-1 text-sm font-medium px-2 py-1 rounded-md outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
-                        {m.symbolCode && (
-                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#f5f3ff", color: "#8b5cf6" }}>
-                            {m.symbolCode}
-                          </span>
-                        )}
-                        <div className="flex items-center gap-0.5">
-                          <span className="text-sm" style={{ color: brand.navyMuted }}>£</span>
-                          <input type="number" value={m.unitPrice ?? ""} onChange={(e) => updateMaterial(i, "unitPrice", e.target.value ? parseFloat(e.target.value) : null)} placeholder="—" className="w-20 text-sm font-medium px-2 py-1 rounded-md outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
+                      <div key={i} className="space-y-0.5">
+                        <div className="flex gap-1.5 items-center">
+                          <button onClick={() => removeMaterial(i)} className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-red-100 text-red-400 hover:text-red-600 flex-shrink-0 transition-colors" title="Remove item"><X className="h-3 w-3" /></button>
+                          <input type="number" value={m.quantity} onChange={(e) => updateMaterial(i, "quantity", parseInt(e.target.value) || 0)} className="w-14 text-sm font-medium px-2 py-1 rounded-md text-center outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
+                          <span className="text-sm" style={{ color: brand.navyMuted }}>×</span>
+                          <input type="text" value={m.item} onChange={(e) => updateMaterial(i, "item", e.target.value)} className="flex-1 text-sm font-medium px-2 py-1 rounded-md outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
+                          {m.symbolCode && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#f5f3ff", color: "#8b5cf6" }}>
+                              {m.symbolCode}
+                            </span>
+                          )}
+                          <div className="flex items-center gap-0.5">
+                            <span className="text-sm" style={{ color: brand.navyMuted }}>£</span>
+                            <input type="number" value={m.unitPrice ?? ""} onChange={(e) => updateMaterial(i, "unitPrice", e.target.value ? parseFloat(e.target.value) : null)} placeholder="—" className="w-20 text-sm font-medium px-2 py-1 rounded-md outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 ml-7 pl-1">
+                          <span className="text-[9px] font-bold uppercase" style={{ color: brand.navyMuted }}>Install:</span>
+                          <input type="number" step="0.25" value={m.installTimeHrs ?? ""} onChange={(e) => updateMaterial(i, "installTimeHrs", e.target.value ? parseFloat(e.target.value) : null)} placeholder="hrs" className="w-14 text-[10px] font-medium px-1.5 py-0.5 rounded outline-none focus:ring-1 focus:ring-blue-300" style={inputStyle} />
+                          <span className="text-[9px]" style={{ color: brand.navyMuted }}>hrs/unit</span>
+                          {calcLabour != null && calcLabour > 0 && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#eff6ff", color: "#3b82f6" }}>
+                              Labour: £{calcLabour.toFixed(2)}
+                            </span>
+                          )}
                         </div>
                       </div>
                     );
@@ -585,10 +630,20 @@ export default function QuoteDraftSummary({
                       {m.unitPrice != null && m.unitPrice > 0 && (
                         <span className="text-xs" style={{ color: brand.navyMuted }}>@ £{m.unitPrice}</span>
                       )}
+                      {m.installTimeHrs != null && m.installTimeHrs > 0 && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ backgroundColor: "#eff6ff", color: "#3b82f6" }}>
+                          {m.installTimeHrs}hrs
+                        </span>
+                      )}
+                      {m.labourCost != null && m.labourCost > 0 && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#dbeafe", color: "#1d4ed8" }}>
+                          Labour: £{m.labourCost.toFixed(2)}
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>
-              )}
+              )}}
             </div>
           </div>
         )}

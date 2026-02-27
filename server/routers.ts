@@ -2720,6 +2720,7 @@ Report facts only. Do not interpret or add commentary.`,
         unit: z.string().optional(),
         defaultRate: z.string().optional(),
         costPrice: z.string().optional(),
+        installTimeHrs: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         // Get user's organization to set orgId
@@ -2740,6 +2741,7 @@ Report facts only. Do not interpret or add commentary.`,
         unit: z.string().optional(),
         defaultRate: z.string().optional(),
         costPrice: z.string().optional(),
+        installTimeHrs: z.string().optional(),
         isActive: z.number().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
@@ -3200,7 +3202,7 @@ If NOT relevant: {"relevant": false, "message": "Brief explanation of why this d
         let catalogContext = "";
         if (catalogItems.length > 0) {
           catalogContext = `\n\nCOMPANY CATALOG — DEFAULT RATES (can be overridden by user instructions):
-${catalogItems.map(c => `- "${c.name}" | Rate: £${c.defaultRate}/${c.unit} | Cost: £${c.costPrice || "n/a"} | Category: ${c.category || "General"} | ${c.description || ""}`).join("\n")}
+${catalogItems.map(c => `- "${c.name}" | Rate: £${c.defaultRate}/${c.unit} | Cost: £${c.costPrice || "n/a"} | Install: ${c.installTimeHrs ? c.installTimeHrs + "hrs" : "n/a"} | Category: ${c.category || "General"} | ${c.description || ""}`).join("\n")}
 
 IMPORTANT: Use catalog rates as defaults, but if the user's voice dictation or instructions specify a different price, markup, or rate for an item, ALWAYS use the user's stated price instead.`;
         }

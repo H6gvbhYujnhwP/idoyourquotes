@@ -35,6 +35,7 @@ interface CatalogItemData {
   unit: string | null;
   defaultRate: string | null;
   costPrice: string | null;
+  installTimeHrs: string | null;
   isActive: number | null;
 }
 
@@ -50,6 +51,7 @@ export default function Catalog() {
   const [unit, setUnit] = useState("each");
   const [defaultRate, setDefaultRate] = useState("");
   const [costPrice, setCostPrice] = useState("");
+  const [installTimeHrs, setInstallTimeHrs] = useState("");
 
   const { data: items, isLoading, refetch } = trpc.catalog.list.useQuery();
 
@@ -88,6 +90,7 @@ export default function Catalog() {
     setUnit("each");
     setDefaultRate("");
     setCostPrice("");
+    setInstallTimeHrs("");
   };
 
   const handleEdit = (item: CatalogItemData) => {
@@ -98,6 +101,7 @@ export default function Catalog() {
     setUnit(item.unit || "each");
     setDefaultRate(item.defaultRate || "");
     setCostPrice(item.costPrice || "");
+    setInstallTimeHrs(item.installTimeHrs || "");
   };
 
   const handleSubmit = () => {
@@ -115,6 +119,7 @@ export default function Catalog() {
         unit: unit || undefined,
         defaultRate: defaultRate || undefined,
         costPrice: costPrice || undefined,
+        installTimeHrs: installTimeHrs || undefined,
       });
     } else {
       createItem.mutate({
@@ -124,6 +129,7 @@ export default function Catalog() {
         unit: unit || undefined,
         defaultRate: defaultRate || undefined,
         costPrice: costPrice || undefined,
+        installTimeHrs: installTimeHrs || undefined,
       });
     }
   };
@@ -232,6 +238,18 @@ export default function Catalog() {
                   />
                 </div>
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="installTimeHrs">Install Time (hours per unit)</Label>
+                <Input
+                  id="installTimeHrs"
+                  type="number"
+                  step="0.25"
+                  placeholder="e.g. 1.5"
+                  value={installTimeHrs}
+                  onChange={(e) => setInstallTimeHrs(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">Labour time per item — used to auto-calculate installation costs in quotes</p>
+              </div>
               <Button onClick={handleSubmit} className="w-full" disabled={createItem.isPending}>
                 Add to Catalog
               </Button>
@@ -313,6 +331,18 @@ export default function Catalog() {
                   onChange={(e) => setCostPrice(e.target.value)}
                 />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-installTimeHrs">Install Time (hours per unit)</Label>
+              <Input
+                id="edit-installTimeHrs"
+                type="number"
+                step="0.25"
+                placeholder="e.g. 1.5"
+                value={installTimeHrs}
+                onChange={(e) => setInstallTimeHrs(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">Labour time per item — used to auto-calculate installation costs in quotes</p>
             </div>
             <Button onClick={handleSubmit} className="w-full" disabled={updateItem.isPending}>
               Save Changes
