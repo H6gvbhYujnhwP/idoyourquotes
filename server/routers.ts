@@ -3236,7 +3236,14 @@ INSTALLATION LABOUR FROM MATERIALS:
     1. "Supply Linear LED Light" — qty: 89, rate: £19, unit: each
     2. "Install Linear LED Light" — qty: 178 (89 × 2hrs), rate: £60/hr (use the Labour Rate), unit: hr
 - If a material does NOT have "[install: Xhrs/unit]", create ONE combined "Supply and install" line item as normal. Do NOT estimate or invent installation times — only use times explicitly provided in the data.
-- The Labour Rate from company settings should be used for all installation labour calculations.`;
+- The Labour Rate from company settings should be used for all installation labour calculations.
+
+PLANT / HIRE ITEMS:
+- If the user provides a "PLANT / HIRE:" section, create separate line items for each piece of hired equipment.
+- Use the SELL price (not cost price) as the rate on the quote. The cost price is internal only.
+- Include the duration in the description, e.g. "Cherry Picker Hire (1 week)" or "Scaffold Tower Hire (3 days)".
+- Apply the Plant Markup percentage to plant/hire items if specified in company defaults or user data.
+- Do NOT invent plant/hire items — only include them if explicitly provided in the data.`;
 
         // Build company defaults context from organization profile
         let companyDefaultsContext = "";

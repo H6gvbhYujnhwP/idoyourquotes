@@ -1988,6 +1988,19 @@ export default function QuoteWorkspace() {
                 if (data.sundries !== null) parts.push(`Sundries: £${data.sundries}`);
                 if (data.preliminaries !== null) parts.push(`Preliminaries: ${data.preliminaries}% of total project value`);
                 if (data.contingency) parts.push(`Contingency: ${data.contingency}`);
+
+                // Plant / Hire items
+                if (data.plantHire && data.plantHire.length > 0) {
+                  parts.push("PLANT / HIRE:");
+                  parts.push(data.plantHire.map(p => {
+                    let line = `  ${p.quantity} × ${p.description}`;
+                    if (p.duration) line += ` (${p.duration})`;
+                    if (p.sellPrice != null && p.sellPrice > 0) line += ` @ £${p.sellPrice} each`;
+                    if (p.costPrice != null && p.costPrice > 0) line += ` [cost: £${p.costPrice}]`;
+                    return line;
+                  }).join("\n"));
+                }
+
                 if (data.notes) parts.push(`Notes: ${data.notes}`);
 
                 setUserPrompt(parts.join("\n"));
@@ -2025,6 +2038,13 @@ export default function QuoteWorkspace() {
                     preliminaries: data.preliminaries != null ? Number(data.preliminaries) || 0 : null,
                     labourRate: data.labourRate != null ? Number(data.labourRate) || 0 : null,
                     plantMarkup: data.plantMarkup != null ? Number(data.plantMarkup) || 0 : null,
+                    plantHire: (data.plantHire || []).map(p => ({
+                      description: p.description,
+                      costPrice: p.costPrice != null ? Number(p.costPrice) || 0 : null,
+                      sellPrice: p.sellPrice != null ? Number(p.sellPrice) || 0 : null,
+                      quantity: Number(p.quantity) || 1,
+                      duration: p.duration || "",
+                    })),
                     notes: data.notes || null,
                   },
                 }, {
