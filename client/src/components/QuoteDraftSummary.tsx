@@ -30,6 +30,7 @@ interface MaterialItem {
   labourCost: number | null; // calculated: installTimeHrs × labourRate × quantity
   source: "voice" | "takeoff" | "containment" | "document";
   symbolCode?: string; // for takeoff and containment items
+  catalogName?: string; // matched catalog item name
 }
 
 export interface QuoteDraftData {
@@ -263,6 +264,34 @@ function mergeSummaryWithTakeoffs(
           symbolCode: code,
         });
       }
+    }
+  }
+
+  // Auto-match catalog prices for voice/manual materials (global — all trades)
+  for (const mat of base.materials) {
+    if (mat.source !== "voice") continue; // Only process voice materials here
+    const catalogMatch = matchCatalogPrice(mat.item, catalogItems);
+    if (!catalogMatch) continue;
+
+    // Price: only auto-fill if user hasn't set one
+    if (mat.unitPrice === null || mat.unitPrice === undefined || mat.unitPrice === 0) {
+      mat.unitPrice = catalogMatch.rate;
+    }
+    // Cost price: always fill from catalog for margin calculation
+    if (mat.costPrice === null || mat.costPrice === undefined) {
+      mat.costPrice = catalogMatch.costPrice ?? null;
+    }
+    // Install time: only auto-fill if not already set
+    if (mat.installTimeHrs === null || mat.installTimeHrs === undefined || mat.installTimeHrs === 0) {
+      mat.installTimeHrs = catalogMatch.installTimeHrs ?? null;
+    }
+    // Recalculate labour cost if we now have install time and labour rate
+    if (mat.installTimeHrs && mat.installTimeHrs > 0 && base.labourRate) {
+      mat.labourCost = mat.installTimeHrs * base.labourRate * mat.quantity;
+    }
+    // Store catalog name for reference
+    if (catalogMatch.catalogName) {
+      mat.catalogName = catalogMatch.catalogName;
     }
   }
 
@@ -517,29 +546,6 @@ export default function QuoteDraftSummary({
         )}
 
         {/* Client */}
-        {(data.clientName || isEditing) && (
-          <div className="flex items-start gap-3">
-            <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5" style={{ backgroundColor: `${brand.navy}08` }}>
-              <User className="h-3.5 w-3.5" style={{ color: brand.navy }} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: brand.navyMuted }}>Client</p>
-              {isEditing ? (
-                <input
-                  type="text"
-                  value={edited.clientName || ""}
-                  onChange={(e) => updateField("clientName", e.target.value || null)}
-                  placeholder="Client name"
-                  className="w-full text-sm font-medium px-2 py-1 rounded-md outline-none focus:ring-1 focus:ring-teal-300"
-                  style={inputStyle}
-                />
-              ) : (
-                <p className="text-sm font-medium" style={{ color: brand.navy }}>{data.clientName}</p>
-              )}
-            </div>
-          </div>
-        )}
-
         {/* Labour */}
         {(hasLabour || isEditing) && (
           <div className="flex items-start gap-3">
@@ -585,15 +591,34 @@ export default function QuoteDraftSummary({
                 <div className="space-y-1.5">
                   {edited.materials.map((m, i) => {
                     if (m.source !== "voice") return null;
+                    const labourRate = edited.labourRate || 0;
+                    const calcLabour = (m.installTimeHrs && labourRate) ? m.installTimeHrs * labourRate * m.quantity : null;
                     return (
-                      <div key={i} className="flex gap-1.5 items-center">
-                        <button onClick={() => removeMaterial(i)} className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-red-100 text-red-400 hover:text-red-600 flex-shrink-0 transition-colors" title="Remove item"><X className="h-3 w-3" /></button>
-                        <input type="number" value={m.quantity} onChange={(e) => updateMaterial(i, "quantity", parseInt(e.target.value) || 0)} className="w-14 text-sm font-medium px-2 py-1 rounded-md text-center outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
-                        <span className="text-sm" style={{ color: brand.navyMuted }}>×</span>
-                        <input type="text" value={m.item} onChange={(e) => updateMaterial(i, "item", e.target.value)} className="flex-1 text-sm font-medium px-2 py-1 rounded-md outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
-                        <div className="flex items-center gap-0.5">
-                          <span className="text-sm" style={{ color: brand.navyMuted }}>£</span>
-                          <input type="number" value={m.unitPrice ?? ""} onChange={(e) => updateMaterial(i, "unitPrice", e.target.value ? parseFloat(e.target.value) : null)} placeholder="—" className="w-20 text-sm font-medium px-2 py-1 rounded-md outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
+                      <div key={i} className="space-y-0.5">
+                        <div className="flex gap-1.5 items-center">
+                          <button onClick={() => removeMaterial(i)} className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-red-100 text-red-400 hover:text-red-600 flex-shrink-0 transition-colors" title="Remove item"><X className="h-3 w-3" /></button>
+                          <input type="number" value={m.quantity} onChange={(e) => updateMaterial(i, "quantity", parseInt(e.target.value) || 0)} className="w-14 text-sm font-medium px-2 py-1 rounded-md text-center outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
+                          <span className="text-sm" style={{ color: brand.navyMuted }}>×</span>
+                          <input type="text" value={m.item} onChange={(e) => updateMaterial(i, "item", e.target.value)} className="flex-1 text-sm font-medium px-2 py-1 rounded-md outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
+                          {m.catalogName && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#f0fdf4", color: "#22c55e" }}>
+                              {m.catalogName}
+                            </span>
+                          )}
+                          <div className="flex items-center gap-0.5">
+                            <span className="text-sm" style={{ color: brand.navyMuted }}>£</span>
+                            <input type="number" value={m.unitPrice ?? ""} onChange={(e) => updateMaterial(i, "unitPrice", e.target.value ? parseFloat(e.target.value) : null)} placeholder="—" className="w-20 text-sm font-medium px-2 py-1 rounded-md outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 ml-7">
+                          <span className="text-[9px]" style={{ color: brand.navyMuted }}>INSTALL:</span>
+                          <input type="number" step="0.5" value={m.installTimeHrs ?? ""} onChange={(e) => updateMaterial(i, "installTimeHrs", e.target.value ? parseFloat(e.target.value) : null)} placeholder="hrs" className="w-14 text-[11px] px-1.5 py-0.5 rounded outline-none focus:ring-1 focus:ring-blue-300" style={inputStyle} />
+                          <span className="text-[9px]" style={{ color: brand.navyMuted }}>hrs/unit</span>
+                          {calcLabour != null && calcLabour > 0 && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#dbeafe", color: "#1d4ed8" }}>
+                              Labour: £{calcLabour.toFixed(2)}
+                            </span>
+                          )}
                         </div>
                       </div>
                     );
@@ -601,9 +626,34 @@ export default function QuoteDraftSummary({
                 </div>
               ) : (
                 voiceMaterials.map((m, i) => (
-                  <p key={i} className="text-sm font-medium" style={{ color: brand.navy }}>
-                    {m.quantity} × {m.item}{m.unitPrice ? ` @ £${m.unitPrice}` : ""}
-                  </p>
+                  <div key={i} className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-extrabold" style={{ color: brand.navy }}>{m.quantity}</span>
+                    <span className="text-sm" style={{ color: brand.navyMuted }}>×</span>
+                    <span className="text-sm font-medium" style={{ color: brand.navy }}>{m.item}</span>
+                    {m.catalogName && (
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#f0fdf4", color: "#22c55e" }}>
+                        {m.catalogName}
+                      </span>
+                    )}
+                    {m.unitPrice != null && m.unitPrice > 0 && (
+                      <span className="text-xs" style={{ color: brand.navyMuted }}>@ £{m.unitPrice}</span>
+                    )}
+                    {m.installTimeHrs != null && m.installTimeHrs > 0 && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ backgroundColor: "#eff6ff", color: "#3b82f6" }}>
+                        {m.installTimeHrs}hrs
+                      </span>
+                    )}
+                    {m.labourCost != null && m.labourCost > 0 && (
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#dbeafe", color: "#1d4ed8" }}>
+                        Labour: £{m.labourCost.toFixed(2)}
+                      </span>
+                    )}
+                    {m.unitPrice != null && m.costPrice != null && m.unitPrice > 0 && m.costPrice > 0 && (
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#f0fdf4", color: "#16a34a" }}>
+                        Margin: £{((m.unitPrice - m.costPrice) * m.quantity).toFixed(2)} ({((m.unitPrice - m.costPrice) / m.unitPrice * 100).toFixed(0)}%)
+                      </span>
+                    )}
+                  </div>
                 ))
               )}
             </div>
