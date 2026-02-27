@@ -169,6 +169,7 @@ export default function QuoteWorkspace() {
   // Form state
   const [title, setTitle] = useState("");
   const [clientName, setClientName] = useState("");
+  const [contactName, setContactName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
   const [clientPhone, setClientPhone] = useState("");
   const [clientAddress, setClientAddress] = useState("");
@@ -651,6 +652,7 @@ export default function QuoteWorkspace() {
     if (fullQuote?.quote) {
       setTitle(fullQuote.quote.title || "");
       setClientName(fullQuote.quote.clientName || "");
+      setContactName((fullQuote.quote as any).contactName || "");
       setClientEmail(fullQuote.quote.clientEmail || "");
       setClientPhone(fullQuote.quote.clientPhone || "");
       setClientAddress(fullQuote.quote.clientAddress || "");
@@ -680,6 +682,7 @@ export default function QuoteWorkspace() {
         id: quoteId,
         title,
         clientName,
+        contactName,
         clientEmail,
         clientPhone,
         clientAddress,
@@ -1312,7 +1315,7 @@ export default function QuoteWorkspace() {
                   }
                 }}
                 onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                placeholder="Client / Company name"
+                placeholder="Client / Customer"
                 className="text-sm bg-transparent outline-none p-0 min-w-[140px] placeholder:text-muted-foreground/40 text-muted-foreground border-b border-transparent hover:border-dashed hover:border-gray-300 focus:border-solid focus:border-teal-400 transition-colors"
               />
               <span className="text-muted-foreground/30">|</span>
@@ -1371,8 +1374,8 @@ export default function QuoteWorkspace() {
           <Button 
             variant="outline" 
             onClick={handleGenerateEmail} 
-            disabled={isGeneratingEmail || !quote.clientName}
-            title={!quote.clientName ? "Add client details first" : "Generate email to send quote"}
+            disabled={isGeneratingEmail || (!quote.clientName && !(quote as any).contactName)}
+            title={(!quote.clientName && !(quote as any).contactName) ? "Add client details first" : "Generate email to send quote"}
           >
             {isGeneratingEmail ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
             Email
@@ -2338,12 +2341,21 @@ export default function QuoteWorkspace() {
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="clientName">Client Name</Label>
+                  <Label htmlFor="clientName">Client / Customer</Label>
                   <Input
                     id="clientName"
                     value={clientName}
                     onChange={(e) => setClientName(e.target.value)}
-                    placeholder="Company or individual name"
+                    placeholder="Company or organisation name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="contactName">Contact</Label>
+                  <Input
+                    id="contactName"
+                    value={contactName}
+                    onChange={(e) => setContactName(e.target.value)}
+                    placeholder="Contact person name"
                   />
                 </div>
                 <div className="space-y-2">
@@ -2365,7 +2377,7 @@ export default function QuoteWorkspace() {
                     placeholder="+44 123 456 7890"
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-2 md:col-span-2">
                   <Label htmlFor="clientAddress">Address</Label>
                   <Input
                     id="clientAddress"

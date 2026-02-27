@@ -748,6 +748,7 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
         <div class="party-label">Quote For</div>
         <div class="party-name">${escapeHtml(quote.clientName || "Client")}</div>
         <div class="party-details">
+          ${(quote as any).contactName ? `FAO: ${escapeHtml((quote as any).contactName)}<br>` : ""}
           ${quote.clientAddress ? `${escapeHtml(quote.clientAddress)}<br>` : ""}
           ${quote.clientPhone ? `Tel: ${escapeHtml(quote.clientPhone)}<br>` : ""}
           ${quote.clientEmail ? `Email: ${escapeHtml(quote.clientEmail)}` : ""}
@@ -867,7 +868,7 @@ function generateComprehensiveProposalHTML(data: PDFQuoteData): string {
     <div class="cover-divider"></div>
     <div class="cover-subtitle">Comprehensive Project Proposal</div>
     <div class="cover-meta">
-      <strong>Prepared for:</strong> ${escapeHtml(quote.clientName || "Client")}<br>
+      <strong>Prepared for:</strong> ${escapeHtml(quote.clientName || "Client")}${(quote as any).contactName ? ` — FAO: ${escapeHtml((quote as any).contactName)}` : ""}<br>
       <strong>Reference:</strong> ${quote.reference || `Q-${quote.id}`}<br>
       <strong>Date:</strong> ${formatDate(quote.createdAt)}<br>
       ${quote.validUntil ? `<strong>Valid Until:</strong> ${formatDate(quote.validUntil)}<br>` : ""}
@@ -889,6 +890,7 @@ function generateComprehensiveProposalHTML(data: PDFQuoteData): string {
         <div class="party-label">To</div>
         <div class="party-name">${escapeHtml(quote.clientName || "Client")}</div>
         <div class="party-details">
+          ${(quote as any).contactName ? `FAO: ${escapeHtml((quote as any).contactName)}<br>` : ""}
           ${quote.clientAddress ? `${escapeHtml(quote.clientAddress)}<br>` : ""}
           ${quote.clientEmail ? `Email: ${escapeHtml(quote.clientEmail)}` : ""}
         </div>
@@ -922,6 +924,7 @@ function generateComprehensiveProposalHTML(data: PDFQuoteData): string {
         <div class="party-label">Client</div>
         <div class="party-name">${escapeHtml(quote.clientName || "Client")}</div>
         <div class="party-details">
+          ${(quote as any).contactName ? `FAO: ${escapeHtml((quote as any).contactName)}<br>` : ""}
           ${quote.clientAddress ? `${escapeHtml(quote.clientAddress)}<br>` : ""}
           ${quote.clientPhone ? `Tel: ${escapeHtml(quote.clientPhone)}<br>` : ""}
           ${quote.clientEmail ? `Email: ${escapeHtml(quote.clientEmail)}` : ""}

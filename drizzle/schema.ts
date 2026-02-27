@@ -152,6 +152,7 @@ export const quotes = pgTable("quotes", {
   reference: varchar("reference", { length: 100 }),
   status: quoteStatusEnum("status").default("draft").notNull(),
   clientName: varchar("client_name", { length: 255 }),
+  contactName: varchar("contact_name", { length: 255 }),
   clientEmail: varchar("client_email", { length: 320 }),
   clientPhone: varchar("client_phone", { length: 50 }),
   clientAddress: text("client_address"),

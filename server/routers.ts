@@ -334,6 +334,7 @@ export const appRouter = router({
         reference: z.string().optional(),
         status: z.enum(["draft", "sent", "accepted", "declined"]).optional(),
         clientName: z.string().optional(),
+        contactName: z.string().optional(),
         clientEmail: z.string().optional(),
         clientPhone: z.string().optional(),
         clientAddress: z.string().optional(),
@@ -1051,6 +1052,7 @@ Respond with valid JSON:
 
         // Build context for email generation
         const clientName = quote.clientName || "[Client Name]";
+        const contactNameForEmail = (quote as any).contactName || clientName;
         const projectTitle = quote.title || "[Project Name]";
         const total = quote.total ? `£${parseFloat(quote.total).toLocaleString("en-GB", { minimumFractionDigits: 2 })}` : "[Total]";
         const vatAmount = quote.taxAmount ? `£${parseFloat(quote.taxAmount).toLocaleString("en-GB", { minimumFractionDigits: 2 })}` : null;
@@ -1135,7 +1137,8 @@ HTML formatting rules:
               role: "user",
               content: `Generate a quotation email with this context:
 
-Client Name: ${clientName}
+Client/Company: ${clientName}
+Contact Person: ${contactNameForEmail}
 Project/Quote Title: ${projectTitle}
 Quote Reference: ${quote.reference || "Q-" + quote.id}
 Total (inc VAT): ${total}${subtotal ? `\nSubtotal: ${subtotal}` : ""}${vatAmount ? `\nVAT: ${vatAmount}` : ""}
@@ -1145,7 +1148,9 @@ Scope Summary:\n${lineItemsSummary}
 ${keyNotes.length > 0 ? `Key Notes:\n${keyNotes.join("\n")}` : "No specific notes."}
 
 Sender Company: ${user.companyName || "[Your Company]"}
-Sender Name: ${user.name || "[Your Name]"}`,
+Sender Name: ${user.name || "[Your Name]"}
+
+IMPORTANT: Address the email greeting to the Contact Person (e.g. "Hi ${contactNameForEmail},"), NOT the company name.`,
             },
           ],
           response_format: { type: "json_object" },
@@ -1179,12 +1184,12 @@ Sender Name: ${user.name || "[Your Name]"}`,
           // Return a fallback template
           return {
             subject: `Quotation – ${projectTitle}`,
-            htmlBody: `<p style="font-family: Arial, sans-serif; margin-bottom: 16px;">Hi ${clientName},</p>
+            htmlBody: `<p style="font-family: Arial, sans-serif; margin-bottom: 16px;">Hi ${contactNameForEmail},</p>
 <p style="font-family: Arial, sans-serif; margin-bottom: 16px;">Please find attached our quotation for ${projectTitle}.</p>
 <p style="font-family: Arial, sans-serif; margin-bottom: 16px;"><strong>Total: ${total}</strong></p>
 <p style="font-family: Arial, sans-serif; margin-bottom: 16px;">Please let me know if you have any questions.</p>
 <p style="font-family: Arial, sans-serif; margin-bottom: 16px;">Kind regards,<br/>${user.name || "[Your Name]"}<br/>${user.companyName || ""}</p>`,
-            textBody: `Hi ${clientName},\n\nPlease find attached our quotation for ${projectTitle}.\n\nTotal: ${total}\n\nPlease let me know if you have any questions.\n\nKind regards,\n${user.name || "[Your Name]"}\n${user.companyName || ""}`,
+            textBody: `Hi ${contactNameForEmail},\n\nPlease find attached our quotation for ${projectTitle}.\n\nTotal: ${total}\n\nPlease let me know if you have any questions.\n\nKind regards,\n${user.name || "[Your Name]"}\n${user.companyName || ""}`,
           };
         }
       }),
