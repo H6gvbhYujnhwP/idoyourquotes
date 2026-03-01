@@ -12,6 +12,8 @@ import { router, protectedProcedure, publicProcedure } from "../_core/trpc";
 import {
   createCheckoutSession,
   createPortalSession,
+  cancelSubscription,
+  resumeSubscription,
   TIER_CONFIG,
   isTrialExpired,
   trialDaysRemaining,
@@ -21,7 +23,7 @@ import {
   getUpgradeSuggestion,
   type SubscriptionTier,
 } from "./stripe";
-import { getUserPrimaryOrg, getOrgMembersByOrgId, getUserByEmail, addOrgMember, getDb } from "../db";
+import { getUserPrimaryOrg, getOrgMembersByOrgId, getUserByEmail, addOrgMember, getDb, updateOrganization } from "../db";
 import { sendLimitWarningEmail, sendTierChangeEmail } from "./emailService";
 
 const PAID_TIERS = ['solo', 'pro', 'team', 'business'] as const;
@@ -154,6 +156,72 @@ export const subscriptionRouter = router({
     });
 
     return { url };
+  }),
+
+  // Cancel subscription at end of current billing period
+  cancel: protectedProcedure.mutation(async ({ ctx }) => {
+    const org = await getUserPrimaryOrg(ctx.user.id);
+    if (!org) throw new Error("No organization found");
+
+    // Only owners/admins can cancel
+    const members = await getOrgMembersByOrgId(org.id);
+    const membership = members.find(m => Number(m.userId) === ctx.user.id);
+    if (!membership || (membership.role !== 'owner' && membership.role !== 'admin')) {
+      throw new Error("Only organisation owners and admins can manage billing");
+    }
+
+    const stripeSubId = (org as any).stripeSubscriptionId;
+    if (!stripeSubId) {
+      throw new Error("No active subscription found. Nothing to cancel.");
+    }
+
+    const tier = (org as any).subscriptionTier as string;
+    if (tier === 'trial') {
+      throw new Error("You're on the free trial — there's nothing to cancel. Your trial will simply expire.");
+    }
+
+    if ((org as any).subscriptionCancelAtPeriodEnd) {
+      throw new Error("Your subscription is already scheduled for cancellation.");
+    }
+
+    await cancelSubscription(stripeSubId);
+    await updateOrganization(org.id, { subscriptionCancelAtPeriodEnd: true } as any);
+
+    console.log(`[Subscription] User ${ctx.user.id} cancelled subscription for org ${org.id}`);
+
+    return { 
+      success: true,
+      cancelDate: (org as any).subscriptionCurrentPeriodEnd,
+    };
+  }),
+
+  // Resume a cancelled subscription (undo cancel_at_period_end)
+  resume: protectedProcedure.mutation(async ({ ctx }) => {
+    const org = await getUserPrimaryOrg(ctx.user.id);
+    if (!org) throw new Error("No organization found");
+
+    // Only owners/admins can resume
+    const members = await getOrgMembersByOrgId(org.id);
+    const membership = members.find(m => Number(m.userId) === ctx.user.id);
+    if (!membership || (membership.role !== 'owner' && membership.role !== 'admin')) {
+      throw new Error("Only organisation owners and admins can manage billing");
+    }
+
+    const stripeSubId = (org as any).stripeSubscriptionId;
+    if (!stripeSubId) {
+      throw new Error("No subscription found to resume.");
+    }
+
+    if (!(org as any).subscriptionCancelAtPeriodEnd) {
+      throw new Error("Your subscription is already active — nothing to resume.");
+    }
+
+    await resumeSubscription(stripeSubId);
+    await updateOrganization(org.id, { subscriptionCancelAtPeriodEnd: false } as any);
+
+    console.log(`[Subscription] User ${ctx.user.id} resumed subscription for org ${org.id}`);
+
+    return { success: true };
   }),
 
   // Check if user can perform a specific action — also triggers email warnings

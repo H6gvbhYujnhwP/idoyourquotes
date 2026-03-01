@@ -5,8 +5,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase, Shield, Clock, PoundSterling, CreditCard, Users, Crown, AlertTriangle, Trash2, Mail, UserPlus, Check, ArrowRight } from "lucide-react";
+import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase, Shield, Clock, PoundSterling, CreditCard, Users, Crown, AlertTriangle, Trash2, Mail, UserPlus, Check, ArrowRight, XCircle, RotateCcw } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { TRADE_SECTOR_OPTIONS } from "@/lib/tradeSectors";
 import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
@@ -712,11 +722,34 @@ export default function Settings() {
 
 function BillingTab() {
   const [, setLocation] = useLocation();
-  const { data: sub, isLoading } = trpc.subscription.status.useQuery();
+  const { data: sub, isLoading, refetch: refetchSub } = trpc.subscription.status.useQuery();
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
 
   const createPortal = trpc.subscription.createPortal.useMutation({
     onSuccess: (data) => {
       window.location.href = data.url;
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  const cancelSubscription = trpc.subscription.cancel.useMutation({
+    onSuccess: () => {
+      toast.success("Subscription cancelled. You'll retain access until the end of your billing period.");
+      setShowCancelDialog(false);
+      refetchSub();
+    },
+    onError: (err) => {
+      toast.error(err.message);
+      setShowCancelDialog(false);
+    },
+  });
+
+  const resumeSubscription = trpc.subscription.resume.useMutation({
+    onSuccess: () => {
+      toast.success("Subscription resumed! You're back on track.");
+      refetchSub();
     },
     onError: (err) => {
       toast.error(err.message);
@@ -880,7 +913,7 @@ function BillingTab() {
               Manage Billing
             </CardTitle>
             <CardDescription>
-              Update payment method, view invoices, or cancel your subscription
+              Update payment method, view invoices, or manage your subscription
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -901,6 +934,116 @@ function BillingTab() {
           </CardContent>
         </Card>
       )}
+
+      {/* Resume subscription — shown when subscription is cancelling */}
+      {sub.cancelAtPeriodEnd && sub.hasActiveSubscription && (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <h4 className="font-semibold text-amber-800">Your subscription is set to cancel</h4>
+                <p className="text-sm text-amber-700 mt-1">
+                  Your {sub.tierName} plan will end on{' '}
+                  <strong>
+                    {sub.currentPeriodEnd
+                      ? new Date(sub.currentPeriodEnd).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+                      : 'the end of your billing period'}
+                  </strong>.
+                  After that, you won't be able to create new quotes or access premium features.
+                </p>
+                <div className="flex gap-2 mt-3">
+                  <Button
+                    size="sm"
+                    onClick={() => resumeSubscription.mutate()}
+                    disabled={resumeSubscription.isPending}
+                    style={{ backgroundColor: '#0d9488' }}
+                  >
+                    {resumeSubscription.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                    ) : (
+                      <RotateCcw className="h-4 w-4 mr-1" />
+                    )}
+                    Resume Subscription
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Cancel subscription — shown for paid active subscriptions that are NOT already cancelling */}
+      {sub.tier !== 'trial' && sub.hasActiveSubscription && !sub.cancelAtPeriodEnd && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-muted-foreground">
+              <XCircle className="h-5 w-5" />
+              Cancel Subscription
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-3">
+              If you cancel, your {sub.tierName} plan will remain active until the end of your current billing period. You can resume at any time before then.
+            </p>
+            <Button
+              variant="outline"
+              className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+              onClick={() => setShowCancelDialog(true)}
+            >
+              Cancel Subscription
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Cancel confirmation dialog */}
+      <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel your {sub.tierName} subscription?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>
+                  Your subscription will remain active until{' '}
+                  <strong>
+                    {sub.currentPeriodEnd
+                      ? new Date(sub.currentPeriodEnd).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+                      : 'the end of your billing period'}
+                  </strong>.
+                  After that:
+                </p>
+                <ul className="list-disc list-inside space-y-1 text-sm">
+                  <li>You won't be able to create new quotes</li>
+                  <li>Existing quotes and data will be preserved</li>
+                  <li>You can resume your plan at any time before the end date</li>
+                  <li>You won't be charged again unless you resubscribe</li>
+                </ul>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cancelSubscription.isPending}>Keep My Plan</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                cancelSubscription.mutate();
+              }}
+              disabled={cancelSubscription.isPending}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              {cancelSubscription.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Cancelling...
+                </>
+              ) : (
+                'Yes, Cancel Subscription'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Trial info card */}
       {sub.tier === 'trial' && !sub.isTrialExpired && (
