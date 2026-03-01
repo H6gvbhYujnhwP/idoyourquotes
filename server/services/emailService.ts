@@ -576,3 +576,126 @@ export async function sendTierChangeEmail(params: {
     return false;
   }
 }
+
+/**
+ * Send account deletion goodbye email to the user
+ */
+export async function sendAccountDeletedEmail(params: {
+  to: string;
+  name?: string;
+}): Promise<boolean> {
+  const firstName = params.name?.split(' ')[0] || 'there';
+  
+  try {
+    const { error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: params.to,
+      subject: 'Your IdoYourQuotes account has been deleted',
+      html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f8fafc;">
+  <div style="max-width: 480px; margin: 0 auto; padding: 40px 20px;">
+    
+    <div style="text-align: center; margin-bottom: 32px;">
+      <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png" alt="IdoYourQuotes" style="height: 48px;" />
+    </div>
+
+    <div style="background: white; border-radius: 12px; padding: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+      <h2 style="font-size: 20px; font-weight: 700; color: #1a2b4a; margin: 0 0 16px;">Sorry to see you go, ${firstName}</h2>
+      
+      <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 16px;">
+        Your IdoYourQuotes account has been deleted. Here's what's happened:
+      </p>
+      
+      <div style="background: #f8fafc; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+        <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #475569; line-height: 1.8;">
+          <li>Your subscription has been cancelled — you won't be charged again</li>
+          <li>All quotes, documents, and uploaded files have been permanently deleted</li>
+          <li>Your catalog and settings have been removed</li>
+        </ul>
+      </div>
+      
+      <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 16px;">
+        If you ever change your mind, we'd love to have you back. You can sign up again at any time at 
+        <a href="${APP_URL}" style="color: #0d9488; text-decoration: none; font-weight: 600;">idoyourquotes.com</a>.
+      </p>
+      
+      <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0;">
+        Thank you for trying IdoYourQuotes. We wish you all the best.
+      </p>
+    </div>
+    
+    <div style="text-align: center; margin-top: 24px;">
+      <p style="font-size: 11px; color: #94a3b8;">
+        IdoYourQuotes · Helping tradespeople quote smarter
+      </p>
+    </div>
+  </div>
+</body>
+</html>`,
+    });
+
+    if (error) {
+      console.error('[Email] Account deleted send failed:', error);
+      return false;
+    }
+
+    console.log(`[Email] Account deleted email sent to ${params.to}`);
+    return true;
+  } catch (err) {
+    console.error('[Email] Account deleted send error:', err);
+    return false;
+  }
+}
+
+/**
+ * Send exit survey notification to support
+ */
+export async function sendExitSurveyToSupport(params: {
+  userEmail: string;
+  userName?: string;
+  companyName?: string;
+  reason: string;
+  tier: string;
+}): Promise<boolean> {
+  try {
+    const { error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: 'support@idoyourquotes.com',
+      subject: `Account Deleted — ${params.userName || params.userEmail} (${params.tier})`,
+      html: `
+<!DOCTYPE html>
+<html>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px;">
+  <h2 style="color: #1a2b4a;">Account Deletion — Exit Survey</h2>
+  <table style="border-collapse: collapse; width: 100%; max-width: 500px;">
+    <tr><td style="padding: 8px; font-weight: 600; color: #475569;">User</td><td style="padding: 8px;">${params.userName || 'N/A'}</td></tr>
+    <tr><td style="padding: 8px; font-weight: 600; color: #475569;">Email</td><td style="padding: 8px;">${params.userEmail}</td></tr>
+    <tr><td style="padding: 8px; font-weight: 600; color: #475569;">Company</td><td style="padding: 8px;">${params.companyName || 'N/A'}</td></tr>
+    <tr><td style="padding: 8px; font-weight: 600; color: #475569;">Plan</td><td style="padding: 8px;">${params.tier}</td></tr>
+  </table>
+  <h3 style="color: #1a2b4a; margin-top: 24px;">Reason for leaving</h3>
+  <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; white-space: pre-wrap; font-size: 14px; color: #334155;">
+${params.reason || 'No reason provided'}
+  </div>
+</body>
+</html>`,
+    });
+
+    if (error) {
+      console.error('[Email] Exit survey send failed:', error);
+      return false;
+    }
+
+    console.log(`[Email] Exit survey sent to support for ${params.userEmail}`);
+    return true;
+  } catch (err) {
+    console.error('[Email] Exit survey send error:', err);
+    return false;
+  }
+}

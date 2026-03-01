@@ -23,8 +23,8 @@ import {
   getUpgradeSuggestion,
   type SubscriptionTier,
 } from "./stripe";
-import { getUserPrimaryOrg, getOrgMembersByOrgId, getUserByEmail, addOrgMember, getDb, updateOrganization } from "../db";
-import { sendLimitWarningEmail, sendTierChangeEmail } from "./emailService";
+import { getUserPrimaryOrg, getOrgMembersByOrgId, getUserByEmail, addOrgMember, getDb, updateOrganization, deleteAllOrgData } from "../db";
+import { sendLimitWarningEmail, sendTierChangeEmail, sendAccountDeletedEmail, sendExitSurveyToSupport } from "./emailService";
 
 const PAID_TIERS = ['solo', 'pro', 'team', 'business'] as const;
 type PaidTier = typeof PAID_TIERS[number];
@@ -438,5 +438,128 @@ export const subscriptionRouter = router({
       await db.update(orgMembers).set({ role: input.role }).where(eq(orgMembers.id, BigInt(input.memberId) as any));
       
       return { success: true };
+    }),
+
+  // Delete account — permanently removes all org data, cancels subscription, sends goodbye email
+  deleteAccount: protectedProcedure
+    .input(z.object({
+      confirmText: z.string(),
+      exitReason: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Require exact confirmation text
+      if (input.confirmText !== 'DELETE') {
+        throw new Error('Please type DELETE to confirm account deletion.');
+      }
+
+      const org = await getUserPrimaryOrg(ctx.user.id);
+      if (!org) throw new Error("No organization found");
+
+      // Only org owners can delete the account
+      const members = await getOrgMembersByOrgId(org.id);
+      const membership = members.find(m => Number(m.userId) === ctx.user.id);
+      if (!membership || membership.role !== 'owner') {
+        throw new Error("Only the organisation owner can delete the account.");
+      }
+
+      const tier = (org as any).subscriptionTier as string || 'trial';
+      const stripeSubId = (org as any).stripeSubscriptionId;
+
+      console.log(`[DeleteAccount] Starting deletion for org ${org.id} (${org.name}), user ${ctx.user.id}, tier: ${tier}`);
+
+      // 1. Cancel Stripe subscription immediately (hard cancel, not end-of-period)
+      if (stripeSubId) {
+        try {
+          const Stripe = (await import('stripe')).default;
+          const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { apiVersion: '2025-02-24.acacia' as any });
+          await stripe.subscriptions.cancel(stripeSubId);
+          console.log(`[DeleteAccount] Stripe subscription ${stripeSubId} cancelled immediately`);
+        } catch (err) {
+          console.error(`[DeleteAccount] Stripe cancel failed (continuing):`, err);
+          // Continue with deletion even if Stripe cancel fails — we don't want to trap users
+        }
+      }
+
+      // 2. Delete all org data (quotes, inputs, line items, takeoffs, catalog, usage logs)
+      //    Returns file keys for R2 cleanup
+      let fileKeys: string[] = [];
+      let quotesDeleted = 0;
+      try {
+        const result = await deleteAllOrgData(org.id);
+        fileKeys = result.fileKeys;
+        quotesDeleted = result.quotesDeleted;
+        console.log(`[DeleteAccount] Deleted ${quotesDeleted} quotes, ${fileKeys.length} file keys collected`);
+      } catch (err) {
+        console.error(`[DeleteAccount] Data deletion failed:`, err);
+        throw new Error('Failed to delete account data. Please try again or contact support.');
+      }
+
+      // 3. Delete R2 files (async, don't block on failures)
+      if (fileKeys.length > 0) {
+        const { deleteFromR2 } = await import('../r2Storage');
+        for (const key of fileKeys) {
+          deleteFromR2(key).catch(err => {
+            console.error(`[DeleteAccount] R2 delete failed for ${key}:`, err);
+          });
+        }
+        console.log(`[DeleteAccount] Queued ${fileKeys.length} R2 file deletions`);
+      }
+
+      // 4. Delete org members
+      const db = await getDb();
+      if (db) {
+        const { orgMembers } = await import("../../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        await db.delete(orgMembers).where(eq(orgMembers.orgId, org.id));
+        console.log(`[DeleteAccount] Org members deleted`);
+      }
+
+      // 5. Soft-delete the org (mark inactive but preserve for anti-gaming domain check)
+      //    The user record in the users table is NOT deleted — isDomainTrialUsed checks users table
+      await updateOrganization(org.id, {
+        name: `[DELETED] ${org.name}`,
+        subscriptionTier: 'trial' as any,
+        subscriptionStatus: 'canceled' as any,
+        stripeSubscriptionId: null,
+        subscriptionCancelAtPeriodEnd: true,
+        monthlyQuoteCount: 0,
+      } as any);
+      console.log(`[DeleteAccount] Org ${org.id} soft-deleted`);
+
+      // 6. Deactivate the user account
+      if (db) {
+        const { users } = await import("../../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        await db.update(users).set({ isActive: false } as any).where(eq(users.id, ctx.user.id));
+        console.log(`[DeleteAccount] User ${ctx.user.id} deactivated`);
+      }
+
+      // 7. Send goodbye email to user (async)
+      sendAccountDeletedEmail({
+        to: ctx.user.email,
+        name: ctx.user.name || undefined,
+      }).catch(err => console.error(`[DeleteAccount] Goodbye email failed:`, err));
+
+      // 8. Send exit survey to support (async)
+      if (input.exitReason) {
+        sendExitSurveyToSupport({
+          userEmail: ctx.user.email,
+          userName: ctx.user.name || undefined,
+          companyName: (org as any).companyName || org.name,
+          reason: input.exitReason,
+          tier,
+        }).catch(err => console.error(`[DeleteAccount] Exit survey email failed:`, err));
+      }
+
+      // 9. Invalidate session — clear the cookie
+      const { COOKIE_NAME } = await import("@shared/const");
+      const { getSessionCookieOptions } = await import("../_core/cookies");
+      const cookieOptions = getSessionCookieOptions();
+      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      console.log(`[DeleteAccount] Session invalidated for user ${ctx.user.id}`);
+
+      console.log(`[DeleteAccount] ✅ Complete — org ${org.id}, ${quotesDeleted} quotes, ${fileKeys.length} files`);
+
+      return { success: true, quotesDeleted, filesDeleted: fileKeys.length };
     }),
 });

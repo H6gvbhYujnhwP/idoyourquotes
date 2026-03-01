@@ -975,3 +975,56 @@ export async function updateContainmentTakeoff(
     .returning();
   return result;
 }
+
+/**
+ * Delete all data for an organization — used for account deletion.
+ * Returns all R2 file keys that need to be deleted from storage.
+ * Does NOT delete the org or user records (soft delete handled separately).
+ */
+export async function deleteAllOrgData(orgId: number): Promise<{ fileKeys: string[]; quotesDeleted: number }> {
+  const db = await getDb();
+  if (!db) return { fileKeys: [], quotesDeleted: 0 };
+
+  // 1. Find all quotes for this org
+  const orgQuotes = await db.select({ id: quotes.id }).from(quotes)
+    .where(eq(quotes.orgId, orgId));
+  const quoteIds = orgQuotes.map(q => q.id);
+
+  if (quoteIds.length === 0) {
+    // Still delete catalog items and usage logs
+    await db.delete(catalogItems).where(eq(catalogItems.orgId, orgId));
+    await db.delete(usageLogs).where(eq(usageLogs.orgId, orgId));
+    return { fileKeys: [], quotesDeleted: 0 };
+  }
+
+  // 2. Collect all R2 file keys from inputs
+  const allFileKeys: string[] = [];
+  for (const qId of quoteIds) {
+    const inputs = await db.select({ fileKey: quoteInputs.fileKey }).from(quoteInputs)
+      .where(eq(quoteInputs.quoteId, qId));
+    for (const inp of inputs) {
+      if (inp.fileKey) allFileKeys.push(inp.fileKey);
+    }
+  }
+
+  // 3. Delete all related records for each quote
+  for (const qId of quoteIds) {
+    await db.delete(quoteLineItems).where(eq(quoteLineItems.quoteId, qId));
+    await db.delete(quoteInputs).where(eq(quoteInputs.quoteId, qId));
+    await db.delete(tenderContexts).where(eq(tenderContexts.quoteId, qId));
+    await db.delete(internalEstimates).where(eq(internalEstimates.quoteId, qId));
+    await db.delete(electricalTakeoffs).where(eq(electricalTakeoffs.quoteId, qId));
+    await db.delete(containmentTakeoffs).where(eq(containmentTakeoffs.quoteId, qId));
+  }
+
+  // 4. Delete all quotes
+  await db.delete(quotes).where(eq(quotes.orgId, orgId));
+
+  // 5. Delete catalog items
+  await db.delete(catalogItems).where(eq(catalogItems.orgId, orgId));
+
+  // 6. Delete usage logs
+  await db.delete(usageLogs).where(eq(usageLogs.orgId, orgId));
+
+  return { fileKeys: allFileKeys, quotesDeleted: quoteIds.length };
+}

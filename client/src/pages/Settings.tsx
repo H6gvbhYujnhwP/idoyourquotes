@@ -756,6 +756,25 @@ function BillingTab() {
     },
   });
 
+  // Delete account state
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deleteStep, setDeleteStep] = useState<'reason' | 'confirm'>('reason');
+  const [exitReason, setExitReason] = useState('');
+  const [confirmText, setConfirmText] = useState('');
+
+  const deleteAccount = trpc.subscription.deleteAccount.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Account deleted. ${data.quotesDeleted} quotes and ${data.filesDeleted} files removed.`);
+      // Redirect to home after a brief moment
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 1500);
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -1062,6 +1081,140 @@ function BillingTab() {
           </CardContent>
         </Card>
       )}
+
+      {/* Danger Zone — Delete Account */}
+      <div className="pt-4">
+        <Separator className="mb-6" />
+        <Card className="border-red-200">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-red-700">
+              <Trash2 className="h-5 w-5" />
+              Danger Zone
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-3">
+              Permanently delete your account and all associated data. This includes all quotes, documents, uploaded files, catalog items, and settings. This action cannot be undone.
+            </p>
+            <Button
+              variant="outline"
+              className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+              onClick={() => {
+                setShowDeleteDialog(true);
+                setDeleteStep('reason');
+                setExitReason('');
+                setConfirmText('');
+              }}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete Account
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Delete Account Dialog — Step 1: Exit survey */}
+      <AlertDialog open={showDeleteDialog && deleteStep === 'reason'} onOpenChange={(open) => { if (!open) setShowDeleteDialog(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-red-700">We're sorry to see you go</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-4">
+                <p>
+                  Before you delete your account, could you let us know why you're leaving? Your feedback helps us improve IdoYourQuotes for everyone.
+                </p>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">Why are you leaving? (optional)</label>
+                  <textarea
+                    className="w-full min-h-[100px] p-3 border rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-300"
+                    placeholder="e.g. Too expensive, missing features, found an alternative, no longer need it..."
+                    value={exitReason}
+                    onChange={(e) => setExitReason(e.target.value)}
+                  />
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setShowDeleteDialog(false)}>
+              Keep My Account
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                setDeleteStep('confirm');
+              }}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              Continue to Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Account Dialog — Step 2: Type DELETE to confirm */}
+      <AlertDialog open={showDeleteDialog && deleteStep === 'confirm'} onOpenChange={(open) => { if (!open) setShowDeleteDialog(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-red-700">Confirm Account Deletion</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-4">
+                <div className="p-3 rounded-lg bg-red-50 border border-red-200">
+                  <p className="text-sm text-red-800 font-medium">This will permanently:</p>
+                  <ul className="list-disc list-inside text-sm text-red-700 mt-2 space-y-1">
+                    <li>Cancel your subscription immediately</li>
+                    <li>Delete all {sub.currentQuoteCount || 'your'} quotes and line items</li>
+                    <li>Delete all uploaded documents and files from storage</li>
+                    <li>Delete your catalog, settings, and all preferences</li>
+                    <li>Log you out and deactivate your account</li>
+                  </ul>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">
+                    Type <span className="font-mono font-bold text-red-600">DELETE</span> to confirm
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full p-3 border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-300"
+                    placeholder="Type DELETE here"
+                    value={confirmText}
+                    onChange={(e) => setConfirmText(e.target.value.toUpperCase())}
+                    autoComplete="off"
+                  />
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setShowDeleteDialog(false)} disabled={deleteAccount.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                deleteAccount.mutate({
+                  confirmText: confirmText,
+                  exitReason: exitReason || undefined,
+                });
+              }}
+              disabled={confirmText !== 'DELETE' || deleteAccount.isPending}
+              className="bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              {deleteAccount.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Permanently Delete Account
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
