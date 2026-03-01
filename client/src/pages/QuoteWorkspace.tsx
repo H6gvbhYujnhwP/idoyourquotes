@@ -712,6 +712,22 @@ export default function QuoteWorkspace() {
     }
   }, [fullQuote?.inputs]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Rehydrate QDS on page load — if inputs exist but voiceSummary is empty, re-analyse
+  const hasRehydratedRef = useRef(false);
+  useEffect(() => {
+    if (hasRehydratedRef.current) return;
+    const allInputs = fullQuote?.inputs;
+    if (!allInputs || allInputs.length === 0) return;
+    // Check if there are voice notes or text inputs that would populate the QDS
+    const hasAnalysableInputs = allInputs.some(
+      (i: any) => (i.inputType === "audio" && i.content && !i.fileUrl) || (i.inputType === "text" && i.content && !i.fileUrl)
+    );
+    if (hasAnalysableInputs && !voiceSummary) {
+      hasRehydratedRef.current = true;
+      triggerVoiceAnalysis();
+    }
+  }, [fullQuote?.inputs, voiceSummary]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleSaveQuote = async () => {
     setIsSaving(true);
     try {
