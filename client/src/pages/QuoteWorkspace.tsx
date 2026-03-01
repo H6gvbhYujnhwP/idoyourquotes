@@ -702,14 +702,15 @@ export default function QuoteWorkspace() {
 
   // Hydrate text input if one exists
   useEffect(() => {
-    if (inputs && inputs.length > 0 && !textInputId) {
-      const existingTextInput = inputs.find((i: QuoteInput) => i.inputType === "text" && i.content && !i.fileUrl);
+    const allInputs = fullQuote?.inputs;
+    if (allInputs && allInputs.length > 0 && !textInputId) {
+      const existingTextInput = allInputs.find((i: any) => i.inputType === "text" && i.content && !i.fileUrl);
       if (existingTextInput) {
         setTextInputId(existingTextInput.id);
         setNewTextInput(existingTextInput.content || "");
       }
     }
-  }, [inputs]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fullQuote?.inputs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSaveQuote = async () => {
     setIsSaving(true);
