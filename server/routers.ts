@@ -3006,51 +3006,64 @@ Rules:
         const catalogItems = await getCatalogItemsByUserId(ctx.user.id);
         let catalogContext = "";
         if (catalogItems.length > 0) {
-          catalogContext = `\n\nCOMPANY CATALOG — use these to identify materials/products/services the user is referring to:
-${catalogItems.map(c => `- "${c.name}" | £${c.defaultRate}/${c.unit}${c.description ? ` | ${c.description}` : ""}`).join("\n")}
-
-IMPORTANT: When the user mentions items that match catalog entries, extract them as materials with the catalog price. For example:
-- If catalog has "Website" at £99/Per Page and user says "seven page website", extract: {"item": "Website", "quantity": 7, "unitPrice": 99}
-- If catalog has "Double Socket" at £29/each and user says "six double sockets", extract: {"item": "double socket", "quantity": 6, "unitPrice": 29}
-- Services, deliverables, and products from the catalog should ALL be treated as materials, not just physical items.`
+          catalogContext = `\n\nCOMPANY CATALOG — these are the user's products and services with their set prices:
+${catalogItems.map(c => `- "${c.name}" | Sell: £${c.defaultRate}/${c.unit}${c.costPrice ? ` | Buy-in: £${c.costPrice}` : ""}${(c as any).installTimeHrs ? ` | Install: ${(c as any).installTimeHrs}hrs/unit` : ""} | Category: ${c.category || "General"}${c.description ? ` | ${c.description}` : ""}`).join("\n")}`;
         }
 
         const response = await invokeLLM({
           messages: [
             {
               role: "system",
-              content: `You are a quote parser for a ${tradeLabel} business. Extract structured data from the user's dictation/inputs and respond ONLY with valid JSON.
+              content: `You are a senior estimator for a "${tradeLabel}" business. Your job is to analyse ALL provided evidence (voice notes, emails, documents, text) and produce a structured Quote Draft Summary.
 
-IMPORTANT: Voice notes are listed in chronological order. Later voice notes may AMEND earlier ones. If a later note says to "remove", "delete", "take off", or "cancel" items — those items must NOT appear in the final output. If a later note changes a quantity, use the new quantity. If a later note adds items, include them. Always produce the FINAL merged result after applying all amendments.
+THINK LIKE AN EXPERIENCED PROFESSIONAL in the "${tradeLabel}" sector. Consider:
+- What work is ACTUALLY being requested (not just what's literally said)
+- What the standard approach would be for this type of job
+- What catalog items from this business would apply
+- What labour is realistically needed
+- What assumptions you're making that the user should verify
+- Whether this is a discovery/assessment phase or a full implementation quote
 
-Parse the content and extract:
-- clientName: The client or company name if mentioned (string or null)
-- clientEmail: The client's email address if mentioned (string or null)
-- clientPhone: The client's phone number if mentioned (string or null)
-- jobDescription: Brief one-line summary of the work (string)
-- labour: Array of {role, quantity, duration} objects. E.g. [{"role": "electrician", "quantity": 2, "duration": "half a day"}]
-- materials: Array of {item, quantity, unitPrice} objects. This includes ALL billable items — physical materials, products, services, and deliverables. E.g. [{"item": "fluorescent batten", "quantity": 2, "unitPrice": 30}] or [{"item": "Website", "quantity": 7, "unitPrice": 99}]
-- markup: Percentage if mentioned (number or null)
-- sundries: Amount if mentioned (number or null)
-- contingency: Amount or percentage if mentioned (string or null)
-- notes: Any other relevant details as a string (location, timeline, special requirements)
-- isTradeRelevant: Boolean — does this relate to ${tradeLabel} work?
+INPUT PROCESSING:
+- Inputs are listed chronologically. Later inputs override earlier ones for quantities, prices, or scope changes.
+- Emails contain conversation, signatures, disclaimers — extract ONLY the quotable content. Ignore "have a good weekend", email footers, legal disclaimers, confidentiality notices, and social pleasantries.
+- Voice notes are natural speech — "quid" means pounds, "sparky" means electrician, "a day" typically means 8 hours, "half a day" means 4 hours in UK trades.
+- When multiple inputs cover the same work, MERGE them into one coherent summary — never duplicate line items.
 
-CRITICAL RULES FOR MATERIALS:
-- "materials" means ANY billable item, product, service, or deliverable — not just physical goods.
-- If the user mentions something that matches a catalog item, extract it as a material with the catalog price.
-- If the user states a specific price, always use the user's price over the catalog price.
-- If the user mentions a quantity of a service (e.g. "seven page website"), extract it as a material with that quantity.
-- Labour/time-based items (e.g. "3 hours for email setup") should go in BOTH labour AND materials if they are billable deliverables.
+CLIENT EXTRACTION:
+- Extract client details from email signatures, headers, or mentions: name, company, email, phone.
+- The RECIPIENT of the quote is the client (the person asking for work), NOT the user (the person sending the quote).
+- Look for patterns: "Dear [name]", "Hi [name]", email From/To headers, signature blocks with company name, phone, email, address.
+- If an email chain shows the user replying to someone, the "someone" is the client.
 ${catalogContext}
 
-If a field is not mentioned, use null. Be precise with numbers — if they say "30 quid each" that's unitPrice: 30. If they say "half a day" keep it as "half a day". British English expected — "quid" means pounds, "sparky" means electrician.
+CATALOG MATCHING RULES:
+- When evidence mentions work that matches a catalog item, extract it as a material WITH the catalog sell price.
+- Match by meaning, not exact words: "engineer onsite for a day" matches "IT Labour Onsite" if that's in the catalog.
+- "half a day workshop" matches "IT Labour Workshop" if that's in the catalog.
+- Use the CORRECT catalog item for each piece of work — don't use the same catalog rate for different items.
+- If the user states a specific price that differs from catalog, use the USER's price.
+- If no catalog item matches, set unitPrice to the user's stated price, or null if unknown.
 
-IMPORTANT for jobDescription: Write a detailed 2-3 sentence description of the full scope of work. Include ALL deliverables mentioned. Don't just summarise — capture the specifics. E.g. instead of "Build a website and IT setup" write "Build an eight-page website including design and development. On-site engineer for one day to install and configure email system. Half-day workshop to set up and configure a new server."
+MATERIALS vs LABOUR:
+- "materials" in this system means ALL billable line items — physical products, services, deliverables, and time-based work that should appear as priced lines on the quote.
+- "labour" means the team composition — roles and durations (e.g. "1 × engineer, one day"). This describes WHO is doing the work.
+- The same work can appear in both: labour describes the team, materials describes the billable line item.
+- Example: "one engineer onsite for a day" → labour: [{role: "engineer", quantity: 1, duration: "one day"}] AND materials: [{item: "IT Labour Onsite", quantity: 8, unitPrice: 99, unit: "Per Hour"}] if "IT Labour Onsite" is in the catalog at £99/hr.
+- Physical items (cable, hardware, servers) go in materials ONLY, not labour.
+- If the user gives a lump sum price (e.g. "the server costs £4,650"), extract as a material with quantity 1 and that price.
 
-IMPORTANT for materials: Include a "unit" field matching the catalog unit or sensible default (each, page, metre, hour, etc). Include a "description" field with a brief explanation of what this line item covers.
+SCOPE REASONING:
+- If the client is asking "is this possible?" or "can you help with this?" — this is likely a discovery/assessment phase. Consider extracting a smaller initial scope (assessment, site survey) rather than the full project.
+- Note in the "notes" field if the full scope should be quoted separately after assessment.
+- If the client describes a problem (e.g. "server going end of life"), reason about what the ${tradeLabel} business would typically propose as a solution.
 
-Respond with:
+DEDUPLICATION:
+- If the same item appears in multiple inputs (e.g. mentioned in email AND voice note), include it ONCE.
+- Prefer the more specific/detailed version with the most accurate quantity and price.
+- Later inputs override earlier ones for the same item.
+
+Respond ONLY with valid JSON in this exact format:
 {
   "clientName": string | null,
   "clientEmail": string | null,
@@ -3063,7 +3076,19 @@ Respond with:
   "contingency": string | null,
   "notes": string | null,
   "isTradeRelevant": boolean
-}`,
+}
+
+FIELD GUIDELINES:
+- clientName: Full name and/or company. E.g. "Bjorn Gladwell / Rosetti"
+- clientEmail: Email address from signature or header
+- clientPhone: Phone from signature or mentions
+- jobDescription: 2-3 detailed sentences covering the FULL scope. Include specifics — server types, cable lengths, page counts, service descriptions. Write from the perspective of the quoting business describing the work they'll do.
+- labour: Team composition with realistic durations. Think about what ${tradeLabel} professionals would need.
+- materials: Every billable line item with catalog-matched prices where possible. Include "unit" matching catalog (Per Hour, each, metre, etc.) and "description" explaining what this covers.
+- notes: Assumptions, site access requirements, items needing verification, phasing suggestions, anything the user should review.
+- isTradeRelevant: false only if the content has nothing to do with ${tradeLabel} work.
+
+If a field is not mentioned or cannot be determined, use null.`,
             },
             {
               role: "user",
@@ -3071,7 +3096,7 @@ Respond with:
             },
           ],
           response_format: { type: "json_object" },
-          max_tokens: 800,
+          max_tokens: 1500,
         });
 
         const content = response.choices[0]?.message?.content;
