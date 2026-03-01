@@ -549,39 +549,30 @@ export default function Dashboard() {
             {/* Quick plan comparison */}
             <div className="space-y-2">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Available plans</p>
-              <div
-                className="flex items-center justify-between p-3 rounded-lg border-2 cursor-pointer hover:border-teal-400 transition-colors"
-                style={{ borderColor: '#99f6e4' }}
-                onClick={() => { setShowUpgradeModal(false); setLocation('/pricing'); }}
-              >
-                <div>
-                  <p className="font-semibold text-sm">Solo</p>
-                  <p className="text-xs text-muted-foreground">10 quotes/month · 1 user · 50 catalog items</p>
+              {[
+                { name: "Solo", desc: "10 quotes/month · 1 user · 50 catalog items", price: "£59", color: "#0d9488", borderColor: "#99f6e4" },
+                { name: "Pro", desc: "15 quotes/month · 2 users · Unlimited catalog", price: "£99", color: "#3b82f6", borderColor: "#bfdbfe", badge: "Popular" },
+                { name: "Team", desc: "50 quotes/month · 5 users · Everything in Pro", price: "£159", color: "#059669", borderColor: "#bbf7d0" },
+                { name: "Business", desc: "Unlimited quotes · 10 users · Everything in Team", price: "£249", color: "#d97706", borderColor: "#fde68a" },
+              ].map((plan) => (
+                <div
+                  key={plan.name}
+                  className="flex items-center justify-between p-3 rounded-lg border-2 cursor-pointer transition-colors"
+                  style={{ borderColor: plan.borderColor }}
+                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = plan.color)}
+                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = plan.borderColor)}
+                  onClick={() => { setShowUpgradeModal(false); setLocation('/pricing'); }}
+                >
+                  <div>
+                    <p className="font-semibold text-sm">
+                      {plan.name}
+                      {plan.badge && <span className="text-xs font-normal px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 ml-1">{plan.badge}</span>}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{plan.desc}</p>
+                  </div>
+                  <p className="font-bold text-sm" style={{ color: plan.color }}>{plan.price}<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
                 </div>
-                <p className="font-bold text-sm" style={{ color: '#0d9488' }}>£59<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
-              </div>
-              <div
-                className="flex items-center justify-between p-3 rounded-lg border-2 cursor-pointer hover:border-blue-400 transition-colors"
-                style={{ borderColor: '#bfdbfe' }}
-                onClick={() => { setShowUpgradeModal(false); setLocation('/pricing'); }}
-              >
-                <div>
-                  <p className="font-semibold text-sm">Pro <span className="text-xs font-normal px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 ml-1">Popular</span></p>
-                  <p className="text-xs text-muted-foreground">15 quotes/month · 2 users · Unlimited catalog</p>
-                </div>
-                <p className="font-bold text-sm text-blue-600">£99<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
-              </div>
-              <div
-                className="flex items-center justify-between p-3 rounded-lg border-2 cursor-pointer hover:border-green-400 transition-colors"
-                style={{ borderColor: '#bbf7d0' }}
-                onClick={() => { setShowUpgradeModal(false); setLocation('/pricing'); }}
-              >
-                <div>
-                  <p className="font-semibold text-sm">Team</p>
-                  <p className="text-xs text-muted-foreground">Unlimited quotes · 10 users · Everything in Pro</p>
-                </div>
-                <p className="font-bold text-sm text-green-700">£249<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
-              </div>
+              ))}
             </div>
           </div>
 
