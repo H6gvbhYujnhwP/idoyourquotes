@@ -13,6 +13,9 @@ import {
   MoreHorizontal,
   Search,
   Layers,
+  Crown,
+  ArrowRight,
+  AlertTriangle,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { Input } from "@/components/ui/input";
@@ -86,6 +89,10 @@ export default function Dashboard() {
   const [quoteMode, setQuoteMode] = useState<"simple" | "comprehensive">("simple");
   const [tradePreset, setTradePreset] = useState<string>("");
 
+  // Upgrade modal state — shown when quota blocks quote creation
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [upgradeReason, setUpgradeReason] = useState("");
+
   const { data: quotes, isLoading, refetch } = trpc.quotes.list.useQuery();
   const { data: tradePresets } = trpc.quotes.getTradePresets.useQuery();
 
@@ -104,7 +111,15 @@ export default function Dashboard() {
       setLocation(`/quotes/${data.id}`);
     },
     onError: (error) => {
-      toast.error("Failed to create quote: " + error.message);
+      // If the error is a quota/subscription block, show upgrade modal instead of toast
+      const msg = error.message || "";
+      if (msg.includes("monthly limit") || msg.includes("trial has expired") || msg.includes("cancelled") || msg.includes("past due") || msg.includes("unpaid")) {
+        setShowCreateDialog(false);
+        setUpgradeReason(msg);
+        setShowUpgradeModal(true);
+      } else {
+        toast.error("Failed to create quote: " + error.message);
+      }
     },
   });
 
@@ -138,6 +153,12 @@ export default function Dashboard() {
   };
 
   const handleCreateQuote = () => {
+    // If quota is blocked, show upgrade modal immediately instead of opening create dialog
+    if (subStatus?.canCreateQuote === false) {
+      setUpgradeReason(subStatus.quoteBlockReason || "You've reached your plan's limit. Upgrade to create more quotes.");
+      setShowUpgradeModal(true);
+      return;
+    }
     setShowCreateDialog(true);
   };
 
@@ -199,7 +220,7 @@ export default function Dashboard() {
               {subStatus.quoteUsage.current} of {subStatus.quoteUsage.max} quotes used
             </span>
           )}
-          <Button onClick={handleCreateQuote} disabled={createQuote.isPending || (subStatus?.canCreateQuote === false)}>
+          <Button onClick={handleCreateQuote} disabled={createQuote.isPending}>
             <Plus className="mr-2 h-4 w-4" />
             New Quote
           </Button>
@@ -477,6 +498,112 @@ export default function Dashboard() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ── Upgrade Modal — shown when quota blocks quote creation ── */}
+      <Dialog open={showUpgradeModal} onOpenChange={setShowUpgradeModal}>
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="flex items-center justify-center w-10 h-10 rounded-full" style={{ backgroundColor: '#f0fdfa' }}>
+                <Crown className="h-5 w-5" style={{ color: '#0d9488' }} />
+              </div>
+              <div>
+                <DialogTitle className="text-lg">Upgrade Your Plan</DialogTitle>
+              </div>
+            </div>
+            <DialogDescription className="pt-2 text-sm leading-relaxed">
+              {upgradeReason || "You've reached your current plan's limits."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            {/* Current usage */}
+            {subStatus && subStatus.maxQuotesPerMonth !== -1 && (
+              <div className="p-3 rounded-lg bg-gray-50 border">
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="text-muted-foreground">Quotes used this month</span>
+                  <span className="font-semibold">{subStatus.currentQuoteCount} / {subStatus.maxQuotesPerMonth}</span>
+                </div>
+                <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full"
+                    style={{
+                      width: '100%',
+                      backgroundColor: '#ef4444',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Trial expired info */}
+            {subStatus?.isTrialExpired && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200">
+                <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-amber-700">
+                  Your 14-day free trial has ended. Choose a plan below to continue creating professional quotes.
+                </p>
+              </div>
+            )}
+
+            {/* Quick plan comparison */}
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Available plans</p>
+              <div
+                className="flex items-center justify-between p-3 rounded-lg border-2 cursor-pointer hover:border-teal-400 transition-colors"
+                style={{ borderColor: '#99f6e4' }}
+                onClick={() => { setShowUpgradeModal(false); setLocation('/pricing'); }}
+              >
+                <div>
+                  <p className="font-semibold text-sm">Solo</p>
+                  <p className="text-xs text-muted-foreground">10 quotes/month · 1 user · 50 catalog items</p>
+                </div>
+                <p className="font-bold text-sm" style={{ color: '#0d9488' }}>£59<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
+              </div>
+              <div
+                className="flex items-center justify-between p-3 rounded-lg border-2 cursor-pointer hover:border-blue-400 transition-colors"
+                style={{ borderColor: '#bfdbfe' }}
+                onClick={() => { setShowUpgradeModal(false); setLocation('/pricing'); }}
+              >
+                <div>
+                  <p className="font-semibold text-sm">Pro <span className="text-xs font-normal px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 ml-1">Popular</span></p>
+                  <p className="text-xs text-muted-foreground">15 quotes/month · 2 users · Unlimited catalog</p>
+                </div>
+                <p className="font-bold text-sm text-blue-600">£99<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
+              </div>
+              <div
+                className="flex items-center justify-between p-3 rounded-lg border-2 cursor-pointer hover:border-green-400 transition-colors"
+                style={{ borderColor: '#bbf7d0' }}
+                onClick={() => { setShowUpgradeModal(false); setLocation('/pricing'); }}
+              >
+                <div>
+                  <p className="font-semibold text-sm">Team</p>
+                  <p className="text-xs text-muted-foreground">Unlimited quotes · 10 users · Everything in Pro</p>
+                </div>
+                <p className="font-bold text-sm text-green-700">£249<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowUpgradeModal(false)}
+              className="w-full sm:w-auto"
+            >
+              Maybe later
+            </Button>
+            <Button
+              onClick={() => { setShowUpgradeModal(false); setLocation('/pricing'); }}
+              className="w-full sm:w-auto"
+              style={{ backgroundColor: '#0d9488' }}
+            >
+              View Plans & Upgrade
+              <ArrowRight className="h-4 w-4 ml-1" />
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { invokeLLM } from "./_core/llm";
 import { subscriptionRouter } from "./services/subscriptionRouter";
 import { canCreateQuote, getUpgradeSuggestion, TIER_CONFIG, type SubscriptionTier } from "./services/stripe";
+import { sendLimitWarningEmail } from "./services/emailService";
 import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured, getFileBuffer } from "./r2Storage";
 import { analyzePdfWithClaude, analyzePdfWithOpenAI, analyzeImageWithClaude, isClaudeConfigured } from "./_core/claude";
 import { isOpenAIConfigured } from "./_core/openai";
@@ -322,6 +323,28 @@ export const appRouter = router({
         if (org) {
           const currentCount = ((org as any).monthlyQuoteCount ?? 0) + 1;
           await updateOrganization(org.id, { monthlyQuoteCount: currentCount } as any);
+
+          // Send limit warning email at 80% or 100% of quota
+          const max = (org as any).maxQuotesPerMonth ?? 10;
+          if (max > 0 && max !== -1) {
+            const pct = Math.round((currentCount / max) * 100);
+            if (pct >= 80) {
+              const tier = (org as any).subscriptionTier as SubscriptionTier || 'trial';
+              const suggestion = getUpgradeSuggestion(tier, 'quotes');
+              sendLimitWarningEmail({
+                to: (org as any).billingEmail || ctx.user.email,
+                name: ctx.user.name || undefined,
+                limitType: 'quotes',
+                currentUsage: currentCount,
+                maxAllowed: max,
+                currentTierName: TIER_CONFIG[tier]?.name || tier,
+                suggestedTierName: suggestion?.tierName,
+                suggestedTierPrice: suggestion?.price,
+                newLimit: suggestion?.newLimit,
+                isHardLimit: pct >= 100,
+              }).catch(err => console.error('[QuoteCreate] Failed to send limit email:', err));
+            }
+          }
         }
         
         return quote;
