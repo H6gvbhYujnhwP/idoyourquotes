@@ -192,6 +192,8 @@ export default function QuoteWorkspace() {
 
   // New text input state
   const [newTextInput, setNewTextInput] = useState("");
+  const [textInputId, setTextInputId] = useState<number | null>(null);
+  const [isAnalysingText, setIsAnalysingText] = useState(false);
 
   // Catalog picker state
   const [showCatalogPicker, setShowCatalogPicker] = useState(false);
@@ -371,11 +373,19 @@ export default function QuoteWorkspace() {
   };
 
   const createInput = trpc.inputs.create.useMutation({
-    onSuccess: () => {
-      setNewTextInput("");
+    onSuccess: (data) => {
+      // If this was a text input, track its ID for editing
+      if (data && (data as any).id && (data as any).inputType === "text") {
+        setTextInputId((data as any).id);
+      }
       refetch();
     },
     onError: (error) => toast.error("Failed to add input: " + error.message),
+  });
+
+  const updateInputContent = trpc.inputs.updateContent.useMutation({
+    onSuccess: () => refetch(),
+    onError: (error) => toast.error("Failed to update: " + error.message),
   });
 
   const uploadFile = trpc.inputs.uploadFile.useMutation({
@@ -690,6 +700,17 @@ export default function QuoteWorkspace() {
     }
   }, [fullQuote]);
 
+  // Hydrate text input if one exists
+  useEffect(() => {
+    if (inputs && inputs.length > 0 && !textInputId) {
+      const existingTextInput = inputs.find((i: QuoteInput) => i.inputType === "text" && i.content && !i.fileUrl);
+      if (existingTextInput) {
+        setTextInputId(existingTextInput.id);
+        setNewTextInput(existingTextInput.content || "");
+      }
+    }
+  }, [inputs]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleSaveQuote = async () => {
     setIsSaving(true);
     try {
@@ -758,16 +779,41 @@ export default function QuoteWorkspace() {
     });
   };
 
-  const handleAddTextInput = () => {
+  const handleAddTextInput = async () => {
     if (!newTextInput.trim()) {
       toast.error("Please enter some text");
       return;
     }
-    createInput.mutate({
-      quoteId,
-      inputType: "text",
-      content: newTextInput,
-    });
+    setIsAnalysingText(true);
+    try {
+      if (textInputId) {
+        // Update existing text input
+        await updateInputContent.mutateAsync({
+          id: textInputId,
+          quoteId,
+          content: newTextInput,
+        });
+      } else {
+        // Create new text input
+        const result = await createInput.mutateAsync({
+          quoteId,
+          inputType: "text",
+          content: newTextInput,
+          filename: "Pasted Text / Email",
+        });
+        if (result && (result as any).id) {
+          setTextInputId((result as any).id);
+        }
+      }
+      // Now trigger QDS analysis which reads all inputs including this text
+      await triggerVoiceAnalysis();
+      toast.success("Text analysed — QDS updated");
+    } catch (err) {
+      console.warn("[handleAddTextInput] Failed:", err);
+      toast.error("Failed to analyse text");
+    } finally {
+      setIsAnalysingText(false);
+    }
   };
 
   // Voice dictation command handler
@@ -1710,6 +1756,73 @@ export default function QuoteWorkspace() {
               </div>
             </div>
 
+            {/* Paste Email / Text — scrollable input with analyse button */}
+            <div className="px-4 py-3" style={{ borderTop: `1px solid ${brand.border}`, backgroundColor: brand.white }}>
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-2">
+                  <Mail className="h-4 w-4" style={{ color: brand.teal }} />
+                  <span className="text-sm font-bold" style={{ color: brand.navy }}>Paste Email / Text</span>
+                  {textInputId && (
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: `${brand.teal}15`, color: brand.teal }}>
+                      Saved
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {newTextInput.trim() && (
+                    <button
+                      onClick={handleAddTextInput}
+                      disabled={isAnalysingText}
+                      className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors shadow-sm"
+                      style={{ backgroundColor: brand.teal, color: "#fff", opacity: isAnalysingText ? 0.6 : 1 }}
+                    >
+                      {isAnalysingText ? (
+                        <><Loader2 className="h-3.5 w-3.5 animate-spin" />Analysing…</>
+                      ) : textInputId ? (
+                        <><RefreshCw className="h-3.5 w-3.5" />Re-analyse</>
+                      ) : (
+                        <><Sparkles className="h-3.5 w-3.5" />Analyse & Build QDS</>
+                      )}
+                    </button>
+                  )}
+                  {textInputId && (
+                    <button
+                      onClick={() => {
+                        if (window.confirm("Remove pasted text?")) {
+                          deleteInput.mutate({ id: textInputId, quoteId });
+                          setTextInputId(null);
+                          setNewTextInput("");
+                        }
+                      }}
+                      className="text-xs font-medium px-2 py-1 rounded hover:bg-red-50 transition-colors"
+                      style={{ color: "#dc2626" }}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+              <Textarea
+                value={newTextInput}
+                onChange={(e) => setNewTextInput(e.target.value)}
+                className="w-full px-3 py-2.5 text-sm rounded-lg resize-none focus:ring-1 focus:ring-teal-300 overflow-y-auto"
+                style={{
+                  color: brand.navy,
+                  backgroundColor: `${brand.teal}04`,
+                  border: `1.5px solid ${brand.border}`,
+                  maxHeight: "160px",
+                  minHeight: "80px",
+                }}
+                rows={5}
+                placeholder={"Paste an email, brief, specification, or any text here...\nThe AI will extract client details, job scope, materials, and labour to pre-fill your Quote Draft Summary."}
+              />
+              {!newTextInput.trim() && (
+                <p className="text-[10px] mt-1 ml-1" style={{ color: brand.navyMuted }}>
+                  Paste client emails, project briefs, or scope descriptions — the AI will extract everything it can to build your QDS
+                </p>
+              )}
+            </div>
+
             {/* Option B: Processing instructions with teal left accent */}
             <div className="px-4 py-3" style={{ backgroundColor: '#f8fafc' }}>
               <div className="flex items-center justify-between mb-1.5">
@@ -1862,7 +1975,7 @@ export default function QuoteWorkspace() {
           )}
 
           {/* Quote Draft Summary — always visible, merges voice + takeoff data */}
-          {inputs && inputs.length > 0 && (
+          {((inputs && inputs.length > 0) || voiceSummary || isSummaryLoading) && (
             <QuoteDraftSummary
               voiceSummary={voiceSummary}
               takeoffs={[

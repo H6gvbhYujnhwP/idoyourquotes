@@ -1348,6 +1348,26 @@ IMPORTANT: Address the email greeting to the Contact Person (e.g. "Hi ${contactN
         return { success: true };
       }),
 
+    // Update text content for an existing input (used for email/text editing)
+    updateContent: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        quoteId: z.number(),
+        content: z.string(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+
+        const inputRecord = await getInputById(input.id);
+        if (!inputRecord) throw new Error("Input not found");
+        if (inputRecord.quoteId !== input.quoteId) throw new Error("Input does not belong to this quote");
+
+        await updateInputContent(input.id, input.content);
+
+        return { success: true };
+      }),
+
     // File upload via base64
     uploadFile: protectedProcedure
       .input(z.object({
