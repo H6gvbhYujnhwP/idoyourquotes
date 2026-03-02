@@ -578,6 +578,96 @@ export async function sendTierChangeEmail(params: {
 }
 
 /**
+ * Send subscription cancellation confirmation email
+ */
+export async function sendCancellationEmail(params: {
+  to: string;
+  name?: string;
+  tierName: string;
+  cancelDate: Date | string | null;
+}): Promise<boolean> {
+  const firstName = params.name?.split(' ')[0] || 'there';
+  const cancelDateStr = params.cancelDate
+    ? new Date(params.cancelDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+    : 'the end of your current billing period';
+
+  try {
+    const { error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: params.to,
+      subject: 'Your IdoYourQuotes subscription has been cancelled',
+      html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f8fafc;">
+  <div style="max-width: 480px; margin: 0 auto; padding: 40px 20px;">
+    
+    <div style="text-align: center; margin-bottom: 32px;">
+      <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png" alt="IdoYourQuotes" style="height: 48px;" />
+    </div>
+
+    <div style="background: white; border-radius: 12px; padding: 32px; border: 1px solid #e2e8f0;">
+      <div style="background: #fef3c7; border-radius: 8px; padding: 12px 16px; margin-bottom: 24px;">
+        <p style="font-size: 14px; font-weight: 600; color: #92400e; margin: 0;">
+          ℹ️ Subscription cancellation confirmed
+        </p>
+      </div>
+
+      <h1 style="font-size: 22px; font-weight: 700; color: #1a2b4a; margin: 0 0 16px;">
+        We're sorry to see you go, ${firstName}
+      </h1>
+      <p style="font-size: 15px; color: #475569; line-height: 1.6; margin: 0 0 24px;">
+        Your <strong>${params.tierName}</strong> subscription has been cancelled. Here's what you need to know:
+      </p>
+
+      <div style="background: #f8fafc; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+        <ul style="margin: 0; padding-left: 20px; font-size: 14px; color: #475569; line-height: 1.8;">
+          <li>Your plan stays active until <strong>${cancelDateStr}</strong></li>
+          <li>You can continue creating quotes and using all features until then</li>
+          <li>No further charges will be made after this period</li>
+          <li>You can resume your subscription at any time before it expires</li>
+        </ul>
+      </div>
+
+      <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 24px;">
+        Changed your mind? You can resume your plan from the Billing section in your settings — no need to re-enter payment details.
+      </p>
+
+      <div style="text-align: center; margin: 28px 0;">
+        <a href="${APP_URL}/settings?tab=billing" style="display: inline-block; background-color: #1a2b4a; color: white; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 8px;">
+          Manage Subscription
+        </a>
+      </div>
+    </div>
+
+    <div style="text-align: center; margin-top: 24px;">
+      <p style="font-size: 12px; color: #94a3b8;">
+        &copy; ${new Date().getFullYear()} IdoYourQuotes. All rights reserved.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`,
+    });
+
+    if (error) {
+      console.error('[Email] Cancellation confirmation send failed:', error);
+      return false;
+    }
+
+    console.log(`[Email] Cancellation confirmation sent to ${params.to}`);
+    return true;
+  } catch (err) {
+    console.error('[Email] Cancellation confirmation send error:', err);
+    return false;
+  }
+}
+
+/**
  * Send account deletion goodbye email to the user
  */
 export async function sendAccountDeletedEmail(params: {

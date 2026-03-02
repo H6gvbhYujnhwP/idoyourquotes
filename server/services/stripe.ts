@@ -300,10 +300,19 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
       console.log(`[Stripe Webhook] Payment succeeded: org=${orgId}`);
 
       // Reset monthly quote count on successful payment
+      // Also clear limit email flags so they can fire again next billing period
+      const existingOrg = await getOrganizationById(orgId);
+      const dayWorkRates = ((existingOrg as any)?.defaultDayWorkRates || {}) as Record<string, any>;
+      const emailFlags = { ...(dayWorkRates._emailFlags || {}) };
+      delete emailFlags.limitApproachingSent;
+      delete emailFlags.limitReachedSent;
+      const updatedRates = { ...dayWorkRates, _emailFlags: emailFlags };
+
       await updateOrganization(orgId, {
         monthlyQuoteCount: 0,
         quoteCountResetAt: new Date(),
         subscriptionStatus: 'active',
+        defaultDayWorkRates: updatedRates,
       } as any);
       break;
     }

@@ -305,7 +305,13 @@ export const appRouter = router({
           }
           // Reset count if needed
           if (quotaCheck.shouldResetCount) {
-            await updateOrganization(org.id, { monthlyQuoteCount: 0, quoteCountResetAt: new Date() } as any);
+            // Also clear the limit email flags so they can fire again next period
+            const dayWorkRates = ((org as any).defaultDayWorkRates || {}) as Record<string, any>;
+            const emailFlags = { ...(dayWorkRates._emailFlags || {}) };
+            delete emailFlags.limitApproachingSent;
+            delete emailFlags.limitReachedSent;
+            const updatedRates = { ...dayWorkRates, _emailFlags: emailFlags };
+            await updateOrganization(org.id, { monthlyQuoteCount: 0, quoteCountResetAt: new Date(), defaultDayWorkRates: updatedRates } as any);
           }
         }
 
@@ -324,25 +330,39 @@ export const appRouter = router({
           const currentCount = ((org as any).monthlyQuoteCount ?? 0) + 1;
           await updateOrganization(org.id, { monthlyQuoteCount: currentCount } as any);
 
-          // Send limit warning email at 80% or 100% of quota
+          // Send limit warning email at 80% or 100% of quota (once per billing period)
           const max = (org as any).maxQuotesPerMonth ?? 10;
           if (max > 0 && max !== -1) {
             const pct = Math.round((currentCount / max) * 100);
             if (pct >= 80) {
-              const tier = (org as any).subscriptionTier as SubscriptionTier || 'trial';
-              const suggestion = getUpgradeSuggestion(tier, 'quotes');
-              sendLimitWarningEmail({
-                to: (org as any).billingEmail || ctx.user.email,
-                name: ctx.user.name || undefined,
-                limitType: 'quotes',
-                currentUsage: currentCount,
-                maxAllowed: max,
-                currentTierName: TIER_CONFIG[tier]?.name || tier,
-                suggestedTierName: suggestion?.tierName,
-                suggestedTierPrice: suggestion?.price,
-                newLimit: suggestion?.newLimit,
-                isHardLimit: pct >= 100,
-              }).catch(err => console.error('[QuoteCreate] Failed to send limit email:', err));
+              // Check if we've already sent this email this billing period
+              const dayWorkRates = ((org as any).defaultDayWorkRates || {}) as Record<string, any>;
+              const emailFlags = dayWorkRates._emailFlags || {};
+              const isHardLimit = pct >= 100;
+              const flagKey = isHardLimit ? 'limitReachedSent' : 'limitApproachingSent';
+
+              if (!emailFlags[flagKey]) {
+                const tier = (org as any).subscriptionTier as SubscriptionTier || 'trial';
+                const suggestion = getUpgradeSuggestion(tier, 'quotes');
+                sendLimitWarningEmail({
+                  to: (org as any).billingEmail || ctx.user.email,
+                  name: ctx.user.name || undefined,
+                  limitType: 'quotes',
+                  currentUsage: currentCount,
+                  maxAllowed: max,
+                  currentTierName: TIER_CONFIG[tier]?.name || tier,
+                  suggestedTierName: suggestion?.tierName,
+                  suggestedTierPrice: suggestion?.price,
+                  newLimit: suggestion?.newLimit,
+                  isHardLimit,
+                }).then(() => {
+                  // Mark flag so we don't send again this billing period
+                  const updatedFlags = { ...emailFlags, [flagKey]: new Date().toISOString() };
+                  const updatedRates = { ...dayWorkRates, _emailFlags: updatedFlags };
+                  updateOrganization(org.id, { defaultDayWorkRates: updatedRates } as any)
+                    .catch(err => console.error('[QuoteCreate] Failed to save limit email flag:', err));
+                }).catch(err => console.error('[QuoteCreate] Failed to send limit email:', err));
+              }
             }
           }
         }

@@ -24,7 +24,7 @@ import {
   type SubscriptionTier,
 } from "./stripe";
 import { getUserPrimaryOrg, getOrgMembersByOrgId, getUserByEmail, addOrgMember, getDb, updateOrganization, deleteAllOrgData } from "../db";
-import { sendLimitWarningEmail, sendTierChangeEmail, sendAccountDeletedEmail, sendExitSurveyToSupport } from "./emailService";
+import { sendLimitWarningEmail, sendTierChangeEmail, sendCancellationEmail, sendAccountDeletedEmail, sendExitSurveyToSupport } from "./emailService";
 
 const PAID_TIERS = ['solo', 'pro', 'team', 'business'] as const;
 type PaidTier = typeof PAID_TIERS[number];
@@ -188,6 +188,15 @@ export const subscriptionRouter = router({
     await updateOrganization(org.id, { subscriptionCancelAtPeriodEnd: true } as any);
 
     console.log(`[Subscription] User ${ctx.user.id} cancelled subscription for org ${org.id}`);
+
+    // Send cancellation confirmation email (async, non-blocking)
+    const tierConfig = TIER_CONFIG[tier as SubscriptionTier];
+    sendCancellationEmail({
+      to: (org as any).billingEmail || ctx.user.email,
+      name: ctx.user.name || undefined,
+      tierName: tierConfig?.name || tier,
+      cancelDate: (org as any).subscriptionCurrentPeriodEnd,
+    }).catch(err => console.error('[Subscription] Failed to send cancellation email:', err));
 
     return { 
       success: true,
