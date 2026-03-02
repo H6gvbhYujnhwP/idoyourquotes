@@ -467,6 +467,37 @@ export function canAddTeamMember(org: {
 }
 
 /**
+ * Check if the org can use AI features (generateDraft, parseDictationSummary, transcribeAudio, etc.)
+ * These cost OpenAI tokens — block only when fully cancelled/expired, not during grace periods.
+ *
+ * Blocks when:
+ *   - subscriptionStatus === 'canceled' (fully cancelled, period ended)
+ *   - subscriptionStatus === 'unpaid' (exhausted payment retries)
+ *   - Trial expired (tier=trial AND trialEndsAt has passed)
+ *
+ * Does NOT block when:
+ *   - past_due (grace during payment retry)
+ *   - cancelAtPeriodEnd while period is still active (they paid for it)
+ *   - Active trialing within the 14-day window
+ */
+export function canUseAIFeatures(org: {
+  subscriptionTier: string;
+  subscriptionStatus: string;
+  trialEndsAt: Date | null;
+}): { allowed: boolean; reason?: string } {
+  if (org.subscriptionStatus === 'canceled') {
+    return { allowed: false, reason: 'Your subscription has been cancelled. Please resubscribe to use AI features.' };
+  }
+  if (org.subscriptionStatus === 'unpaid') {
+    return { allowed: false, reason: 'Your account has an unpaid invoice. Please update your payment method to use AI features.' };
+  }
+  if (org.subscriptionTier === 'trial' && isTrialExpired(org as any)) {
+    return { allowed: false, reason: 'Your 14-day trial has expired. Choose a plan to continue using AI features.' };
+  }
+  return { allowed: true };
+}
+
+/**
  * Check if the org can add more catalog items
  */
 export function canAddCatalogItem(org: {

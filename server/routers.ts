@@ -5,7 +5,7 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { invokeLLM } from "./_core/llm";
 import { subscriptionRouter } from "./services/subscriptionRouter";
-import { canCreateQuote, getUpgradeSuggestion, TIER_CONFIG, type SubscriptionTier } from "./services/stripe";
+import { canCreateQuote, canUseAIFeatures, getUpgradeSuggestion, TIER_CONFIG, type SubscriptionTier } from "./services/stripe";
 import { sendLimitWarningEmail } from "./services/emailService";
 import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured, getFileBuffer } from "./r2Storage";
 import { analyzePdfWithClaude, analyzePdfWithOpenAI, analyzeImageWithClaude, isClaudeConfigured } from "./_core/claude";
@@ -74,6 +74,21 @@ async function getQuoteWithOrgAccess(quoteId: number, userId: number): Promise<A
   }
   // Fallback to user-based access for legacy data
   return getQuoteById(quoteId, userId);
+}
+
+/**
+ * Gate AI features by subscription status.
+ * Throws if the user's org is cancelled, unpaid, or trial-expired.
+ * Does NOT block past_due (grace period) or cancelAtPeriodEnd (paid through end of period).
+ * Manual edits (quotes.update, lineItems.update, generatePDF) are NOT gated — they cost nothing.
+ */
+async function assertAIAccess(userId: number): Promise<void> {
+  const org = await getUserPrimaryOrg(userId);
+  if (!org) return; // No org = legacy user, allow through
+  const check = canUseAIFeatures(org as any);
+  if (!check.allowed) {
+    throw new Error(check.reason || 'AI features are not available on your current plan.');
+  }
 }
 
 export const appRouter = router({
@@ -622,6 +637,7 @@ export const appRouter = router({
     suggestTimeline: protectedProcedure
       .input(z.object({ quoteId: z.number() }))
       .mutation(async ({ ctx, input }) => {
+        await assertAIAccess(ctx.user.id);
         const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
         if (quote.quoteMode !== "comprehensive") throw new Error("Quote is not in comprehensive mode");
@@ -724,6 +740,7 @@ Respond with valid JSON only:
         inputId: z.number(),
       }))
       .mutation(async ({ ctx, input }) => {
+        await assertAIAccess(ctx.user.id);
         const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
         if (quote.quoteMode !== "comprehensive") throw new Error("Quote is not in comprehensive mode");
@@ -798,6 +815,7 @@ Respond with valid JSON only:
     populateReviewForms: protectedProcedure
       .input(z.object({ quoteId: z.number() }))
       .mutation(async ({ ctx, input }) => {
+        await assertAIAccess(ctx.user.id);
         const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
         if (quote.quoteMode !== "comprehensive") throw new Error("Quote is not in comprehensive mode");
@@ -1078,6 +1096,7 @@ Respond with valid JSON:
         includeSummary: z.boolean().optional().default(true),
       }))
       .mutation(async ({ ctx, input }) => {
+        await assertAIAccess(ctx.user.id);
         // Try org-based access first
         const org = await getUserPrimaryOrg(ctx.user.id);
         let quote = null;
@@ -1421,6 +1440,7 @@ IMPORTANT: Address the email greeting to the Contact Person (e.g. "Hi ${contactN
         inputType: z.enum(["pdf", "image", "audio", "email", "document"]),
       }))
       .mutation(async ({ ctx, input }) => {
+        await assertAIAccess(ctx.user.id);
         const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
@@ -1713,6 +1733,7 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
     transcribeAudio: protectedProcedure
       .input(z.object({ inputId: z.number(), quoteId: z.number() }))
       .mutation(async ({ ctx, input }) => {
+        await assertAIAccess(ctx.user.id);
         const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
@@ -1779,6 +1800,7 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
     extractPdfText: protectedProcedure
       .input(z.object({ inputId: z.number(), quoteId: z.number() }))
       .mutation(async ({ ctx, input }) => {
+        await assertAIAccess(ctx.user.id);
         const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
@@ -1861,6 +1883,7 @@ Be thorough and precise - missed details in technical drawings often lead to cos
     analyzeImage: protectedProcedure
       .input(z.object({ inputId: z.number(), quoteId: z.number() }))
       .mutation(async ({ ctx, input }) => {
+        await assertAIAccess(ctx.user.id);
         const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
@@ -2009,6 +2032,7 @@ Report facts only. Do not interpret or add commentary.`,
         force: z.boolean().optional(), // true = re-analyse (skip duplicate check)
       }))
       .mutation(async ({ ctx, input }) => {
+        await assertAIAccess(ctx.user.id);
         const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
         
@@ -2427,6 +2451,7 @@ Report facts only. Do not interpret or add commentary.`,
         quoteId: z.number(),
       }))
       .mutation(async ({ ctx, input }) => {
+        await assertAIAccess(ctx.user.id);
         const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
@@ -2844,6 +2869,7 @@ Report facts only. Do not interpret or add commentary.`,
         customPrompt: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
+        await assertAIAccess(ctx.user.id);
         // Get quote data with org-first access
         const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
@@ -3008,6 +3034,7 @@ Rules:
         quoteId: z.number(),
       }))
       .mutation(async ({ ctx, input }) => {
+        await assertAIAccess(ctx.user.id);
         console.log(`[parseDictationSummary] Starting for quoteId=${input.quoteId}`);
 
         const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
@@ -3166,6 +3193,7 @@ If a field is not mentioned or cannot be determined, use null.`,
         quoteId: z.number(),
       }))
       .mutation(async ({ ctx, input }) => {
+        await assertAIAccess(ctx.user.id);
         console.log(`[tradeRelevanceCheck] Starting for quoteId=${input.quoteId}`);
         
         const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
@@ -3241,6 +3269,7 @@ If NOT relevant: {"relevant": false, "message": "Brief explanation of why this d
         userPrompt: z.string().optional(), // Additional context from user (pasted email, instructions)
       }))
       .mutation(async ({ ctx, input }) => {
+        await assertAIAccess(ctx.user.id);
         const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
