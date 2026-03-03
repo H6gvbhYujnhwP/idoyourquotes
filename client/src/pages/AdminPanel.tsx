@@ -266,6 +266,12 @@ function OrgDetail({ orgId, onBack }: { orgId: number; onBack: () => void }) {
   const [quotaValue, setQuotaValue] = useState("");
   const [quotaResult, setQuotaResult] = useState<string | null>(null);
 
+  // Delete state
+  const [showDelete, setShowDelete] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [hardDeleteUsers, setHardDeleteUsers] = useState(false);
+  const [deleteResult, setDeleteResult] = useState<string | null>(null);
+
   const resetPasswordMut = trpc.admin.resetUserPassword.useMutation({
     onSuccess: () => { setPwResult("Password reset successfully"); setNewPassword(""); setResetUserId(null); },
     onError: (err) => setPwResult(`Error: ${err.message}`),
@@ -279,6 +285,14 @@ function OrgDetail({ orgId, onBack }: { orgId: number; onBack: () => void }) {
   const updateQuotaMut = trpc.admin.updateQuotaLimit.useMutation({
     onSuccess: () => { setQuotaResult("Quota updated"); refetch(); },
     onError: (err) => setQuotaResult(`Error: ${err.message}`),
+  });
+
+  const deleteOrgMut = trpc.admin.deleteOrganization.useMutation({
+    onSuccess: (data) => {
+      setDeleteResult(`Deleted: ${data.quotesDeleted} quotes, ${data.filesQueued} files, ${data.usersAffected} users ${data.hardDeleted ? "(hard deleted)" : "(deactivated)"}`);
+      setTimeout(() => onBack(), 2000);
+    },
+    onError: (err) => setDeleteResult(`Error: ${err.message}`),
   });
 
   if (isLoading) return <div style={{ padding: 40, textAlign: "center", color: brand.navyMuted }}>Loading...</div>;
@@ -547,6 +561,94 @@ function OrgDetail({ orgId, onBack }: { orgId: number; onBack: () => void }) {
               </div>
               {quotaResult && <div style={{ marginTop: 6, fontSize: 12, color: quotaResult.startsWith("Error") ? "#dc2626" : "#166534" }}>{quotaResult}</div>}
             </div>
+          </div>
+
+          {/* Danger Zone */}
+          <div style={{
+            ...sectionStyle, borderColor: "#fca5a5", background: "#fff5f5",
+          }}>
+            <div style={{ ...sectionTitle, color: "#dc2626", borderColor: "#fecaca" }}>
+              Danger Zone
+            </div>
+
+            {!showDelete ? (
+              <button
+                onClick={() => setShowDelete(true)}
+                style={{
+                  width: "100%", padding: "10px 16px", borderRadius: 6,
+                  border: "1px solid #fca5a5", background: "white", cursor: "pointer",
+                  fontSize: 13, fontWeight: 600, color: "#dc2626",
+                }}
+              >Delete This Organisation</button>
+            ) : (
+              <div>
+                <p style={{ fontSize: 13, color: "#991b1b", marginBottom: 12, lineHeight: 1.5 }}>
+                  This will permanently delete <strong>{org.companyName || org.name}</strong> and all associated data:
+                  quotes, documents, uploads, catalog items, team memberships, and cancel any Stripe subscription.
+                </p>
+
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#991b1b", cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={hardDeleteUsers}
+                      onChange={(e) => setHardDeleteUsers(e.target.checked)}
+                      style={{ width: 16, height: 16 }}
+                    />
+                    <span>
+                      <strong>Hard delete user records</strong> — removes users from the database entirely, freeing their email domain for new trial signups. Leave unchecked to just deactivate (preserves anti-gaming).
+                    </span>
+                  </label>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: "#991b1b", display: "block", marginBottom: 6 }}>
+                    Type DELETE to confirm
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="DELETE"
+                    value={deleteConfirm}
+                    onChange={(e) => setDeleteConfirm(e.target.value)}
+                    style={{
+                      width: "100%", padding: "8px 12px", borderRadius: 6,
+                      border: "1px solid #fca5a5", fontSize: 13, outline: "none", background: "white",
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={() => {
+                      if (deleteConfirm !== "DELETE") return;
+                      deleteOrgMut.mutate({ orgId: org.id, hardDeleteUsers });
+                    }}
+                    disabled={deleteConfirm !== "DELETE" || deleteOrgMut.isLoading}
+                    style={{
+                      flex: 1, padding: "10px 16px", borderRadius: 6, border: "none",
+                      background: deleteConfirm === "DELETE" ? "#dc2626" : "#d1d5db",
+                      color: "white", cursor: deleteConfirm === "DELETE" ? "pointer" : "default",
+                      fontSize: 13, fontWeight: 700,
+                    }}
+                  >{deleteOrgMut.isLoading ? "Deleting..." : "Permanently Delete Organisation"}</button>
+                  <button
+                    onClick={() => { setShowDelete(false); setDeleteConfirm(""); setHardDeleteUsers(false); }}
+                    style={{
+                      padding: "10px 16px", borderRadius: 6, border: `1px solid ${brand.border}`,
+                      background: "white", cursor: "pointer", fontSize: 13,
+                    }}
+                  >Cancel</button>
+                </div>
+
+                {deleteResult && (
+                  <div style={{
+                    marginTop: 10, fontSize: 12, padding: "8px 12px", borderRadius: 6,
+                    color: deleteResult.startsWith("Error") ? "#991b1b" : "#166534",
+                    background: deleteResult.startsWith("Error") ? "#fee2e2" : "#dcfce7",
+                  }}>{deleteResult}</div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>

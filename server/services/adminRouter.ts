@@ -310,4 +310,101 @@ export const adminRouter = router({
       statusCounts,
     };
   }),
+
+  /**
+   * Delete an organisation and all its data.
+   * Cancels Stripe, deletes R2 files, org data, org members, org record, deactivates users.
+   * If hardDeleteUsers is true, also removes user records from DB (frees domain for new trials).
+   */
+  deleteOrganization: adminProcedure
+    .input(z.object({
+      orgId: z.number(),
+      hardDeleteUsers: z.boolean().optional().default(false),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+
+      const { organizations, orgMembers, users } = await import("../../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const { deleteAllOrgData } = await import("../db");
+
+      // Get org
+      const [org] = await db.select().from(organizations).where(eq(organizations.id, input.orgId)).limit(1);
+      if (!org) throw new Error("Organisation not found");
+      const orgAny = org as any;
+
+      console.log(`[Admin:DeleteOrg] Starting for org ${org.id} (${org.name}), hardDeleteUsers=${input.hardDeleteUsers}`);
+
+      // 1. Cancel Stripe subscription if exists
+      const stripeSubId = orgAny.stripeSubscriptionId;
+      if (stripeSubId) {
+        try {
+          const Stripe = (await import('stripe')).default;
+          const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { apiVersion: '2025-02-24.acacia' as any });
+          await stripe.subscriptions.cancel(stripeSubId);
+          console.log(`[Admin:DeleteOrg] Stripe subscription ${stripeSubId} cancelled`);
+        } catch (err) {
+          console.error(`[Admin:DeleteOrg] Stripe cancel failed (continuing):`, err);
+        }
+      }
+
+      // 2. Delete all org data (quotes, inputs, line items, takeoffs, catalog, usage logs)
+      let fileKeys: string[] = [];
+      let quotesDeleted = 0;
+      try {
+        const result = await deleteAllOrgData(org.id);
+        fileKeys = result.fileKeys;
+        quotesDeleted = result.quotesDeleted;
+        console.log(`[Admin:DeleteOrg] Deleted ${quotesDeleted} quotes, ${fileKeys.length} file keys`);
+      } catch (err) {
+        console.error(`[Admin:DeleteOrg] Data deletion error:`, err);
+      }
+
+      // 3. Delete R2 files (async)
+      if (fileKeys.length > 0) {
+        const { deleteFromR2 } = await import('../r2Storage');
+        for (const key of fileKeys) {
+          deleteFromR2(key).catch(err => console.error(`[Admin:DeleteOrg] R2 delete failed: ${key}`, err));
+        }
+      }
+
+      // 4. Get all member user IDs before deleting memberships
+      const members = await db.select().from(orgMembers).where(eq(orgMembers.orgId, org.id));
+      const memberUserIds = members.map(m => Number(m.userId));
+
+      // 5. Delete org members
+      await db.delete(orgMembers).where(eq(orgMembers.orgId, org.id));
+
+      // 6. Handle users
+      let usersDeleted = 0;
+      if (input.hardDeleteUsers) {
+        // Hard delete — removes user records entirely (frees domain for new trial)
+        for (const userId of memberUserIds) {
+          await db.delete(users).where(eq(users.id, userId));
+          usersDeleted++;
+        }
+        console.log(`[Admin:DeleteOrg] Hard-deleted ${usersDeleted} users`);
+      } else {
+        // Soft delete — deactivate users (preserves anti-gaming domain check)
+        for (const userId of memberUserIds) {
+          await db.update(users).set({ isActive: false } as any).where(eq(users.id, userId));
+        }
+        console.log(`[Admin:DeleteOrg] Deactivated ${memberUserIds.length} users`);
+      }
+
+      // 7. Delete the org record itself
+      await db.delete(organizations).where(eq(organizations.id, org.id));
+      console.log(`[Admin:DeleteOrg] Org record deleted`);
+
+      console.log(`[Admin:DeleteOrg] ✅ Complete — org ${org.id}, ${quotesDeleted} quotes, ${fileKeys.length} files, ${usersDeleted || memberUserIds.length} users`);
+
+      return {
+        success: true,
+        quotesDeleted,
+        filesQueued: fileKeys.length,
+        usersAffected: memberUserIds.length,
+        hardDeleted: input.hardDeleteUsers,
+      };
+    }),
 });
