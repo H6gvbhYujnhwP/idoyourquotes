@@ -13,6 +13,7 @@ import Dashboard from "./pages/Dashboard";
 import QuoteWorkspace from "./pages/QuoteWorkspace";
 import Catalog from "./pages/Catalog";
 import Settings from "./pages/Settings";
+import AdminPanel from "./pages/AdminPanel";
 
 function Router() {
   return (
@@ -49,6 +50,9 @@ function Router() {
           <Settings />
         </DashboardLayout>
       </Route>
+      
+      {/* Admin panel — obscured URL */}
+      <Route path="/manage-7k9x2m4q8r" component={AdminPanel} />
       
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

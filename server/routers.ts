@@ -5,6 +5,7 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { invokeLLM } from "./_core/llm";
 import { subscriptionRouter } from "./services/subscriptionRouter";
+import { adminRouter } from "./services/adminRouter";
 import { canCreateQuote, canUseAIFeatures, getUpgradeSuggestion, TIER_CONFIG, type SubscriptionTier } from "./services/stripe";
 import { sendLimitWarningEmail } from "./services/emailService";
 import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured, getFileBuffer } from "./r2Storage";
@@ -2852,6 +2853,7 @@ Report facts only. Do not interpret or add commentary.`,
 
   // ============ SUBSCRIPTION (real router with Stripe integration) ============
   subscription: subscriptionRouter,
+  admin: adminRouter,
 
   // ============ AI ASSISTANT ============
   ai: router({
