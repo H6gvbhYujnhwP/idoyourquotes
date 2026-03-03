@@ -75,31 +75,32 @@ export const adminRouter = router({
       const total = allOrgs.length;
       const paginatedOrgs = allOrgs.slice(offset, offset + limit);
 
-      // Enrich each org with owner info, member count, quote count
+      // Enrich each org with all members (with user details), quote count
       const enriched = await Promise.all(paginatedOrgs.map(async (org) => {
         const orgAny = org as any;
 
-        // Get members
-        const members = await db.select().from(orgMembers).where(eq(orgMembers.orgId, org.id));
-        
-        // Get owner
-        const ownerMembership = members.find(m => (m as any).role === 'owner');
-        let owner = null;
-        if (ownerMembership) {
-          const [ownerUser] = await db.select().from(users)
-            .where(eq(users.id, BigInt(ownerMembership.userId) as any)).limit(1);
-          if (ownerUser) {
-            owner = {
-              id: Number(ownerUser.id),
-              email: ownerUser.email,
-              name: ownerUser.name,
-              lastSignedIn: (ownerUser as any).lastSignedIn,
-              createdAt: ownerUser.createdAt,
-              emailVerified: (ownerUser as any).emailVerified,
-              defaultTradeSector: (ownerUser as any).defaultTradeSector,
-            };
-          }
-        }
+        // Get members with full user info
+        const memberRows = await db.select().from(orgMembers).where(eq(orgMembers.orgId, org.id));
+        const allMembers = await Promise.all(memberRows.map(async (m) => {
+          const [user] = await db.select().from(users)
+            .where(eq(users.id, BigInt(m.userId) as any)).limit(1);
+          return {
+            userId: Number(m.userId),
+            role: (m as any).role as string,
+            email: user?.email || 'unknown',
+            name: user?.name || null,
+            lastSignedIn: (user as any)?.lastSignedIn || null,
+            createdAt: user?.createdAt || null,
+            isActive: (user as any)?.isActive ?? true,
+            defaultTradeSector: (user as any)?.defaultTradeSector || null,
+          };
+        }));
+
+        // Sort: owner first, then admin, then member
+        const roleOrder: Record<string, number> = { owner: 0, admin: 1, member: 2 };
+        allMembers.sort((a, b) => (roleOrder[a.role] ?? 9) - (roleOrder[b.role] ?? 9));
+
+        const owner = allMembers.find(m => m.role === 'owner') || null;
 
         // Get quote count
         const orgQuotes = await db.select({ id: quotes.id }).from(quotes)
@@ -123,7 +124,8 @@ export const adminRouter = router({
           currentPeriodEnd: orgAny.subscriptionCurrentPeriodEnd,
           createdAt: org.createdAt,
           totalQuotes: orgQuotes.length,
-          memberCount: members.length,
+          memberCount: allMembers.length,
+          members: allMembers,
           owner,
         };
       }));
@@ -310,6 +312,51 @@ export const adminRouter = router({
       statusCounts,
     };
   }),
+
+  /**
+   * Delete a single user from an org (remove membership + optionally hard-delete user record).
+   * Cannot delete the org owner — must delete the whole org for that.
+   */
+  deleteUser: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      orgId: z.number(),
+      hardDelete: z.boolean().optional().default(false),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+
+      const { orgMembers, users } = await import("../../drizzle/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      // Check membership exists
+      const [membership] = await db.select().from(orgMembers)
+        .where(and(eq(orgMembers.orgId, input.orgId), eq(orgMembers.userId, input.userId)))
+        .limit(1);
+      if (!membership) throw new Error("User is not a member of this organisation");
+
+      // Prevent deleting the owner — must delete org instead
+      if ((membership as any).role === 'owner') {
+        throw new Error("Cannot delete the org owner. Use 'Delete Organisation' to remove the entire org.");
+      }
+
+      // Remove membership
+      await db.delete(orgMembers)
+        .where(and(eq(orgMembers.orgId, input.orgId), eq(orgMembers.userId, input.userId)));
+
+      if (input.hardDelete) {
+        // Hard delete user record
+        await db.delete(users).where(eq(users.id, input.userId));
+        console.log(`[Admin:DeleteUser] Hard-deleted user ${input.userId} from org ${input.orgId}`);
+      } else {
+        // Deactivate
+        await db.update(users).set({ isActive: false } as any).where(eq(users.id, input.userId));
+        console.log(`[Admin:DeleteUser] Deactivated user ${input.userId} from org ${input.orgId}`);
+      }
+
+      return { success: true, hardDeleted: input.hardDelete };
+    }),
 
   /**
    * Delete an organisation and all its data.

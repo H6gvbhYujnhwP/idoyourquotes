@@ -13,10 +13,10 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { brand } from "@/lib/brandTheme";
-import { useState } from "react";
+import React, { useState } from "react";
 import {
   Search, Users, Building2, FileText, ChevronLeft, RotateCcw,
-  Shield, Clock, Hash, Eye, Calendar, Mail, ArrowUpDown,
+  Shield, Clock, Hash, Eye, Calendar, Mail, ArrowUpDown, Trash2, UserX,
 } from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────
@@ -122,15 +122,42 @@ function StatsBar({ stats }: { stats: any }) {
 function OrgList({ onSelectOrg }: { onSelectOrg: (id: number) => void }) {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [deletingUser, setDeletingUser] = useState<{ userId: number; orgId: number; email: string } | null>(null);
+  const [hardDeleteUser, setHardDeleteUser] = useState(false);
 
+  const utils = trpc.useUtils();
   const { data, isLoading } = trpc.admin.listOrganizations.useQuery(
     { search: search || undefined, page, limit: 50 },
     { keepPreviousData: true }
   );
 
+  const deleteUserMut = trpc.admin.deleteUser.useMutation({
+    onSuccess: () => {
+      setDeletingUser(null);
+      setHardDeleteUser(false);
+      utils.admin.listOrganizations.invalidate();
+      utils.admin.platformStats.invalidate();
+    },
+  });
+
   const orgs = data?.orgs || [];
   const total = data?.total || 0;
   const totalPages = Math.ceil(total / 50);
+
+  const roleBadge = (role: string) => {
+    const styles: Record<string, { bg: string; text: string }> = {
+      owner: { bg: "#fef3c7", text: "#92400e" },
+      admin: { bg: "#dbeafe", text: "#1e40af" },
+      member: { bg: "#f1f5f9", text: "#475569" },
+    };
+    const s = styles[role] || styles.member;
+    return (
+      <span style={{
+        fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 3,
+        background: s.bg, color: s.text, textTransform: "uppercase", marginLeft: 6,
+      }}>{role}</span>
+    );
+  };
 
   return (
     <div>
@@ -152,12 +179,50 @@ function OrgList({ onSelectOrg }: { onSelectOrg: (id: number) => void }) {
         />
       </div>
 
-      {/* Table */}
+      {/* Delete user confirmation dialog */}
+      {deletingUser && (
+        <div style={{
+          background: "#fff5f5", border: "1px solid #fca5a5", borderRadius: 10,
+          padding: 16, marginBottom: 16, fontSize: 13,
+        }}>
+          <div style={{ fontWeight: 700, color: "#dc2626", marginBottom: 8 }}>
+            <UserX size={14} style={{ display: "inline", marginRight: 6 }} />
+            Delete user: {deletingUser.email}
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, cursor: "pointer", color: "#991b1b" }}>
+            <input type="checkbox" checked={hardDeleteUser} onChange={(e) => setHardDeleteUser(e.target.checked)} style={{ width: 14, height: 14 }} />
+            <span><strong>Hard delete</strong> — remove from database entirely (frees domain for new trials)</span>
+          </label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={() => deleteUserMut.mutate({ userId: deletingUser.userId, orgId: deletingUser.orgId, hardDelete: hardDeleteUser })}
+              disabled={deleteUserMut.isLoading}
+              style={{
+                padding: "8px 16px", borderRadius: 6, border: "none",
+                background: "#dc2626", color: "white", cursor: "pointer",
+                fontSize: 13, fontWeight: 600,
+              }}
+            >{deleteUserMut.isLoading ? "Deleting..." : "Delete User"}</button>
+            <button
+              onClick={() => { setDeletingUser(null); setHardDeleteUser(false); }}
+              style={{
+                padding: "8px 16px", borderRadius: 6, border: `1px solid ${brand.border}`,
+                background: "white", cursor: "pointer", fontSize: 13,
+              }}
+            >Cancel</button>
+          </div>
+          {deleteUserMut.isError && (
+            <div style={{ marginTop: 8, fontSize: 12, color: "#dc2626" }}>Error: {deleteUserMut.error?.message}</div>
+          )}
+        </div>
+      )}
+
+      {/* Cascaded table */}
       <div style={{ background: "white", borderRadius: 10, border: `1px solid ${brand.border}`, overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={{ background: "#f8fafc" }}>
-              {["Organisation", "Owner", "Tier", "Status", "Quotes", "Members", "Created", "Last Active", ""].map(h => (
+              {["", "Name / Email", "Role", "Tier", "Status", "Quotes", "Created", "Last Active", ""].map(h => (
                 <th key={h} style={{
                   padding: "10px 14px", textAlign: "left", fontWeight: 600,
                   color: brand.navyMuted, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5,
@@ -173,44 +238,99 @@ function OrgList({ onSelectOrg }: { onSelectOrg: (id: number) => void }) {
               <tr><td colSpan={9} style={{ padding: 40, textAlign: "center", color: brand.navyMuted }}>No organisations found</td></tr>
             ) : orgs.map((org: any) => {
               const badge = statusBadge(org.status, org.cancelAtPeriodEnd);
+              const members = org.members || [];
               return (
-                <tr key={org.id} style={{ borderBottom: `1px solid ${brand.borderLight}`, cursor: "pointer" }}
-                  onClick={() => onSelectOrg(org.id)}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "#f8fafc")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "white")}
-                >
-                  <td style={{ padding: "12px 14px" }}>
-                    <div style={{ fontWeight: 600, color: brand.navy }}>{org.companyName || org.name}</div>
-                    <div style={{ fontSize: 11, color: brand.navyMuted }}>{org.slug}</div>
-                  </td>
-                  <td style={{ padding: "12px 14px" }}>
-                    <div style={{ color: brand.navy }}>{org.owner?.name || "—"}</div>
-                    <div style={{ fontSize: 11, color: brand.navyMuted }}>{org.owner?.email || "—"}</div>
-                  </td>
-                  <td style={{ padding: "12px 14px" }}>
-                    <span style={{
-                      display: "inline-block", padding: "2px 8px", borderRadius: 4, fontSize: 11,
-                      fontWeight: 700, color: "white", background: tierColor(org.tier),
-                      textTransform: "uppercase",
-                    }}>{org.tier}</span>
-                  </td>
-                  <td style={{ padding: "12px 14px" }}>
-                    <span style={{
-                      display: "inline-block", padding: "2px 8px", borderRadius: 4, fontSize: 11,
-                      fontWeight: 600, color: badge.text, background: badge.bg,
-                    }}>{badge.label}</span>
-                  </td>
-                  <td style={{ padding: "12px 14px", color: brand.navy, fontWeight: 600 }}>
-                    {org.totalQuotes}
-                    <span style={{ fontWeight: 400, color: brand.navyMuted, fontSize: 11 }}> / {org.maxQuotesPerMonth === -1 ? "∞" : `${org.monthlyQuoteCount}mo`}</span>
-                  </td>
-                  <td style={{ padding: "12px 14px", color: brand.navy }}>{org.memberCount}</td>
-                  <td style={{ padding: "12px 14px", color: brand.navyMuted, fontSize: 12 }}>{formatDate(org.createdAt)}</td>
-                  <td style={{ padding: "12px 14px", color: brand.navyMuted, fontSize: 12 }}>{timeAgo(org.owner?.lastSignedIn)}</td>
-                  <td style={{ padding: "12px 14px" }}>
-                    <Eye size={14} color={brand.teal} />
-                  </td>
-                </tr>
+                <React.Fragment key={org.id}>
+                  {/* Org header row */}
+                  <tr
+                    style={{ borderBottom: `1px solid ${brand.borderLight}`, cursor: "pointer", background: "#f8fafc" }}
+                    onClick={() => onSelectOrg(org.id)}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#f0f4f8")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "#f8fafc")}
+                  >
+                    <td style={{ padding: "12px 14px", width: 32 }}>
+                      <Building2 size={14} color={brand.navyMuted} />
+                    </td>
+                    <td style={{ padding: "12px 14px" }}>
+                      <div style={{ fontWeight: 700, color: brand.navy, fontSize: 14 }}>{org.companyName || org.name}</div>
+                      <div style={{ fontSize: 11, color: brand.navyMuted }}>{org.slug}</div>
+                    </td>
+                    <td style={{ padding: "12px 14px", fontSize: 11, color: brand.navyMuted }}>
+                      {members.length} member{members.length !== 1 ? "s" : ""}
+                    </td>
+                    <td style={{ padding: "12px 14px" }}>
+                      <span style={{
+                        display: "inline-block", padding: "2px 8px", borderRadius: 4, fontSize: 11,
+                        fontWeight: 700, color: "white", background: tierColor(org.tier),
+                        textTransform: "uppercase",
+                      }}>{org.tier}</span>
+                    </td>
+                    <td style={{ padding: "12px 14px" }}>
+                      <span style={{
+                        display: "inline-block", padding: "2px 8px", borderRadius: 4, fontSize: 11,
+                        fontWeight: 600, color: badge.text, background: badge.bg,
+                      }}>{badge.label}</span>
+                    </td>
+                    <td style={{ padding: "12px 14px", color: brand.navy, fontWeight: 600 }}>
+                      {org.totalQuotes}
+                      <span style={{ fontWeight: 400, color: brand.navyMuted, fontSize: 11 }}> ({org.monthlyQuoteCount}mo)</span>
+                    </td>
+                    <td style={{ padding: "12px 14px", color: brand.navyMuted, fontSize: 12 }}>{formatDate(org.createdAt)}</td>
+                    <td style={{ padding: "12px 14px" }} />
+                    <td style={{ padding: "12px 14px" }}>
+                      <Eye size={14} color={brand.teal} />
+                    </td>
+                  </tr>
+
+                  {/* Member rows — indented under org */}
+                  {members.map((m: any) => (
+                    <tr key={`${org.id}-${m.userId}`}
+                      style={{ borderBottom: `1px solid ${brand.borderLight}` }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "#fafbfc")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = "white")}
+                    >
+                      <td style={{ padding: "8px 14px 8px 28px", width: 32 }}>
+                        <div style={{
+                          width: 1, height: 20, background: brand.border, marginLeft: 6,
+                          borderLeft: `2px solid ${brand.border}`,
+                        }} />
+                      </td>
+                      <td style={{ padding: "8px 14px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ color: brand.navy, fontWeight: 500 }}>{m.name || "Unnamed"}</span>
+                          {roleBadge(m.role)}
+                          {!m.isActive && <span style={{
+                            fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 3,
+                            background: "#fee2e2", color: "#991b1b",
+                          }}>INACTIVE</span>}
+                        </div>
+                        <div style={{ fontSize: 11, color: brand.navyMuted }}>{m.email}</div>
+                      </td>
+                      <td style={{ padding: "8px 14px", fontSize: 11, color: brand.navyMuted }}>
+                        {m.role}
+                      </td>
+                      <td style={{ padding: "8px 14px" }} />
+                      <td style={{ padding: "8px 14px" }} />
+                      <td style={{ padding: "8px 14px" }} />
+                      <td style={{ padding: "8px 14px", color: brand.navyMuted, fontSize: 12 }}>{formatDate(m.createdAt)}</td>
+                      <td style={{ padding: "8px 14px", color: brand.navyMuted, fontSize: 12 }}>{timeAgo(m.lastSignedIn)}</td>
+                      <td style={{ padding: "8px 14px" }}>
+                        {m.role !== "owner" && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setDeletingUser({ userId: m.userId, orgId: org.id, email: m.email }); setHardDeleteUser(false); }}
+                            title="Delete user"
+                            style={{
+                              padding: "3px 6px", borderRadius: 4, border: `1px solid ${brand.border}`,
+                              background: "white", cursor: "pointer", display: "flex", alignItems: "center",
+                            }}
+                          >
+                            <Trash2 size={12} color="#dc2626" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </React.Fragment>
               );
             })}
           </tbody>
