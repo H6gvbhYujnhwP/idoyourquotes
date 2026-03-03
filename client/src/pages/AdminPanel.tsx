@@ -15,7 +15,7 @@ import { trpc } from "@/lib/trpc";
 import { brand } from "@/lib/brandTheme";
 import React, { useState } from "react";
 import {
-  Search, Users, Building2, FileText, ChevronLeft, RotateCcw,
+  Search, Users, Building2, FileText, ChevronLeft, ChevronDown, ChevronRight, RotateCcw,
   Shield, Clock, Hash, Eye, Calendar, Mail, ArrowUpDown, Trash2, UserX,
 } from "lucide-react";
 
@@ -124,6 +124,7 @@ function OrgList({ onSelectOrg }: { onSelectOrg: (id: number) => void }) {
   const [page, setPage] = useState(1);
   const [deletingUser, setDeletingUser] = useState<{ userId: number; orgId: number; email: string } | null>(null);
   const [hardDeleteUser, setHardDeleteUser] = useState(false);
+  const [expandedOrgs, setExpandedOrgs] = useState<Set<number>>(new Set());
 
   const utils = trpc.useUtils();
   const { data, isLoading } = trpc.admin.listOrganizations.useQuery(
@@ -244,12 +245,16 @@ function OrgList({ onSelectOrg }: { onSelectOrg: (id: number) => void }) {
                   {/* Org header row */}
                   <tr
                     style={{ borderBottom: `1px solid ${brand.borderLight}`, cursor: "pointer", background: "#f8fafc" }}
-                    onClick={() => onSelectOrg(org.id)}
+                    onClick={() => setExpandedOrgs(prev => {
+                      const next = new Set(prev);
+                      if (next.has(org.id)) next.delete(org.id); else next.add(org.id);
+                      return next;
+                    })}
                     onMouseEnter={(e) => (e.currentTarget.style.background = "#f0f4f8")}
                     onMouseLeave={(e) => (e.currentTarget.style.background = "#f8fafc")}
                   >
-                    <td style={{ padding: "12px 14px", width: 32 }}>
-                      <Building2 size={14} color={brand.navyMuted} />
+                    <td style={{ padding: "12px 14px", width: 32, display: "flex", alignItems: "center", gap: 4 }}>
+                      {expandedOrgs.has(org.id) ? <ChevronDown size={14} color={brand.navyMuted} /> : <ChevronRight size={14} color={brand.navyMuted} />}
                     </td>
                     <td style={{ padding: "12px 14px" }}>
                       <div style={{ fontWeight: 700, color: brand.navy, fontSize: 14 }}>{org.companyName || org.name}</div>
@@ -278,12 +283,14 @@ function OrgList({ onSelectOrg }: { onSelectOrg: (id: number) => void }) {
                     <td style={{ padding: "12px 14px", color: brand.navyMuted, fontSize: 12 }}>{formatDate(org.createdAt)}</td>
                     <td style={{ padding: "12px 14px" }} />
                     <td style={{ padding: "12px 14px" }}>
-                      <Eye size={14} color={brand.teal} />
+                      <button onClick={(e) => { e.stopPropagation(); onSelectOrg(org.id); }} style={{ padding: 2, border: "none", background: "transparent", cursor: "pointer" }} title="View full details">
+                        <Eye size={14} color={brand.teal} />
+                      </button>
                     </td>
                   </tr>
 
-                  {/* Member rows — indented under org */}
-                  {members.map((m: any) => (
+                  {/* Member rows — indented under org, only when expanded */}
+                  {expandedOrgs.has(org.id) && members.map((m: any) => (
                     <tr key={`${org.id}-${m.userId}`}
                       style={{ borderBottom: `1px solid ${brand.borderLight}` }}
                       onMouseEnter={(e) => (e.currentTarget.style.background = "#fafbfc")}

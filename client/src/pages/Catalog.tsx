@@ -222,8 +222,8 @@ export default function Catalog() {
     { label: "Description", flex: 2, mw: 120 },
     { label: "Category", flex: 1.2, mw: 90 },
     { label: "Unit", flex: 0.7, mw: 60 },
-    { label: "Sell (\u00a3)", flex: 0.8, mw: 70 },
-    { label: "Buy-in (\u00a3)", flex: 0.8, mw: 70 },
+    { label: "Sell (£)", flex: 0.8, mw: 70 },
+    { label: "Buy-in (£)", flex: 0.8, mw: 70 },
     { label: "Install (hrs)", flex: 0.8, mw: 70 },
     { label: "", flex: 0.3, mw: 36 },
   ];
@@ -341,10 +341,10 @@ export default function Catalog() {
                         <EditableCell value={item.unit || ""} field="unit" itemId={item.id} placeholder="each" onSave={handleInlineSave} minWidth={50} />
                       </div>
                       <div style={{ flex: 0.8, minWidth: 70, padding: "0 2px" }}>
-                        <EditableCell value={item.defaultRate || ""} field="defaultRate" itemId={item.id} type="number" step="0.01" placeholder="0.00" prefix="\u00a3" onSave={handleInlineSave} minWidth={60} />
+                        <EditableCell value={item.defaultRate || ""} field="defaultRate" itemId={item.id} type="number" step="0.01" placeholder="0.00" prefix="£" onSave={handleInlineSave} minWidth={60} />
                       </div>
                       <div style={{ flex: 0.8, minWidth: 70, padding: "0 2px" }}>
-                        <EditableCell value={item.costPrice || ""} field="costPrice" itemId={item.id} type="number" step="0.01" prefix="\u00a3" onSave={handleInlineSave} minWidth={60} />
+                        <EditableCell value={item.costPrice || ""} field="costPrice" itemId={item.id} type="number" step="0.01" prefix="£" onSave={handleInlineSave} minWidth={60} />
                       </div>
                       <div style={{ flex: 0.8, minWidth: 70, padding: "0 2px" }}>
                         <EditableCell value={item.installTimeHrs || ""} field="installTimeHrs" itemId={item.id} type="number" step="0.25" suffix="hrs" onSave={handleInlineSave} minWidth={50} />
