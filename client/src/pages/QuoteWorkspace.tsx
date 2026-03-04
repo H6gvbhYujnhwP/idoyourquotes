@@ -604,9 +604,24 @@ export default function QuoteWorkspace() {
         // Auto-fill client details from parsed data
         const updateFields: Record<string, string> = {};
 
+        // Split "Person / Company" pattern from AI into contactName + clientName
+        // AI returns e.g. "Brian / ABC Limited" or "Bjorn Gladwell / Rosetti"
         if (parsed.clientName && !clientName) {
-          setClientName(parsed.clientName);
-          updateFields.clientName = parsed.clientName;
+          const raw = parsed.clientName as string;
+          if (raw.includes(" / ")) {
+            const [personPart, companyPart] = raw.split(" / ", 2);
+            // Company goes in clientName (the business), person goes in contactName
+            setClientName(companyPart.trim());
+            updateFields.clientName = companyPart.trim();
+            if (!contactName) {
+              setContactName(personPart.trim());
+              updateFields.contactName = personPart.trim();
+            }
+          } else {
+            // No slash — could be just a company or just a person name
+            setClientName(raw);
+            updateFields.clientName = raw;
+          }
         }
         if (parsed.clientEmail && !clientEmail) {
           setClientEmail(parsed.clientEmail);
@@ -618,8 +633,9 @@ export default function QuoteWorkspace() {
         }
 
         // Auto-name the quote: ClientName — DD/MM/YYYY (if title is empty)
-        if (!title && (parsed.clientName || clientName)) {
-          const name = parsed.clientName || clientName;
+        // Use the already-split clientName (company) rather than the raw AI value
+        if (!title && (updateFields.clientName || clientName)) {
+          const name = updateFields.clientName || clientName;
           const today = new Date().toLocaleDateString("en-GB");
           const autoTitle = `${name} — ${today}`;
           setTitle(autoTitle);
