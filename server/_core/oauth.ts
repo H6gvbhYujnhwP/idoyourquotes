@@ -285,4 +285,135 @@ export function registerOAuthRoutes(app: Express) {
       res.status(500).json({ error: "Failed to resend" });
     }
   });
+
+  // Validate invite token (check it's still valid before showing set-password form)
+  app.get("/api/auth/validate-invite", async (req: Request, res: Response) => {
+    const { token } = req.query;
+
+    if (!token || typeof token !== "string") {
+      res.status(400).json({ valid: false, error: "Missing token" });
+      return;
+    }
+
+    try {
+      const db = await getDb();
+      if (!db) {
+        res.status(500).json({ valid: false, error: "Server error" });
+        return;
+      }
+
+      const { users } = await import("../../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+
+      const [user] = await db.select({
+        id: users.id,
+        email: users.email,
+        emailVerified: users.emailVerified,
+        emailVerificationSentAt: users.emailVerificationSentAt,
+      })
+        .from(users)
+        .where(eq(users.emailVerificationToken, token))
+        .limit(1);
+
+      if (!user) {
+        res.status(404).json({ valid: false, error: "Invalid or expired invitation link" });
+        return;
+      }
+
+      // Already set their password
+      if (user.emailVerified) {
+        res.status(400).json({ valid: false, error: "This invitation has already been used. Please log in instead." });
+        return;
+      }
+
+      // Check token age (7 days for invites)
+      if (user.emailVerificationSentAt) {
+        const daysSinceSent = (Date.now() - new Date(user.emailVerificationSentAt).getTime()) / (1000 * 60 * 60 * 24);
+        if (daysSinceSent > 7) {
+          res.status(410).json({ valid: false, error: "This invitation has expired. Ask your team admin to invite you again." });
+          return;
+        }
+      }
+
+      res.json({ valid: true, email: user.email });
+    } catch (error) {
+      console.error("[Auth] Validate invite failed", error);
+      res.status(500).json({ valid: false, error: "Server error" });
+    }
+  });
+
+  // Set password for invited team members
+  app.post("/api/auth/set-password", async (req: Request, res: Response) => {
+    const { token, password, name } = req.body;
+
+    if (!token || !password) {
+      res.status(400).json({ error: "Token and password are required" });
+      return;
+    }
+
+    if (password.length < 8) {
+      res.status(400).json({ error: "Password must be at least 8 characters" });
+      return;
+    }
+
+    try {
+      const db = await getDb();
+      if (!db) {
+        res.status(500).json({ error: "Server error" });
+        return;
+      }
+
+      const { users } = await import("../../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const bcryptModule = await import("bcryptjs");
+
+      // Find user by token
+      const [user] = await db.select()
+        .from(users)
+        .where(eq(users.emailVerificationToken, token))
+        .limit(1);
+
+      if (!user) {
+        res.status(404).json({ error: "Invalid or expired invitation link" });
+        return;
+      }
+
+      // Already activated
+      if (user.emailVerified) {
+        res.status(400).json({ error: "This invitation has already been used. Please log in instead." });
+        return;
+      }
+
+      // Check token age (7 days)
+      if (user.emailVerificationSentAt) {
+        const daysSinceSent = (Date.now() - new Date(user.emailVerificationSentAt).getTime()) / (1000 * 60 * 60 * 24);
+        if (daysSinceSent > 7) {
+          res.status(410).json({ error: "This invitation has expired. Ask your team admin to invite you again." });
+          return;
+        }
+      }
+
+      // Hash the new password and activate the account
+      const passwordHash = await bcryptModule.default.hash(password, 12);
+      await db.update(users).set({
+        passwordHash,
+        name: name?.trim() || null,
+        emailVerified: true,
+        emailVerificationToken: null,
+        updatedAt: new Date(),
+      } as any).where(eq(users.id, user.id));
+
+      console.log(`[Auth] Invited user ${user.id} (${user.email}) set password and activated`);
+
+      // Auto-login: create session token
+      const sessionToken = await sdk.createSessionToken(user.id, user.email, { name: name?.trim() || "" });
+      const cookieOptions = getSessionCookieOptions(req);
+      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("[Auth] Set password failed", error);
+      res.status(500).json({ error: "Failed to set password" });
+    }
+  });
 }

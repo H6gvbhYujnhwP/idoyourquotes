@@ -14,6 +14,7 @@ import QuoteWorkspace from "./pages/QuoteWorkspace";
 import Catalog from "./pages/Catalog";
 import Settings from "./pages/Settings";
 import AdminPanel from "./pages/AdminPanel";
+import SetPassword from "./pages/SetPassword";
 
 function Router() {
   return (
@@ -50,6 +51,9 @@ function Router() {
           <Settings />
         </DashboardLayout>
       </Route>
+      
+      {/* Invite set-password page */}
+      <Route path="/set-password" component={SetPassword} />
       
       {/* Admin panel — obscured URL */}
       <Route path="/manage-7k9x2m4q8r" component={AdminPanel} />

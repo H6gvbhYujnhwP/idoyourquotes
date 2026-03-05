@@ -1230,8 +1230,12 @@ function TeamTab() {
   const { data: teamMembers, refetch: refetchTeam } = trpc.subscription.teamMembers.useQuery();
 
   const inviteMember = trpc.subscription.inviteTeamMember.useMutation({
-    onSuccess: () => {
-      toast.success('Team member added');
+    onSuccess: (data: any) => {
+      if (data?.created) {
+        toast.success('Invitation sent! They\'ll receive an email to set their password.');
+      } else {
+        toast.success('Team member added');
+      }
       setInviteEmail('');
       refetchTeam();
     },
@@ -1399,7 +1403,7 @@ function TeamTab() {
               </Button>
             </form>
             <p className="text-xs text-muted-foreground mt-2">
-              The user must already have an IdoYourQuotes account. They'll be added to your organisation immediately.
+              Enter their email address. If they don't have an account yet, we'll create one and send them an invitation to set their password.
             </p>
           </CardContent>
         </Card>

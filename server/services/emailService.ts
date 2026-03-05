@@ -789,3 +789,88 @@ ${params.reason || 'No reason provided'}
     return false;
   }
 }
+
+/**
+ * Send team invitation email to a new user
+ * Includes a "Set Your Password" link so they can activate their account
+ */
+export async function sendTeamInviteEmail(params: {
+  to: string;
+  inviterName: string;
+  orgName: string;
+  token: string;
+}): Promise<boolean> {
+  const setPasswordUrl = `${APP_URL}/set-password?token=${params.token}`;
+
+  try {
+    const { error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: params.to,
+      subject: `You've been invited to ${params.orgName} on IdoYourQuotes`,
+      html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f8fafc;">
+  <div style="max-width: 480px; margin: 0 auto; padding: 40px 20px;">
+    
+    <div style="text-align: center; margin-bottom: 32px;">
+      <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png" alt="IdoYourQuotes" style="height: 48px;" />
+    </div>
+
+    <div style="background: white; border-radius: 12px; padding: 32px; border: 1px solid #e2e8f0;">
+      <h1 style="font-size: 22px; font-weight: 700; color: #1a2b4a; margin: 0 0 16px;">
+        You've been invited to join ${params.orgName}
+      </h1>
+      <p style="font-size: 15px; color: #475569; line-height: 1.6; margin: 0 0 16px;">
+        <strong>${params.inviterName}</strong> has invited you to their team on IdoYourQuotes — the AI-powered quoting platform for tradespeople.
+      </p>
+      <p style="font-size: 15px; color: #475569; line-height: 1.6; margin: 0 0 24px;">
+        Click the button below to set your password and activate your account. You'll have immediate access to your team's quotes and catalog.
+      </p>
+      
+      <div style="text-align: center; margin: 28px 0;">
+        <a href="${setPasswordUrl}" style="display: inline-block; background-color: #0d9488; color: white; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 8px;">
+          Set My Password & Join
+        </a>
+      </div>
+
+      <p style="font-size: 13px; color: #94a3b8; line-height: 1.5; margin: 0 0 16px;">
+        Or copy and paste this link into your browser:
+      </p>
+      <p style="font-size: 12px; color: #0d9488; word-break: break-all; margin: 0 0 24px;">
+        ${setPasswordUrl}
+      </p>
+
+      <div style="border-top: 1px solid #e2e8f0; padding-top: 16px;">
+        <p style="font-size: 12px; color: #94a3b8; margin: 0;">
+          This link expires in 7 days. If you weren't expecting this invitation, you can safely ignore this email.
+        </p>
+      </div>
+    </div>
+
+    <div style="text-align: center; margin-top: 24px;">
+      <p style="font-size: 12px; color: #94a3b8;">
+        &copy; ${new Date().getFullYear()} IdoYourQuotes. All rights reserved.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`,
+    });
+
+    if (error) {
+      console.error('[Email] Team invite send failed:', error);
+      return false;
+    }
+
+    console.log(`[Email] Team invite sent to ${params.to} for org ${params.orgName}`);
+    return true;
+  } catch (err) {
+    console.error('[Email] Team invite send error:', err);
+    return false;
+  }
+}

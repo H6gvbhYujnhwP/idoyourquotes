@@ -24,7 +24,9 @@ import {
   type SubscriptionTier,
 } from "./stripe";
 import { getUserPrimaryOrg, getOrgMembersByOrgId, getUserByEmail, addOrgMember, getDb, updateOrganization, deleteAllOrgData } from "../db";
-import { sendLimitWarningEmail, sendTierChangeEmail, sendCancellationEmail, sendAccountDeletedEmail, sendExitSurveyToSupport } from "./emailService";
+import { sendLimitWarningEmail, sendTierChangeEmail, sendCancellationEmail, sendAccountDeletedEmail, sendExitSurveyToSupport, sendTeamInviteEmail } from "./emailService";
+import bcrypt from "bcryptjs";
+import crypto from "crypto";
 
 const PAID_TIERS = ['solo', 'pro', 'team', 'business'] as const;
 type PaidTier = typeof PAID_TIERS[number];
@@ -372,18 +374,59 @@ export const subscriptionRouter = router({
 
       // Find user by email
       const targetUser = await getUserByEmail(input.email);
-      if (!targetUser) {
-        throw new Error("No account found with that email. They need to create an IdoYourQuotes account first.");
+
+      if (targetUser) {
+        // Existing user — check not already a member, then add
+        const existing = members.find(m => Number(m.userId) === targetUser.id);
+        if (existing) {
+          throw new Error("This user is already a member of your organisation");
+        }
+
+        await addOrgMember(org.id, targetUser.id, input.role);
+        return { success: true, created: false };
       }
 
-      // Check not already a member
-      const existing = members.find(m => Number(m.userId) === targetUser.id);
-      if (existing) {
-        throw new Error("This user is already a member of your organisation");
-      }
+      // User doesn't exist — create account and invite them
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
 
-      await addOrgMember(org.id, targetUser.id, input.role);
-      return { success: true };
+      const { users } = await import("../../drizzle/schema");
+
+      // Generate a random temporary password (they'll set their own via invite link)
+      const tempPassword = crypto.randomBytes(24).toString("hex");
+      const passwordHash = await bcrypt.hash(tempPassword, 12);
+
+      // Generate invitation token (reuse email_verification_token column)
+      const inviteToken = crypto.randomBytes(32).toString("hex");
+
+      const [newUser] = await db.insert(users).values({
+        email: input.email.toLowerCase(),
+        passwordHash,
+        name: null,
+        role: "user" as const,
+        isActive: true,
+        emailVerified: false,
+        emailVerificationToken: inviteToken,
+        emailVerificationSentAt: new Date(),
+      }).returning();
+
+      if (!newUser) throw new Error("Failed to create user account");
+
+      // Add to org — NO new org created (they join the inviter's org)
+      await addOrgMember(org.id, newUser.id, input.role);
+
+      // Send invite email with set-password link
+      const inviterName = ctx.user.name || ctx.user.email;
+      const orgName = (org as any).companyName || org.name || "your team";
+      sendTeamInviteEmail({
+        to: input.email.toLowerCase(),
+        inviterName,
+        orgName,
+        token: inviteToken,
+      }).catch(err => console.error("[Team] Failed to send invite email:", err));
+
+      console.log(`[Team] Created invited user ${newUser.id} (${input.email}) for org ${org.id}`);
+      return { success: true, created: true };
     }),
 
   // Remove team member
