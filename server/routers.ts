@@ -3118,6 +3118,7 @@ CATALOG MATCHING RULES:
 - When evidence mentions work that matches a catalog item, extract it as a material WITH the catalog sell price.
 - Match by meaning, not exact words: "engineer onsite for a day" matches "IT Labour Onsite" if that's in the catalog.
 - "half a day workshop" matches "IT Labour Workshop" if that's in the catalog.
+- CRITICAL: Before finalising your output, scan EVERY activity, service, or deliverable mentioned in the evidence against the catalog item names. If a phrase like "discovery session required" or "need a site survey" closely matches a catalog item name (e.g. "Discovery Session"), it IS a billable catalog item — include it as a material with the catalog price. Do NOT treat catalog item names as generic descriptions of work phases.
 - Use the CORRECT catalog item for each piece of work — don't use the same catalog rate for different items.
 - If the user states a specific price that differs from catalog, use the USER's price.
 - If no catalog item matches, set unitPrice to the user's stated price, or null if unknown.
