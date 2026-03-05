@@ -77,7 +77,7 @@ function generateStyles(colors: BrandColors): string {
   const bodyText = '#2d3748';
   const mutedText = '#4a5568';
   const lightText = '#6b7280';
-  const pageBg = '#f0ede6';
+  const pageBg = '#ffffff';
   const cardBg = '#ffffff';
   const borderLight = '#e2e8f0';
 
