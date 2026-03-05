@@ -542,9 +542,13 @@ export default function QuoteWorkspace() {
   const handleProcessInput = (input: QuoteInput) => {
     if (input.inputType === "audio") {
       transcribeAudio.mutate({ inputId: input.id, quoteId });
-    } else if (input.inputType === "pdf" || input.inputType === "document") {
-      // Documents (Word, Excel) are auto-processed on upload, but PDF needs Claude
+    } else if (input.inputType === "pdf") {
+      // PDF files → Claude/OpenAI vision extraction
       extractPdfText.mutate({ inputId: input.id, quoteId });
+    } else if (input.inputType === "document") {
+      // Word/Excel documents are already parsed on upload — their processedContent is stored.
+      // Re-analyse just needs to re-run QDS analysis on existing extracted content.
+      triggerVoiceAnalysis();
     } else if (input.inputType === "image") {
       analyzeImage.mutate({ inputId: input.id, quoteId });
     }

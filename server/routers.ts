@@ -3172,8 +3172,8 @@ FIELD GUIDELINES:
 - clientEmail: Email address from signature or header
 - clientPhone: Phone from signature or mentions
 - jobDescription: 2-3 detailed sentences covering the FULL scope. Include specifics — server types, cable lengths, page counts, service descriptions. Write from the perspective of the quoting business describing the work they'll do.
-- labour: Team composition with realistic durations. Think about what ${tradeLabel} professionals would need.
-- materials: Every billable line item with catalog-matched prices where possible. Include "unit" matching catalog (Per Hour, each, metre, etc.) and "description" explaining what this covers.
+- labour: Team composition with realistic durations. Only include if there is genuinely separate on-site labour not covered by catalog service items.
+- materials: Every billable line item with catalog-matched prices where possible. Use the EXACT "item" name from the catalog. Use the EXACT "unit" from the catalog (Per Hour, Per Month, Per 5,000, Session, etc.). For "description", use the catalog item's description if one exists — do NOT write your own description when the catalog already provides one. Only write a description if the catalog item has no description.
 - notes: Assumptions, site access requirements, items needing verification, phasing suggestions, anything the user should review.
 - isTradeRelevant: false only if the content has nothing to do with ${tradeLabel} work.
 
