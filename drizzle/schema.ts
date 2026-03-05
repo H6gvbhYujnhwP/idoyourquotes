@@ -197,6 +197,7 @@ export const quoteLineItems = pgTable("quote_line_items", {
   // Comprehensive quote phase tracking
   phaseId: varchar("phase_id", { length: 50 }),
   category: varchar("category", { length: 100 }),
+  pricingType: varchar("pricing_type", { length: 20 }).default("standard"),
 });
 
 export type QuoteLineItem = typeof quoteLineItems.$inferSelect;
@@ -350,6 +351,7 @@ export const catalogItems = pgTable("catalog_items", {
   defaultRate: decimal("default_rate", { precision: 12, scale: 2 }).default("0.00"),
   costPrice: decimal("cost_price", { precision: 12, scale: 2 }),
   installTimeHrs: decimal("install_time_hrs", { precision: 6, scale: 2 }),
+  pricingType: varchar("pricing_type", { length: 20 }).default("standard"),
   isActive: integer("is_active").default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
