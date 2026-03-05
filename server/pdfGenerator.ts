@@ -68,6 +68,16 @@ function escapeHtml(text: string): string {
  * Generate the shared CSS styles
  */
 function generateStyles(colors: BrandColors): string {
+  // Use brand primary as an accent colour, with dark navy for headings
+  const headingColor = '#1a2b4a';
+  const accentColor = colors.primary;
+  const bodyText = '#2d3748';
+  const mutedText = '#4a5568';
+  const lightText = '#6b7280';
+  const pageBg = '#f5f2ec';
+  const cardBg = '#ffffff';
+  const borderLight = '#e2e8f0';
+
   return `
     @page {
       margin: 18mm 20mm;
@@ -88,14 +98,22 @@ function generateStyles(colors: BrandColors): string {
       font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
       font-size: 10.5pt;
       line-height: 1.65;
-      color: #2d3748;
-      background: white;
+      color: ${bodyText};
+      background: ${pageBg};
     }
 
     .container {
       max-width: 800px;
       margin: 0 auto;
       padding: 30px 40px;
+    }
+
+    /* ===== ACCENT TOP RULE ===== */
+    .accent-rule {
+      height: 3pt;
+      background: ${accentColor};
+      margin: 0 0 24px 0;
+      border: none;
     }
 
     /* ===== COVER PAGE ===== */
@@ -107,6 +125,7 @@ function generateStyles(colors: BrandColors): string {
       min-height: 90vh;
       text-align: center;
       padding: 60px 40px;
+      background: ${pageBg};
     }
 
     .cover-logo {
@@ -121,71 +140,71 @@ function generateStyles(colors: BrandColors): string {
 
     .cover-title {
       font-size: 32pt;
-      font-weight: 700;
-      color: ${colors.primary};
+      font-weight: 800;
+      color: ${headingColor};
       margin-bottom: 16px;
-      line-height: 1.2;
+      line-height: 1.15;
     }
 
     .cover-subtitle {
       font-size: 16pt;
-      color: #4a5568;
+      color: ${accentColor};
       margin-bottom: 40px;
-      font-weight: 400;
+      font-weight: 600;
     }
 
     .cover-divider {
       width: 120px;
       height: 3px;
-      background: ${colors.primary};
+      background: ${accentColor};
       margin: 0 auto 40px auto;
     }
 
     .cover-meta {
       font-size: 12pt;
-      color: #6b7280;
+      color: ${lightText};
       line-height: 2;
     }
 
     .cover-meta strong {
-      color: #2d3748;
+      color: ${bodyText};
     }
 
     .cover-company {
       font-size: 14pt;
       font-weight: 600;
-      color: ${colors.primary};
+      color: ${headingColor};
       margin-top: 40px;
     }
 
     /* ===== HEADINGS ===== */
     h1 {
       font-size: 22pt;
-      font-weight: 700;
-      color: ${colors.primary};
+      font-weight: 800;
+      color: ${headingColor};
       margin: 0 0 6mm 0;
       padding-bottom: 3mm;
-      border-bottom: 2.5pt solid ${colors.primary};
+      border-bottom: 2.5pt solid ${accentColor};
     }
 
     h2 {
       font-size: 16pt;
-      font-weight: 600;
-      color: ${colors.primary};
+      font-weight: 700;
+      color: ${headingColor};
       margin: 8mm 0 4mm 0;
     }
 
     h3 {
       font-size: 13pt;
-      font-weight: 600;
-      color: #2d3748;
+      font-weight: 700;
+      color: ${bodyText};
       margin: 6mm 0 3mm 0;
     }
 
     h4 {
       font-size: 11pt;
       font-weight: 600;
-      color: #4a5568;
+      color: ${mutedText};
       margin: 4mm 0 2mm 0;
     }
 
@@ -214,7 +233,7 @@ function generateStyles(colors: BrandColors): string {
     }
 
     th {
-      background-color: ${colors.primary};
+      background-color: ${headingColor};
       color: white;
       padding: 3mm;
       text-align: left;
@@ -226,13 +245,13 @@ function generateStyles(colors: BrandColors): string {
 
     td {
       padding: 2.5mm 3mm;
-      border-bottom: 0.5pt solid #e2e8f0;
+      border-bottom: 0.5pt solid ${borderLight};
       font-size: 10pt;
       vertical-align: top;
     }
 
     tr:nth-child(even) {
-      background-color: #f8fafc;
+      background-color: rgba(255,255,255,0.5);
     }
 
     /* ===== SECTIONS ===== */
@@ -248,9 +267,10 @@ function generateStyles(colors: BrandColors): string {
     .phase-block {
       margin: 5mm 0;
       padding: 4mm 5mm;
-      border-left: 3pt solid ${colors.secondary};
-      background-color: #f8fafc;
+      border-left: 3pt solid ${accentColor};
+      background-color: ${cardBg};
       page-break-inside: avoid;
+      border-radius: 0 4px 4px 0;
     }
 
     .phase-header {
@@ -263,7 +283,7 @@ function generateStyles(colors: BrandColors): string {
     .phase-cost {
       font-size: 12pt;
       font-weight: 700;
-      color: ${colors.primary};
+      color: ${accentColor};
     }
 
     .phase-description {
@@ -280,11 +300,11 @@ function generateStyles(colors: BrandColors): string {
 
     .phase-meta-item {
       font-size: 9.5pt;
-      color: #4a5568;
+      color: ${mutedText};
     }
 
     .phase-meta-item strong {
-      color: #2d3748;
+      color: ${bodyText};
     }
 
     .deliverables-list {
@@ -316,8 +336,8 @@ function generateStyles(colors: BrandColors): string {
     }
 
     .info-box-info {
-      background-color: #ebf8ff;
-      border-left: 2.5pt solid #63b3ed;
+      background-color: ${cardBg};
+      border-left: 2.5pt solid ${accentColor};
     }
 
     .info-box-success {
@@ -335,11 +355,11 @@ function generateStyles(colors: BrandColors): string {
       font-weight: 600;
       display: inline-block;
       min-width: 130pt;
-      color: #4a5568;
+      color: ${mutedText};
     }
 
     .value {
-      color: #2d3748;
+      color: ${bodyText};
     }
 
     /* ===== HEADER (simple quotes) ===== */
@@ -349,20 +369,20 @@ function generateStyles(colors: BrandColors): string {
       align-items: flex-start;
       margin-bottom: 30px;
       padding-bottom: 16px;
-      border-bottom: 2pt solid ${colors.primary};
+      border-bottom: 2pt solid ${accentColor};
     }
 
     .company-info { flex: 1; }
 
     .company-name {
       font-size: 22px;
-      font-weight: 700;
-      color: ${colors.primary};
+      font-weight: 800;
+      color: ${headingColor};
       margin-bottom: 6px;
     }
 
     .company-details {
-      color: #6b7280;
+      color: ${lightText};
       font-size: 12px;
     }
 
@@ -372,21 +392,21 @@ function generateStyles(colors: BrandColors): string {
 
     .quote-label {
       font-size: 28px;
-      font-weight: 700;
-      color: ${colors.primary};
+      font-weight: 800;
+      color: ${headingColor};
       text-transform: uppercase;
       letter-spacing: 2px;
     }
 
     .quote-ref {
       font-size: 14px;
-      color: #6b7280;
+      color: ${lightText};
       margin-top: 4px;
     }
 
     .quote-date {
       font-size: 13px;
-      color: #6b7280;
+      color: ${lightText};
       margin-top: 6px;
     }
 
@@ -401,8 +421,8 @@ function generateStyles(colors: BrandColors): string {
 
     .party-label {
       font-size: 10pt;
-      font-weight: 600;
-      color: #6b7280;
+      font-weight: 700;
+      color: ${accentColor};
       text-transform: uppercase;
       letter-spacing: 1px;
       margin-bottom: 6px;
@@ -410,30 +430,30 @@ function generateStyles(colors: BrandColors): string {
 
     .party-name {
       font-size: 15pt;
-      font-weight: 600;
-      color: #1f2937;
+      font-weight: 700;
+      color: ${headingColor};
       margin-bottom: 4px;
     }
 
     .party-details {
-      color: #6b7280;
+      color: ${lightText};
       font-size: 10.5pt;
       line-height: 1.6;
     }
 
     /* ===== DESCRIPTION BOX ===== */
     .description-box {
-      background: #f8fafc;
+      background: ${cardBg};
       padding: 18px 22px;
       border-radius: 6px;
       margin-bottom: 24px;
-      border-left: 3pt solid ${colors.primary};
+      border-left: 3pt solid ${accentColor};
     }
 
     .description-label {
       font-size: 10pt;
-      font-weight: 600;
-      color: ${colors.primary};
+      font-weight: 700;
+      color: ${accentColor};
       text-transform: uppercase;
       letter-spacing: 1px;
       margin-bottom: 8px;
@@ -444,10 +464,13 @@ function generateStyles(colors: BrandColors): string {
       width: 100%;
       border-collapse: collapse;
       margin-bottom: 24px;
+      background: ${cardBg};
+      border-radius: 4px;
+      overflow: hidden;
     }
 
     .items-table th {
-      background: ${colors.primary};
+      background: ${headingColor};
       color: white;
       padding: 10px 12px;
       text-align: left;
@@ -465,7 +488,7 @@ function generateStyles(colors: BrandColors): string {
 
     .items-table td {
       padding: 8px 12px;
-      border-bottom: 0.5pt solid #e2e8f0;
+      border-bottom: 0.5pt solid ${borderLight};
       font-size: 10pt;
     }
 
@@ -473,22 +496,22 @@ function generateStyles(colors: BrandColors): string {
       background-color: #edf2f7;
       font-weight: 600;
       font-size: 10.5pt;
-      color: ${colors.primary};
+      color: ${headingColor};
     }
 
     .phase-group-header td {
       padding: 8px 12px;
-      border-bottom: 1.5pt solid ${colors.secondary};
+      border-bottom: 1.5pt solid ${accentColor};
     }
 
     .category-subheader {
-      background-color: #f7fafc;
+      background-color: rgba(255,255,255,0.7);
     }
 
     .category-subheader td {
       font-weight: 600;
       font-size: 9.5pt;
-      color: #4a5568;
+      color: ${mutedText};
       font-style: italic;
       padding: 6px 12px 6px 24px;
     }
@@ -500,104 +523,96 @@ function generateStyles(colors: BrandColors): string {
       margin-bottom: 30px;
     }
 
-    .totals-table { width: 280px; }
+    .totals-table {
+      width: 280px;
+      background: ${cardBg};
+      border-radius: 6px;
+      padding: 12px 16px;
+    }
 
     .totals-row {
       display: flex;
       justify-content: space-between;
-      padding: 7px 0;
-      border-bottom: 1px solid #e5e7eb;
+      padding: 5px 0;
+      font-size: 10.5pt;
     }
 
     .totals-row.total {
-      border-bottom: none;
-      border-top: 2.5px solid ${colors.primary};
-      padding-top: 10px;
+      border-top: 2pt solid ${headingColor};
       margin-top: 6px;
+      padding-top: 10px;
+      font-size: 14pt;
+      font-weight: 800;
+      color: ${headingColor};
     }
 
-    .totals-label { color: #6b7280; font-size: 10.5pt; }
-    .totals-value { font-weight: 500; font-size: 10.5pt; }
+    .totals-label {
+      color: ${mutedText};
+    }
 
-    .totals-row.total .totals-label,
-    .totals-row.total .totals-value {
-      font-size: 16pt;
-      font-weight: 700;
-      color: ${colors.primary};
+    .totals-value {
+      font-weight: 600;
     }
 
     /* ===== TERMS ===== */
     .terms-box {
-      background: #f8fafc;
-      padding: 18px 22px;
+      background: ${cardBg};
+      padding: 16px 20px;
       border-radius: 6px;
-      margin-bottom: 24px;
+      margin-top: 20px;
+      border-left: 3pt solid ${accentColor};
     }
 
     .terms-label {
       font-size: 10pt;
-      font-weight: 600;
-      color: #6b7280;
+      font-weight: 700;
+      color: ${accentColor};
       text-transform: uppercase;
       letter-spacing: 1px;
       margin-bottom: 8px;
     }
 
     .terms-content {
-      color: #4b5563;
-      font-size: 10pt;
-      white-space: pre-wrap;
+      font-size: 9.5pt;
+      color: ${mutedText};
       line-height: 1.7;
+      white-space: pre-line;
     }
 
     /* ===== VALIDITY ===== */
     .validity {
-      background: #fef3c7;
-      color: #92400e;
-      padding: 10px 18px;
-      border-radius: 6px;
-      margin-bottom: 24px;
       font-size: 10.5pt;
+      color: ${mutedText};
+      margin-bottom: 16px;
     }
 
     /* ===== FOOTER ===== */
     .footer {
+      margin-top: 40px;
+      padding-top: 16px;
+      border-top: 1pt solid ${borderLight};
       text-align: center;
-      padding-top: 24px;
-      border-top: 1px solid #e5e7eb;
-      color: #9ca3af;
-      font-size: 9.5pt;
-    }
-
-    /* ===== ASSUMPTIONS / EXCLUSIONS ===== */
-    .assumption-item, .exclusion-item {
-      padding: 2mm 0;
-      border-bottom: 0.5pt solid #f0f0f0;
+      color: ${lightText};
       font-size: 10pt;
-    }
-
-    .assumption-item:last-child, .exclusion-item:last-child {
-      border-bottom: none;
     }
 
     /* ===== COVER LETTER ===== */
     .cover-letter {
-      padding: 20px 0;
+      margin-top: 6mm;
       line-height: 1.8;
-      font-size: 11pt;
     }
 
     .cover-letter p {
-      margin-bottom: 5mm;
-      text-align: justify;
+      text-indent: 0;
     }
 
-    /* ===== CHECKLIST ===== */
+    /* ===== TECHNICAL REVIEW ===== */
     .checklist-item {
       display: flex;
+      gap: 2mm;
       align-items: flex-start;
-      padding: 2mm 0;
-      border-bottom: 0.5pt solid #f0f0f0;
+      margin-bottom: 2mm;
+      padding: 1.5mm 0;
     }
 
     .checklist-icon {
@@ -613,7 +628,7 @@ function generateStyles(colors: BrandColors): string {
 
     .checklist-notes {
       font-size: 9pt;
-      color: #6b7280;
+      color: ${lightText};
       font-style: italic;
     }
 
@@ -626,6 +641,7 @@ function generateStyles(colors: BrandColors): string {
     }
   `;
 }
+
 
 /**
  * Generate trial watermark CSS and HTML overlay
@@ -732,8 +748,7 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
         <div class="company-name">${escapeHtml(companyName)}</div>
         <div class="company-details">
           ${user.companyAddress ? `${escapeHtml(user.companyAddress)}<br>` : ""}
-          ${user.companyPhone ? `Tel: ${escapeHtml(user.companyPhone)}<br>` : ""}
-          ${user.companyEmail ? `Email: ${escapeHtml(user.companyEmail)}` : ""}
+          ${user.companyPhone ? `Tel: ${escapeHtml(user.companyPhone)}` : ""}
         </div>
       </div>
       <div class="quote-title">
@@ -750,8 +765,7 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
         <div class="party-details">
           ${(quote as any).contactName ? `FAO: ${escapeHtml((quote as any).contactName)}<br>` : ""}
           ${quote.clientAddress ? `${escapeHtml(quote.clientAddress)}<br>` : ""}
-          ${quote.clientPhone ? `Tel: ${escapeHtml(quote.clientPhone)}<br>` : ""}
-          ${quote.clientEmail ? `Email: ${escapeHtml(quote.clientEmail)}` : ""}
+          ${quote.clientPhone ? `Tel: ${escapeHtml(quote.clientPhone)}` : ""}
         </div>
       </div>
     </div>
@@ -876,7 +890,7 @@ function generateComprehensiveProposalHTML(data: PDFQuoteData): string {
     <div class="cover-company">${escapeHtml(companyName)}</div>
     <div class="company-details" style="margin-top: 8px; text-align: center; color: #6b7280; font-size: 11pt;">
       ${user.companyAddress ? `${escapeHtml(user.companyAddress)}<br>` : ""}
-      ${user.companyPhone ? `Tel: ${escapeHtml(user.companyPhone)}` : ""}${user.companyPhone && user.companyEmail ? ` | ` : ""}${user.companyEmail ? `Email: ${escapeHtml(user.companyEmail)}` : ""}
+      ${user.companyPhone ? `Tel: ${escapeHtml(user.companyPhone)}` : ""}
     </div>
   </div>`;
 
@@ -891,8 +905,7 @@ function generateComprehensiveProposalHTML(data: PDFQuoteData): string {
         <div class="party-name">${escapeHtml(quote.clientName || "Client")}</div>
         <div class="party-details">
           ${(quote as any).contactName ? `FAO: ${escapeHtml((quote as any).contactName)}<br>` : ""}
-          ${quote.clientAddress ? `${escapeHtml(quote.clientAddress)}<br>` : ""}
-          ${quote.clientEmail ? `Email: ${escapeHtml(quote.clientEmail)}` : ""}
+          ${quote.clientAddress ? `${escapeHtml(quote.clientAddress)}` : ""}
         </div>
       </div>
       <div class="party" style="text-align: right;">
@@ -900,8 +913,7 @@ function generateComprehensiveProposalHTML(data: PDFQuoteData): string {
         <div class="party-name">${escapeHtml(companyName)}</div>
         <div class="party-details">
           ${user.companyAddress ? `${escapeHtml(user.companyAddress)}<br>` : ""}
-          ${user.companyPhone ? `Tel: ${escapeHtml(user.companyPhone)}<br>` : ""}
-          ${user.companyEmail ? `Email: ${escapeHtml(user.companyEmail)}` : ""}
+          ${user.companyPhone ? `Tel: ${escapeHtml(user.companyPhone)}` : ""}
         </div>
       </div>
     </div>
@@ -926,8 +938,7 @@ function generateComprehensiveProposalHTML(data: PDFQuoteData): string {
         <div class="party-details">
           ${(quote as any).contactName ? `FAO: ${escapeHtml((quote as any).contactName)}<br>` : ""}
           ${quote.clientAddress ? `${escapeHtml(quote.clientAddress)}<br>` : ""}
-          ${quote.clientPhone ? `Tel: ${escapeHtml(quote.clientPhone)}<br>` : ""}
-          ${quote.clientEmail ? `Email: ${escapeHtml(quote.clientEmail)}` : ""}
+          ${quote.clientPhone ? `Tel: ${escapeHtml(quote.clientPhone)}` : ""}
         </div>
       </div>
       <div class="party" style="text-align: right;">
