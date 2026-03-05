@@ -3095,7 +3095,8 @@ PRICING TYPES — each catalog item has a pricing type that MUST be preserved:
 - "standard" = one-off cost included in the quote total (the default)
 - "monthly" = recurring monthly service — shown separately, NOT included in the one-off total
 - "optional" = add-on the client can choose — shown separately, NOT included in the one-off total
-When extracting materials, ALWAYS include a "pricingType" field matching the catalog item's pricing type. If no catalog match, default to "standard".`;
+When extracting materials, ALWAYS include a "pricingType" field matching the catalog item's pricing type.
+CRITICAL: Look at the "Pricing:" field shown next to each catalog item above. If a catalog item says "Pricing: optional", the material MUST have "pricingType": "optional". If it says "Pricing: monthly", it MUST be "monthly". Do NOT override the catalog's pricing type — it was set by the user for a reason. If no catalog match, default to "standard".`;
         }
 
         const response = await invokeLLM({
@@ -3137,8 +3138,7 @@ CATALOG MATCHING RULES:
 MATERIALS vs LABOUR:
 - "materials" in this system means ALL billable line items — physical products, services, deliverables, and time-based work that should appear as priced lines on the quote.
 - "labour" means the team composition — roles and durations (e.g. "1 × engineer, one day"). This describes WHO is doing the work.
-- The same work can appear in both: labour describes the team, materials describes the billable line item.
-- Example: "one engineer onsite for a day" → labour: [{role: "engineer", quantity: 1, duration: "one day"}] AND materials: [{item: "IT Labour Onsite", quantity: 8, unitPrice: 99, unit: "Per Hour"}] if "IT Labour Onsite" is in the catalog at £99/hr.
+- IMPORTANT: If the catalog items already represent the services being delivered (e.g. "Discovery Session", "Email Campaign", "Website Design"), do NOT create labour entries. The catalog service items ARE the deliverables — adding separate labour entries for "marketing consultant" or "campaign specialist" duplicates the work. Only create labour entries when there is genuinely separate on-site or hands-on labour that is NOT covered by a catalog service item.
 - Physical items (cable, hardware, servers) go in materials ONLY, not labour.
 - If the user gives a lump sum price (e.g. "the server costs £4,650"), extract as a material with quantity 1 and that price.
 

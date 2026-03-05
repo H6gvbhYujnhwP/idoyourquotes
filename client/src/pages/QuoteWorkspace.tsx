@@ -229,11 +229,8 @@ export default function QuoteWorkspace() {
     }
   );
 
-  // Track whether QDS has been populated at least once (prevents re-triggering after save/refetch)
-  const qdsPopulatedRef = useRef(false);
-
   // Update processing state whenever fullQuote changes
-  // Auto-trigger DQS analysis when input processing completes — but ONLY if QDS hasn't been populated yet
+  // Auto-trigger DQS analysis when input processing completes — but ONLY on first-ever analysis
   const prevProcessingRef = useRef(false);
   useEffect(() => {
     if (fullQuote?.inputs) {
@@ -245,8 +242,9 @@ export default function QuoteWorkspace() {
       setHasProcessingInputs(isProcessing);
 
       // When processing just finished (was processing → no longer processing)
-      // Auto-trigger DQS analysis ONLY if QDS hasn't been populated yet
-      if (wasProcessing && !isProcessing && fullQuote.inputs.length > 0 && !qdsPopulatedRef.current && !voiceSummary) {
+      // Auto-trigger DQS analysis ONLY if QDS has never been saved (no userPrompt in DB)
+      const hasSavedQDS = !!(fullQuote?.quote as any)?.userPrompt;
+      if (wasProcessing && !isProcessing && fullQuote.inputs.length > 0 && !hasSavedQDS && !voiceSummary) {
         const hasCompletedInputs = fullQuote.inputs.some(
           (input: QuoteInput) => input.processingStatus === "completed"
         );
@@ -588,7 +586,6 @@ export default function QuoteWorkspace() {
           plantMarkup: parsed.plantMarkup ?? null,
           notes: parsed.notes ?? null,
         });
-        qdsPopulatedRef.current = true;
 
         // Auto-fill client details from parsed data
         const updateFields: Record<string, string> = {};
@@ -717,16 +714,24 @@ export default function QuoteWorkspace() {
     }
   }, [fullQuote?.inputs]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Rehydrate QDS on page load — if inputs exist but voiceSummary is empty, re-analyse
-  // This ONLY fires once on first load. Once QDS is populated, it never auto-triggers again.
+  // Rehydrate QDS on page load — ONLY if the QDS has never been saved before.
+  // If userPrompt exists in the DB, the user already saved the QDS — do NOT auto-analyse.
+  // The user can manually click "Re-analyse" if they want a fresh analysis.
   const hasRehydratedRef = useRef(false);
   useEffect(() => {
     if (hasRehydratedRef.current) return;
-    if (qdsPopulatedRef.current) return;
     const allInputs = fullQuote?.inputs;
     if (!allInputs || allInputs.length === 0) return;
-    // Check if there are any inputs that would populate the QDS:
-    // voice notes, text inputs, OR processed documents with extracted content
+    
+    // If the quote already has saved Processing Instructions, the QDS was previously saved.
+    // Do NOT re-analyse — the user's saved data takes priority (Guardrail 10: User Data Sovereignty).
+    const hasSavedQDS = !!(fullQuote?.quote as any)?.userPrompt;
+    if (hasSavedQDS) {
+      hasRehydratedRef.current = true;
+      return;
+    }
+    
+    // Only auto-analyse if there are analysable inputs AND no voiceSummary yet
     const hasAnalysableInputs = allInputs.some(
       (i: any) => (i.inputType === "audio" && i.content && !i.fileUrl) || 
                    (i.inputType === "text" && i.content && !i.fileUrl) ||
@@ -736,7 +741,7 @@ export default function QuoteWorkspace() {
       hasRehydratedRef.current = true;
       triggerVoiceAnalysis();
     }
-  }, [fullQuote?.inputs, voiceSummary]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fullQuote?.inputs, fullQuote?.quote, voiceSummary]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSaveQuote = async () => {
     setIsSaving(true);
