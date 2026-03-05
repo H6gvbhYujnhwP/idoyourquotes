@@ -632,9 +632,30 @@ export default function QuoteWorkspace() {
           updateFields.title = autoTitle;
         }
 
-        // Save all auto-filled fields in one mutation
+        // Build auto-save userPrompt to mark the QDS as populated.
+        // This prevents re-analysis when navigating away and back.
+        const autoPromptParts: string[] = [];
+        if (parsed.jobDescription) autoPromptParts.push(`Job: ${parsed.jobDescription}`);
+        if (parsed.clientName) autoPromptParts.push(`Client: ${parsed.clientName}`);
+        if (parsed.materials && parsed.materials.length > 0) {
+          autoPromptParts.push("Materials:\n" + parsed.materials.map((m: any) => 
+            `  ${m.quantity || 1} × ${m.item}${m.unitPrice ? ` @ £${m.unitPrice}` : ""}`
+          ).join("\n"));
+        }
+        if (autoPromptParts.length > 0) {
+          const autoPrompt = autoPromptParts.join("\n");
+          setUserPrompt(autoPrompt);
+          updateFields.userPrompt = autoPrompt;
+        }
+
+        // Save all auto-filled fields AND userPrompt in one awaited mutation
+        // Using mutateAsync ensures the DB write completes before the user can navigate away
         if (Object.keys(updateFields).length > 0) {
-          updateQuote.mutate({ id: quoteId, ...updateFields });
+          try {
+            await updateQuote.mutateAsync({ id: quoteId, ...updateFields });
+          } catch (err) {
+            console.warn("[triggerVoiceAnalysis] Auto-save failed:", err);
+          }
         }
       } else {
         toast.error("Could not parse dictation");
