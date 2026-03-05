@@ -229,8 +229,11 @@ export default function QuoteWorkspace() {
     }
   );
 
+  // Track whether QDS has been populated at least once (prevents re-triggering after save/refetch)
+  const qdsPopulatedRef = useRef(false);
+
   // Update processing state whenever fullQuote changes
-  // Auto-trigger DQS analysis when input processing completes
+  // Auto-trigger DQS analysis when input processing completes — but ONLY if QDS hasn't been populated yet
   const prevProcessingRef = useRef(false);
   useEffect(() => {
     if (fullQuote?.inputs) {
@@ -242,8 +245,8 @@ export default function QuoteWorkspace() {
       setHasProcessingInputs(isProcessing);
 
       // When processing just finished (was processing → no longer processing)
-      // Auto-trigger DQS analysis to extract structured data from all inputs
-      if (wasProcessing && !isProcessing && fullQuote.inputs.length > 0) {
+      // Auto-trigger DQS analysis ONLY if QDS hasn't been populated yet
+      if (wasProcessing && !isProcessing && fullQuote.inputs.length > 0 && !qdsPopulatedRef.current && !voiceSummary) {
         const hasCompletedInputs = fullQuote.inputs.some(
           (input: QuoteInput) => input.processingStatus === "completed"
         );
@@ -585,6 +588,7 @@ export default function QuoteWorkspace() {
           plantMarkup: parsed.plantMarkup ?? null,
           notes: parsed.notes ?? null,
         });
+        qdsPopulatedRef.current = true;
 
         // Auto-fill client details from parsed data
         const updateFields: Record<string, string> = {};
@@ -714,9 +718,11 @@ export default function QuoteWorkspace() {
   }, [fullQuote?.inputs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Rehydrate QDS on page load — if inputs exist but voiceSummary is empty, re-analyse
+  // This ONLY fires once on first load. Once QDS is populated, it never auto-triggers again.
   const hasRehydratedRef = useRef(false);
   useEffect(() => {
     if (hasRehydratedRef.current) return;
+    if (qdsPopulatedRef.current) return;
     const allInputs = fullQuote?.inputs;
     if (!allInputs || allInputs.length === 0) return;
     // Check if there are any inputs that would populate the QDS:
