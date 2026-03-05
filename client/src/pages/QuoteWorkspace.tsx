@@ -556,23 +556,7 @@ export default function QuoteWorkspace() {
       }
     }
 
-    // Option A: Pre-generation trade relevance check
-    if (inputs && inputs.length > 0) {
-      try {
-        setIsGeneratingDraft(true);
-        const check = await tradeRelevanceCheck.mutateAsync({ quoteId });
-        if (!check.relevant) {
-          setIsGeneratingDraft(false);
-          const proceed = window.confirm(
-            `⚠️ This doesn't seem to relate to your trade:\n\n"${check.message}"\n\nGenerate anyway?`
-          );
-          if (!proceed) return;
-        }
-      } catch (err) {
-        console.warn("[tradeRelevanceCheck] Failed, proceeding:", err);
-      }
-    }
-
+    setIsGeneratingDraft(true);
     generateDraft.mutate({
       quoteId,
       userPrompt: userPrompt || undefined,
