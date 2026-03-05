@@ -3418,6 +3418,14 @@ PLANT / HIRE ITEMS:
 - If the user provides a "PLANT / HIRE:" section, create separate line items for each piece of hired equipment.
 - Use the SELL price (not cost price) as the rate on the quote. The cost price is internal only.
 - Include the duration in the description, e.g. "Cherry Picker Hire (1 week)" or "Scaffold Tower Hire (3 days)".
+
+PRICING TYPE — CRITICAL:
+- Each line item MUST have a "pricingType" field set to "standard", "monthly", or "optional".
+- If a material in the user instructions has "[pricing: monthly]" or "[pricing: optional]", the generated line item MUST use that exact pricingType.
+- If a material matches a catalog item, use the catalog item's Pricing type (shown as "Pricing: standard/monthly/optional" in the catalog).
+- If no pricing tag or catalog match, default to "standard".
+- "standard" items are included in the quote total. "monthly" and "optional" items are shown separately and NOT included in the total.
+- This is NOT optional — every lineItem in your JSON response must include the pricingType field.
 - Apply the Plant Markup percentage to plant/hire items if specified in company defaults or user data.
 - Do NOT invent plant/hire items — only include them if explicitly provided in the data.`;
 
