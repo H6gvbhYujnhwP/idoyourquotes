@@ -15,8 +15,6 @@ export const orgMemberRoleEnum = pgEnum("org_member_role", ["owner", "admin", "m
 export const quoteStatusEnum = pgEnum("quote_status", ["draft", "sent", "accepted", "declined"]);
 export const inputTypeEnum = pgEnum("input_type", ["pdf", "image", "audio", "email", "text", "document"]);
 export const quoteModeEnum = pgEnum("quote_mode", ["simple", "comprehensive"]);
-export const subscriptionTierEnum = pgEnum("subscription_tier", ["trial", "solo", "pro", "business"]);
-export const subscriptionStatusEnum = pgEnum("subscription_status", ["trialing", "active", "past_due", "canceled", "unpaid", "incomplete"]);
 
 /**
  * Organizations - multi-tenant container for all data
@@ -36,22 +34,20 @@ export const organizations = pgTable("organizations", {
   defaultTerms: text("default_terms"),
   billingEmail: varchar("billing_email", { length: 320 }),
   stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
-  aiCreditsRemaining: integer("ai_credits_remaining").default(0),
-  // Subscription & billing
-  subscriptionTier: subscriptionTierEnum("subscription_tier").default("trial").notNull(),
-  subscriptionStatus: subscriptionStatusEnum("subscription_status").default("trialing").notNull(),
   stripeSubscriptionId: varchar("stripe_subscription_id", { length: 255 }),
   stripePriceId: varchar("stripe_price_id", { length: 255 }),
-  trialStartsAt: timestamp("trial_starts_at"),
-  trialEndsAt: timestamp("trial_ends_at"),
+  subscriptionTier: varchar("subscription_tier", { length: 50 }).default("trial"),
+  subscriptionStatus: varchar("subscription_status", { length: 50 }).default("trialing"),
   subscriptionCurrentPeriodStart: timestamp("subscription_current_period_start"),
   subscriptionCurrentPeriodEnd: timestamp("subscription_current_period_end"),
   subscriptionCancelAtPeriodEnd: boolean("subscription_cancel_at_period_end").default(false),
-  monthlyQuoteCount: integer("monthly_quote_count").default(0),
-  quoteCountResetAt: timestamp("quote_count_reset_at"),
+  trialEndsAt: timestamp("trial_ends_at"),
   maxUsers: integer("max_users").default(1),
   maxQuotesPerMonth: integer("max_quotes_per_month").default(10),
   maxCatalogItems: integer("max_catalog_items").default(50),
+  monthlyQuoteCount: integer("monthly_quote_count").default(0),
+  quoteCountResetAt: timestamp("quote_count_reset_at"),
+  aiCreditsRemaining: integer("ai_credits_remaining").default(0),
   // Trade-specific company defaults — used by AI when generating quotes
   defaultWorkingHoursStart: varchar("default_working_hours_start", { length: 10 }).default("08:00"),
   defaultWorkingHoursEnd: varchar("default_working_hours_end", { length: 10 }).default("16:30"),
@@ -132,7 +128,7 @@ export const users = pgTable("users", {
   companyLogo: text("company_logo"),
   defaultTradeSector: varchar("default_trade_sector", { length: 50 }),
   emailVerified: boolean("email_verified").default(false),
-  emailVerificationToken: varchar("email_verification_token", { length: 255 }),
+  emailVerificationToken: text("email_verification_token"),
   emailVerificationSentAt: timestamp("email_verification_sent_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -156,6 +152,7 @@ export const quotes = pgTable("quotes", {
   reference: varchar("reference", { length: 100 }),
   status: quoteStatusEnum("status").default("draft").notNull(),
   clientName: varchar("client_name", { length: 255 }),
+  contactName: varchar("contact_name", { length: 255 }),
   clientEmail: varchar("client_email", { length: 320 }),
   clientPhone: varchar("client_phone", { length: 50 }),
   clientAddress: text("client_address"),
@@ -308,86 +305,26 @@ export type InsertElectricalTakeoff = typeof electricalTakeoffs.$inferInsert;
 
 /**
  * Containment Takeoffs — tray/cable run measurements from containment drawings
- * Measures tray lengths by size, counts fittings (T-pieces, crosses, bends, drops)
- * Calculates cable requirements based on tray routes + user inputs
  */
 export const containmentTakeoffs = pgTable("containment_takeoffs", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   quoteId: bigint("quote_id", { mode: "number" }).notNull(),
   inputId: bigint("input_id", { mode: "number" }).notNull(),
   drawingRef: varchar("drawing_ref", { length: 255 }),
-  status: varchar("status", { length: 20 }).default("draft").notNull(), // draft | processing | ready | verified | locked
-
-  // Drawing metadata
+  status: varchar("status", { length: 20 }).default("draft").notNull(),
   pageWidth: decimal("page_width", { precision: 10, scale: 2 }),
   pageHeight: decimal("page_height", { precision: 10, scale: 2 }),
-  detectedScale: varchar("detected_scale", { length: 50 }), // e.g. "1:100"
-  paperSize: varchar("paper_size", { length: 10 }), // e.g. "A0", "A1", "A3"
-
-  // AI-measured tray runs: array of { size, type, lengthMetres, height, tPieces, crossPieces, bends90, drops }
-  trayRuns: json("tray_runs").$type<Array<{
-    id: string;
-    sizeMillimetres: number;   // 50, 75, 100, 150, 225, 300, 450, 600
-    trayType: string;          // "LV", "FA", "ELV", "SUB"
-    lengthMetres: number;      // measured length in metres
-    heightMetres: number;      // installation height (e.g. 12.5)
-    wholesalerLengths: number; // ceil(lengthMetres / 3)
-    tPieces: number;
-    crossPieces: number;
-    bends90: number;
-    drops: number;
-    segments: Array<{          // individual line segments for SVG overlay
-      x1: number; y1: number;
-      x2: number; y2: number;
-      lengthMetres: number;
-    }>;
-  }>>(),
-
-  // Fitting summary (aggregated from tray runs, for cross-pieces use larger size rule)
-  fittingSummary: json("fitting_summary").$type<Record<string, {
-    tPieces: number;
-    crossPieces: number;
-    bends90: number;
-    drops: number;
-    couplers: number; // one per joint = wholesalerLengths - 1
-  }>>(),
-
-  // User-editable inputs for cable calculation
-  userInputs: json("user_inputs").$type<{
-    trayFilter: string;           // "LV" | "all" | custom
-    trayDuty: string;             // "light" | "medium" | "heavy"
-    extraDropPerFitting: number;  // metres of cable per fitting drop
-    firstPointRunLength: number;  // metres from DB to first tray point
-    numberOfCircuits: number;
-    additionalCablePercent: number; // e.g. 10 for 10%
-  }>(),
-
-  // Derived cable calculation
-  cableSummary: json("cable_summary").$type<{
-    trayRouteLengthMetres: number;
-    dropAllowanceMetres: number;
-    firstPointMetres: number;
-    additionalAllowanceMetres: number;
-    totalCableMetres: number;
-    cableDrums: number; // ceil(total / 100)
-  }>(),
-
-  // Questions for user (like electrical takeoff)
-  questions: json("questions").$type<Array<{
-    id: string; question: string; context: string;
-    options: Array<{ label: string; value: string }>;
-    defaultValue?: string;
-  }>>(),
-  userAnswers: json("user_answers").$type<Record<string, string>>(),
-
-  // Drawing notes extracted
-  drawingNotes: json("drawing_notes").$type<string[]>(),
-
-  // SVG overlay for marked drawing
+  detectedScale: varchar("detected_scale", { length: 50 }),
+  paperSize: varchar("paper_size", { length: 10 }),
+  trayRuns: json("tray_runs"),
+  fittingSummary: json("fitting_summary"),
+  userInputs: json("user_inputs"),
+  cableSummary: json("cable_summary"),
+  questions: json("questions"),
+  userAnswers: json("user_answers"),
+  drawingNotes: json("drawing_notes"),
   svgOverlay: text("svg_overlay"),
   markupImageUrl: text("markup_image_url"),
-
-  // Verification
   verifiedAt: timestamp("verified_at"),
   verifiedBy: bigint("verified_by", { mode: "number" }),
   revision: integer("revision").default(1),
@@ -413,6 +350,7 @@ export const catalogItems = pgTable("catalog_items", {
   unit: varchar("unit", { length: 50 }).default("each"),
   defaultRate: decimal("default_rate", { precision: 12, scale: 2 }).default("0.00"),
   costPrice: decimal("cost_price", { precision: 12, scale: 2 }),
+  installTimeHrs: decimal("install_time_hrs", { precision: 6, scale: 2 }),
   pricingType: varchar("pricing_type", { length: 20 }).default("standard"),
   isActive: integer("is_active").default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),

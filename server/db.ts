@@ -814,7 +814,11 @@ export async function recalculateQuoteTotals(quoteId: number, userId: number): P
   
   if (!quote) return undefined;
 
-  const subtotal = lineItems.reduce((sum, item) => sum + parseFloat(item.total || "0"), 0);
+  // Only include 'standard' pricing type in the quote total
+  // Monthly and optional items are shown separately and not included
+  const subtotal = lineItems
+    .filter(item => !item.pricingType || item.pricingType === 'standard')
+    .reduce((sum, item) => sum + parseFloat(item.total || "0"), 0);
   const taxRate = parseFloat(quote.taxRate || "0");
   const taxAmount = subtotal * (taxRate / 100);
   const total = subtotal + taxAmount;

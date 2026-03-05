@@ -1276,6 +1276,7 @@ IMPORTANT: Address the email greeting to the Contact Person (e.g. "Hi ${contactN
         quantity: z.string().optional(),
         unit: z.string().optional(),
         rate: z.string().optional(),
+        pricingType: z.enum(['standard', 'monthly', 'optional']).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         // Verify quote ownership with org-first access
@@ -1293,6 +1294,7 @@ IMPORTANT: Address the email greeting to the Contact Person (e.g. "Hi ${contactN
           unit: input.unit || "each",
           rate: input.rate || "0.00",
           total,
+          pricingType: input.pricingType || "standard",
         });
 
         // Recalculate quote totals
@@ -1310,6 +1312,7 @@ IMPORTANT: Address the email greeting to the Contact Person (e.g. "Hi ${contactN
         unit: z.string().optional(),
         rate: z.string().optional(),
         sortOrder: z.number().optional(),
+        pricingType: z.enum(['standard', 'monthly', 'optional']).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         // Verify quote ownership with org-first access
@@ -2815,6 +2818,7 @@ Report facts only. Do not interpret or add commentary.`,
         defaultRate: z.string().optional(),
         costPrice: z.string().optional(),
         installTimeHrs: z.string().optional(),
+        pricingType: z.enum(['standard', 'monthly', 'optional']).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         // Get user's organization to set orgId
@@ -2836,6 +2840,7 @@ Report facts only. Do not interpret or add commentary.`,
         defaultRate: z.string().optional(),
         costPrice: z.string().optional(),
         installTimeHrs: z.string().optional(),
+        pricingType: z.enum(['standard', 'monthly', 'optional']).optional(),
         isActive: z.number().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
@@ -3084,7 +3089,13 @@ Rules:
         let catalogContext = "";
         if (catalogItems.length > 0) {
           catalogContext = `\n\nCOMPANY CATALOG — these are the user's products and services with their set prices:
-${catalogItems.map(c => `- "${c.name}" | Sell: £${c.defaultRate}/${c.unit}${c.costPrice ? ` | Buy-in: £${c.costPrice}` : ""}${(c as any).installTimeHrs ? ` | Install: ${(c as any).installTimeHrs}hrs/unit` : ""} | Category: ${c.category || "General"}${c.description ? ` | ${c.description}` : ""}`).join("\n")}`;
+${catalogItems.map(c => `- "${c.name}" | Sell: £${c.defaultRate}/${c.unit}${c.costPrice ? ` | Buy-in: £${c.costPrice}` : ""}${(c as any).installTimeHrs ? ` | Install: ${(c as any).installTimeHrs}hrs/unit` : ""} | Category: ${c.category || "General"} | Pricing: ${(c as any).pricingType || "standard"}${c.description ? ` | ${c.description}` : ""}`).join("\n")}
+
+PRICING TYPES — each catalog item has a pricing type that MUST be preserved:
+- "standard" = one-off cost included in the quote total (the default)
+- "monthly" = recurring monthly service — shown separately, NOT included in the one-off total
+- "optional" = add-on the client can choose — shown separately, NOT included in the one-off total
+When extracting materials, ALWAYS include a "pricingType" field matching the catalog item's pricing type. If no catalog match, default to "standard".`;
         }
 
         const response = await invokeLLM({
@@ -3148,7 +3159,7 @@ Respond ONLY with valid JSON in this exact format:
   "clientPhone": string | null,
   "jobDescription": string,
   "labour": [{"role": string, "quantity": number, "duration": string}],
-  "materials": [{"item": string, "quantity": number, "unitPrice": number | null, "unit": string, "description": string}],
+  "materials": [{"item": string, "quantity": number, "unitPrice": number | null, "unit": string, "description": string, "pricingType": "standard" | "monthly" | "optional"}],
   "markup": number | null,
   "sundries": number | null,
   "contingency": string | null,
@@ -3518,7 +3529,8 @@ STRUCTURE:
       "unit": "string - from the BoQ (nr, m, m², tonnes, etc.)",
       "rate": "number - use catalog rate if available, otherwise estimate",
       "phase": "string - the site or section name from the BoQ (e.g. 'Haseldine Meadows - Frame' or 'Lockley Crescent - Frame')",
-      "category": "string - the trade category (e.g. 'Structural Steelwork')"
+      "category": "string - the trade category (e.g. 'Structural Steelwork')",
+      "pricingType": "string - 'standard' (default), 'monthly', or 'optional'. Match catalog item's pricing type."
     }
   ],` : `
   "lineItems": [
@@ -3528,7 +3540,8 @@ STRUCTURE:
       "unit": "string (each, hours, days, licences, per user, etc.)",
       "rate": number,
       "phase": "string - which project phase this belongs to (e.g., 'Phase 1: Discovery & Audit')",
-      "category": "string - grouping category (e.g., 'Hardware', 'Professional Services', 'Software & Licensing')"
+      "category": "string - grouping category (e.g., 'Hardware', 'Professional Services', 'Software & Licensing')",
+      "pricingType": "string - 'standard' (default), 'monthly', or 'optional'. Match catalog item's pricing type."
     }
   ],`;
 
@@ -3645,7 +3658,8 @@ You MUST respond with valid JSON in this exact format:
       "description": "string - detailed description of the line item including site name if multiple sites",
       "quantity": "number - MUST match the exact quantity from the BoQ/evidence. Read the Qty column carefully. Do NOT default to 1.",
       "unit": "string (each, nr, sqm, hours, etc.)",
-      "rate": "number - use catalog rate if available, otherwise estimate"
+      "rate": "number - use catalog rate if available, otherwise estimate",
+      "pricingType": "string - 'standard' (default, included in total), 'monthly' (recurring, shown separately), or 'optional' (add-on, shown separately). MUST match the catalog item's pricing type if matched."
     }
   ],
   "assumptions": ["string array of assumptions made"],
@@ -3801,6 +3815,7 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${priceHierarchyContext}$
                 total: total.toFixed(2),
                 phaseId: isComprehensive && item.phase ? item.phase : undefined,
                 category: isComprehensive && item.category ? item.category : undefined,
+                pricingType: item.pricingType || "standard",
               });
               createdLineItems.push(lineItem);
             }

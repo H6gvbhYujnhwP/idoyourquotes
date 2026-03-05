@@ -2127,6 +2127,9 @@ export default function QuoteWorkspace() {
                     parts.push("USER-CONFIRMED PRICED MATERIALS (use these EXACT prices):\n" + 
                       pricedMaterials.map(m => {
                         let line = `  ${m.quantity} × ${m.item} @ £${m.unitPrice} each = £${(m.quantity * (m.unitPrice || 0)).toFixed(2)}`;
+                        if (m.pricingType && m.pricingType !== "standard") {
+                          line += ` [pricing: ${m.pricingType}]`;
+                        }
                         // Only include [install:] tags for takeoff/containment items (physical products).
                         // Voice-sourced items may be services/labour — install tags cause AI to
                         // duplicate them into separate "supply" + "install" lines.
@@ -2143,6 +2146,9 @@ export default function QuoteWorkspace() {
                     parts.push("Materials (need pricing from catalog or estimate):\n" + 
                       unpricedMaterials.map(m => {
                         let line = `  ${m.quantity} × ${m.item}`;
+                        if (m.pricingType && m.pricingType !== "standard") {
+                          line += ` [pricing: ${m.pricingType}]`;
+                        }
                         if (m.installTimeHrs && m.installTimeHrs > 0 && (m.source === "takeoff" || m.source === "containment")) {
                           line += ` [install: ${m.installTimeHrs}hrs/unit]`;
                         }

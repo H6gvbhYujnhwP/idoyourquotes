@@ -31,6 +31,7 @@ interface MaterialItem {
   labourCost: number | null;
   unit?: string;
   description?: string;
+  pricingType?: "standard" | "monthly" | "optional";
   source: "voice" | "takeoff" | "containment" | "document";
   symbolCode?: string;
   catalogName?: string;
@@ -273,7 +274,7 @@ export default function QuoteDraftSummary({
     setEdited((prev) => ({ ...prev, plantHire: [...(prev.plantHire || []), { description: "", costPrice: null, sellPrice: null, quantity: 1, duration: "" }] }));
   };
   const addMaterial = () => {
-    setEdited((prev) => ({ ...prev, materials: [...prev.materials, { item: "", quantity: 1, unitPrice: null, costPrice: null, installTimeHrs: null, labourCost: null, unit: "each", description: "", source: "voice" as const }] }));
+    setEdited((prev) => ({ ...prev, materials: [...prev.materials, { item: "", quantity: 1, unitPrice: null, costPrice: null, installTimeHrs: null, labourCost: null, unit: "each", description: "", pricingType: "standard" as const, source: "voice" as const }] }));
   };
   const addLabour = () => {
     setEdited((prev) => ({ ...prev, labour: [...prev.labour, { role: "", quantity: 1, duration: "" }] }));
@@ -416,7 +417,7 @@ export default function QuoteDraftSummary({
                 <div className="space-y-1.5">
                   {edited.labour.map((l, i) => (
                     <div key={i} className="flex gap-1.5 items-center">
-                      <button onClick={() => removeLabour(i)} className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-red-100 text-red-400 hover:text-red-600 flex-shrink-0 transition-colors" title="Remove"><X className="h-3 w-3" /></button>
+                      <button onClick={() => removeLabour(i)} className="w-7 h-7 flex items-center justify-center rounded-full bg-red-50 hover:bg-red-100 text-red-400 hover:text-red-600 flex-shrink-0 transition-colors border border-red-200" title="Remove"><X className="h-4 w-4" /></button>
                       <input type="number" value={l.quantity} onChange={(e) => updateLabour(i, "quantity", parseInt(e.target.value) || 0)} className="w-14 text-sm font-medium px-2 py-1.5 rounded-md text-center outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
                       <span className="text-sm" style={{ color: brand.navyMuted }}>×</span>
                       <input type="text" value={l.role} onChange={(e) => updateLabour(i, "role", e.target.value)} className="flex-1 text-sm font-medium px-2 py-1.5 rounded-md outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} placeholder="Role" />
@@ -463,7 +464,7 @@ export default function QuoteDraftSummary({
                     <div key={i} className="rounded-lg p-3" style={{ backgroundColor: "#f8fffe", border: "1px solid #e5e7eb" }}>
                       {/* Row 1: remove + item name + badges */}
                       <div className="flex gap-1.5 items-start mb-1.5">
-                        <button onClick={() => removeMaterial(i)} className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-red-100 text-red-400 hover:text-red-600 flex-shrink-0 mt-1 transition-colors" title="Remove"><X className="h-3.5 w-3.5" /></button>
+                        <button onClick={() => removeMaterial(i)} className="w-7 h-7 flex items-center justify-center rounded-full bg-red-50 hover:bg-red-100 text-red-400 hover:text-red-600 flex-shrink-0 mt-1 transition-colors border border-red-200" title="Remove"><X className="h-4 w-4" /></button>
                         <div className="flex-1 min-w-0">
                           <input type="text" value={m.item} onChange={(e) => updateMaterial(i, "item", e.target.value)} className="w-full text-sm font-bold px-2.5 py-1.5 rounded-md outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} placeholder="Item name" />
                         </div>
@@ -494,12 +495,25 @@ export default function QuoteDraftSummary({
                         {lineTotal > 0 && <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ backgroundColor: "#f0f9ff", color: brand.navy }}>= £{fmtGBP(lineTotal)}</span>}
                         {marginAmt != null && marginPct != null && <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ backgroundColor: marginAmt >= 0 ? "#f0fdfa" : "#fef2f2", color: marginAmt >= 0 ? "#0d9488" : "#dc2626" }}>Margin: £{fmtGBP(marginAmt)} ({marginPct.toFixed(0)}%)</span>}
                       </div>
-                      {/* Row 4: install time + labour */}
-                      <div className="flex items-center gap-2 ml-7 mt-1.5">
+                      {/* Row 4: install time + labour + pricing type */}
+                      <div className="flex items-center gap-2 ml-7 mt-1.5 flex-wrap">
                         <span className="text-[10px] font-bold" style={{ color: brand.navyMuted }}>INSTALL:</span>
                         <input type="number" step="0.5" value={m.installTimeHrs ?? ""} onChange={(e) => updateMaterial(i, "installTimeHrs", e.target.value ? parseFloat(e.target.value) : null)} placeholder="hrs" className="w-16 text-xs px-2 py-1 rounded outline-none focus:ring-1 focus:ring-blue-300" style={inputStyle} />
                         <span className="text-[10px]" style={{ color: brand.navyMuted }}>hrs/unit</span>
                         {calcLabour != null && calcLabour > 0 && <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ backgroundColor: "#dbeafe", color: "#1d4ed8" }}>Labour: £{fmtGBP(calcLabour)}</span>}
+                        <div className="flex items-center gap-1 ml-auto">
+                          <span className="text-[10px] font-bold" style={{ color: brand.navyMuted }}>PRICING:</span>
+                          <select
+                            value={m.pricingType || "standard"}
+                            onChange={(e) => updateMaterial(i, "pricingType", e.target.value)}
+                            className="text-xs px-2 py-1 rounded border outline-none focus:ring-1 focus:ring-teal-300"
+                            style={{ borderColor: "#e2e8f0", fontWeight: 600, color: m.pricingType === "monthly" ? "#0d9488" : m.pricingType === "optional" ? "#8b5cf6" : brand.navy }}
+                          >
+                            <option value="standard">Standard</option>
+                            <option value="monthly">Monthly</option>
+                            <option value="optional">Optional</option>
+                          </select>
+                        </div>
                       </div>
                     </div>
                   );
@@ -530,6 +544,13 @@ export default function QuoteDraftSummary({
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="text-[13px] font-semibold" style={{ color: brand.navy }}>{m.item}</span>
                               <SourceBadge source={m.source} symbolCode={m.symbolCode} catalogName={m.catalogName} />
+                              {m.pricingType && m.pricingType !== "standard" && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{
+                                  backgroundColor: m.pricingType === "monthly" ? "#f0fdfa" : "#f5f3ff",
+                                  color: m.pricingType === "monthly" ? "#0d9488" : "#8b5cf6",
+                                  border: `1px solid ${m.pricingType === "monthly" ? "#99f6e4" : "#ddd6fe"}`,
+                                }}>{m.pricingType === "monthly" ? "Monthly" : "Optional"}</span>
+                              )}
                             </div>
                             {m.description && <p className="text-xs mt-0.5 leading-snug" style={{ color: brand.navyMuted }}>{m.description}</p>}
                             {m.installTimeHrs != null && m.installTimeHrs > 0 && (

@@ -23,6 +23,7 @@ interface CatalogItemData {
   defaultRate: string | null;
   costPrice: string | null;
   installTimeHrs: string | null;
+  pricingType: string | null;
   isActive: number | null;
 }
 
@@ -225,6 +226,7 @@ export default function Catalog() {
     { label: "Sell (£)", flex: 0.8, mw: 70 },
     { label: "Buy-in (£)", flex: 0.8, mw: 70 },
     { label: "Install (hrs)", flex: 0.8, mw: 70 },
+    { label: "Pricing", flex: 0.9, mw: 80 },
     { label: "", flex: 0.3, mw: 36 },
   ];
 
@@ -348,6 +350,27 @@ export default function Catalog() {
                       </div>
                       <div style={{ flex: 0.8, minWidth: 70, padding: "0 2px" }}>
                         <EditableCell value={item.installTimeHrs || ""} field="installTimeHrs" itemId={item.id} type="number" step="0.25" suffix="hrs" onSave={handleInlineSave} minWidth={50} />
+                      </div>
+                      <div style={{ flex: 0.9, minWidth: 80, padding: "0 2px" }}>
+                        <select
+                          value={item.pricingType || "standard"}
+                          onChange={(e) => handleInlineSave(item.id, "pricingType", e.target.value)}
+                          style={{
+                            width: "100%",
+                            padding: "4px 6px",
+                            fontSize: 12,
+                            border: "1px solid #e2e8f0",
+                            borderRadius: 4,
+                            background: "white",
+                            cursor: "pointer",
+                            color: item.pricingType === "monthly" ? "#0d9488" : item.pricingType === "optional" ? "#8b5cf6" : "#1a2b4a",
+                            fontWeight: 500,
+                          }}
+                        >
+                          <option value="standard">Standard</option>
+                          <option value="monthly">Monthly</option>
+                          <option value="optional">Optional</option>
+                        </select>
                       </div>
                       <div style={{ flex: 0.3, minWidth: 36, display: "flex", justifyContent: "center" }}>
                         <button

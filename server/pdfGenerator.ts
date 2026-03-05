@@ -557,11 +557,16 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
   const { quote, lineItems, user, organization } = data;
   const colors = getBrandColors(organization);
 
-  const lineItemsHTML = lineItems
+  // Split line items by pricing type
+  const standardItems = lineItems.filter(item => !item.pricingType || item.pricingType === "standard");
+  const monthlyItems = lineItems.filter(item => item.pricingType === "monthly");
+  const optionalItems = lineItems.filter(item => item.pricingType === "optional");
+
+  const renderItemRows = (items: typeof lineItems, startIndex: number = 0) => items
     .map(
       (item, index) => `
       <tr>
-        <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; font-size: 10pt;">${index + 1}</td>
+        <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; font-size: 10pt;">${startIndex + index + 1}</td>
         <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; font-size: 10pt;">${escapeHtml(item.description || "")}</td>
         <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; text-align: center; font-size: 10pt;">${formatQuantity(item.quantity)}</td>
         <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; text-align: center; font-size: 10pt;">${item.unit || "each"}</td>
@@ -640,7 +645,7 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
         </tr>
       </thead>
       <tbody>
-        ${lineItemsHTML}
+        ${renderItemRows(standardItems)}
       </tbody>
     </table>
 
@@ -661,6 +666,50 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
         </div>
       </div>
     </div>
+
+    ${monthlyItems.length > 0 ? `
+    <div style="margin-top: 24px;">
+      <h2 style="font-size: 14pt; margin-bottom: 12px;">Ongoing Monthly Services</h2>
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th style="width: 36px;">#</th>
+            <th>Description</th>
+            <th style="width: 70px;">Qty</th>
+            <th style="width: 70px;">Unit</th>
+            <th style="width: 90px;">Rate</th>
+            <th style="width: 110px;">Per Month</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${renderItemRows(monthlyItems)}
+        </tbody>
+      </table>
+      <div style="text-align: right; font-size: 11pt; color: ${colors.primary}; font-weight: 700; margin-top: -8px;">
+        Monthly Total: ${formatCurrency(monthlyItems.reduce((sum, item) => sum + parseFloat(item.total || "0"), 0))}/month
+      </div>
+    </div>` : ""}
+
+    ${optionalItems.length > 0 ? `
+    <div style="margin-top: 24px;">
+      <h2 style="font-size: 14pt; margin-bottom: 12px;">Optional Services</h2>
+      <p style="font-size: 9.5pt; color: #6b7280; margin-bottom: 8px;">The following items are available as add-ons and are not included in the total above.</p>
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th style="width: 36px;">#</th>
+            <th>Description</th>
+            <th style="width: 70px;">Qty</th>
+            <th style="width: 70px;">Unit</th>
+            <th style="width: 90px;">Rate</th>
+            <th style="width: 110px;">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${renderItemRows(optionalItems)}
+        </tbody>
+      </table>
+    </div>` : ""}
 
     ${quote.terms ? `
     <div class="terms-box">
