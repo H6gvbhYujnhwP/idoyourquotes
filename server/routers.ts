@@ -2839,7 +2839,12 @@ Report facts only. Do not interpret or add commentary.`,
         isActive: z.number().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const { id, ...data } = input;
+        const { id, ...rawData } = input;
+        // Filter out undefined values so editing one field doesn't null out others
+        const data: Record<string, any> = {};
+        for (const [key, val] of Object.entries(rawData)) {
+          if (val !== undefined) data[key] = val;
+        }
         return updateCatalogItem(id, ctx.user.id, data);
       }),
 
