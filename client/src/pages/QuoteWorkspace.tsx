@@ -734,9 +734,12 @@ export default function QuoteWorkspace() {
     if (hasRehydratedRef.current) return;
     const allInputs = fullQuote?.inputs;
     if (!allInputs || allInputs.length === 0) return;
-    // Check if there are voice notes or text inputs that would populate the QDS
+    // Check if there are any inputs that would populate the QDS:
+    // voice notes, text inputs, OR processed documents with extracted content
     const hasAnalysableInputs = allInputs.some(
-      (i: any) => (i.inputType === "audio" && i.content && !i.fileUrl) || (i.inputType === "text" && i.content && !i.fileUrl)
+      (i: any) => (i.inputType === "audio" && i.content && !i.fileUrl) || 
+                   (i.inputType === "text" && i.content && !i.fileUrl) ||
+                   (i.processedContent && i.processingStatus === "completed")
     );
     if (hasAnalysableInputs && !voiceSummary) {
       hasRehydratedRef.current = true;
