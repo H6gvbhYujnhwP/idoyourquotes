@@ -72,6 +72,7 @@ interface LineItem {
   unit: string | null;
   rate: string | null;
   total: string | null;
+  pricingType: string | null;
 }
 
 interface QuoteInput {
@@ -2606,6 +2607,7 @@ export default function QuoteWorkspace() {
                         <th className="text-left p-3 font-medium w-20">Unit</th>
                         <th className="text-right p-3 font-medium w-24">Rate</th>
                         <th className="text-right p-3 font-medium w-24">Total</th>
+                        <th className="text-center p-3 font-medium w-28">Type</th>
                         <th className="text-right p-3 font-medium w-28">
                           <span className="text-green-600" title="Internal only — not shown on PDF">Margin</span>
                         </th>
@@ -2703,6 +2705,30 @@ export default function QuoteWorkspace() {
                           </td>
                           {/* Total - calculated, not editable */}
                           <td className="p-3 text-right font-medium">£{parseFloat(item.total || "0").toFixed(2)}</td>
+                          {/* Pricing Type - dropdown */}
+                          <td className="p-3 text-center">
+                            <select
+                              value={(item as any).pricingType || "standard"}
+                              onChange={(e) => {
+                                updateLineItem.mutate({
+                                  id: item.id,
+                                  quoteId,
+                                  pricingType: e.target.value as any,
+                                });
+                              }}
+                              className="text-xs px-2 py-1 rounded border cursor-pointer"
+                              style={{
+                                borderColor: "#e2e8f0",
+                                fontWeight: 600,
+                                color: (item as any).pricingType === "monthly" ? "#0d9488" : (item as any).pricingType === "optional" ? "#8b5cf6" : "#1a2b4a",
+                                background: (item as any).pricingType === "monthly" ? "#f0fdfa" : (item as any).pricingType === "optional" ? "#f5f3ff" : "white",
+                              }}
+                            >
+                              <option value="standard">Standard</option>
+                              <option value="monthly">Monthly</option>
+                              <option value="optional">Optional</option>
+                            </select>
+                          </td>
                           {/* Margin - internal only, calculated from catalog costPrice */}
                           <td className="p-3 text-right text-xs">
                             {(() => {
