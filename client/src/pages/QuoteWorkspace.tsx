@@ -1919,16 +1919,29 @@ export default function QuoteWorkspace() {
               </div>
             </div>
 
-            {/* Voice Dictation — shows transcript panel when dictating is active */}
+            {/* Voice Dictation — floating bottom bar when dictating is active */}
             {isDictating && (
-              <div className="px-4 py-3" style={{ borderTop: `1px solid ${brand.border}` }}>
-                <DictationButton
-                  onCommand={handleDictationCommand}
-                  autoStart={isDictating}
-                  onListeningChange={(listening) => {
-                    if (!listening) setIsDictating(false);
-                  }}
-                />
+              <div style={{
+                position: "fixed",
+                bottom: 0,
+                left: 0,
+                right: 0,
+                zIndex: 9999,
+                background: "linear-gradient(to top, #1a2b4a 0%, #1e3a5f 100%)",
+                borderTop: "2px solid #0d9488",
+                boxShadow: "0 -4px 24px rgba(0,0,0,0.25)",
+                padding: "0",
+              }}>
+                <div style={{ maxWidth: 900, margin: "0 auto", padding: "12px 20px" }}>
+                  <DictationButton
+                    onCommand={handleDictationCommand}
+                    autoStart={isDictating}
+                    onListeningChange={(listening) => {
+                      if (!listening) setIsDictating(false);
+                    }}
+                    variant="floating"
+                  />
+                </div>
               </div>
             )}
           </div>

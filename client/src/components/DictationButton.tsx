@@ -115,7 +115,7 @@ interface DictationButtonProps {
   onCommand?: (command: DictationCommand) => void;
   disabled?: boolean;
   className?: string;
-  variant?: "default" | "inline";
+  variant?: "default" | "inline" | "floating";
   /** Simple mode: just returns text, no command detection */
   onTranscript?: (text: string) => void;
   /** Auto-start listening when mounted or when this value changes to true */
@@ -289,6 +289,110 @@ export default function DictationButton({
     : liveCommand?.type === "build" ? "Will generate your quote"
     : liveCommand?.type === "build_with_text" ? "Will save & generate quote"
     : null;
+
+  // Floating variant — compact dark-themed bar for fixed bottom overlay
+  if (variant === "floating") {
+    return (
+      <div className={className}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {/* Pulsing recording indicator */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            {isListening && (
+              <span style={{ position: "relative", display: "flex", height: 12, width: 12 }}>
+                <span style={{
+                  position: "absolute", display: "inline-flex", height: "100%", width: "100%",
+                  borderRadius: "50%", backgroundColor: "#f87171", opacity: 0.75,
+                  animation: "ping 1s cubic-bezier(0,0,0.2,1) infinite",
+                }} />
+                <span style={{
+                  position: "relative", display: "inline-flex", height: 12, width: 12,
+                  borderRadius: "50%", backgroundColor: "#ef4444",
+                }} />
+              </span>
+            )}
+            <span style={{ color: isListening ? "#f87171" : "#94a3b8", fontSize: 13, fontWeight: 600 }}>
+              {isListening ? "Listening..." : "Ready"}
+            </span>
+          </div>
+
+          {/* Live transcript */}
+          <div style={{
+            flex: 1, minHeight: 36, padding: "6px 12px", borderRadius: 8,
+            backgroundColor: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)",
+            overflow: "hidden",
+          }}>
+            {commandLabel && (
+              <div style={{
+                fontSize: 10, fontWeight: 700, marginBottom: 2,
+                color: liveCommand?.type === "remove" ? "#fbbf24"
+                  : liveCommand?.type === "build" || liveCommand?.type === "build_with_text" ? "#34d399"
+                  : "#60a5fa",
+              }}>
+                {liveCommand?.type === "remove" && "⏪ "}{liveCommand?.type === "build" || liveCommand?.type === "build_with_text" ? "⚡ " : ""}{liveCommand?.type === "change" && "✏️ "}{commandLabel}
+              </div>
+            )}
+            <p style={{
+              fontSize: 13, color: displayText ? "#e2e8f0" : "#64748b", lineHeight: 1.4,
+              margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+            }}>
+              {displayText || "Speak now — describe the job, materials, pricing..."}
+              {interimText && <span style={{ color: "#64748b" }}>|</span>}
+            </p>
+          </div>
+
+          {/* Action buttons */}
+          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+            {isListening ? (
+              <>
+                <button
+                  type="button"
+                  onClick={stopListening}
+                  style={{
+                    padding: "8px 20px", borderRadius: 8, border: "none", cursor: "pointer",
+                    backgroundColor: "#ef4444", color: "white", fontSize: 13, fontWeight: 700,
+                    display: "flex", alignItems: "center", gap: 6,
+                  }}
+                >
+                  <Square style={{ height: 14, width: 14 }} />
+                  Done
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelListening}
+                  style={{
+                    padding: "8px 14px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.2)",
+                    cursor: "pointer", backgroundColor: "transparent", color: "#94a3b8",
+                    fontSize: 12, fontWeight: 500,
+                  }}
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={startListening}
+                disabled={disabled}
+                style={{
+                  padding: "8px 20px", borderRadius: 8, border: "none", cursor: "pointer",
+                  backgroundColor: "#0d9488", color: "white", fontSize: 13, fontWeight: 700,
+                  display: "flex", alignItems: "center", gap: 6,
+                }}
+              >
+                <Mic style={{ height: 14, width: 14 }} />
+                Start
+              </button>
+            )}
+          </div>
+        </div>
+
+        {error && <p style={{ fontSize: 11, color: "#f87171", marginTop: 6 }}>{error}</p>}
+
+        {/* Keyframes for ping animation */}
+        <style>{`@keyframes ping { 75%, 100% { transform: scale(2); opacity: 0; } }`}</style>
+      </div>
+    );
+  }
 
   // Inline variant
   if (variant === "inline") {
