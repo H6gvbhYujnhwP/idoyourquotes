@@ -588,7 +588,7 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Quote ${quote.reference || `Q-${quote.id}`}</title>
+  <title>${quote.reference || `Q-${quote.id}`}</title>
   <style>${generateStyles(colors)}</style>
 </head>
 <body>
