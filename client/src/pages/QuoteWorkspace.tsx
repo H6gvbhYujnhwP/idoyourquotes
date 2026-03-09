@@ -2259,7 +2259,12 @@ export default function QuoteWorkspace() {
 
                 if (data.notes) parts.push(`Notes: ${data.notes}`);
 
-                setUserPrompt(parts.join("\n"));
+                const builtPrompt = parts.join("\n");
+                setUserPrompt(builtPrompt);
+                // Persist Processing Instructions to DB immediately — generateDraft reads this
+                // column server-side, so without this write, quote generation always uses the
+                // stale original analysis regardless of QDS edits.
+                updateQuote.mutate({ id: quoteId, userPrompt: builtPrompt || null });
 
                 // Auto-name if client provided and title is empty
                 if (data.clientName && !title) {
