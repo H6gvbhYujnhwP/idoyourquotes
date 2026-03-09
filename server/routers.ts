@@ -3198,10 +3198,12 @@ INPUT PROCESSING:
 - When multiple inputs cover the same work, MERGE them into one coherent summary — never duplicate line items.
 
 CLIENT EXTRACTION:
-- Extract client details from email signatures, headers, or mentions: name, company, email, phone.
+- Extract client details from ANY source: email signatures, email headers, Word document contact blocks, tender cover pages, specification headers, letter headings, or any mention of company/contact details.
 - The RECIPIENT of the quote is the client (the person asking for work), NOT the user (the person sending the quote).
-- Look for patterns: "Dear [name]", "Hi [name]", email From/To headers, signature blocks with company name, phone, email, address.
+- Look for patterns: "Dear [name]", "Hi [name]", email From/To headers, signature blocks, document headers with company name, contact sections, "Prepared for:", "Issued to:", "Client:", "Contact:", or any block containing a name + email + phone together.
+- Email addresses appear in many formats — look for anything matching name@domain.com or name@domain.co.uk anywhere in the document, not just in email signatures.
 - If an email chain shows the user replying to someone, the "someone" is the client.
+- For tender documents and Word docs: the client is typically named on the cover page, in a "prepared for" section, or in a contact/enquiries block.
 ${catalogContext}
 
 CATALOG MATCHING RULES:
@@ -3247,7 +3249,7 @@ Respond ONLY with valid JSON in this exact format:
 
 FIELD GUIDELINES:
 - clientName: Full name and/or company. E.g. "Bjorn Gladwell / Rosetti"
-- clientEmail: Email address from signature or header
+- clientEmail: Email address — look anywhere in the document: signatures, headers, contact blocks, tender cover pages, anywhere an @ symbol appears in a recognisable email format
 - clientPhone: Phone from signature or mentions
 - jobDescription: 2-3 detailed sentences covering the FULL scope. Include specifics — server types, cable lengths, page counts, service descriptions. Write from the perspective of the quoting business describing the work they'll do.
 - labour: Team composition with realistic durations. Only include if there is genuinely separate on-site labour not covered by catalog service items.
