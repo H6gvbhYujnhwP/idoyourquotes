@@ -810,7 +810,10 @@ export async function recalculateQuoteTotals(quoteId: number, userId: number): P
   if (!db) return undefined;
 
   const lineItems = await getLineItemsByQuoteId(quoteId);
-  const quote = await getQuoteById(quoteId, userId);
+  // Try org-based lookup first — team quotes are org-owned and may not match by userId alone
+  const org = await getUserPrimaryOrg(userId);
+  let quote = org ? await getQuoteByIdAndOrg(quoteId, org.id) : undefined;
+  if (!quote) quote = await getQuoteById(quoteId, userId);
   
   if (!quote) return undefined;
 

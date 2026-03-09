@@ -190,6 +190,7 @@ export default function QuoteWorkspace() {
   const [newItemQuantity, setNewItemQuantity] = useState("1");
   const [newItemUnit, setNewItemUnit] = useState("each");
   const [newItemRate, setNewItemRate] = useState("");
+  const [newItemPricingType, setNewItemPricingType] = useState<"standard" | "monthly" | "optional" | "annual">("standard");
 
   // New text input state
   const [newTextInput, setNewTextInput] = useState("");
@@ -863,6 +864,7 @@ export default function QuoteWorkspace() {
       quantity: newItemQuantity,
       unit: newItemUnit,
       rate: newItemRate || "0",
+      pricingType: newItemPricingType,
     });
   };
 
@@ -2924,6 +2926,23 @@ export default function QuoteWorkspace() {
                       onChange={(e) => setNewItemRate(e.target.value)}
                     />
                   </div>
+                  <div className="col-span-12 md:col-span-2">
+                    <select
+                      value={newItemPricingType}
+                      onChange={(e) => setNewItemPricingType(e.target.value as any)}
+                      className="w-full h-10 text-sm px-3 rounded-md border border-input bg-background"
+                      style={{
+                        fontWeight: 600,
+                        color: newItemPricingType === "monthly" ? "#0d9488" : newItemPricingType === "optional" ? "#8b5cf6" : newItemPricingType === "annual" ? "#b45309" : "#1a2b4a",
+                        background: newItemPricingType === "monthly" ? "#f0fdfa" : newItemPricingType === "optional" ? "#f5f3ff" : newItemPricingType === "annual" ? "#fef3c7" : "white",
+                      }}
+                    >
+                      <option value="standard">Standard</option>
+                      <option value="monthly">Monthly</option>
+                      <option value="optional">Optional</option>
+                      <option value="annual">Annual</option>
+                    </select>
+                  </div>
                   <div className="col-span-12 md:col-span-1">
                     <Button
                       onClick={handleAddLineItem}
@@ -2952,7 +2971,7 @@ export default function QuoteWorkspace() {
                 
                 {showCatalogPicker && catalogItems && catalogItems.length > 0 && (
                   <div className="absolute z-50 mt-2 w-full bg-popover border rounded-lg shadow-lg max-h-64 overflow-y-auto">
-                    {catalogItems.map((item: { id: number; name: string; description: string | null; unit: string | null; defaultRate: string | null; category: string | null }, index: number) => (
+                    {catalogItems.map((item: { id: number; name: string; description: string | null; unit: string | null; defaultRate: string | null; category: string | null; pricingType?: string | null }, index: number) => (
                       <div
                         key={item.id}
                         className={`p-3 cursor-pointer hover:bg-accent transition-colors ${index % 2 === 1 ? 'bg-muted/30' : ''}`}
@@ -2963,6 +2982,7 @@ export default function QuoteWorkspace() {
                             quantity: "1",
                             unit: item.unit || "each",
                             rate: item.defaultRate || "0",
+                            pricingType: (item.pricingType as any) || "standard",
                           });
                           setShowCatalogPicker(false);
                           toast.success(`Added "${item.name}" to quote`);
