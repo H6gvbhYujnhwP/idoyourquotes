@@ -3091,8 +3091,11 @@ Rules:
         const userTradeSector = ctx.user.defaultTradeSector || null;
         const tradeLabel = tradePresetKey || userTradeSector || "general trades/construction";
 
-        // Fetch catalog items so the AI can match dictated items to catalog products/services
-        const catalogItems = await getCatalogItemsByUserId(ctx.user.id);
+        // Fetch catalog items — org-first for team/org consistency
+        const org = await getUserPrimaryOrg(ctx.user.id);
+        const catalogItems = org 
+          ? await getCatalogItemsByOrgId(org.id)
+          : await getCatalogItemsByUserId(ctx.user.id);
         let catalogContext = "";
         if (catalogItems.length > 0) {
           catalogContext = `\n\nCOMPANY CATALOG — these are the user's products and services with their set prices:
@@ -3134,13 +3137,13 @@ CLIENT EXTRACTION:
 ${catalogContext}
 
 CATALOG MATCHING RULES:
-- When evidence mentions work that matches a catalog item, extract it as a material WITH the catalog sell price.
-- Match by meaning, not exact words: "engineer onsite for a day" matches "IT Labour Onsite" if that's in the catalog.
-- "half a day workshop" matches "IT Labour Workshop" if that's in the catalog.
-- CRITICAL: Before finalising your output, scan EVERY activity, service, or deliverable mentioned in the evidence against the catalog item names. If a phrase like "discovery session required" or "need a site survey" closely matches a catalog item name (e.g. "Discovery Session"), it IS a billable catalog item — include it as a material with the catalog price. Do NOT treat catalog item names as generic descriptions of work phases.
-- Use the CORRECT catalog item for each piece of work — don't use the same catalog rate for different items.
+- STEP 1: First, extract ALL items, services, and deliverables from the evidence independently. Identify what hardware, software, labour, and services are actually needed based on what the document describes. Do NOT look at the catalog yet.
+- STEP 2: Then, for each extracted item, check if there is a CLEAR and ACCURATE catalog match. "IT Labour Onsite" matches "engineer onsite for installation" — that is a good match. "Website 7 Pages" does NOT match "network infrastructure upgrade" — that is a bad match. Reject bad matches.
+- ONLY use a catalog item if the scope item genuinely IS that catalog product or service. If a catalog item is unrelated to the project scope, IGNORE it completely.
+- Never force catalog matches. If the catalog has 3 items and the project needs 10 different things, create 10 line items — only the ones that genuinely match get catalog prices, the rest get estimated prices.
 - If the user states a specific price that differs from catalog, use the USER's price.
-- If no catalog item matches, estimate a reasonable UK market price based on your knowledge of typical trade pricing. Set "estimated" to true on that material so it can be flagged in the UI. NEVER return null for unitPrice — always provide either a catalog price or an estimated price.
+- If no catalog item matches, create a new line item with an estimated UK market price. Set "estimated" to true on that material. NEVER return null for unitPrice — always provide either a catalog price or a reasonable estimate.
+- For estimated prices, use realistic UK market rates for the specific trade and item type. Be specific: "Ubiquiti U6 Pro WAP" not "networking equipment"; "VoIP Desk Phone" not "phone setup".
 
 MATERIALS vs LABOUR:
 - "materials" in this system means ALL billable line items — physical products, services, deliverables, and time-based work that should appear as priced lines on the quote.
@@ -3303,10 +3306,14 @@ If NOT relevant: {"relevant": false, "message": "Brief explanation of why this d
         const inputs = await getInputsByQuoteId(input.quoteId);
         const tenderContext = await getTenderContextByQuoteId(input.quoteId);
         const internalEstimate = await getInternalEstimateByQuoteId(input.quoteId);
-        const catalogItems = await getCatalogItemsByUserId(ctx.user.id);
 
         // Fetch organization profile for company defaults
         const org = await getUserPrimaryOrg(ctx.user.id);
+
+        // Fetch catalog items — org-first for team/org consistency
+        const catalogItems = org
+          ? await getCatalogItemsByOrgId(org.id)
+          : await getCatalogItemsByUserId(ctx.user.id);
         const orgDefaults = org ? {
           companyName: org.companyName || ctx.user.companyName || null,
           workingHours: {
