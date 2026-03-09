@@ -561,6 +561,7 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
   const standardItems = lineItems.filter(item => !item.pricingType || item.pricingType === "standard");
   const monthlyItems = lineItems.filter(item => item.pricingType === "monthly");
   const optionalItems = lineItems.filter(item => item.pricingType === "optional");
+  const annualItems = lineItems.filter(item => item.pricingType === "annual");
 
   const renderItemRows = (items: typeof lineItems, startIndex: number = 0) => items
     .map(
@@ -709,6 +710,30 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
           ${renderItemRows(optionalItems)}
         </tbody>
       </table>
+    </div>` : ""}
+
+    ${annualItems.length > 0 ? `
+    <div style="margin-top: 24px;">
+      <h2 style="font-size: 14pt; margin-bottom: 12px;">Annual Services</h2>
+      <p style="font-size: 9.5pt; color: #6b7280; margin-bottom: 8px;">The following items are billed annually and are not included in the one-off total above.</p>
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th style="width: 36px;">#</th>
+            <th>Description</th>
+            <th style="width: 70px;">Qty</th>
+            <th style="width: 70px;">Unit</th>
+            <th style="width: 90px;">Rate</th>
+            <th style="width: 110px;">Per Year</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${renderItemRows(annualItems)}
+        </tbody>
+      </table>
+      <div style="text-align: right; font-size: 11pt; color: ${colors.primary}; font-weight: 700; margin-top: -8px;">
+        Annual Total: ${formatCurrency(annualItems.reduce((sum, item) => sum + parseFloat(item.total || "0"), 0))}/year
+      </div>
     </div>` : ""}
 
     ${quote.terms ? `

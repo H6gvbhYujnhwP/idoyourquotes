@@ -2769,13 +2769,14 @@ export default function QuoteWorkspace() {
                               style={{
                                 borderColor: "#e2e8f0",
                                 fontWeight: 600,
-                                color: (item as any).pricingType === "monthly" ? "#0d9488" : (item as any).pricingType === "optional" ? "#8b5cf6" : "#1a2b4a",
-                                background: (item as any).pricingType === "monthly" ? "#f0fdfa" : (item as any).pricingType === "optional" ? "#f5f3ff" : "white",
+                                color: (item as any).pricingType === "monthly" ? "#0d9488" : (item as any).pricingType === "optional" ? "#8b5cf6" : (item as any).pricingType === "annual" ? "#b45309" : "#1a2b4a",
+                                background: (item as any).pricingType === "monthly" ? "#f0fdfa" : (item as any).pricingType === "optional" ? "#f5f3ff" : (item as any).pricingType === "annual" ? "#fef3c7" : "white",
                               }}
                             >
                               <option value="standard">Standard</option>
                               <option value="monthly">Monthly</option>
                               <option value="optional">Optional</option>
+                              <option value="annual">Annual</option>
                             </select>
                           </td>
                           {/* Margin - internal only, calculated from catalog costPrice */}

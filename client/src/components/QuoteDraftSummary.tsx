@@ -510,11 +510,12 @@ export default function QuoteDraftSummary({
                             value={m.pricingType || "standard"}
                             onChange={(e) => updateMaterial(i, "pricingType", e.target.value)}
                             className="text-xs px-2 py-1 rounded border outline-none focus:ring-1 focus:ring-teal-300"
-                            style={{ borderColor: "#e2e8f0", fontWeight: 600, color: m.pricingType === "monthly" ? "#0d9488" : m.pricingType === "optional" ? "#8b5cf6" : brand.navy }}
+                            style={{ borderColor: "#e2e8f0", fontWeight: 600, color: m.pricingType === "monthly" ? "#0d9488" : m.pricingType === "optional" ? "#8b5cf6" : m.pricingType === "annual" ? "#b45309" : brand.navy }}
                           >
                             <option value="standard">Standard</option>
                             <option value="monthly">Monthly</option>
                             <option value="optional">Optional</option>
+                            <option value="annual">Annual</option>
                           </select>
                         </div>
                       </div>
@@ -549,10 +550,10 @@ export default function QuoteDraftSummary({
                               <SourceBadge source={m.source} symbolCode={m.symbolCode} catalogName={m.catalogName} estimated={m.estimated} />
                               {m.pricingType && m.pricingType !== "standard" && (
                                 <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{
-                                  backgroundColor: m.pricingType === "monthly" ? "#f0fdfa" : "#f5f3ff",
-                                  color: m.pricingType === "monthly" ? "#0d9488" : "#8b5cf6",
-                                  border: `1px solid ${m.pricingType === "monthly" ? "#99f6e4" : "#ddd6fe"}`,
-                                }}>{m.pricingType === "monthly" ? "Monthly" : "Optional"}</span>
+                                  backgroundColor: m.pricingType === "monthly" ? "#f0fdfa" : m.pricingType === "annual" ? "#fef3c7" : "#f5f3ff",
+                                  color: m.pricingType === "monthly" ? "#0d9488" : m.pricingType === "annual" ? "#b45309" : "#8b5cf6",
+                                  border: `1px solid ${m.pricingType === "monthly" ? "#99f6e4" : m.pricingType === "annual" ? "#fde68a" : "#ddd6fe"}`,
+                                }}>{m.pricingType === "monthly" ? "Monthly" : m.pricingType === "annual" ? "Annual" : "Optional"}</span>
                               )}
                             </div>
                             {m.description && <p className="text-xs mt-0.5 leading-snug" style={{ color: brand.navyMuted }}>{m.description}</p>}

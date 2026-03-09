@@ -363,13 +363,14 @@ export default function Catalog() {
                             borderRadius: 4,
                             background: "white",
                             cursor: "pointer",
-                            color: item.pricingType === "monthly" ? "#0d9488" : item.pricingType === "optional" ? "#8b5cf6" : "#1a2b4a",
+                            color: item.pricingType === "monthly" ? "#0d9488" : item.pricingType === "optional" ? "#8b5cf6" : item.pricingType === "annual" ? "#b45309" : "#1a2b4a",
                             fontWeight: 500,
                           }}
                         >
                           <option value="standard">Standard</option>
                           <option value="monthly">Monthly</option>
                           <option value="optional">Optional</option>
+                          <option value="annual">Annual</option>
                         </select>
                       </div>
                       <div style={{ flex: 0.3, minWidth: 36, display: "flex", justifyContent: "center" }}>
