@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { trpc } from "@/lib/trpc";
 import { brand } from "@/lib/brandTheme";
 import { Check, AlertTriangle, Loader2, X, Zap, Mic, FileText } from "lucide-react";
 import FileIcon from "@/components/FileIcon";
@@ -15,6 +16,11 @@ interface QuoteInput {
   processingStatus: string | null;
   processingError: string | null;
   createdAt: string;
+}
+
+// Helper: is this input marked as reference-only (e.g. legend sheet)?
+function getIsReferenceOnly(input: QuoteInput): boolean {
+  return (input.mimeType || '').includes(';reference=true');
 }
 
 interface TakeoffData {
@@ -154,6 +160,7 @@ function DetailContent({
   onDelete,
   onClose,
   onTriggerVoiceAnalysis,
+  onTakeoffChanged,
   processingInputId,
   quoteId,
   userPrompt,
@@ -165,6 +172,7 @@ function DetailContent({
   onDelete: (input: QuoteInput) => void;
   onClose: () => void;
   onTriggerVoiceAnalysis: () => void;
+  onTakeoffChanged: () => void;
   processingInputId: number | null;
   quoteId: number;
   userPrompt: string;
@@ -172,6 +180,15 @@ function DetailContent({
 }) {
   const isApproved = takeoff?.status === "verified" || takeoff?.status === "locked";
   const isVoiceNote = input.inputType === "audio" && input.content && !input.fileUrl;
+  const isPdf = input.inputType === "pdf";
+  const isReferenceOnly = getIsReferenceOnly(input);
+
+  const setReferenceOnly = trpc.inputs.setReferenceOnly.useMutation({
+    onSuccess: () => {
+      // Refresh the inputs list in the parent so mimeType updates immediately
+      onTakeoffChanged();
+    },
+  });
 
   return (
     <div className="flex flex-col h-full">
@@ -230,6 +247,23 @@ function DetailContent({
                 Edit Summary
               </button>
             )}
+            {/* Reference Only toggle — PDF inputs only */}
+            {isPdf && (
+              <button
+                onClick={() => setReferenceOnly.mutate({ id: input.id, quoteId, isReferenceOnly: !isReferenceOnly })}
+                disabled={setReferenceOnly.isPending}
+                className={`text-[11px] font-bold px-3 py-1.5 rounded-lg border transition-colors ${
+                  isReferenceOnly
+                    ? "text-amber-300 bg-amber-500/20 border-amber-400/40 hover:bg-amber-500/30"
+                    : "text-white/50 bg-white/5 border-white/10 hover:bg-white/10 hover:text-white/70"
+                }`}
+                title={isReferenceOnly
+                  ? "Reference Only — this file informs the takeoff AI but is excluded from the Quote Draft Summary. Click to include in QDS."
+                  : "Click to mark as Reference Only — useful for legend sheets and symbol keys"}
+              >
+                {isReferenceOnly ? "⚑ Reference Only" : "Reference Only"}
+              </button>
+            )}
             {/* Open File */}
             {input.fileUrl && (
               <button
@@ -264,6 +298,15 @@ function DetailContent({
 
       {/* Content area */}
       <div className="flex-1 overflow-y-auto" style={{ backgroundColor: brand.white }}>
+        {/* Reference-only notice banner */}
+        {isReferenceOnly && isPdf && (
+          <div className="px-4 py-2.5 flex items-center gap-2 border-b" style={{ backgroundColor: '#fffbeb', borderColor: '#fde68a' }}>
+            <span className="text-amber-600 text-[11px] font-bold">⚑ Reference Only</span>
+            <span className="text-amber-700 text-[10px]">
+              This file is used by the AI to map symbols on drawings but is excluded from Quote Draft Summary generation.
+            </span>
+          </div>
+        )}
         {/* TakeoffPanel for PDFs */}
         {input.inputType === "pdf" && input.processingStatus === "completed" && (
           <TakeoffPanel
@@ -272,6 +315,12 @@ function DetailContent({
             filename={input.filename || "Drawing"}
             fileUrl={input.fileUrl || undefined}
             processingInstructions={userPrompt}
+            onAfterSave={() => {
+              // After marker edits are saved, refresh takeoff list and re-run QDS
+              // so Processing Instructions and Quote Draft Summary reflect updated counts
+              onTakeoffChanged();
+              onTriggerVoiceAnalysis();
+            }}
           />
         )}
 
@@ -496,6 +545,14 @@ export default function InputsPanel({
                   <div className="mt-1">
                     <StatusIndicator input={input} takeoff={takeoff} />
                   </div>
+                  {/* Reference-only badge */}
+                  {getIsReferenceOnly(input) && (
+                    <div className="mt-0.5">
+                      <span className="text-[8px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#fef3c7', color: '#92400e' }}>
+                        REF ONLY
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -517,6 +574,7 @@ export default function InputsPanel({
               }}
               onClose={() => onSelectInput(null)}
               onTriggerVoiceAnalysis={onTriggerVoiceAnalysis}
+              onTakeoffChanged={onTakeoffChanged}
               processingInputId={processingInputId}
               quoteId={quoteId}
               userPrompt={userPrompt}

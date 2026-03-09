@@ -22,9 +22,10 @@ interface TakeoffPanelProps {
   fileUrl?: string;
   processingInstructions?: string;
   reanalyzeTrigger?: number;
+  onAfterSave?: () => void; // Called after marker edits saved — triggers QDS re-analysis in parent
 }
 
-export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, processingInstructions, reanalyzeTrigger }: TakeoffPanelProps) {
+export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, processingInstructions, reanalyzeTrigger, onAfterSave }: TakeoffPanelProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showViewer, setShowViewer] = useState(false);
   const [showChat, setShowChat] = useState(true);
@@ -596,7 +597,12 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
             });
           }}
           onClose={() => setShowViewer(false)}
-          onSave={() => { refetch(); setShowViewer(false); }}
+          onSave={() => {
+            refetch();
+            setShowViewer(false);
+            // Notify parent that markers changed — triggers processedContent sync + QDS re-analysis
+            if (onAfterSave) onAfterSave();
+          }}
         />
       )}
     </div>

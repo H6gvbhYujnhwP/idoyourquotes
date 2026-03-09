@@ -708,6 +708,21 @@ export async function updateInputProcessing(
   return result;
 }
 
+export async function updateInputMimeType(
+  inputId: number,
+  mimeType: string,
+): Promise<QuoteInput | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const [result] = await db.update(quoteInputs)
+    .set({ mimeType })
+    .where(eq(quoteInputs.id, inputId))
+    .returning();
+
+  return result;
+}
+
 export async function updateInputContent(
   inputId: number,
   content: string,

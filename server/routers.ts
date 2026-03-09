@@ -42,6 +42,7 @@ import {
   getInputById,
   updateInputProcessing,
   updateInputContent,
+  updateInputMimeType,
   getTenderContextByQuoteId,
   upsertTenderContext,
   getInternalEstimateByQuoteId,
@@ -1436,6 +1437,30 @@ IMPORTANT: Address the email greeting to the Contact Person (e.g. "Hi ${contactN
         return { success: true };
       }),
 
+    // Toggle reference-only flag on an input (reference docs inform AI but don't feed into QDS)
+    setReferenceOnly: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        quoteId: z.number(),
+        isReferenceOnly: z.boolean(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+
+        const inputRecord = await getInputById(input.id);
+        if (!inputRecord) throw new Error("Input not found");
+        if (inputRecord.quoteId !== input.quoteId) throw new Error("Input does not belong to this quote");
+
+        // Store flag as a suffix on mimeType — no migration needed
+        const baseMime = (inputRecord.mimeType || '').replace(';reference=true', '');
+        const newMime = input.isReferenceOnly ? baseMime + ';reference=true' : baseMime;
+
+        await updateInputMimeType(input.id, newMime);
+
+        return { success: true, isReferenceOnly: input.isReferenceOnly };
+      }),
+
     // File upload via base64
     uploadFile: protectedProcedure
       .input(z.object({
@@ -1469,6 +1494,13 @@ IMPORTANT: Address the email greeting to the Contact Person (e.g. "Hi ${contactN
           folder
         );
 
+        // Auto-detect legend/reference-only PDFs by filename pattern
+        const isLegendFile = input.inputType === 'pdf' && (() => {
+          const lower = (input.filename || '').toLowerCase();
+          return lower.includes('legend') || lower.includes('_key') || lower.includes('-key') ||
+                 lower.includes('symbols') || lower.includes('abbreviation') || lower.includes('keynotes');
+        })();
+
         // Create input record
         const inputRecord = await createInput({
           quoteId: input.quoteId,
@@ -1476,7 +1508,7 @@ IMPORTANT: Address the email greeting to the Contact Person (e.g. "Hi ${contactN
           filename: input.filename,
           fileUrl: url,
           fileKey: key,
-          mimeType: input.contentType,
+          mimeType: isLegendFile ? input.contentType + ';reference=true' : input.contentType,
         });
 
         // Auto-analyze the uploaded file in the background
@@ -2387,13 +2419,28 @@ Report facts only. Do not interpret or add commentary.`,
           totalTextElements: takeoff.totalTextElements || 0,
         });
 
-        // Save
+        // Save takeoff
         const updated = await updateElectricalTakeoff(takeoff.id, {
           symbols: updatedSymbols as any,
           counts: newCounts as any,
           svgOverlay,
           updatedAt: new Date(),
         });
+
+        // Sync processedContent so parseDictationSummary picks up the updated counts
+        // (Same pattern as answerQuestions — without this, QDS re-analysis reads stale quantities)
+        if (takeoff.inputId) {
+          const freshResult = {
+            drawingRef: takeoff.drawingRef || '',
+            symbols: updatedSymbols as any,
+            counts: newCounts,
+            dbCircuits: (takeoff.dbCircuits || []) as string[],
+            notes: (takeoff.drawingNotes || []) as string[],
+          };
+          await updateInputProcessing(Number(takeoff.inputId), {
+            processedContent: formatTakeoffForQuoteContext(freshResult as any),
+          });
+        }
 
         return {
           takeoff: updated,
@@ -3068,8 +3115,12 @@ Rules:
         const inputRecords = await getInputsByQuoteId(input.quoteId);
 
         // Collect all voice notes, text content, and processed document content
+        // Reference-only inputs (legend sheets, symbol keys) are excluded from QDS generation —
+        // they are used by the takeoff AI to map symbols, but should not contribute scope/materials to the quote
         const allContent: string[] = [];
         for (const inp of inputRecords) {
+          const isReferenceOnly = (inp.mimeType || '').includes(';reference=true');
+          if (isReferenceOnly) continue; // Skip — legend/key sheets feed takeoff AI, not QDS
           if (inp.inputType === "audio" && inp.content && !inp.fileUrl) {
             allContent.push(`Voice Note (${inp.filename || "untitled"}): ${inp.content}`);
           } else if (inp.inputType === "audio" && inp.content && inp.fileUrl) {
