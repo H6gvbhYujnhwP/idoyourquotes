@@ -2996,6 +2996,7 @@ Rules:
       .input(z.object({
         quoteId: z.number(),
         qdsSummaryJson: z.string().optional(), // Full QuoteDraftData JSON for QDS restoration
+        userPrompt: z.string().optional(), // Built Processing Instructions text — persisted so generateDraft uses edited values
         summary: z.object({
           clientName: z.string().nullable(),
           jobDescription: z.string(),
@@ -3011,10 +3012,13 @@ Rules:
         const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
-        // Persist the full QDS JSON so it can be restored on page reload without re-analysis
-        if (input.qdsSummaryJson) {
-          await updateQuote(input.quoteId, ctx.user.id, { qdsSummaryJson: input.qdsSummaryJson } as any);
-          console.log(`[saveVoiceNoteSummary] Saved qdsSummaryJson for quote ${input.quoteId}`);
+        // Persist the full QDS JSON and userPrompt together — atomic, no race condition with refetch
+        if (input.qdsSummaryJson || input.userPrompt) {
+          const updates: Record<string, string> = {};
+          if (input.qdsSummaryJson) updates.qdsSummaryJson = input.qdsSummaryJson;
+          if (input.userPrompt) updates.userPrompt = input.userPrompt;
+          await updateQuote(input.quoteId, ctx.user.id, updates as any);
+          console.log(`[saveVoiceNoteSummary] Saved qdsSummaryJson+userPrompt for quote ${input.quoteId}`);
         }
 
         // Build structured text from the summary
