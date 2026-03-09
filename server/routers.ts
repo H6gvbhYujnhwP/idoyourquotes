@@ -3066,10 +3066,17 @@ Rules:
             allContent.push(`Text Input: ${inp.content}`);
           }
           // Also include processed/extracted content from documents
+          // Use full content — truncation causes the AI to miss critical requirements
           if (inp.processedContent) {
-            allContent.push(`Document (${inp.filename || inp.inputType}): ${inp.processedContent.substring(0, 8000)}`);
+            const content = inp.processedContent.length > 50000 
+              ? inp.processedContent.substring(0, 50000) + "\n\n[Document truncated — original was " + inp.processedContent.length + " characters]"
+              : inp.processedContent;
+            allContent.push(`Document (${inp.filename || inp.inputType}): ${content}`);
           } else if (inp.extractedText) {
-            allContent.push(`Extracted Text (${inp.filename || inp.inputType}): ${inp.extractedText.substring(0, 8000)}`);
+            const content = inp.extractedText.length > 50000
+              ? inp.extractedText.substring(0, 50000) + "\n\n[Document truncated — original was " + inp.extractedText.length + " characters]"
+              : inp.extractedText;
+            allContent.push(`Extracted Text (${inp.filename || inp.inputType}): ${content}`);
           }
         }
 
