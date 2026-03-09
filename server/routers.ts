@@ -3067,9 +3067,9 @@ Rules:
           }
           // Also include processed/extracted content from documents
           if (inp.processedContent) {
-            allContent.push(`Document (${inp.filename || inp.inputType}): ${inp.processedContent.substring(0, 2000)}`);
+            allContent.push(`Document (${inp.filename || inp.inputType}): ${inp.processedContent.substring(0, 8000)}`);
           } else if (inp.extractedText) {
-            allContent.push(`Extracted Text (${inp.filename || inp.inputType}): ${inp.extractedText.substring(0, 2000)}`);
+            allContent.push(`Extracted Text (${inp.filename || inp.inputType}): ${inp.extractedText.substring(0, 8000)}`);
           }
         }
 
