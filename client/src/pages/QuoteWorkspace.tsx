@@ -3018,12 +3018,12 @@ export default function QuoteWorkspace() {
               {/* Totals */}
               <div className="border-t pt-4 space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span>Subtotal</span>
+                  <span>Subtotal (ex VAT)</span>
                   <span>£{parseFloat(quote.subtotal || "0").toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between items-center text-sm">
                   <div className="flex items-center gap-2">
-                    <span>Tax</span>
+                    <span>VAT</span>
                     <Input
                       type="number"
                       className="w-16 h-7 text-xs"
@@ -3035,7 +3035,7 @@ export default function QuoteWorkspace() {
                   <span>£{parseFloat(quote.taxAmount || "0").toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between font-bold text-lg border-t pt-2">
-                  <span>Total</span>
+                  <span>Total (inc VAT)</span>
                   <span>£{parseFloat(quote.total || "0").toFixed(2)}</span>
                 </div>
               </div>

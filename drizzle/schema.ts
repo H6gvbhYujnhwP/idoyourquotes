@@ -61,6 +61,8 @@ export const organizations = pgTable("organizations", {
     labourRate?: number;
     materialMarkup?: number;
     plantMarkup?: number;
+    defaultVatRate?: number;
+    _emailFlags?: Record<string, string>;
   }>(),
   defaultExclusions: text("default_exclusions"),
   defaultValidityDays: integer("default_validity_days").default(30),

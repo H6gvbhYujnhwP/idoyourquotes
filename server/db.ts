@@ -405,6 +405,18 @@ export async function createQuote(data: Partial<InsertQuote> & { userId: number;
   // Once the user saves the QDS with a client name the title is upgraded automatically.
   const defaultTitle = data.title || reference;
 
+  // Resolve default VAT rate: prefer org setting, fall back to 20% (UK standard)
+  let defaultVatRate = 20;
+  if (data.taxRate !== undefined && data.taxRate !== null) {
+    // Caller explicitly set a taxRate — use it as-is
+    defaultVatRate = parseFloat(data.taxRate as string) || 20;
+  } else if (data.orgId) {
+    const orgForVat = await db.select({ rates: organizations.defaultDayWorkRates })
+      .from(organizations).where(eq(organizations.id, data.orgId)).limit(1);
+    const orgVat = (orgForVat[0]?.rates as any)?.defaultVatRate;
+    if (orgVat !== undefined && orgVat !== null) defaultVatRate = orgVat;
+  }
+
   const [result] = await db.insert(quotes).values({
     userId: data.userId,
     orgId: data.orgId,
@@ -420,7 +432,7 @@ export async function createQuote(data: Partial<InsertQuote> & { userId: number;
     terms: data.terms,
     validUntil: data.validUntil,
     subtotal: data.subtotal || "0.00",
-    taxRate: data.taxRate || "0.00",
+    taxRate: defaultVatRate.toFixed(2),
     taxAmount: data.taxAmount || "0.00",
     total: data.total || "0.00",
     quoteMode: data.quoteMode || "simple",

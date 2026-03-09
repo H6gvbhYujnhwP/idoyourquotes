@@ -653,16 +653,15 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
     <div class="totals">
       <div class="totals-table">
         <div class="totals-row">
-          <span class="totals-label">Subtotal</span>
+          <span class="totals-label">Subtotal (ex VAT)</span>
           <span class="totals-value">${formatCurrency(quote.subtotal)}</span>
         </div>
-        ${parseFloat(quote.taxRate || "0") > 0 ? `
         <div class="totals-row">
-          <span class="totals-label">VAT (${quote.taxRate}%)</span>
+          <span class="totals-label">VAT (${parseFloat(quote.taxRate || "0").toFixed(0)}%)</span>
           <span class="totals-value">${formatCurrency(quote.taxAmount)}</span>
-        </div>` : ""}
+        </div>
         <div class="totals-row total">
-          <span class="totals-label">Total</span>
+          <span class="totals-label">Total (inc VAT)</span>
           <span class="totals-value">${formatCurrency(quote.total)}</span>
         </div>
       </div>
@@ -917,16 +916,15 @@ function generateComprehensiveProposalHTML(data: PDFQuoteData): string {
     <div class="totals" style="margin-top: 8mm;">
       <div class="totals-table">
         <div class="totals-row">
-          <span class="totals-label">Subtotal</span>
+          <span class="totals-label">Subtotal (ex VAT)</span>
           <span class="totals-value">${formatCurrency(quote.subtotal)}</span>
         </div>
-        ${parseFloat(quote.taxRate || "0") > 0 ? `
         <div class="totals-row">
-          <span class="totals-label">VAT (${quote.taxRate}%)</span>
+          <span class="totals-label">VAT (${parseFloat(quote.taxRate || "0").toFixed(0)}%)</span>
           <span class="totals-value">${formatCurrency(quote.taxAmount)}</span>
-        </div>` : ""}
+        </div>
         <div class="totals-row total">
-          <span class="totals-label">Total</span>
+          <span class="totals-label">Total (inc VAT)</span>
           <span class="totals-value">${formatCurrency(quote.total)}</span>
         </div>
       </div>

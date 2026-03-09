@@ -48,6 +48,7 @@ export default function Settings() {
   const [dayWorkLabourRate, setDayWorkLabourRate] = useState("");
   const [dayWorkMaterialMarkup, setDayWorkMaterialMarkup] = useState("");
   const [dayWorkPlantMarkup, setDayWorkPlantMarkup] = useState("");
+  const [defaultVatRate, setDefaultVatRate] = useState("20");
   const [defaultExclusions, setDefaultExclusions] = useState("");
   const [validityDays, setValidityDays] = useState("30");
   const [signatoryName, setSignatoryName] = useState("");
@@ -94,6 +95,7 @@ export default function Settings() {
         setDayWorkLabourRate(dw.labourRate?.toString() || "");
         setDayWorkMaterialMarkup(dw.materialMarkup?.toString() || "");
         setDayWorkPlantMarkup(dw.plantMarkup?.toString() || "");
+        setDefaultVatRate(dw.defaultVatRate?.toString() || "20");
       }
       if (org.defaultExclusions) setDefaultExclusions(org.defaultExclusions);
       if (org.defaultValidityDays) setValidityDays(org.defaultValidityDays.toString());
@@ -146,11 +148,12 @@ export default function Settings() {
         public: insurancePublic || undefined,
         professional: insuranceProfessional || undefined,
       } : undefined,
-      defaultDayWorkRates: (dayWorkLabourRate || dayWorkMaterialMarkup || dayWorkPlantMarkup) ? {
+      defaultDayWorkRates: {
         labourRate: dayWorkLabourRate ? parseFloat(dayWorkLabourRate) : undefined,
         materialMarkup: dayWorkMaterialMarkup ? parseFloat(dayWorkMaterialMarkup) : undefined,
         plantMarkup: dayWorkPlantMarkup ? parseFloat(dayWorkPlantMarkup) : undefined,
-      } : undefined,
+        defaultVatRate: defaultVatRate ? parseFloat(defaultVatRate) : 20,
+      },
       defaultExclusions: defaultExclusions || undefined,
       defaultValidityDays: validityDays ? parseInt(validityDays) : undefined,
       defaultSignatoryName: signatoryName || undefined,
@@ -619,6 +622,18 @@ export default function Settings() {
                 value={dayWorkPlantMarkup}
                 onChange={(e) => setDayWorkPlantMarkup(e.target.value)}
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="defaultVatRate">Default VAT Rate (%)</Label>
+              <Input
+                id="defaultVatRate"
+                type="number"
+                step="0.1"
+                placeholder="e.g. 20"
+                value={defaultVatRate}
+                onChange={(e) => setDefaultVatRate(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">Applied to all new quotes. Use 0 for non-VAT registered.</p>
             </div>
           </div>
         </CardContent>
