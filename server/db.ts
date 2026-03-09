@@ -1,4 +1,4 @@
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import bcrypt from "bcryptjs";
@@ -374,7 +374,36 @@ export async function createQuote(data: Partial<InsertQuote> & { userId: number;
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const reference = data.reference || `Q-${Date.now()}`;
+  // Build date string: DD/MM/YYYY
+  const today = new Date();
+  const dd = String(today.getDate()).padStart(2, "0");
+  const mm = String(today.getMonth() + 1).padStart(2, "0");
+  const yyyy = today.getFullYear();
+  const dateStr = `${dd}/${mm}/${yyyy}`;
+
+  // Reference: "OrgName_Quote_DD/MM/YYYY" — human-readable, scoped to org or user.
+  // Falls back to user name/email if no org name available.
+  // The QDS save will later upgrade the title to "ClientName_Quote_DD/MM/YYYY".
+  let reference = data.reference;
+  if (!reference) {
+    // Fetch org name if we have an orgId
+    let scopeName = "Quote";
+    if (data.orgId) {
+      const orgRows = await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, data.orgId)).limit(1);
+      if (orgRows[0]?.name) scopeName = orgRows[0].name;
+    } else {
+      // Solo user — fetch their company name or name
+      const userRows = await db.select({ companyName: users.companyName, name: users.name }).from(users).where(eq(users.id, data.userId)).limit(1);
+      scopeName = userRows[0]?.companyName || userRows[0]?.name || "Quote";
+    }
+    // Sanitise: strip characters that break file names / URLs
+    const safeName = scopeName.replace(/[^a-zA-Z0-9 _-]/g, "").trim().replace(/\s+/g, "_");
+    reference = `${safeName}_Quote_${dd}-${mm}-${yyyy}`;
+  }
+
+  // Default title matches the reference format.
+  // Once the user saves the QDS with a client name the title is upgraded automatically.
+  const defaultTitle = data.title || reference;
 
   const [result] = await db.insert(quotes).values({
     userId: data.userId,
@@ -386,7 +415,7 @@ export async function createQuote(data: Partial<InsertQuote> & { userId: number;
     clientEmail: data.clientEmail,
     clientPhone: data.clientPhone,
     clientAddress: data.clientAddress,
-    title: data.title,
+    title: defaultTitle,
     description: data.description,
     terms: data.terms,
     validUntil: data.validUntil,
