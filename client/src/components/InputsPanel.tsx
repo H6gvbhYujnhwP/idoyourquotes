@@ -316,10 +316,12 @@ function DetailContent({
             fileUrl={input.fileUrl || undefined}
             processingInstructions={userPrompt}
             onAfterSave={() => {
-              // After marker edits are saved, refresh takeoff list and re-run QDS
-              // so Processing Instructions and Quote Draft Summary reflect updated counts
+              // After marker edits saved: refresh takeoff list, then re-run QDS
+              // Small delay ensures server's processedContent write has committed before QDS reads it
               onTakeoffChanged();
-              onTriggerVoiceAnalysis();
+              setTimeout(() => {
+                onTriggerVoiceAnalysis();
+              }, 800);
             }}
           />
         )}

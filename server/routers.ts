@@ -2430,16 +2430,31 @@ Report facts only. Do not interpret or add commentary.`,
         // Sync processedContent so parseDictationSummary picks up the updated counts
         // (Same pattern as answerQuestions — without this, QDS re-analysis reads stale quantities)
         if (takeoff.inputId) {
-          const freshResult = {
-            drawingRef: takeoff.drawingRef || '',
-            symbols: updatedSymbols as any,
-            counts: newCounts,
-            dbCircuits: (takeoff.dbCircuits || []) as string[],
-            notes: (takeoff.drawingNotes || []) as string[],
-          };
-          await updateInputProcessing(Number(takeoff.inputId), {
-            processedContent: formatTakeoffForQuoteContext(freshResult as any),
-          });
+          try {
+            const freshResult = {
+              drawingRef: takeoff.drawingRef || '',
+              symbols: updatedSymbols,
+              counts: newCounts,
+              dbCircuits: (takeoff.dbCircuits || []) as string[],
+              notes: (takeoff.drawingNotes || []) as string[],
+              questions: [],
+              pageWidth: 0,
+              pageHeight: 0,
+              hasTextLayer: takeoff.hasTextLayer ?? true,
+              totalTextElements: takeoff.totalTextElements || 0,
+            };
+            const formatted = formatTakeoffForQuoteContext(freshResult as any);
+            console.log(`[updateMarkers] Syncing processedContent for inputId=${takeoff.inputId}, counts:`, JSON.stringify(newCounts));
+            await updateInputProcessing(Number(takeoff.inputId), {
+              processedContent: formatted,
+            });
+            console.log(`[updateMarkers] processedContent synced OK`);
+          } catch (syncErr) {
+            console.error(`[updateMarkers] Failed to sync processedContent:`, syncErr);
+            // Non-fatal — takeoff save succeeded, QDS will be slightly stale
+          }
+        } else {
+          console.warn(`[updateMarkers] takeoff.inputId is null — cannot sync processedContent`);
         }
 
         return {

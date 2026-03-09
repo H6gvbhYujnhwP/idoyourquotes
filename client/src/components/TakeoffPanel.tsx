@@ -598,10 +598,10 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
           }}
           onClose={() => setShowViewer(false)}
           onSave={() => {
+            // Notify parent BEFORE closing the modal so React batching doesn't drop the callback
+            if (onAfterSave) onAfterSave();
             refetch();
             setShowViewer(false);
-            // Notify parent that markers changed — triggers processedContent sync + QDS re-analysis
-            if (onAfterSave) onAfterSave();
           }}
         />
       )}
