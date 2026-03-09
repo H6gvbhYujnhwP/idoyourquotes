@@ -3133,7 +3133,7 @@ CATALOG MATCHING RULES:
 - CRITICAL: Before finalising your output, scan EVERY activity, service, or deliverable mentioned in the evidence against the catalog item names. If a phrase like "discovery session required" or "need a site survey" closely matches a catalog item name (e.g. "Discovery Session"), it IS a billable catalog item — include it as a material with the catalog price. Do NOT treat catalog item names as generic descriptions of work phases.
 - Use the CORRECT catalog item for each piece of work — don't use the same catalog rate for different items.
 - If the user states a specific price that differs from catalog, use the USER's price.
-- If no catalog item matches, set unitPrice to the user's stated price, or null if unknown.
+- If no catalog item matches, estimate a reasonable UK market price based on your knowledge of typical trade pricing. Set "estimated" to true on that material so it can be flagged in the UI. NEVER return null for unitPrice — always provide either a catalog price or an estimated price.
 
 MATERIALS vs LABOUR:
 - "materials" in this system means ALL billable line items — physical products, services, deliverables, and time-based work that should appear as priced lines on the quote.
@@ -3159,7 +3159,7 @@ Respond ONLY with valid JSON in this exact format:
   "clientPhone": string | null,
   "jobDescription": string,
   "labour": [{"role": string, "quantity": number, "duration": string}],
-  "materials": [{"item": string, "quantity": number, "unitPrice": number | null, "unit": string, "description": string, "pricingType": "standard" | "monthly" | "optional"}],
+  "materials": [{"item": string, "quantity": number, "unitPrice": number, "unit": string, "description": string, "pricingType": "standard" | "monthly" | "optional", "estimated": boolean}],
   "markup": number | null,
   "sundries": number | null,
   "contingency": string | null,
@@ -3390,7 +3390,7 @@ When determining prices, rates, markups, labour costs, and quantities, follow th
 2. SECOND PRIORITY — User's voice dictations and written instructions. If the user says "charge £700 per day" or "battens are £30 each" or "20% markup", USE THOSE EXACT FIGURES.
 3. THIRD PRIORITY — Company catalog rates. Use these when the user hasn't specified a price for that item.
 4. FOURTH PRIORITY — Company default rates from settings (day work rates, material markup %, etc.). Use these when neither the user nor the catalog provides a rate.
-5. LOWEST PRIORITY — Your own UK market rate estimates. Only use these when no other source provides a rate. If you must estimate a rate, set it to 0 and flag it in assumptions so the user can fill it in.
+5. LOWEST PRIORITY — Your own UK market rate estimates. Use these when no other source provides a rate. Estimate a realistic UK market price based on typical trade pricing for the item. NEVER set a rate to 0 — always provide a reasonable estimate. The user can adjust it later.
 
 VOICE DICTATION PROCESSING:
 - Voice dictations are numbered in order. If there are multiple, process them sequentially.

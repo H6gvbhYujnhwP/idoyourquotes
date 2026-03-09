@@ -32,6 +32,7 @@ interface MaterialItem {
   unit?: string;
   description?: string;
   pricingType?: "standard" | "monthly" | "optional";
+  estimated?: boolean;
   source: "voice" | "takeoff" | "containment" | "document";
   symbolCode?: string;
   catalogName?: string;
@@ -202,6 +203,7 @@ const sourceBadgeStyles: Record<string, { bg: string; color: string }> = {
   voice: { bg: "#f0fdfa", color: "#0d9488" },
   document: { bg: "#fff7ed", color: "#ea580c" },
   catalog: { bg: "#eff6ff", color: "#3b82f6" },
+  estimated: { bg: "#fef3c7", color: "#b45309" },
 };
 
 // ---- Component ----
@@ -315,7 +317,7 @@ export default function QuoteDraftSummary({
   };
   const inputStyle = { color: brand.navy, backgroundColor: `${brand.teal}06`, border: `1px solid ${brand.teal}30` };
 
-  const SourceBadge = ({ source, symbolCode, catalogName }: { source: string; symbolCode?: string; catalogName?: string }) => (
+  const SourceBadge = ({ source, symbolCode, catalogName, estimated }: { source: string; symbolCode?: string; catalogName?: string; estimated?: boolean }) => (
     <span className="inline-flex items-center gap-1 flex-wrap">
       {(source === "takeoff" || source === "containment") && symbolCode && (
         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles[source].bg, color: sourceBadgeStyles[source].color }}>
@@ -323,8 +325,9 @@ export default function QuoteDraftSummary({
         </span>
       )}
       {catalogName && (<span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles.catalog.bg, color: sourceBadgeStyles.catalog.color }}>Catalog</span>)}
-      {source === "voice" && !symbolCode && !catalogName && (<span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles.voice.bg, color: sourceBadgeStyles.voice.color }}>Voice</span>)}
-      {source === "document" && !symbolCode && !catalogName && (<span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles.document.bg, color: sourceBadgeStyles.document.color }}>Document</span>)}
+      {estimated && !catalogName && (<span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles.estimated.bg, color: sourceBadgeStyles.estimated.color }}>Estimated Price</span>)}
+      {source === "voice" && !symbolCode && !catalogName && !estimated && (<span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles.voice.bg, color: sourceBadgeStyles.voice.color }}>Voice</span>)}
+      {source === "document" && !symbolCode && !catalogName && !estimated && (<span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles.document.bg, color: sourceBadgeStyles.document.color }}>Document</span>)}
     </span>
   );
 
@@ -468,7 +471,7 @@ export default function QuoteDraftSummary({
                         <div className="flex-1 min-w-0">
                           <input type="text" value={m.item} onChange={(e) => updateMaterial(i, "item", e.target.value)} className="w-full text-sm font-bold px-2.5 py-1.5 rounded-md outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} placeholder="Item name" />
                         </div>
-                        <SourceBadge source={m.source} symbolCode={m.symbolCode} catalogName={m.catalogName} />
+                        <SourceBadge source={m.source} symbolCode={m.symbolCode} catalogName={m.catalogName} estimated={m.estimated} />
                       </div>
                       {/* Row 2: description */}
                       <div className="ml-7 mb-2">
@@ -543,7 +546,7 @@ export default function QuoteDraftSummary({
                           <td className="py-2 px-2 align-top">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="text-[13px] font-semibold" style={{ color: brand.navy }}>{m.item}</span>
-                              <SourceBadge source={m.source} symbolCode={m.symbolCode} catalogName={m.catalogName} />
+                              <SourceBadge source={m.source} symbolCode={m.symbolCode} catalogName={m.catalogName} estimated={m.estimated} />
                               {m.pricingType && m.pricingType !== "standard" && (
                                 <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{
                                   backgroundColor: m.pricingType === "monthly" ? "#f0fdfa" : "#f5f3ff",
