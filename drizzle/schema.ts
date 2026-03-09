@@ -166,6 +166,8 @@ export const quotes = pgTable("quotes", {
   taxRate: decimal("tax_rate", { precision: 5, scale: 2 }).default("0.00"),
   taxAmount: decimal("tax_amount", { precision: 12, scale: 2 }).default("0.00"),
   total: decimal("total", { precision: 12, scale: 2 }).default("0.00"),
+  monthlyTotal: decimal("monthly_total", { precision: 12, scale: 2 }).default("0.00"),
+  annualTotal: decimal("annual_total", { precision: 12, scale: 2 }).default("0.00"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   sentAt: timestamp("sent_at"),

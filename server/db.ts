@@ -858,11 +858,22 @@ export async function recalculateQuoteTotals(quoteId: number, userId: number): P
   
   if (!quote) return undefined;
 
-  // Only include 'standard' pricing type in the quote total
-  // Monthly and optional items are shown separately and not included
+  // Standard items only — form the one-off total ex VAT
   const subtotal = lineItems
     .filter(item => !item.pricingType || item.pricingType === 'standard')
     .reduce((sum, item) => sum + parseFloat(item.total || "0"), 0);
+
+  // Monthly recurring total (ex VAT — shown as a separate figure)
+  const monthlyTotal = lineItems
+    .filter(item => item.pricingType === 'monthly')
+    .reduce((sum, item) => sum + parseFloat(item.total || "0"), 0);
+
+  // Annual recurring total (ex VAT — shown as a separate figure)
+  const annualTotal = lineItems
+    .filter(item => item.pricingType === 'annual')
+    .reduce((sum, item) => sum + parseFloat(item.total || "0"), 0);
+
+  // VAT applies to standard (one-off) subtotal only
   const taxRate = parseFloat(quote.taxRate || "0");
   const taxAmount = subtotal * (taxRate / 100);
   const total = subtotal + taxAmount;
@@ -871,7 +882,9 @@ export async function recalculateQuoteTotals(quoteId: number, userId: number): P
     subtotal: subtotal.toFixed(2),
     taxAmount: taxAmount.toFixed(2),
     total: total.toFixed(2),
-  });
+    monthlyTotal: monthlyTotal.toFixed(2),
+    annualTotal: annualTotal.toFixed(2),
+  } as any);
 }
 
 // ============ MIGRATION HELPER ============
