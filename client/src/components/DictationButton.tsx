@@ -294,7 +294,34 @@ export default function DictationButton({
   if (variant === "floating") {
     return (
       <div className={className}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        {/* Live transcript — full width on top */}
+        {isListening && (
+          <div style={{
+            minHeight: 48, padding: "8px 12px", borderRadius: 8, marginBottom: 10,
+            backgroundColor: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)",
+          }}>
+            {commandLabel && (
+              <div style={{
+                fontSize: 10, fontWeight: 700, marginBottom: 2,
+                color: liveCommand?.type === "remove" ? "#fbbf24"
+                  : liveCommand?.type === "build" || liveCommand?.type === "build_with_text" ? "#34d399"
+                  : "#60a5fa",
+              }}>
+                {liveCommand?.type === "remove" && "⏪ "}{liveCommand?.type === "build" || liveCommand?.type === "build_with_text" ? "⚡ " : ""}{liveCommand?.type === "change" && "✏️ "}{commandLabel}
+              </div>
+            )}
+            <p style={{
+              fontSize: 14, color: displayText ? "#e2e8f0" : "#64748b", lineHeight: 1.5,
+              margin: 0, wordBreak: "break-word",
+            }}>
+              {displayText || "Speak now — describe the job, materials, pricing..."}
+              {interimText && <span style={{ color: "#64748b" }}>|</span>}
+            </p>
+          </div>
+        )}
+
+        {/* Bottom row: status + buttons */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
           {/* Pulsing recording indicator */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
             {isListening && (
@@ -315,31 +342,6 @@ export default function DictationButton({
             </span>
           </div>
 
-          {/* Live transcript */}
-          <div style={{
-            flex: 1, minHeight: 36, padding: "6px 12px", borderRadius: 8,
-            backgroundColor: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)",
-            overflow: "hidden",
-          }}>
-            {commandLabel && (
-              <div style={{
-                fontSize: 10, fontWeight: 700, marginBottom: 2,
-                color: liveCommand?.type === "remove" ? "#fbbf24"
-                  : liveCommand?.type === "build" || liveCommand?.type === "build_with_text" ? "#34d399"
-                  : "#60a5fa",
-              }}>
-                {liveCommand?.type === "remove" && "⏪ "}{liveCommand?.type === "build" || liveCommand?.type === "build_with_text" ? "⚡ " : ""}{liveCommand?.type === "change" && "✏️ "}{commandLabel}
-              </div>
-            )}
-            <p style={{
-              fontSize: 13, color: displayText ? "#e2e8f0" : "#64748b", lineHeight: 1.4,
-              margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-            }}>
-              {displayText || "Speak now — describe the job, materials, pricing..."}
-              {interimText && <span style={{ color: "#64748b" }}>|</span>}
-            </p>
-          </div>
-
           {/* Action buttons */}
           <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
             {isListening ? (
@@ -348,8 +350,8 @@ export default function DictationButton({
                   type="button"
                   onClick={stopListening}
                   style={{
-                    padding: "8px 20px", borderRadius: 8, border: "none", cursor: "pointer",
-                    backgroundColor: "#ef4444", color: "white", fontSize: 13, fontWeight: 700,
+                    padding: "10px 24px", borderRadius: 8, border: "none", cursor: "pointer",
+                    backgroundColor: "#ef4444", color: "white", fontSize: 14, fontWeight: 700,
                     display: "flex", alignItems: "center", gap: 6,
                   }}
                 >
@@ -360,9 +362,9 @@ export default function DictationButton({
                   type="button"
                   onClick={cancelListening}
                   style={{
-                    padding: "8px 14px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.2)",
+                    padding: "10px 16px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.2)",
                     cursor: "pointer", backgroundColor: "transparent", color: "#94a3b8",
-                    fontSize: 12, fontWeight: 500,
+                    fontSize: 13, fontWeight: 500,
                   }}
                 >
                   Cancel
@@ -374,8 +376,8 @@ export default function DictationButton({
                 onClick={startListening}
                 disabled={disabled}
                 style={{
-                  padding: "8px 20px", borderRadius: 8, border: "none", cursor: "pointer",
-                  backgroundColor: "#0d9488", color: "white", fontSize: 13, fontWeight: 700,
+                  padding: "10px 24px", borderRadius: 8, border: "none", cursor: "pointer",
+                  backgroundColor: "#0d9488", color: "white", fontSize: 14, fontWeight: 700,
                   display: "flex", alignItems: "center", gap: 6,
                 }}
               >
