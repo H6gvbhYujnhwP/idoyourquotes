@@ -177,6 +177,7 @@ export const quotes = pgTable("quotes", {
   comprehensiveConfig: json("comprehensive_config").$type<ComprehensiveConfig>(),
   userPrompt: text("user_prompt"),
   processingInstructions: text("processing_instructions"),
+  qdsSummaryJson: text("qds_summary_json"),
 });
 
 export type Quote = typeof quotes.$inferSelect;

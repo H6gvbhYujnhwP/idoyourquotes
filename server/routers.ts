@@ -403,6 +403,7 @@ export const appRouter = router({
         taxRate: z.string().optional(),
         userPrompt: z.string().nullable().optional(),
         processingInstructions: z.string().nullable().optional(),
+        qdsSummaryJson: z.string().nullable().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
@@ -2994,6 +2995,7 @@ Rules:
     saveVoiceNoteSummary: protectedProcedure
       .input(z.object({
         quoteId: z.number(),
+        qdsSummaryJson: z.string().optional(), // Full QuoteDraftData JSON for QDS restoration
         summary: z.object({
           clientName: z.string().nullable(),
           jobDescription: z.string(),
@@ -3008,6 +3010,12 @@ Rules:
       .mutation(async ({ ctx, input }) => {
         const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
+
+        // Persist the full QDS JSON so it can be restored on page reload without re-analysis
+        if (input.qdsSummaryJson) {
+          await updateQuote(input.quoteId, ctx.user.id, { qdsSummaryJson: input.qdsSummaryJson } as any);
+          console.log(`[saveVoiceNoteSummary] Saved qdsSummaryJson for quote ${input.quoteId}`);
+        }
 
         // Build structured text from the summary
         const parts: string[] = [];

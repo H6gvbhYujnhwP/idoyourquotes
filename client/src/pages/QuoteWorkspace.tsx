@@ -648,7 +648,25 @@ export default function QuoteWorkspace() {
           updateFields.userPrompt = autoPrompt;
         }
 
-        // Save all auto-filled fields AND userPrompt in one awaited mutation
+        // Persist the full voiceSummary JSON so the QDS can be restored on page reload
+        // without re-running AI analysis (fixes blank QDS after navigation)
+        const qdsSummaryToSave = {
+          clientName: parsed.clientName || null,
+          jobDescription: parsed.jobDescription || "",
+          labour: parsed.labour || [],
+          materials: (parsed.materials || []).map((m: any) => ({ ...m, source: "voice" as const })),
+          markup: parsed.markup ?? null,
+          sundries: parsed.sundries ?? null,
+          contingency: parsed.contingency ?? null,
+          preliminaries: parsed.preliminaries ?? null,
+          labourRate: parsed.labourRate ?? null,
+          plantMarkup: parsed.plantMarkup ?? null,
+          plantHire: parsed.plantHire || [],
+          notes: parsed.notes ?? null,
+        };
+        (updateFields as any).qdsSummaryJson = JSON.stringify(qdsSummaryToSave);
+
+        // Save all auto-filled fields AND userPrompt AND qdsSummaryJson in one awaited mutation
         // Using mutateAsync ensures the DB write completes before the user can navigate away
         if (Object.keys(updateFields).length > 0) {
           try {
@@ -717,6 +735,17 @@ export default function QuoteWorkspace() {
       if ((fullQuote.quote as any).userPrompt) {
         setUserPrompt((fullQuote.quote as any).userPrompt);
       }
+      // Restore QDS from persisted JSON — no re-analysis needed
+      const savedQdsSummary = (fullQuote.quote as any).qdsSummaryJson;
+      if (savedQdsSummary && !voiceSummary) {
+        try {
+          const parsed = JSON.parse(savedQdsSummary);
+          setVoiceSummary(parsed);
+          console.log("[QDS restore] Restored voiceSummary from qdsSummaryJson");
+        } catch (e) {
+          console.warn("[QDS restore] Failed to parse qdsSummaryJson", e);
+        }
+      }
     }
     if (fullQuote?.tenderContext) {
       setTenderNotes(fullQuote.tenderContext.notes || "");
@@ -748,15 +777,16 @@ export default function QuoteWorkspace() {
     const allInputs = fullQuote?.inputs;
     if (!allInputs || allInputs.length === 0) return;
     
-    // If the quote already has saved Processing Instructions, the QDS was previously saved.
-    // Do NOT re-analyse — the user's saved data takes priority (Guardrail 10: User Data Sovereignty).
-    const hasSavedQDS = !!(fullQuote?.quote as any)?.userPrompt;
-    if (hasSavedQDS) {
+    // If qdsSummaryJson exists, the page-load useEffect already restored voiceSummary.
+    // No re-analysis needed — mark as done and return.
+    const hasPersistedQDS = !!(fullQuote?.quote as any)?.qdsSummaryJson;
+    if (hasPersistedQDS) {
       hasRehydratedRef.current = true;
       return;
     }
-    
-    // Only auto-analyse if there are analysable inputs AND no voiceSummary yet
+
+    // No persisted QDS — fall back to re-analysis if inputs exist and QDS is empty.
+    // This handles brand-new quotes and quotes created before qdsSummaryJson was added.
     const hasAnalysableInputs = allInputs.some(
       (i: any) => (i.inputType === "audio" && i.content && !i.fileUrl) || 
                    (i.inputType === "text" && i.content && !i.fileUrl) ||
@@ -2240,9 +2270,12 @@ export default function QuoteWorkspace() {
                   updateQuote.mutate({ id: quoteId, clientName: data.clientName });
                 }
 
-                // Also save voice data to DB
+                // Also save voice data to DB — including full QDS JSON for page-reload restoration
+                // qdsSummaryJson captures the COMPLETE user-edited state (all sources, all fields)
+                // so the QDS is restored exactly as the user left it, without re-analysis
                 saveVoiceNoteSummary.mutate({
                   quoteId,
+                  qdsSummaryJson: JSON.stringify(data),
                   summary: {
                     clientName: data.clientName,
                     jobDescription: data.jobDescription,
