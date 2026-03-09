@@ -3097,17 +3097,46 @@ Rules:
           ? await getCatalogItemsByOrgId(org.id)
           : await getCatalogItemsByUserId(ctx.user.id);
         let catalogContext = "";
+        // Pricing type rules always inject — not conditional on having catalog items
+        const pricingTypeRules = `
+
+PRICING TYPE CLASSIFICATION — every material line item MUST have a pricingType field:
+- "standard" = one-off cost included in the quote total (hardware purchases, installation labour, setup fees)
+- "monthly" = recurring monthly service cost — shown separately, NOT included in the one-off total (line rentals, SaaS subscriptions, hosted services, SIP trunks)
+- "optional" = add-on the client can choose — shown separately, NOT included in the one-off total
+- "annual" = yearly recurring cost — shown separately, NOT included in the one-off total (maintenance contracts, annual licences)
+
+HARDWARE vs SERVICE RULE — apply this classification every time:
+- Physical hardware (WAPs, switches, phones, UPS, servers, cable) → ALWAYS "standard"
+- Installation labour, setup, configuration → ALWAYS "standard"
+- Broadband / internet line rental → ALWAYS "monthly"
+- VoIP SIP trunks / phone line rental → ALWAYS "monthly"
+- Hosted PBX / cloud phone system service → ALWAYS "monthly"
+- SaaS subscriptions, cloud services, monitoring services → ALWAYS "monthly"
+- Hardware maintenance contracts, annual support contracts → ALWAYS "annual"
+- Annual software licences → ALWAYS "annual"
+
+TENDER PRICING STRUCTURE DETECTION:
+If the document being analysed explicitly requests costs broken down into categories such as "one-time costs", "monthly costs", "annual costs" — you MUST create line items in ALL requested categories, even if the document does not list exact products for each category.
+- A tender requesting "monthly costs" means: infer what ongoing services this deployment will require (broadband line rental, VoIP/SIP service, hosted PBX, etc.) and create monthly-typed line items for them.
+- A tender requesting "annual costs" means: infer what annual maintenance or support this deployment will require and create annual-typed line items (e.g. "Network Maintenance Contract").
+- These inferred recurring items are NOT optional — they are essential parts of the quote response the client explicitly asked for.
+- Use realistic UK market rate estimates for inferred recurring services. Set "estimated": true on all inferred items.
+
+SERVICE INFERENCE RULE — for IT/network deployments specifically:
+If the project involves installing FTTP/fibre broadband → the quote MUST include an FTTP Monthly Line Rental item (pricingType: "monthly").
+If the project involves VoIP handsets or PBX → the quote MUST include a VoIP SIP Trunk / Line Rental item (pricingType: "monthly") and consider a Hosted PBX Service item (pricingType: "monthly").
+If the project involves ongoing network infrastructure → include a Network Maintenance Contract (pricingType: "annual").
+These are professional obligations — an experienced IT estimator would always include them.`;
+
         if (catalogItems.length > 0) {
           catalogContext = `\n\nCOMPANY CATALOG — these are the user's products and services with their set prices:
 ${catalogItems.map(c => `- "${c.name}" | Sell: £${c.defaultRate}/${c.unit}${c.costPrice ? ` | Buy-in: £${c.costPrice}` : ""}${(c as any).installTimeHrs ? ` | Install: ${(c as any).installTimeHrs}hrs/unit` : ""} | Category: ${c.category || "General"} | Pricing: ${(c as any).pricingType || "standard"}${c.description ? ` | ${c.description}` : ""}`).join("\n")}
 
-PRICING TYPES — each catalog item has a pricing type that MUST be preserved:
-- "standard" = one-off cost included in the quote total (the default)
-- "monthly" = recurring monthly service — shown separately, NOT included in the one-off total
-- "optional" = add-on the client can choose — shown separately, NOT included in the one-off total
-- "annual" = yearly recurring cost — shown separately, NOT included in the one-off total
-When extracting materials, ALWAYS include a "pricingType" field matching the catalog item's pricing type.
-CRITICAL: Look at the "Pricing:" field shown next to each catalog item above. If a catalog item says "Pricing: optional", the material MUST have "pricingType": "optional". If it says "Pricing: monthly", it MUST be "monthly". If it says "Pricing: annual", it MUST be "annual". Do NOT override the catalog's pricing type — it was set by the user for a reason. If no catalog match, default to "standard". For tenders that explicitly request annual costs (e.g. maintenance contracts), use "annual".`;
+When a catalog item matches an extracted scope item, use the catalog item's exact name, description, unit, and pricing type. Do NOT override the catalog's pricing type — it was set by the user for a reason.
+CRITICAL: Look at the "Pricing:" field shown next to each catalog item above. If a catalog item says "Pricing: optional", the material MUST have "pricingType": "optional". If it says "Pricing: monthly", it MUST be "monthly". If it says "Pricing: annual", it MUST be "annual".` + pricingTypeRules;
+        } else {
+          catalogContext = pricingTypeRules;
         }
 
         const response = await invokeLLM({
@@ -3196,7 +3225,7 @@ If a field is not mentioned or cannot be determined, use null.`,
             },
           ],
           response_format: { type: "json_object" },
-          max_tokens: 1500,
+          max_tokens: 3000,
         });
 
         const content = response.choices[0]?.message?.content;
