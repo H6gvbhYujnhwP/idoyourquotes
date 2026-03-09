@@ -3123,11 +3123,36 @@ If the document being analysed explicitly requests costs broken down into catego
 - These inferred recurring items are NOT optional — they are essential parts of the quote response the client explicitly asked for.
 - Use realistic UK market rate estimates for inferred recurring services. Set "estimated": true on all inferred items.
 
-SERVICE INFERENCE RULE — for IT/network deployments specifically:
-If the project involves installing FTTP/fibre broadband → the quote MUST include an FTTP Monthly Line Rental item (pricingType: "monthly").
-If the project involves VoIP handsets or PBX → the quote MUST include a VoIP SIP Trunk / Line Rental item (pricingType: "monthly") and consider a Hosted PBX Service item (pricingType: "monthly").
-If the project involves ongoing network infrastructure → include a Network Maintenance Contract (pricingType: "annual").
-These are professional obligations — an experienced IT estimator would always include them.`;
+SERVICE INFERENCE RULE — sector-aware recurring service patterns:
+An experienced professional always includes the ongoing service layer above the hardware/labour layer. Apply these rules based on the trade sector and project type:
+
+IT / Networking / Telecoms:
+- FTTP/fibre broadband installation → MUST include FTTP Monthly Line Rental (pricingType: "monthly", est. £35–45/month)
+- VoIP handsets or PBX → MUST include VoIP SIP Trunk / Line Rental (pricingType: "monthly", est. £8–15/line/month) and Hosted PBX Service (pricingType: "monthly", est. £10–15/user/month)
+- Managed network infrastructure → include Network Maintenance Contract (pricingType: "annual", est. £400–800/year)
+- Cloud/SaaS software → include software subscription as monthly item
+
+Security / Alarm / CCTV:
+- Alarm or CCTV installation → include Monitoring Service Contract (pricingType: "monthly", est. £20–40/month) and Annual Maintenance & Inspection (pricingType: "annual", est. £150–300/year)
+- Remote access or cloud viewing service → include Cloud Recording / Remote Access Subscription (pricingType: "monthly")
+
+Cleaning / Facilities:
+- Regular cleaning contract implied → include Cleaning Contract (pricingType: "monthly") for the recurring service
+- Annual deep clean or specialist treatment → include as annual item
+
+HVAC / Heating / Plumbing:
+- Boiler or HVAC system installation → include Annual Service & Maintenance Contract (pricingType: "annual", est. £150–350/year)
+- Filter or consumables replacement programme → include as annual or monthly item
+
+Electrical:
+- Electrical installation with ongoing compliance requirement → include Periodic Inspection & Test Contract (pricingType: "annual")
+- Emergency callout coverage requested → include Emergency Callout Retainer (pricingType: "monthly" or "annual")
+
+Grounds / Landscaping:
+- Grounds maintenance implied → include Grounds Maintenance Contract (pricingType: "monthly")
+- Annual treatments (fertiliser, weed control) → include as annual item
+
+General rule: if the deployment or installation will require ongoing support, maintenance, or service after completion, include that recurring cost. Set "estimated": true on all inferred recurring items.`;
 
         if (catalogItems.length > 0) {
           catalogContext = `\n\nCOMPANY CATALOG — these are the user's products and services with their set prices:

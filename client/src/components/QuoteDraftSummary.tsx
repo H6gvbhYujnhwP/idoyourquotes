@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
+import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 import { brand } from "@/lib/brandTheme";
 import {
   FileText, User, Wrench, Package, Percent, PoundSterling,
@@ -31,7 +33,7 @@ interface MaterialItem {
   labourCost: number | null;
   unit?: string;
   description?: string;
-  pricingType?: "standard" | "monthly" | "optional";
+  pricingType?: "standard" | "monthly" | "optional" | "annual";
   estimated?: boolean;
   source: "voice" | "takeoff" | "containment" | "document";
   symbolCode?: string;
@@ -214,6 +216,14 @@ export default function QuoteDraftSummary({
   isLoading, hasVoiceNotes, onSave, onTriggerVoiceAnalysis,
 }: QuoteDraftSummaryProps) {
   const [isEditing, setIsEditing] = useState(false);
+  // Track which material indices have been saved to catalog this session
+  const [catalogSavedItems, setCatalogSavedItems] = useState<Set<number>>(new Set());
+  const [isAddingAll, setIsAddingAll] = useState(false);
+
+  const addToCatalogMutation = trpc.catalog.create.useMutation({
+    onSuccess: () => {},
+    onError: (err: any) => toast.error("Failed to add to catalog: " + err.message),
+  });
   const mergedData = useMemo(
     () => mergeSummaryWithTakeoffs(voiceSummary, takeoffs, takeoffOverrides, catalogItems, defaultMarkup, defaultLabourRate, defaultPlantMarkup),
     [voiceSummary, takeoffs, takeoffOverrides, catalogItems, defaultMarkup, defaultLabourRate, defaultPlantMarkup]
@@ -317,15 +327,60 @@ export default function QuoteDraftSummary({
   };
   const inputStyle = { color: brand.navy, backgroundColor: `${brand.teal}06`, border: `1px solid ${brand.teal}30` };
 
-  const SourceBadge = ({ source, symbolCode, catalogName, estimated }: { source: string; symbolCode?: string; catalogName?: string; estimated?: boolean }) => (
+  // Save a single material to the catalog and flip its badge
+  const handleAddToCatalog = async (m: MaterialItem, idx: number) => {
+    await addToCatalogMutation.mutateAsync({
+      name: m.item,
+      description: m.description || undefined,
+      unit: m.unit || "each",
+      defaultRate: m.unitPrice != null ? String(m.unitPrice) : undefined,
+      costPrice: m.costPrice != null ? String(m.costPrice) : undefined,
+      installTimeHrs: m.installTimeHrs != null ? String(m.installTimeHrs) : undefined,
+      pricingType: (m.pricingType || "standard") as "standard" | "monthly" | "optional" | "annual",
+      category: undefined,
+    });
+    setCatalogSavedItems(prev => new Set(prev).add(idx));
+    toast.success(`"${m.item}" added to catalog`);
+  };
+
+  // Bulk: save all estimated items that haven't been saved yet
+  const handleAddAllToCatalog = async () => {
+    const toSave = data.materials
+      .map((m, i) => ({ m, i }))
+      .filter(({ m, i }) => m.estimated && !m.catalogName && !catalogSavedItems.has(i));
+    if (!toSave.length) return;
+    setIsAddingAll(true);
+    try {
+      for (const { m, i } of toSave) {
+        await addToCatalogMutation.mutateAsync({
+          name: m.item,
+          description: m.description || undefined,
+          unit: m.unit || "each",
+          defaultRate: m.unitPrice != null ? String(m.unitPrice) : undefined,
+          costPrice: m.costPrice != null ? String(m.costPrice) : undefined,
+          installTimeHrs: m.installTimeHrs != null ? String(m.installTimeHrs) : undefined,
+          pricingType: (m.pricingType || "standard") as "standard" | "monthly" | "optional" | "annual",
+          category: undefined,
+        });
+        setCatalogSavedItems(prev => new Set(prev).add(i));
+      }
+      toast.success(`${toSave.length} item${toSave.length > 1 ? "s" : ""} added to catalog`);
+    } catch {
+      // individual errors already toasted by mutation onError
+    } finally {
+      setIsAddingAll(false);
+    }
+  };
+
+  const SourceBadge = ({ source, symbolCode, catalogName, estimated, isSaved }: { source: string; symbolCode?: string; catalogName?: string; estimated?: boolean; isSaved?: boolean }) => (
     <span className="inline-flex items-center gap-1 flex-wrap">
       {(source === "takeoff" || source === "containment") && symbolCode && (
         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles[source].bg, color: sourceBadgeStyles[source].color }}>
           {source === "takeoff" ? "Takeoff" : "Containment"}: {symbolCode}
         </span>
       )}
-      {catalogName && (<span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles.catalog.bg, color: sourceBadgeStyles.catalog.color }}>Catalog</span>)}
-      {estimated && !catalogName && (<span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles.estimated.bg, color: sourceBadgeStyles.estimated.color }}>Estimated Price</span>)}
+      {(catalogName || isSaved) && (<span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles.catalog.bg, color: sourceBadgeStyles.catalog.color }}>Catalog</span>)}
+      {estimated && !catalogName && !isSaved && (<span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles.estimated.bg, color: sourceBadgeStyles.estimated.color }}>Estimated Price</span>)}
       {source === "voice" && !symbolCode && !catalogName && !estimated && (<span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles.voice.bg, color: sourceBadgeStyles.voice.color }}>Voice</span>)}
       {source === "document" && !symbolCode && !catalogName && !estimated && (<span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles.document.bg, color: sourceBadgeStyles.document.color }}>Document</span>)}
     </span>
@@ -453,6 +508,17 @@ export default function QuoteDraftSummary({
                 <Package className="h-3.5 w-3.5" style={{ color: "#0d9488" }} />
               </div>
               <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: brand.navyMuted }}>Line Items</p>
+              {!isEditing && data.materials.some((m, i) => m.estimated && !m.catalogName && !catalogSavedItems.has(i)) && (
+                <button
+                  onClick={handleAddAllToCatalog}
+                  disabled={isAddingAll}
+                  className="ml-auto text-[10px] font-bold px-2.5 py-1 rounded border transition-colors hover:opacity-80 disabled:opacity-50 flex items-center gap-1"
+                  style={{ backgroundColor: "#f0fdfa", color: "#0d9488", borderColor: "#99f6e4" }}
+                  title="Add all estimated items to your catalog"
+                >
+                  {isAddingAll ? <span>Saving…</span> : <><Plus className="h-2.5 w-2.5" /> Add all estimated to catalog</>}
+                </button>
+              )}
             </div>
 
             {isEditing ? (
@@ -471,7 +537,7 @@ export default function QuoteDraftSummary({
                         <div className="flex-1 min-w-0">
                           <input type="text" value={m.item} onChange={(e) => updateMaterial(i, "item", e.target.value)} className="w-full text-sm font-bold px-2.5 py-1.5 rounded-md outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} placeholder="Item name" />
                         </div>
-                        <SourceBadge source={m.source} symbolCode={m.symbolCode} catalogName={m.catalogName} estimated={m.estimated} />
+                        <SourceBadge source={m.source} symbolCode={m.symbolCode} catalogName={m.catalogName} estimated={m.estimated} isSaved={catalogSavedItems.has(i)} />
                       </div>
                       {/* Row 2: description */}
                       <div className="ml-7 mb-2">
@@ -547,7 +613,16 @@ export default function QuoteDraftSummary({
                           <td className="py-2 px-2 align-top">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="text-[13px] font-semibold" style={{ color: brand.navy }}>{m.item}</span>
-                              <SourceBadge source={m.source} symbolCode={m.symbolCode} catalogName={m.catalogName} estimated={m.estimated} />
+                              <SourceBadge source={m.source} symbolCode={m.symbolCode} catalogName={m.catalogName} estimated={m.estimated} isSaved={catalogSavedItems.has(i)} />
+                              {m.estimated && !m.catalogName && !catalogSavedItems.has(i) && (
+                                <button
+                                  onClick={() => handleAddToCatalog(m, i)}
+                                  disabled={addToCatalogMutation.isPending}
+                                  className="text-[9px] font-bold px-1.5 py-0.5 rounded border transition-colors hover:opacity-80 disabled:opacity-50"
+                                  style={{ backgroundColor: "#f0fdfa", color: "#0d9488", borderColor: "#99f6e4" }}
+                                  title="Add this item to your catalog"
+                                >+ Catalog</button>
+                              )}
                               {m.pricingType && m.pricingType !== "standard" && (
                                 <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{
                                   backgroundColor: m.pricingType === "monthly" ? "#f0fdfa" : m.pricingType === "annual" ? "#fef3c7" : "#f5f3ff",
