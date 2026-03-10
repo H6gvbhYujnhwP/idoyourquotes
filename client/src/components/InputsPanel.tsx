@@ -161,6 +161,7 @@ function DetailContent({
   processingInputId,
   quoteId,
   userPrompt,
+  tradePreset,
   isMobile,
 }: {
   input: QuoteInput;
@@ -173,6 +174,7 @@ function DetailContent({
   processingInputId: number | null;
   quoteId: number;
   userPrompt: string;
+  tradePreset?: string;
   isMobile: boolean;
 }) {
   const isApproved = takeoff?.status === "verified" || takeoff?.status === "locked";
@@ -455,6 +457,7 @@ export default function InputsPanel({
                     processingInputId={processingInputId}
                     quoteId={quoteId}
                     userPrompt={userPrompt}
+                    tradePreset={tradePreset}
                     isMobile={true}
                   />
                 )}
@@ -554,6 +557,7 @@ export default function InputsPanel({
               processingInputId={processingInputId}
               quoteId={quoteId}
               userPrompt={userPrompt}
+              tradePreset={tradePreset}
               isMobile={false}
             />
           ) : (
