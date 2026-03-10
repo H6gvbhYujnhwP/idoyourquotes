@@ -3607,7 +3607,21 @@ PRICING TYPE — CRITICAL:
           companyDefaultsContext = parts.join("\n");
         }
 
-        // BoQ Detection — scan evidence for Bill of Quantities patterns
+        // Takeoff deduplication rule — injected when both takeoff evidence and catalog items are present
+        const hasTakeoffEvidence = processedEvidence.some(e => e.includes("ELECTRICAL TAKEOFF") || e.includes("SYMBOL COUNTS"));
+        const takeoffDedupContext = (hasTakeoffEvidence && catalogItems.length > 0) ? `\n\nELECTRICAL TAKEOFF — CATALOG MATCHING RULES (CRITICAL — READ CAREFULLY):
+The evidence contains both an ELECTRICAL TAKEOFF (with symbol counts) and a COMPANY CATALOG (with item names and rates).
+Many takeoff symbols will map to catalog items. You MUST follow these rules:
+
+1. ONE LINE ITEM PER SYMBOL — When a takeoff symbol matches a catalog item (by name or description), create EXACTLY ONE line item. Use the catalog item's name, rate, unit, and pricingType. Use the takeoff count as the quantity. Do NOT create a separate line item for the raw symbol code on top of the catalog match.
+
+2. NO DUPLICATES — If "Linear LED Light" already appears as a catalog-matched line item, do NOT also add a separate "Takeoff: J" or "J (Linear LED Light)" line item. They are the same thing.
+
+3. UNMATCHED SYMBOLS — If a takeoff symbol has no catalog match, create one line item for it using the symbol description as the name. Estimate a realistic UK rate if none is available.
+
+4. QUANTITIES FROM TAKEOFF — Always use the exact count from the SYMBOL COUNTS section as the quantity. Never use 1 as a default for takeoff items.
+
+5. DO NOT DOUBLE-COUNT — The takeoff counts and the catalog are two sides of the same coin. The takeoff tells you HOW MANY. The catalog tells you the NAME and RATE. Merge them into one line item per symbol.` : ``;
         const allEvidence = processedEvidence.join("\n");
         const boqPatterns = [
           /bill\s+of\s+quantities/i,
@@ -3790,7 +3804,7 @@ CRITICAL RULES:
 - When a Bill of Quantities or Trade Bill is present, extract and price each item individually — do not lump items together or create generic phases.
 - Use company catalog rates when items match. Only estimate rates for items with no catalog match.
 - Use the company defaults provided below for working hours, insurance, exclusions, signatory details, etc. Do NOT invent these values.
-${tradePromptAdditions}${boqContext}${companyDefaultsContext}${catalogContext}${priceHierarchyContext}${tradeRelevanceGuardrail}`;
+${tradePromptAdditions}${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${priceHierarchyContext}${tradeRelevanceGuardrail}`;
         } else {
           systemPrompt = `You are a senior estimator preparing a quote from tender evidence. Extract facts from the documents provided and produce a structured draft.
 
@@ -3852,7 +3866,7 @@ CRITICAL RULES:
 - When a Bill of Quantities or Trade Bill is present, extract and price each item individually.
 - Use company catalog rates when items match. Only estimate rates for items with no catalog match.
 - Use the company defaults below for working hours, insurance, exclusions, etc. Do NOT invent these values.
-${boqContext}${companyDefaultsContext}${catalogContext}${priceHierarchyContext}${tradeRelevanceGuardrail}`;
+${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${priceHierarchyContext}${tradeRelevanceGuardrail}`;
         }
 
         // Generate draft using LLM
