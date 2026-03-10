@@ -17,8 +17,8 @@ import { parseWordDocument, isWordDocument } from "./services/wordParser";
 import { performElectricalTakeoff, applyUserAnswers, formatTakeoffForQuoteContext, SYMBOL_STYLES, SYMBOL_DESCRIPTIONS, extractWithPdfJs, extractPdfLineColours } from "./services/electricalTakeoff";
 import { performContainmentTakeoff, calculateCableSummary, generateContainmentSvgOverlay, isContainmentDrawing, formatContainmentForQuoteContext, TRAY_SIZE_COLOURS } from "./services/containmentTakeoff";
 import { generateSvgOverlay } from "./services/takeoffMarkup";
-import { createElectricalTakeoff, getElectricalTakeoffsByQuoteId, getElectricalTakeoffById, getElectricalTakeoffByInputId, updateElectricalTakeoff } from "./db";
-import { createContainmentTakeoff, getContainmentTakeoffsByQuoteId, getContainmentTakeoffById, getContainmentTakeoffByInputId, updateContainmentTakeoff } from "./db";
+import { createElectricalTakeoff, getElectricalTakeoffsByQuoteId, getElectricalTakeoffById, getElectricalTakeoffByInputId, updateElectricalTakeoff, deleteElectricalTakeoffByInputId } from "./db";
+import { createContainmentTakeoff, getContainmentTakeoffsByQuoteId, getContainmentTakeoffById, getContainmentTakeoffByInputId, updateContainmentTakeoff, deleteContainmentTakeoffByInputId, updateInputMimeType } from "./db";
 import { parseSpreadsheet, isSpreadsheet, formatSpreadsheetForAI } from "./services/excelParser";
 import { generateQuoteHTML } from "./pdfGenerator";
 import {
@@ -42,7 +42,6 @@ import {
   getInputById,
   updateInputProcessing,
   updateInputContent,
-  updateInputMimeType,
   getTenderContextByQuoteId,
   upsertTenderContext,
   getInternalEstimateByQuoteId,
@@ -130,7 +129,6 @@ export const appRouter = router({
           labourRate: z.number().optional(),
           materialMarkup: z.number().optional(),
           plantMarkup: z.number().optional(),
-          defaultVatRate: z.number().optional(),
         }).optional(),
         defaultExclusions: z.string().optional(),
         defaultValidityDays: z.number().optional(),
@@ -405,7 +403,6 @@ export const appRouter = router({
         taxRate: z.string().optional(),
         userPrompt: z.string().nullable().optional(),
         processingInstructions: z.string().nullable().optional(),
-        qdsSummaryJson: z.string().nullable().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
@@ -1437,30 +1434,6 @@ IMPORTANT: Address the email greeting to the Contact Person (e.g. "Hi ${contactN
         return { success: true };
       }),
 
-    // Toggle reference-only flag on an input (reference docs inform AI but don't feed into QDS)
-    setReferenceOnly: protectedProcedure
-      .input(z.object({
-        id: z.number(),
-        quoteId: z.number(),
-        isReferenceOnly: z.boolean(),
-      }))
-      .mutation(async ({ ctx, input }) => {
-        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
-        if (!quote) throw new Error("Quote not found");
-
-        const inputRecord = await getInputById(input.id);
-        if (!inputRecord) throw new Error("Input not found");
-        if (inputRecord.quoteId !== input.quoteId) throw new Error("Input does not belong to this quote");
-
-        // Store flag as a suffix on mimeType — no migration needed
-        const baseMime = (inputRecord.mimeType || '').replace(';reference=true', '');
-        const newMime = input.isReferenceOnly ? baseMime + ';reference=true' : baseMime;
-
-        await updateInputMimeType(input.id, newMime);
-
-        return { success: true, isReferenceOnly: input.isReferenceOnly };
-      }),
-
     // File upload via base64
     uploadFile: protectedProcedure
       .input(z.object({
@@ -1494,13 +1467,6 @@ IMPORTANT: Address the email greeting to the Contact Person (e.g. "Hi ${contactN
           folder
         );
 
-        // Auto-detect legend/reference-only PDFs by filename pattern
-        const isLegendFile = input.inputType === 'pdf' && (() => {
-          const lower = (input.filename || '').toLowerCase();
-          return lower.includes('legend') || lower.includes('_key') || lower.includes('-key') ||
-                 lower.includes('symbols') || lower.includes('abbreviation') || lower.includes('keynotes');
-        })();
-
         // Create input record
         const inputRecord = await createInput({
           quoteId: input.quoteId,
@@ -1508,7 +1474,7 @@ IMPORTANT: Address the email greeting to the Contact Person (e.g. "Hi ${contactN
           filename: input.filename,
           fileUrl: url,
           fileKey: key,
-          mimeType: isLegendFile ? input.contentType + ';reference=true' : input.contentType,
+          mimeType: input.contentType,
         });
 
         // Auto-analyze the uploaded file in the background
@@ -1644,7 +1610,8 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
               // ── Auto-run electrical takeoff for PDFs (server-side) ──
               // This ensures takeoffs run regardless of which input is selected in the UI.
               // Previously, takeoffs only ran when TakeoffPanel mounted (required the PDF to be selected).
-              if (input.inputType === "pdf") {
+              // Skip if this PDF is marked as reference-only (legend sheet) — it has no installation counts.
+              if (input.inputType === "pdf" && !inputRecord.mimeType?.includes(";reference=true")) {
                 try {
                   // Check if a takeoff already exists for this input (avoid duplicates)
                   const existingTakeoff = await getElectricalTakeoffByInputId(inputRecord.id);
@@ -2011,9 +1978,49 @@ Report facts only. Do not interpret or add commentary.`,
           throw error;
         }
       }),
-  }),
 
-  // ============ ELECTRICAL TAKEOFF ============
+    // Toggle reference-only flag on a PDF input (legend/key sheets)
+    // When marked as reference-only: mimeType gets ;reference=true suffix, existing takeoffs deleted
+    // When unmarked: ;reference=true removed from mimeType
+    setReferenceOnly: protectedProcedure
+      .input(z.object({
+        inputId: z.number(),
+        quoteId: z.number(),
+        isReference: z.boolean(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+
+        const inputRecord = await getInputById(input.inputId);
+        if (!inputRecord) throw new Error("Input not found");
+        if (inputRecord.quoteId !== input.quoteId) throw new Error("Input does not belong to this quote");
+        if (inputRecord.inputType !== "pdf") throw new Error("Reference-only flag can only be set on PDF inputs");
+
+        // Build the new mimeType — add or remove the ;reference=true suffix
+        const baseMimeType = (inputRecord.mimeType || "application/pdf").replace(/;reference=true/g, "").trim();
+        const newMimeType = input.isReference ? `${baseMimeType};reference=true` : baseMimeType;
+
+        // Update the mimeType on the input record
+        const updated = await updateInputMimeType(input.inputId, newMimeType);
+
+        // If marking as reference-only, delete any existing takeoffs for this input
+        // — they contain symbol counts from the legend (1 of each), not real installation quantities
+        if (input.isReference) {
+          await deleteElectricalTakeoffByInputId(input.inputId);
+          await deleteContainmentTakeoffByInputId(input.inputId);
+          console.log(`[setReferenceOnly] Deleted takeoffs for reference-only input ${input.inputId}`);
+
+          // Also clear processedContent so the legend text doesn't feed into QDS analysis
+          await updateInputProcessing(input.inputId, {
+            processedContent: "[REFERENCE ONLY — Legend/Key Sheet. Contents excluded from quote analysis.]",
+            processingStatus: "completed",
+          });
+        }
+
+        return { success: true, input: updated };
+      }),
+  }),
   electricalTakeoff: router({
     // Get all takeoffs for a quote
     list: protectedProcedure
@@ -2419,43 +2426,13 @@ Report facts only. Do not interpret or add commentary.`,
           totalTextElements: takeoff.totalTextElements || 0,
         });
 
-        // Save takeoff
+        // Save
         const updated = await updateElectricalTakeoff(takeoff.id, {
           symbols: updatedSymbols as any,
           counts: newCounts as any,
           svgOverlay,
           updatedAt: new Date(),
         });
-
-        // Sync processedContent so parseDictationSummary picks up the updated counts
-        // (Same pattern as answerQuestions — without this, QDS re-analysis reads stale quantities)
-        if (takeoff.inputId) {
-          try {
-            const freshResult = {
-              drawingRef: takeoff.drawingRef || '',
-              symbols: updatedSymbols,
-              counts: newCounts,
-              dbCircuits: (takeoff.dbCircuits || []) as string[],
-              notes: (takeoff.drawingNotes || []) as string[],
-              questions: [],
-              pageWidth: 0,
-              pageHeight: 0,
-              hasTextLayer: takeoff.hasTextLayer ?? true,
-              totalTextElements: takeoff.totalTextElements || 0,
-            };
-            const formatted = formatTakeoffForQuoteContext(freshResult as any);
-            console.log(`[updateMarkers] Syncing processedContent for inputId=${takeoff.inputId}, counts:`, JSON.stringify(newCounts));
-            await updateInputProcessing(Number(takeoff.inputId), {
-              processedContent: formatted,
-            });
-            console.log(`[updateMarkers] processedContent synced OK`);
-          } catch (syncErr) {
-            console.error(`[updateMarkers] Failed to sync processedContent:`, syncErr);
-            // Non-fatal — takeoff save succeeded, QDS will be slightly stale
-          }
-        } else {
-          console.warn(`[updateMarkers] takeoff.inputId is null — cannot sync processedContent`);
-        }
 
         return {
           takeoff: updated,
@@ -3058,8 +3035,6 @@ Rules:
     saveVoiceNoteSummary: protectedProcedure
       .input(z.object({
         quoteId: z.number(),
-        qdsSummaryJson: z.string().optional(), // Full QuoteDraftData JSON for QDS restoration
-        userPrompt: z.string().optional(), // Built Processing Instructions text — persisted so generateDraft uses edited values
         summary: z.object({
           clientName: z.string().nullable(),
           jobDescription: z.string(),
@@ -3074,15 +3049,6 @@ Rules:
       .mutation(async ({ ctx, input }) => {
         const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
-
-        // Persist the full QDS JSON and userPrompt together — atomic, no race condition with refetch
-        if (input.qdsSummaryJson || input.userPrompt) {
-          const updates: Record<string, string> = {};
-          if (input.qdsSummaryJson) updates.qdsSummaryJson = input.qdsSummaryJson;
-          if (input.userPrompt) updates.userPrompt = input.userPrompt;
-          await updateQuote(input.quoteId, ctx.user.id, updates as any);
-          console.log(`[saveVoiceNoteSummary] Saved qdsSummaryJson+userPrompt for quote ${input.quoteId}`);
-        }
 
         // Build structured text from the summary
         const parts: string[] = [];
@@ -3130,12 +3096,8 @@ Rules:
         const inputRecords = await getInputsByQuoteId(input.quoteId);
 
         // Collect all voice notes, text content, and processed document content
-        // Reference-only inputs (legend sheets, symbol keys) are excluded from QDS generation —
-        // they are used by the takeoff AI to map symbols, but should not contribute scope/materials to the quote
         const allContent: string[] = [];
         for (const inp of inputRecords) {
-          const isReferenceOnly = (inp.mimeType || '').includes(';reference=true');
-          if (isReferenceOnly) continue; // Skip — legend/key sheets feed takeoff AI, not QDS
           if (inp.inputType === "audio" && inp.content && !inp.fileUrl) {
             allContent.push(`Voice Note (${inp.filename || "untitled"}): ${inp.content}`);
           } else if (inp.inputType === "audio" && inp.content && inp.fileUrl) {
@@ -3176,71 +3138,17 @@ Rules:
           ? await getCatalogItemsByOrgId(org.id)
           : await getCatalogItemsByUserId(ctx.user.id);
         let catalogContext = "";
-        // Pricing type rules always inject — not conditional on having catalog items
-        const pricingTypeRules = `
-
-PRICING TYPE CLASSIFICATION — every material line item MUST have a pricingType field:
-- "standard" = one-off cost included in the quote total (hardware purchases, installation labour, setup fees)
-- "monthly" = recurring monthly service cost — shown separately, NOT included in the one-off total (line rentals, SaaS subscriptions, hosted services, SIP trunks)
-- "optional" = add-on the client can choose — shown separately, NOT included in the one-off total
-- "annual" = yearly recurring cost — shown separately, NOT included in the one-off total (maintenance contracts, annual licences)
-
-HARDWARE vs SERVICE RULE — apply this classification every time:
-- Physical hardware (WAPs, switches, phones, UPS, servers, cable) → ALWAYS "standard"
-- Installation labour, setup, configuration → ALWAYS "standard"
-- Broadband / internet line rental → ALWAYS "monthly"
-- VoIP SIP trunks / phone line rental → ALWAYS "monthly"
-- Hosted PBX / cloud phone system service → ALWAYS "monthly"
-- SaaS subscriptions, cloud services, monitoring services → ALWAYS "monthly"
-- Hardware maintenance contracts, annual support contracts → ALWAYS "annual"
-- Annual software licences → ALWAYS "annual"
-
-TENDER PRICING STRUCTURE DETECTION:
-If the document being analysed explicitly requests costs broken down into categories such as "one-time costs", "monthly costs", "annual costs" — you MUST create line items in ALL requested categories, even if the document does not list exact products for each category.
-- A tender requesting "monthly costs" means: infer what ongoing services this deployment will require (broadband line rental, VoIP/SIP service, hosted PBX, etc.) and create monthly-typed line items for them.
-- A tender requesting "annual costs" means: infer what annual maintenance or support this deployment will require and create annual-typed line items (e.g. "Network Maintenance Contract").
-- These inferred recurring items are NOT optional — they are essential parts of the quote response the client explicitly asked for.
-- Use realistic UK market rate estimates for inferred recurring services. Set "estimated": true on all inferred items.
-
-SERVICE INFERENCE RULE — sector-aware recurring service patterns:
-An experienced professional always includes the ongoing service layer above the hardware/labour layer. Apply these rules based on the trade sector and project type:
-
-IT / Networking / Telecoms:
-- FTTP/fibre broadband installation → MUST include FTTP Monthly Line Rental (pricingType: "monthly", est. £35–45/month)
-- VoIP handsets or PBX → MUST include VoIP SIP Trunk / Line Rental (pricingType: "monthly", est. £8–15/line/month) and Hosted PBX Service (pricingType: "monthly", est. £10–15/user/month)
-- Managed network infrastructure → include Network Maintenance Contract (pricingType: "annual", est. £400–800/year)
-- Cloud/SaaS software → include software subscription as monthly item
-
-Security / Alarm / CCTV:
-- Alarm or CCTV installation → include Monitoring Service Contract (pricingType: "monthly", est. £20–40/month) and Annual Maintenance & Inspection (pricingType: "annual", est. £150–300/year)
-- Remote access or cloud viewing service → include Cloud Recording / Remote Access Subscription (pricingType: "monthly")
-
-Cleaning / Facilities:
-- Regular cleaning contract implied → include Cleaning Contract (pricingType: "monthly") for the recurring service
-- Annual deep clean or specialist treatment → include as annual item
-
-HVAC / Heating / Plumbing:
-- Boiler or HVAC system installation → include Annual Service & Maintenance Contract (pricingType: "annual", est. £150–350/year)
-- Filter or consumables replacement programme → include as annual or monthly item
-
-Electrical:
-- Electrical installation with ongoing compliance requirement → include Periodic Inspection & Test Contract (pricingType: "annual")
-- Emergency callout coverage requested → include Emergency Callout Retainer (pricingType: "monthly" or "annual")
-
-Grounds / Landscaping:
-- Grounds maintenance implied → include Grounds Maintenance Contract (pricingType: "monthly")
-- Annual treatments (fertiliser, weed control) → include as annual item
-
-General rule: if the deployment or installation will require ongoing support, maintenance, or service after completion, include that recurring cost. Set "estimated": true on all inferred recurring items.`;
-
         if (catalogItems.length > 0) {
           catalogContext = `\n\nCOMPANY CATALOG — these are the user's products and services with their set prices:
 ${catalogItems.map(c => `- "${c.name}" | Sell: £${c.defaultRate}/${c.unit}${c.costPrice ? ` | Buy-in: £${c.costPrice}` : ""}${(c as any).installTimeHrs ? ` | Install: ${(c as any).installTimeHrs}hrs/unit` : ""} | Category: ${c.category || "General"} | Pricing: ${(c as any).pricingType || "standard"}${c.description ? ` | ${c.description}` : ""}`).join("\n")}
 
-When a catalog item matches an extracted scope item, use the catalog item's exact name, description, unit, and pricing type. Do NOT override the catalog's pricing type — it was set by the user for a reason.
-CRITICAL: Look at the "Pricing:" field shown next to each catalog item above. If a catalog item says "Pricing: optional", the material MUST have "pricingType": "optional". If it says "Pricing: monthly", it MUST be "monthly". If it says "Pricing: annual", it MUST be "annual".` + pricingTypeRules;
-        } else {
-          catalogContext = pricingTypeRules;
+PRICING TYPES — each catalog item has a pricing type that MUST be preserved:
+- "standard" = one-off cost included in the quote total (the default)
+- "monthly" = recurring monthly service — shown separately, NOT included in the one-off total
+- "optional" = add-on the client can choose — shown separately, NOT included in the one-off total
+- "annual" = yearly recurring cost — shown separately, NOT included in the one-off total
+When extracting materials, ALWAYS include a "pricingType" field matching the catalog item's pricing type.
+CRITICAL: Look at the "Pricing:" field shown next to each catalog item above. If a catalog item says "Pricing: optional", the material MUST have "pricingType": "optional". If it says "Pricing: monthly", it MUST be "monthly". If it says "Pricing: annual", it MUST be "annual". Do NOT override the catalog's pricing type — it was set by the user for a reason. If no catalog match, default to "standard". For tenders that explicitly request annual costs (e.g. maintenance contracts), use "annual".`;
         }
 
         const response = await invokeLLM({
@@ -3264,12 +3172,10 @@ INPUT PROCESSING:
 - When multiple inputs cover the same work, MERGE them into one coherent summary — never duplicate line items.
 
 CLIENT EXTRACTION:
-- Extract client details from ANY source: email signatures, email headers, Word document contact blocks, tender cover pages, specification headers, letter headings, or any mention of company/contact details.
+- Extract client details from email signatures, headers, or mentions: name, company, email, phone.
 - The RECIPIENT of the quote is the client (the person asking for work), NOT the user (the person sending the quote).
-- Look for patterns: "Dear [name]", "Hi [name]", email From/To headers, signature blocks, document headers with company name, contact sections, "Prepared for:", "Issued to:", "Client:", "Contact:", or any block containing a name + email + phone together.
-- Email addresses appear in many formats — look for anything matching name@domain.com or name@domain.co.uk anywhere in the document, not just in email signatures.
+- Look for patterns: "Dear [name]", "Hi [name]", email From/To headers, signature blocks with company name, phone, email, address.
 - If an email chain shows the user replying to someone, the "someone" is the client.
-- For tender documents and Word docs: the client is typically named on the cover page, in a "prepared for" section, or in a contact/enquiries block.
 ${catalogContext}
 
 CATALOG MATCHING RULES:
@@ -3315,7 +3221,7 @@ Respond ONLY with valid JSON in this exact format:
 
 FIELD GUIDELINES:
 - clientName: Full name and/or company. E.g. "Bjorn Gladwell / Rosetti"
-- clientEmail: Email address — look anywhere in the document: signatures, headers, contact blocks, tender cover pages, anywhere an @ symbol appears in a recognisable email format
+- clientEmail: Email address from signature or header
 - clientPhone: Phone from signature or mentions
 - jobDescription: 2-3 detailed sentences covering the FULL scope. Include specifics — server types, cable lengths, page counts, service descriptions. Write from the perspective of the quoting business describing the work they'll do.
 - labour: Team composition with realistic durations. Only include if there is genuinely separate on-site labour not covered by catalog service items.
@@ -3331,7 +3237,7 @@ If a field is not mentioned or cannot be determined, use null.`,
             },
           ],
           response_format: { type: "json_object" },
-          max_tokens: 3000,
+          max_tokens: 1500,
         });
 
         const content = response.choices[0]?.message?.content;

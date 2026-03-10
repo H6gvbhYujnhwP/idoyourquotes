@@ -190,7 +190,6 @@ export default function QuoteWorkspace() {
   const [newItemQuantity, setNewItemQuantity] = useState("1");
   const [newItemUnit, setNewItemUnit] = useState("each");
   const [newItemRate, setNewItemRate] = useState("");
-  const [newItemPricingType, setNewItemPricingType] = useState<"standard" | "monthly" | "optional" | "annual">("standard");
 
   // New text input state
   const [newTextInput, setNewTextInput] = useState("");
@@ -403,6 +402,19 @@ export default function QuoteWorkspace() {
   const deleteInput = trpc.inputs.delete.useMutation({
     onSuccess: () => refetch(),
     onError: (error) => toast.error("Failed to delete: " + error.message),
+  });
+
+  const setReferenceOnly = trpc.inputs.setReferenceOnly.useMutation({
+    onSuccess: (_, variables) => {
+      refetch();
+      refetchTakeoffs();
+      if (variables.isReference) {
+        toast.success("Marked as legend/reference sheet — takeoff data cleared");
+      } else {
+        toast.success("Reference-only flag removed");
+      }
+    },
+    onError: (error) => toast.error("Failed to update: " + error.message),
   });
 
   const upsertTenderContext = trpc.tenderContext.upsert.useMutation({
@@ -649,25 +661,7 @@ export default function QuoteWorkspace() {
           updateFields.userPrompt = autoPrompt;
         }
 
-        // Persist the full voiceSummary JSON so the QDS can be restored on page reload
-        // without re-running AI analysis (fixes blank QDS after navigation)
-        const qdsSummaryToSave = {
-          clientName: parsed.clientName || null,
-          jobDescription: parsed.jobDescription || "",
-          labour: parsed.labour || [],
-          materials: (parsed.materials || []).map((m: any) => ({ ...m, source: "voice" as const })),
-          markup: parsed.markup ?? null,
-          sundries: parsed.sundries ?? null,
-          contingency: parsed.contingency ?? null,
-          preliminaries: parsed.preliminaries ?? null,
-          labourRate: parsed.labourRate ?? null,
-          plantMarkup: parsed.plantMarkup ?? null,
-          plantHire: parsed.plantHire || [],
-          notes: parsed.notes ?? null,
-        };
-        (updateFields as any).qdsSummaryJson = JSON.stringify(qdsSummaryToSave);
-
-        // Save all auto-filled fields AND userPrompt AND qdsSummaryJson in one awaited mutation
+        // Save all auto-filled fields AND userPrompt in one awaited mutation
         // Using mutateAsync ensures the DB write completes before the user can navigate away
         if (Object.keys(updateFields).length > 0) {
           try {
@@ -736,17 +730,6 @@ export default function QuoteWorkspace() {
       if ((fullQuote.quote as any).userPrompt) {
         setUserPrompt((fullQuote.quote as any).userPrompt);
       }
-      // Restore QDS from persisted JSON — no re-analysis needed
-      const savedQdsSummary = (fullQuote.quote as any).qdsSummaryJson;
-      if (savedQdsSummary && !voiceSummary) {
-        try {
-          const parsed = JSON.parse(savedQdsSummary);
-          setVoiceSummary(parsed);
-          console.log("[QDS restore] Restored voiceSummary from qdsSummaryJson");
-        } catch (e) {
-          console.warn("[QDS restore] Failed to parse qdsSummaryJson", e);
-        }
-      }
     }
     if (fullQuote?.tenderContext) {
       setTenderNotes(fullQuote.tenderContext.notes || "");
@@ -778,16 +761,15 @@ export default function QuoteWorkspace() {
     const allInputs = fullQuote?.inputs;
     if (!allInputs || allInputs.length === 0) return;
     
-    // If qdsSummaryJson exists, the page-load useEffect already restored voiceSummary.
-    // No re-analysis needed — mark as done and return.
-    const hasPersistedQDS = !!(fullQuote?.quote as any)?.qdsSummaryJson;
-    if (hasPersistedQDS) {
+    // If the quote already has saved Processing Instructions, the QDS was previously saved.
+    // Do NOT re-analyse — the user's saved data takes priority (Guardrail 10: User Data Sovereignty).
+    const hasSavedQDS = !!(fullQuote?.quote as any)?.userPrompt;
+    if (hasSavedQDS) {
       hasRehydratedRef.current = true;
       return;
     }
-
-    // No persisted QDS — fall back to re-analysis if inputs exist and QDS is empty.
-    // This handles brand-new quotes and quotes created before qdsSummaryJson was added.
+    
+    // Only auto-analyse if there are analysable inputs AND no voiceSummary yet
     const hasAnalysableInputs = allInputs.some(
       (i: any) => (i.inputType === "audio" && i.content && !i.fileUrl) || 
                    (i.inputType === "text" && i.content && !i.fileUrl) ||
@@ -864,7 +846,6 @@ export default function QuoteWorkspace() {
       quantity: newItemQuantity,
       unit: newItemUnit,
       rate: newItemRate || "0",
-      pricingType: newItemPricingType,
     });
   };
 
@@ -2259,8 +2240,7 @@ export default function QuoteWorkspace() {
 
                 if (data.notes) parts.push(`Notes: ${data.notes}`);
 
-                const builtPrompt = parts.join("\n");
-                setUserPrompt(builtPrompt);
+                setUserPrompt(parts.join("\n"));
 
                 // Auto-name if client provided and title is empty
                 if (data.clientName && !title) {
@@ -2273,13 +2253,9 @@ export default function QuoteWorkspace() {
                   updateQuote.mutate({ id: quoteId, clientName: data.clientName });
                 }
 
-                // Also save voice data to DB — including full QDS JSON for page-reload restoration
-                // qdsSummaryJson captures the COMPLETE user-edited state (all sources, all fields)
-                // so the QDS is restored exactly as the user left it, without re-analysis
+                // Also save voice data to DB
                 saveVoiceNoteSummary.mutate({
                   quoteId,
-                  qdsSummaryJson: JSON.stringify(data),
-                  userPrompt: builtPrompt || undefined,
                   summary: {
                     clientName: data.clientName,
                     jobDescription: data.jobDescription,
@@ -2330,6 +2306,9 @@ export default function QuoteWorkspace() {
               onProcessInput={handleProcessInput}
               onDeleteInput={(input) => {
                 deleteInput.mutate({ id: input.id, quoteId });
+              }}
+              onSetReferenceOnly={(input, isReference) => {
+                setReferenceOnly.mutate({ inputId: input.id, quoteId, isReference });
               }}
               onTriggerVoiceAnalysis={triggerVoiceAnalysis}
               onTakeoffChanged={refetchTakeoffs}
@@ -2928,23 +2907,6 @@ export default function QuoteWorkspace() {
                       onChange={(e) => setNewItemRate(e.target.value)}
                     />
                   </div>
-                  <div className="col-span-12 md:col-span-2">
-                    <select
-                      value={newItemPricingType}
-                      onChange={(e) => setNewItemPricingType(e.target.value as any)}
-                      className="w-full h-10 text-sm px-3 rounded-md border border-input bg-background"
-                      style={{
-                        fontWeight: 600,
-                        color: newItemPricingType === "monthly" ? "#0d9488" : newItemPricingType === "optional" ? "#8b5cf6" : newItemPricingType === "annual" ? "#b45309" : "#1a2b4a",
-                        background: newItemPricingType === "monthly" ? "#f0fdfa" : newItemPricingType === "optional" ? "#f5f3ff" : newItemPricingType === "annual" ? "#fef3c7" : "white",
-                      }}
-                    >
-                      <option value="standard">Standard</option>
-                      <option value="monthly">Monthly</option>
-                      <option value="optional">Optional</option>
-                      <option value="annual">Annual</option>
-                    </select>
-                  </div>
                   <div className="col-span-12 md:col-span-1">
                     <Button
                       onClick={handleAddLineItem}
@@ -2973,7 +2935,7 @@ export default function QuoteWorkspace() {
                 
                 {showCatalogPicker && catalogItems && catalogItems.length > 0 && (
                   <div className="absolute z-50 mt-2 w-full bg-popover border rounded-lg shadow-lg max-h-64 overflow-y-auto">
-                    {catalogItems.map((item: { id: number; name: string; description: string | null; unit: string | null; defaultRate: string | null; category: string | null; pricingType?: string | null }, index: number) => (
+                    {catalogItems.map((item: { id: number; name: string; description: string | null; unit: string | null; defaultRate: string | null; category: string | null }, index: number) => (
                       <div
                         key={item.id}
                         className={`p-3 cursor-pointer hover:bg-accent transition-colors ${index % 2 === 1 ? 'bg-muted/30' : ''}`}
@@ -2984,7 +2946,6 @@ export default function QuoteWorkspace() {
                             quantity: "1",
                             unit: item.unit || "each",
                             rate: item.defaultRate || "0",
-                            pricingType: (item.pricingType as any) || "standard",
                           });
                           setShowCatalogPicker(false);
                           toast.success(`Added "${item.name}" to quote`);
@@ -3018,12 +2979,12 @@ export default function QuoteWorkspace() {
               {/* Totals */}
               <div className="border-t pt-4 space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span>Subtotal (ex VAT)</span>
+                  <span>Subtotal</span>
                   <span>£{parseFloat(quote.subtotal || "0").toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between items-center text-sm">
                   <div className="flex items-center gap-2">
-                    <span>VAT</span>
+                    <span>Tax</span>
                     <Input
                       type="number"
                       className="w-16 h-7 text-xs"
@@ -3035,7 +2996,7 @@ export default function QuoteWorkspace() {
                   <span>£{parseFloat(quote.taxAmount || "0").toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between font-bold text-lg border-t pt-2">
-                  <span>Total (inc VAT)</span>
+                  <span>Total</span>
                   <span>£{parseFloat(quote.total || "0").toFixed(2)}</span>
                 </div>
               </div>

@@ -1,4 +1,4 @@
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import bcrypt from "bcryptjs";
@@ -374,48 +374,7 @@ export async function createQuote(data: Partial<InsertQuote> & { userId: number;
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  // Build date string: DD/MM/YYYY
-  const today = new Date();
-  const dd = String(today.getDate()).padStart(2, "0");
-  const mm = String(today.getMonth() + 1).padStart(2, "0");
-  const yyyy = today.getFullYear();
-  const dateStr = `${dd}/${mm}/${yyyy}`;
-
-  // Reference: "OrgName_Quote_DD/MM/YYYY" — human-readable, scoped to org or user.
-  // Falls back to user name/email if no org name available.
-  // The QDS save will later upgrade the title to "ClientName_Quote_DD/MM/YYYY".
-  let reference = data.reference;
-  if (!reference) {
-    // Fetch org name if we have an orgId
-    let scopeName = "Quote";
-    if (data.orgId) {
-      const orgRows = await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, data.orgId)).limit(1);
-      if (orgRows[0]?.name) scopeName = orgRows[0].name;
-    } else {
-      // Solo user — fetch their company name or name
-      const userRows = await db.select({ companyName: users.companyName, name: users.name }).from(users).where(eq(users.id, data.userId)).limit(1);
-      scopeName = userRows[0]?.companyName || userRows[0]?.name || "Quote";
-    }
-    // Sanitise: strip characters that break file names / URLs
-    const safeName = scopeName.replace(/[^a-zA-Z0-9 _-]/g, "").trim().replace(/\s+/g, "_");
-    reference = `${safeName}_Quote_${dd}-${mm}-${yyyy}`;
-  }
-
-  // Default title matches the reference format.
-  // Once the user saves the QDS with a client name the title is upgraded automatically.
-  const defaultTitle = data.title || reference;
-
-  // Resolve default VAT rate: prefer org setting, fall back to 20% (UK standard)
-  let defaultVatRate = 20;
-  if (data.taxRate !== undefined && data.taxRate !== null) {
-    // Caller explicitly set a taxRate — use it as-is
-    defaultVatRate = parseFloat(data.taxRate as string) || 20;
-  } else if (data.orgId) {
-    const orgForVat = await db.select({ rates: organizations.defaultDayWorkRates })
-      .from(organizations).where(eq(organizations.id, data.orgId)).limit(1);
-    const orgVat = (orgForVat[0]?.rates as any)?.defaultVatRate;
-    if (orgVat !== undefined && orgVat !== null) defaultVatRate = orgVat;
-  }
+  const reference = data.reference || `Q-${Date.now()}`;
 
   const [result] = await db.insert(quotes).values({
     userId: data.userId,
@@ -427,12 +386,12 @@ export async function createQuote(data: Partial<InsertQuote> & { userId: number;
     clientEmail: data.clientEmail,
     clientPhone: data.clientPhone,
     clientAddress: data.clientAddress,
-    title: defaultTitle,
+    title: data.title,
     description: data.description,
     terms: data.terms,
     validUntil: data.validUntil,
     subtotal: data.subtotal || "0.00",
-    taxRate: defaultVatRate.toFixed(2),
+    taxRate: data.taxRate || "0.00",
     taxAmount: data.taxAmount || "0.00",
     total: data.total || "0.00",
     quoteMode: data.quoteMode || "simple",
@@ -708,21 +667,6 @@ export async function updateInputProcessing(
   return result;
 }
 
-export async function updateInputMimeType(
-  inputId: number,
-  mimeType: string,
-): Promise<QuoteInput | undefined> {
-  const db = await getDb();
-  if (!db) return undefined;
-
-  const [result] = await db.update(quoteInputs)
-    .set({ mimeType })
-    .where(eq(quoteInputs.id, inputId))
-    .returning();
-
-  return result;
-}
-
 export async function updateInputContent(
   inputId: number,
   content: string,
@@ -866,29 +810,15 @@ export async function recalculateQuoteTotals(quoteId: number, userId: number): P
   if (!db) return undefined;
 
   const lineItems = await getLineItemsByQuoteId(quoteId);
-  // Try org-based lookup first — team quotes are org-owned and may not match by userId alone
-  const org = await getUserPrimaryOrg(userId);
-  let quote = org ? await getQuoteByIdAndOrg(quoteId, org.id) : undefined;
-  if (!quote) quote = await getQuoteById(quoteId, userId);
+  const quote = await getQuoteById(quoteId, userId);
   
   if (!quote) return undefined;
 
-  // Standard items only — form the one-off total ex VAT
+  // Only include 'standard' pricing type in the quote total
+  // Monthly and optional items are shown separately and not included
   const subtotal = lineItems
     .filter(item => !item.pricingType || item.pricingType === 'standard')
     .reduce((sum, item) => sum + parseFloat(item.total || "0"), 0);
-
-  // Monthly recurring total (ex VAT — shown as a separate figure)
-  const monthlyTotal = lineItems
-    .filter(item => item.pricingType === 'monthly')
-    .reduce((sum, item) => sum + parseFloat(item.total || "0"), 0);
-
-  // Annual recurring total (ex VAT — shown as a separate figure)
-  const annualTotal = lineItems
-    .filter(item => item.pricingType === 'annual')
-    .reduce((sum, item) => sum + parseFloat(item.total || "0"), 0);
-
-  // VAT applies to standard (one-off) subtotal only
   const taxRate = parseFloat(quote.taxRate || "0");
   const taxAmount = subtotal * (taxRate / 100);
   const total = subtotal + taxAmount;
@@ -897,9 +827,7 @@ export async function recalculateQuoteTotals(quoteId: number, userId: number): P
     subtotal: subtotal.toFixed(2),
     taxAmount: taxAmount.toFixed(2),
     total: total.toFixed(2),
-    monthlyTotal: monthlyTotal.toFixed(2),
-    annualTotal: annualTotal.toFixed(2),
-  } as any);
+  });
 }
 
 // ============ MIGRATION HELPER ============
@@ -999,6 +927,14 @@ export async function updateElectricalTakeoff(
   return result;
 }
 
+export async function deleteElectricalTakeoffByInputId(inputId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+
+  await db.delete(electricalTakeoffs).where(eq(electricalTakeoffs.inputId, inputId));
+  return true;
+}
+
 // ---- Containment Takeoffs ----
 
 export async function createContainmentTakeoff(data: InsertContainmentTakeoff): Promise<ContainmentTakeoff> {
@@ -1048,6 +984,25 @@ export async function updateContainmentTakeoff(
   const [result] = await db.update(containmentTakeoffs)
     .set({ ...data, updatedAt: new Date() })
     .where(eq(containmentTakeoffs.id, id))
+    .returning();
+  return result;
+}
+
+export async function deleteContainmentTakeoffByInputId(inputId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+
+  await db.delete(containmentTakeoffs).where(eq(containmentTakeoffs.inputId, inputId));
+  return true;
+}
+
+export async function updateInputMimeType(inputId: number, mimeType: string): Promise<QuoteInput | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const [result] = await db.update(quoteInputs)
+    .set({ mimeType })
+    .where(eq(quoteInputs.id, inputId))
     .returning();
   return result;
 }
