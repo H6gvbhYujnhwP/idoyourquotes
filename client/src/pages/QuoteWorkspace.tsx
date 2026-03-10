@@ -1404,7 +1404,7 @@ export default function QuoteWorkspace() {
       />
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex items-start gap-4">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => setLocation("/dashboard")}>
             <ArrowLeft className="h-5 w-5" />
@@ -1498,88 +1498,6 @@ export default function QuoteWorkspace() {
               )}
             </div>
           </div>
-        </div>
-        <div className="flex gap-2">
-          <Button 
-            onClick={handleGenerateDraft} 
-            disabled={isGeneratingDraft}
-            className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
-          >
-            {isGeneratingDraft ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-            {lineItems && lineItems.length > 0 ? "Regenerate Draft" : "Generate Draft"}
-          </Button>
-          <Button variant="outline" onClick={handleSaveQuote} disabled={isSaving}>
-            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            Save
-          </Button>
-          <Button variant="outline" onClick={handleGeneratePDF} disabled={isGeneratingPDF}>
-            {isGeneratingPDF ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-            PDF
-          </Button>
-          <Button 
-            variant="outline" 
-            onClick={handleGenerateEmail} 
-            disabled={isGeneratingEmail || (!quote.clientName && !(quote as any).contactName)}
-            title={(!quote.clientName && !(quote as any).contactName) ? "Add client details first" : "Generate email to send quote"}
-          >
-            {isGeneratingEmail ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
-            Email
-          </Button>
-          {status === "draft" && (
-            <Button 
-              onClick={() => {
-                if (window.confirm("Mark this quote as sent? This indicates the quote has been delivered to the client.")) {
-                  updateStatus.mutate({ id: quoteId, status: "sent" });
-                }
-              }}
-              disabled={updateStatus.isPending}
-            >
-              {updateStatus.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-              Mark as Sent
-            </Button>
-          )}
-          {status === "sent" && (
-            <>
-              <Button 
-                onClick={() => {
-                  if (window.confirm("Mark this quote as accepted? This indicates the client has approved the quote.")) {
-                    updateStatus.mutate({ id: quoteId, status: "accepted" });
-                  }
-                }}
-                disabled={updateStatus.isPending}
-                className="bg-green-600 hover:bg-green-700"
-              >
-                {updateStatus.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
-                Mark Accepted
-              </Button>
-              <Button 
-                variant="outline"
-                onClick={() => {
-                  if (window.confirm("Mark this quote as declined?")) {
-                    updateStatus.mutate({ id: quoteId, status: "declined" });
-                  }
-                }}
-                disabled={updateStatus.isPending}
-              >
-                <X className="mr-2 h-4 w-4" />
-                Declined
-              </Button>
-            </>
-          )}
-          {(status === "accepted" || status === "declined") && (
-            <Button 
-              variant="outline"
-              onClick={() => {
-                if (window.confirm("Revert this quote back to draft status?")) {
-                  updateStatus.mutate({ id: quoteId, status: "draft" });
-                }
-              }}
-              disabled={updateStatus.isPending}
-            >
-              {updateStatus.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowLeft className="mr-2 h-4 w-4" />}
-              Revert to Draft
-            </Button>
-          )}
         </div>
       </div>
 
@@ -1675,7 +1593,8 @@ export default function QuoteWorkspace() {
                 </span>
               )}
             </div>
-            <div className="flex flex-wrap gap-1.5">
+            {/* Output view tabs */}
+            <div className="flex flex-wrap gap-1.5 mb-3">
               <button
                 onClick={() => setActiveTab("quote")}
                 className={cn(
@@ -1727,6 +1646,95 @@ export default function QuoteWorkspace() {
                     Documents
                   </button>
                 </>
+              )}
+            </div>
+            {/* Action buttons — live inside the Output panel */}
+            <div className="flex flex-col gap-2">
+              <Button
+                onClick={handleGenerateDraft}
+                disabled={isGeneratingDraft}
+                className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
+              >
+                {isGeneratingDraft ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                {lineItems && lineItems.length > 0 ? "Regenerate Draft" : "Generate Draft"}
+              </Button>
+              <div className="grid grid-cols-3 gap-1.5">
+                <Button variant="outline" onClick={handleSaveQuote} disabled={isSaving} className="border-emerald-300 text-emerald-700 hover:bg-emerald-100">
+                  {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                  <span className="ml-1.5 text-xs">Save</span>
+                </Button>
+                <Button variant="outline" onClick={handleGeneratePDF} disabled={isGeneratingPDF} className="border-emerald-300 text-emerald-700 hover:bg-emerald-100">
+                  {isGeneratingPDF ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                  <span className="ml-1.5 text-xs">PDF</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleGenerateEmail}
+                  disabled={isGeneratingEmail || (!quote.clientName && !(quote as any).contactName)}
+                  title={(!quote.clientName && !(quote as any).contactName) ? "Add client details first" : "Generate email to send quote"}
+                  className="border-emerald-300 text-emerald-700 hover:bg-emerald-100"
+                >
+                  {isGeneratingEmail ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+                  <span className="ml-1.5 text-xs">Email</span>
+                </Button>
+              </div>
+              {status === "draft" && (
+                <Button
+                  onClick={() => {
+                    if (window.confirm("Mark this quote as sent? This indicates the quote has been delivered to the client.")) {
+                      updateStatus.mutate({ id: quoteId, status: "sent" });
+                    }
+                  }}
+                  disabled={updateStatus.isPending}
+                  className="w-full bg-slate-800 hover:bg-slate-900 text-white"
+                >
+                  {updateStatus.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                  Mark as Sent
+                </Button>
+              )}
+              {status === "sent" && (
+                <div className="flex gap-1.5">
+                  <Button
+                    onClick={() => {
+                      if (window.confirm("Mark this quote as accepted? This indicates the client has approved the quote.")) {
+                        updateStatus.mutate({ id: quoteId, status: "accepted" });
+                      }
+                    }}
+                    disabled={updateStatus.isPending}
+                    className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                  >
+                    {updateStatus.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-2 h-3.5 w-3.5" />}
+                    <span className="text-xs">Accepted</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      if (window.confirm("Mark this quote as declined?")) {
+                        updateStatus.mutate({ id: quoteId, status: "declined" });
+                      }
+                    }}
+                    disabled={updateStatus.isPending}
+                    className="flex-1"
+                  >
+                    <X className="mr-2 h-3.5 w-3.5" />
+                    <span className="text-xs">Declined</span>
+                  </Button>
+                </div>
+              )}
+              {(status === "accepted" || status === "declined") && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (window.confirm("Revert this quote back to draft status?")) {
+                      updateStatus.mutate({ id: quoteId, status: "draft" });
+                    }
+                  }}
+                  disabled={updateStatus.isPending}
+                  className="w-full"
+                >
+                  {updateStatus.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowLeft className="mr-2 h-4 w-4" />}
+                  Revert to Draft
+                </Button>
               )}
             </div>
             {/* Arrow connector */}
