@@ -1620,7 +1620,17 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
                   if (!existingTakeoff) {
                     console.log(`[Auto-takeoff] Running electrical takeoff for input ${inputRecord.id}`);
                     const pdfBuf = await getFileBuffer(key);
-                    const takeoffResult = await performElectricalTakeoff(pdfBuf, input.filename || 'Unknown');
+
+                    // Fetch any legend symbolMap already saved for this quote
+                    const autoTenderCtx = await getTenderContextByQuoteId(input.quoteId);
+                    const autoSymbolMap: Record<string, string> = {};
+                    if (autoTenderCtx?.symbolMappings) {
+                      for (const [k, v] of Object.entries(autoTenderCtx.symbolMappings)) {
+                        autoSymbolMap[k] = (v as any).meaning || '';
+                      }
+                    }
+
+                    const takeoffResult = await performElectricalTakeoff(pdfBuf, input.filename || 'Unknown', autoSymbolMap);
                     const svgOverlay = generateSvgOverlay(takeoffResult);
 
                     await createElectricalTakeoff({
@@ -1643,7 +1653,7 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
 
                     // Update processedContent with takeoff summary (richer than OpenAI extraction)
                     await updateInputProcessing(inputRecord.id, {
-                      processedContent: formatTakeoffForQuoteContext(takeoffResult),
+                      processedContent: formatTakeoffForQuoteContext(takeoffResult, autoSymbolMap),
                       processingStatus: "completed",
                     });
 
@@ -1982,8 +1992,15 @@ Report facts only. Do not interpret or add commentary.`,
       }),
 
     // Toggle reference-only flag on a PDF input (legend/key sheets)
-    // When marked as reference-only: mimeType gets ;reference=true suffix, existing takeoffs deleted
-    // When unmarked: ;reference=true removed from mimeType
+    // When marked as reference-only:
+    //   1. mimeType gets ;reference=true suffix
+    //   2. Existing takeoffs deleted (they had legend symbol counts, not installation counts)
+    //   3. parseLegend runs — extracts symbol→description pairs into tenderContexts.symbolMappings
+    //   4. All other drawing PDFs for this quote are re-run with the new symbolMap
+    // When unmarked:
+    //   1. ;reference=true removed from mimeType
+    //   2. tenderContexts.symbolMappings cleared (symbol source is gone)
+    //   3. All drawing takeoffs re-run without symbolMap (unknowns will resurface as questions)
     setReferenceOnly: protectedProcedure
       .input(z.object({
         inputId: z.number(),
@@ -1999,27 +2016,161 @@ Report facts only. Do not interpret or add commentary.`,
         if (inputRecord.quoteId !== input.quoteId) throw new Error("Input does not belong to this quote");
         if (inputRecord.inputType !== "pdf") throw new Error("Reference-only flag can only be set on PDF inputs");
 
-        // Build the new mimeType — add or remove the ;reference=true suffix
+        // Build the new mimeType
         const baseMimeType = (inputRecord.mimeType || "application/pdf").replace(/;reference=true/g, "").trim();
         const newMimeType = input.isReference ? `${baseMimeType};reference=true` : baseMimeType;
+        await updateInputMimeType(input.inputId, newMimeType);
 
-        // Update the mimeType on the input record
-        const updated = await updateInputMimeType(input.inputId, newMimeType);
-
-        // If marking as reference-only, delete any existing takeoffs for this input
-        // — they contain symbol counts from the legend (1 of each), not real installation quantities
         if (input.isReference) {
+          // Delete any symbol counts from this input (they're legend reference counts, not installations)
           await deleteElectricalTakeoffByInputId(input.inputId);
           await deleteContainmentTakeoffByInputId(input.inputId);
-          console.log(`[setReferenceOnly] Deleted takeoffs for reference-only input ${input.inputId}`);
+          console.log(`[setReferenceOnly] Deleted takeoffs for legend input ${input.inputId}`);
 
-          // Also clear processedContent so the legend text doesn't feed into QDS analysis
+          // --- parseLegend: extract symbol→description pairs ---
+          let symbolMap: Record<string, string> = {};
+          try {
+            if (!inputRecord.fileKey) throw new Error("No file key");
+            const pdfBuf = await getFileBuffer(inputRecord.fileKey);
+            const extracted = await extractWithPdfJs(pdfBuf);
+            const legendText = extracted.words.map((w: any) => w.text).join(' ');
+
+            // Call LLM to extract symbol mappings from the legend text
+            const legendResponse = await invokeLLM({
+              messages: [
+                {
+                  role: "system",
+                  content: `You are an electrical drawing expert. Extract ALL symbol codes and their descriptions from this electrical legend/key sheet text.
+Return ONLY a valid JSON object in this exact format (no markdown, no preamble):
+{"CODE": "Description", "CODE2": "Description2"}
+Rules:
+- Symbol codes are typically 1-8 uppercase alphanumeric characters (e.g. J, JE, SO, WP, SPD, EXIT1)
+- Include every code-description pair you can find
+- If unsure whether something is a symbol, include it
+- Return {} if no symbols found`
+                },
+                {
+                  role: "user",
+                  content: `Legend sheet text:\n\n${legendText.substring(0, 4000)}`
+                }
+              ],
+              response_format: { type: "json_object" },
+            });
+
+            const content = legendResponse.choices[0]?.message?.content || '{}';
+            const parsed = JSON.parse(content.replace(/```json|```/g, '').trim());
+            // Validate: only keep string values, skip noise
+            for (const [k, v] of Object.entries(parsed)) {
+              if (typeof k === 'string' && typeof v === 'string' && k.length <= 10 && (v as string).length > 1) {
+                symbolMap[k.toUpperCase()] = v as string;
+              }
+            }
+            console.log(`[parseLegend] Extracted ${Object.keys(symbolMap).length} symbols from legend ${input.inputId}: ${Object.keys(symbolMap).join(', ')}`);
+          } catch (legendErr: any) {
+            console.warn(`[parseLegend] Legend extraction failed (non-fatal): ${legendErr.message}`);
+          }
+
+          // Save symbolMap to tenderContexts for this quote
+          const symbolMappings = Object.fromEntries(
+            Object.entries(symbolMap).map(([k, v]) => [k, { meaning: v, confirmed: false }])
+          );
+          await upsertTenderContext(input.quoteId, { symbolMappings });
+
+          // Mark processedContent as legend reference (not used in QDS)
           await updateInputProcessing(input.inputId, {
-            processedContent: "[REFERENCE ONLY — Legend/Key Sheet. Contents excluded from quote analysis.]",
+            processedContent: `[LEGEND/KEY SHEET — ${Object.keys(symbolMap).length} symbol definitions extracted: ${Object.keys(symbolMap).join(', ')}. Not counted as installations.]`,
             processingStatus: "completed",
           });
+
+          // Re-run electrical takeoffs on all OTHER drawing PDFs for this quote with the new symbolMap
+          const allInputs = await getInputsByQuoteId(input.quoteId);
+          const drawingInputs = allInputs.filter((inp: any) =>
+            inp.inputType === 'pdf' &&
+            inp.id !== input.inputId &&
+            !inp.mimeType?.includes(';reference=true') &&
+            inp.fileKey
+          );
+          for (const drawingInput of drawingInputs) {
+            try {
+              const pdfBuf = await getFileBuffer(drawingInput.fileKey!);
+              const takeoffResult = await performElectricalTakeoff(pdfBuf, drawingInput.filename || 'Unknown', symbolMap);
+              const svgOverlay = generateSvgOverlay(takeoffResult);
+              // Upsert — delete existing then create fresh
+              await deleteElectricalTakeoffByInputId(drawingInput.id);
+              await createElectricalTakeoff({
+                quoteId: input.quoteId,
+                inputId: drawingInput.id,
+                drawingRef: takeoffResult.drawingRef,
+                status: takeoffResult.questions.length > 0 ? 'questions' : 'draft',
+                pageWidth: takeoffResult.pageWidth.toString(),
+                pageHeight: takeoffResult.pageHeight.toString(),
+                symbols: takeoffResult.symbols,
+                counts: takeoffResult.counts,
+                questions: takeoffResult.questions,
+                userAnswers: {},
+                drawingNotes: takeoffResult.notes,
+                dbCircuits: takeoffResult.dbCircuits,
+                hasTextLayer: takeoffResult.hasTextLayer,
+                totalTextElements: takeoffResult.totalTextElements,
+                svgOverlay,
+              });
+              await updateInputProcessing(drawingInput.id, {
+                processedContent: formatTakeoffForQuoteContext(takeoffResult, symbolMap),
+                processingStatus: "completed",
+              });
+              console.log(`[setReferenceOnly] Re-ran takeoff for drawing ${drawingInput.id} with legend symbolMap`);
+            } catch (rerunErr: any) {
+              console.warn(`[setReferenceOnly] Re-run failed for input ${drawingInput.id} (non-fatal): ${rerunErr.message}`);
+            }
+          }
+
+        } else {
+          // Unmarking as reference — clear the symbolMappings and re-run without them
+          await upsertTenderContext(input.quoteId, { symbolMappings: null });
+          console.log(`[setReferenceOnly] Cleared symbolMappings for quote ${input.quoteId}`);
+
+          // Re-run all drawing takeoffs without symbolMap (unknowns will surface as questions)
+          const allInputs = await getInputsByQuoteId(input.quoteId);
+          const drawingInputs = allInputs.filter((inp: any) =>
+            inp.inputType === 'pdf' &&
+            inp.id !== input.inputId &&
+            !inp.mimeType?.includes(';reference=true') &&
+            inp.fileKey
+          );
+          for (const drawingInput of drawingInputs) {
+            try {
+              const pdfBuf = await getFileBuffer(drawingInput.fileKey!);
+              const takeoffResult = await performElectricalTakeoff(pdfBuf, drawingInput.filename || 'Unknown', {});
+              const svgOverlay = generateSvgOverlay(takeoffResult);
+              await deleteElectricalTakeoffByInputId(drawingInput.id);
+              await createElectricalTakeoff({
+                quoteId: input.quoteId,
+                inputId: drawingInput.id,
+                drawingRef: takeoffResult.drawingRef,
+                status: takeoffResult.questions.length > 0 ? 'questions' : 'draft',
+                pageWidth: takeoffResult.pageWidth.toString(),
+                pageHeight: takeoffResult.pageHeight.toString(),
+                symbols: takeoffResult.symbols,
+                counts: takeoffResult.counts,
+                questions: takeoffResult.questions,
+                userAnswers: {},
+                drawingNotes: takeoffResult.notes,
+                dbCircuits: takeoffResult.dbCircuits,
+                hasTextLayer: takeoffResult.hasTextLayer,
+                totalTextElements: takeoffResult.totalTextElements,
+                svgOverlay,
+              });
+              await updateInputProcessing(drawingInput.id, {
+                processedContent: formatTakeoffForQuoteContext(takeoffResult, {}),
+                processingStatus: "completed",
+              });
+            } catch (rerunErr: any) {
+              console.warn(`[setReferenceOnly] Re-run (unmark) failed for input ${drawingInput.id}: ${rerunErr.message}`);
+            }
+          }
         }
 
+        const updated = await getInputById(input.inputId);
         return { success: true, input: updated };
       }),
   }),
@@ -2063,11 +2214,20 @@ Report facts only. Do not interpret or add commentary.`,
         
         const quote = await getQuoteWithOrgAccess(takeoff.quoteId, ctx.user.id);
         if (!quote) throw new Error("Access denied");
+
+        // Merge legend symbols into symbolDescriptions so chips show full descriptions
+        const tenderCtx = await getTenderContextByQuoteId(takeoff.quoteId);
+        const legendSymbols: Record<string, string> = {};
+        if (tenderCtx?.symbolMappings) {
+          for (const [k, v] of Object.entries(tenderCtx.symbolMappings)) {
+            legendSymbols[k] = (v as any).meaning || '';
+          }
+        }
         
         return {
           ...takeoff,
           symbolStyles: SYMBOL_STYLES,
-          symbolDescriptions: SYMBOL_DESCRIPTIONS,
+          symbolDescriptions: { ...SYMBOL_DESCRIPTIONS, ...legendSymbols },
         };
       }),
 
@@ -2105,9 +2265,18 @@ Report facts only. Do not interpret or add commentary.`,
         
         // Download PDF from R2
         const pdfBuffer = await getFileBuffer(inputRecord.fileKey);
-        
-        // Run electrical takeoff extraction
-        const result = await performElectricalTakeoff(pdfBuffer, inputRecord.filename || 'Unknown');
+
+        // Fetch legend symbolMap for this quote (populated when legend sheet is toggled)
+        const tenderCtx = await getTenderContextByQuoteId(input.quoteId);
+        const symbolMap: Record<string, string> = {};
+        if (tenderCtx?.symbolMappings) {
+          for (const [k, v] of Object.entries(tenderCtx.symbolMappings)) {
+            symbolMap[k] = (v as any).meaning || '';
+          }
+        }
+
+        // Run electrical takeoff extraction with legend symbol map
+        const result = await performElectricalTakeoff(pdfBuffer, inputRecord.filename || 'Unknown', symbolMap);
         
         // Generate SVG overlay
         const svgOverlay = generateSvgOverlay(result);
@@ -2133,7 +2302,7 @@ Report facts only. Do not interpret or add commentary.`,
         
         // Also update the input's processed content with takeoff summary
         await updateInputProcessing(input.inputId, {
-          processedContent: formatTakeoffForQuoteContext(result),
+          processedContent: formatTakeoffForQuoteContext(result, symbolMap),
           processingStatus: "completed",
         });
 
@@ -2191,7 +2360,7 @@ Report facts only. Do not interpret or add commentary.`,
         return {
           takeoff,
           symbolStyles: SYMBOL_STYLES,
-          symbolDescriptions: SYMBOL_DESCRIPTIONS,
+          symbolDescriptions: { ...SYMBOL_DESCRIPTIONS, ...symbolMap },
         };
       }),
 
@@ -2207,6 +2376,15 @@ Report facts only. Do not interpret or add commentary.`,
         
         const quote = await getQuoteWithOrgAccess(takeoff.quoteId, ctx.user.id);
         if (!quote) throw new Error("Access denied");
+
+        // Fetch legend symbolMap for full descriptions
+        const tenderCtx = await getTenderContextByQuoteId(takeoff.quoteId);
+        const symbolMap: Record<string, string> = {};
+        if (tenderCtx?.symbolMappings) {
+          for (const [k, v] of Object.entries(tenderCtx.symbolMappings)) {
+            symbolMap[k] = (v as any).meaning || '';
+          }
+        }
         
         // Rebuild result from stored data and apply answers
         const storedResult = {
@@ -2222,7 +2400,7 @@ Report facts only. Do not interpret or add commentary.`,
           totalTextElements: takeoff.totalTextElements || 0,
         };
         
-        const updated = applyUserAnswers(storedResult, input.answers);
+        const updated = applyUserAnswers(storedResult as any, input.answers, symbolMap);
         const svgOverlay = generateSvgOverlay(updated);
         
         // Update database
@@ -2234,17 +2412,17 @@ Report facts only. Do not interpret or add commentary.`,
           status: 'draft',
         });
         
-        // Update input processed content with new counts
+        // Update input processed content with new counts (including legend descriptions)
         if (takeoff.inputId) {
           await updateInputProcessing(Number(takeoff.inputId), {
-            processedContent: formatTakeoffForQuoteContext(updated),
+            processedContent: formatTakeoffForQuoteContext(updated, symbolMap),
           });
         }
         
         return {
           takeoff: updatedTakeoff,
           symbolStyles: SYMBOL_STYLES,
-          symbolDescriptions: SYMBOL_DESCRIPTIONS,
+          symbolDescriptions: { ...SYMBOL_DESCRIPTIONS, ...symbolMap },
         };
       }),
 
@@ -2312,6 +2490,14 @@ Report facts only. Do not interpret or add commentary.`,
 
         // Also update the processedContent to reflect excluded codes
         if (takeoff.inputId) {
+          // Fetch legend symbolMap for accurate descriptions
+          const exclTenderCtx = await getTenderContextByQuoteId(takeoff.quoteId);
+          const exclSymbolMap: Record<string, string> = {};
+          if (exclTenderCtx?.symbolMappings) {
+            for (const [k, v] of Object.entries(exclTenderCtx.symbolMappings)) {
+              exclSymbolMap[k] = (v as any).meaning || '';
+            }
+          }
           const storedResult = {
             drawingRef: takeoff.drawingRef || '',
             pageWidth: Number(takeoff.pageWidth) || 0,
@@ -2333,7 +2519,7 @@ Report facts only. Do not interpret or add commentary.`,
           }
           const filteredResult = { ...storedResult, counts: filteredCounts };
           await updateInputProcessing(Number(takeoff.inputId), {
-            processedContent: formatTakeoffForQuoteContext(filteredResult),
+            processedContent: formatTakeoffForQuoteContext(filteredResult as any, exclSymbolMap),
           });
         }
         

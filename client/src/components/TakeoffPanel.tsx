@@ -196,38 +196,8 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
         }
       }
 
-      // Also check common aliases
-      const aliases: Record<string, string[]> = {
-        'exit signs': ['EXIT1', 'EX'],
-        'exit sign': ['EXIT1', 'EX'],
-        'exits': ['EXIT1', 'EX'],
-        'smoke detectors': ['SO'],
-        'smoke detector': ['SO'],
-        'smoke': ['SO'],
-        'fire alarm': ['SO', 'CO', 'HF', 'HC', 'HR', 'CO2', 'SB', 'FARP', 'VESDA'],
-        'fire': ['SO', 'CO', 'HF', 'HC', 'HR', 'CO2', 'SB', 'FARP', 'VESDA'],
-        'pir': ['P4', 'P1', 'P2', 'P3'],
-        'pirs': ['P4', 'P1', 'P2', 'P3'],
-        'sensors': ['P4', 'P1', 'P2', 'P3'],
-        'emergency': ['JE', 'EXIT1', 'EX'],
-        'emergency lights': ['JE'],
-        'emergency lighting': ['JE'],
-        'downlights': ['J'],
-        'led lights': ['J', 'JE', 'N'],
-        'surface lights': ['N'],
-        'controls': ['P4', 'P1', 'P2', 'P3', 'LCM'],
-        'cctv': ['CCTV'],
-        'access control': ['AC'],
-        'power': ['PWR', 'DB'],
-      };
-
-      if (aliases[t]) {
-        for (const code of aliases[t]) {
-          if (rawCounts[code] && !matches.includes(code)) {
-            matches.push(code);
-          }
-        }
-      }
+      // Also check common aliases — but only using description-based matching now
+      // (No hardcoded symbol codes here — everything goes through symbolDescriptions)
 
       return matches;
     };
@@ -241,10 +211,9 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
         const desc = (rawSymbolDescriptions[code] || '').toLowerCase();
         const isLighting = desc.includes('light') || desc.includes('led') || desc.includes('emergency') ||
           desc.includes('exit') || desc.includes('luminaire') || desc.includes('downlight') ||
-          desc.includes('batten') || code === 'J' || code === 'JE' || code === 'N' ||
-          code === 'EXIT1' || code === 'EX';
+          desc.includes('batten') || desc.includes('pendant');
         const isControl = desc.includes('pir') || desc.includes('presence') || desc.includes('control') ||
-          code.startsWith('P') || code === 'LCM';
+          desc.includes('sensor') || desc.includes('lcm') || desc.includes('dimmer');
         if (!isLighting && !isControl) {
           excluded.add(code);
         }
@@ -667,10 +636,21 @@ function TakeoffChatSection({
     setAnswers(prev => ({ ...prev, [questionId]: value }));
   };
 
+  const [symbolDefinitions, setSymbolDefinitions] = useState<Record<string, string>>({});
+
   const handleConfirmQuestion = (questionId: string) => {
     setAnsweredIds(prev => new Set([...prev, questionId]));
-    // Submit answers immediately so counts update right away
-    onAnswersSubmitted({ ...answers });
+    // For unknown symbol questions with 'define' selected, encode the description into the answer
+    const currentAnswer = answers[questionId];
+    if (questionId.startsWith('unknown-symbol-') && currentAnswer === 'define') {
+      const code = questionId.replace('unknown-symbol-', '');
+      const desc = symbolDefinitions[code] || '';
+      const finalAnswers = { ...answers, [questionId]: desc ? `define:${desc}` : 'skip' };
+      setAnswers(finalAnswers);
+      onAnswersSubmitted(finalAnswers);
+    } else {
+      onAnswersSubmitted({ ...answers });
+    }
   };
 
   const allAnswered = questions.every(q => answeredIds.has(q.id));
@@ -691,46 +671,25 @@ function TakeoffChatSection({
     const lowerMsg = msg.toLowerCase();
     let response = '';
 
-    if (lowerMsg.includes('lighting only') || lowerMsg.includes('ignore fire') || lowerMsg.includes('exclude fire')) {
+    if (lowerMsg.includes('lighting only') || lowerMsg.includes('lights only')) {
+      // Dynamically identify lighting — use descriptions, not hardcoded codes
       const lightingCodes = Object.entries(counts)
         .filter(([code]) => {
           const desc = (symbolDescriptions[code] || '').toLowerCase();
-          return desc.includes('light') || desc.includes('led') || desc.includes('emergency') ||
-                 desc.includes('exit') || code === 'J' || code === 'JE' || code === 'N' ||
-                 code === 'EXIT1' || code === 'EX';
+          return desc.includes('light') || desc.includes('led') || desc.includes('luminaire') ||
+                 desc.includes('emergency') || desc.includes('exit') || desc.includes('downlight') ||
+                 desc.includes('batten') || desc.includes('pendant');
         });
       const nonLightingCodes = Object.keys(counts).filter(code => !lightingCodes.some(([c]) => c === code));
       const lightingTotal = lightingCodes.reduce((sum, [, c]) => sum + c, 0);
-      // Actually exclude non-lighting codes
       if (onExcludeCodes && nonLightingCodes.length > 0) {
         onExcludeCodes(nonLightingCodes);
       }
-      response = `Done — excluded ${nonLightingCodes.join(', ')} from scope. Your lighting items:\n\n${lightingCodes.map(([code, count]) => `• ${code} (${symbolDescriptions[code] || code}): ${count}`).join('\n')}\n\nLighting total: ${lightingTotal} items. The excluded symbols are now greyed out above.`;
-    } else if (
-      // Broad match: user wants N status markers counted as fittings
-      // Matches: "add all N", "include N", "count N as", "make N a surface", "N are surface LED", etc.
-      (lowerMsg.match(/\bn\b/) || lowerMsg.includes("'n'") || lowerMsg.includes('"n"')) &&
-      (lowerMsg.includes('add') || lowerMsg.includes('include') || lowerMsg.includes('count') ||
-       lowerMsg.includes('make') || lowerMsg.includes('are') || lowerMsg.includes('should be') ||
-       lowerMsg.includes('surface') || lowerMsg.includes('led') || lowerMsg.includes('fitting') ||
-       lowerMsg.includes('175') || lowerMsg.includes('status'))
-    ) {
-      // User wants to include the N status markers as actual fittings — trigger the backend answer
-      onAnswersSubmitted({ 'n-status-marker': 'include' });
-      response = `Done — I've included all N labels as Surface LED Light fittings. The counts are being recalculated now and the N chip above will update to show the full count.`;
+      response = `Done — excluded ${nonLightingCodes.join(', ')} from scope. Lighting total: ${lightingTotal} items. Excluded symbols are greyed out above.`;
     } else if (lowerMsg.includes('how many') || lowerMsg.includes('count') || lowerMsg.includes('total')) {
       const totalItems = Object.values(counts).reduce((a, b) => a + b, 0);
-      response = `Current counts from ${drawingRef}:\n\n${Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)).map(([code, count]) => `• ${code} (${symbolDescriptions[code] || code}): ${count}`).join('\n')}\n\nTotal: ${totalItems} items detected.`;
-    } else if (lowerMsg.includes('what') && (lowerMsg.includes('je') || lowerMsg.includes('j e'))) {
-      response = `JE symbols are Linear LED Emergency fittings — LED light fixtures with built-in emergency battery backup. On this drawing I found ${counts['JE'] || 0} of them. They're shown with orange circle markers on the marked-up drawing.`;
-    } else if (lowerMsg.includes('legend') || lowerMsg.includes('key')) {
-      response = `This appears to be a ${drawingRef.toLowerCase().includes('legend') ? 'legend/key sheet' : 'drawing sheet'}. Legend sheets show one of each symbol for reference — the counts from a legend won't reflect actual installation quantities. If this is a legend sheet, the counts here are just the reference symbols (1 of each type), not the actual quantities needed for the job.`;
-    } else if (lowerMsg.includes('re-run') || lowerMsg.includes('rerun') || lowerMsg.includes('run again')) {
-      response = `I can't re-run the extraction from here yet, but the counts shown are from the most recent analysis. If you believe symbols were missed, please note which ones and I'll flag them for manual review. You can adjust the final quantities during quote generation.`;
-    } else if (lowerMsg.includes('scope') || lowerMsg.includes('tender') || lowerMsg.includes('spec')) {
-      response = `To scope the takeoff correctly, paste the tender email or specification requirements into the "Instructions / Notes for AI" field at the top of the page. When you generate the quote, the AI will cross-reference those instructions with these takeoff counts to only price what's in scope.\n\nFor example, if the tender says "lighting only, exclude fire alarm", the quote AI will use the J, JE, N, EXIT1, and P4 counts but skip SO (smoke detectors) and other fire alarm items.`;
+      response = `Current counts from ${drawingRef}:\n\n${Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)).map(([code, count]) => `• ${code} (${symbolDescriptions[code] || 'Unknown — answer the question above to define it'}): ${count}`).join('\n')}\n\nTotal: ${totalItems} items detected.`;
     } else if (lowerMsg.includes('exclude') || lowerMsg.includes('remove') || lowerMsg.includes('ignore')) {
-      // Try to find which codes the user wants to exclude
       const codesToExclude: string[] = [];
       for (const code of Object.keys(counts)) {
         const desc = (symbolDescriptions[code] || '').toLowerCase();
@@ -738,7 +697,6 @@ function TakeoffChatSection({
           codesToExclude.push(code);
         }
       }
-      // Also check description keywords
       for (const [code, desc] of Object.entries(symbolDescriptions)) {
         const words = desc.toLowerCase().split(/\s+/).filter(w => w.length > 3);
         if (words.some(w => lowerMsg.includes(w)) && !codesToExclude.includes(code)) {
@@ -749,10 +707,12 @@ function TakeoffChatSection({
         onExcludeCodes(codesToExclude);
         response = `Done — excluded ${codesToExclude.map(c => `${c} (${symbolDescriptions[c] || c})`).join(', ')} from scope. These are now greyed out above.`;
       } else {
-        response = `I couldn't identify which symbols to exclude. Try specifying the code (e.g. "exclude SO") or the description (e.g. "exclude smoke detectors").`;
+        response = `I couldn't identify which symbols to exclude. Try specifying the code directly (e.g. "exclude WP") or by description (e.g. "exclude wall plates").`;
       }
+    } else if (lowerMsg.includes('scope') || lowerMsg.includes('tender') || lowerMsg.includes('spec')) {
+      response = `To scope the takeoff correctly, paste your tender requirements into the "Instructions / Notes for AI" field. The AI will cross-reference those against the takeoff counts when generating the quote.`;
     } else {
-      response = `I've extracted ${Object.values(counts).reduce((a, b) => a + b, 0)} symbols from this drawing across ${Object.keys(counts).length} different types. Here's what I can help with:\n\n• Tell me to focus on specific categories (e.g. "lighting only", "exclude fire alarm")\n• Ask about specific symbol codes (e.g. "what is JE?")\n• Ask for a count summary\n• Ask about how scope filtering works with the tender instructions\n\nThe marked-up drawing view shows coloured markers at each detected symbol location.`;
+      response = `I've extracted ${Object.values(counts).reduce((a, b) => a + b, 0)} symbols from this drawing. Here's what I can help with:\n\n• Focus on a category ("lighting only")\n• Exclude symbols ("exclude fire alarm")\n• Summarise counts ("how many total?")\n\nIf any symbols show as 'Unknown', answer the questions above to define them — the descriptions will be used throughout the quote.`;
     }
 
     setTimeout(() => {
@@ -812,10 +772,31 @@ function TakeoffChatSection({
                       </div>
                     ))}
                   </RadioGroup>
+                  {/* Free-text description input for unknown symbols */}
+                  {q.id.startsWith('unknown-symbol-') && answers[q.id] === 'define' && (
+                    <div className="mt-2">
+                      <input
+                        type="text"
+                        className="w-full border rounded px-2 py-1 text-sm"
+                        placeholder={`e.g. "Waterproof Socket Outlet" or "Emergency Key Switch"`}
+                        value={symbolDefinitions[q.id.replace('unknown-symbol-', '')] || ''}
+                        onChange={e => {
+                          const code = q.id.replace('unknown-symbol-', '');
+                          setSymbolDefinitions(prev => ({ ...prev, [code]: e.target.value }));
+                        }}
+                        autoFocus
+                      />
+                      <p className="text-[10px] text-gray-500 mt-1">This description will be used in the quote and saved to the legend for this job.</p>
+                    </div>
+                  )}
                   <Button
                     size="sm"
                     className="mt-3"
-                    disabled={!answers[q.id]}
+                    disabled={
+                      !answers[q.id] ||
+                      (q.id.startsWith('unknown-symbol-') && answers[q.id] === 'define' &&
+                        !symbolDefinitions[q.id.replace('unknown-symbol-', '')]?.trim())
+                    }
                     onClick={() => handleConfirmQuestion(q.id)}
                   >
                     Confirm
@@ -824,7 +805,7 @@ function TakeoffChatSection({
               ) : (
                 <div className="flex items-center gap-1 mt-1 text-xs text-green-700">
                   <CheckCircle className="h-3 w-3" />
-                  {q.options.find(o => o.value === answers[q.id])?.label || answers[q.id]}
+                  {q.options.find(o => o.value === answers[q.id] || answers[q.id]?.startsWith(o.value + ':'))?.label || answers[q.id]}
                 </div>
               )}
             </div>

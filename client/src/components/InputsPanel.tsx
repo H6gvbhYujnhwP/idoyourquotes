@@ -39,6 +39,7 @@ interface InputsPanelProps {
   processingInputId: number | null;
   quoteId: number;
   userPrompt: string;
+  tradePreset?: string; // Used to gate electrical-only panels (TakeoffPanel, ContainmentTakeoffPanel)
 }
 
 function useIsMobile(breakpoint = 768) {
@@ -293,8 +294,8 @@ function DetailContent({
             </div>
           </div>
         )}
-        {/* TakeoffPanel for PDFs */}
-        {input.inputType === "pdf" && input.processingStatus === "completed" && (
+        {/* TakeoffPanel for PDFs — electrical sector only */}
+        {input.inputType === "pdf" && input.processingStatus === "completed" && tradePreset === "electrical" && (
           <TakeoffPanel
             inputId={input.id}
             quoteId={quoteId}
@@ -304,8 +305,8 @@ function DetailContent({
           />
         )}
 
-        {/* Containment Takeoff Panel — auto-renders if containment data exists for this PDF */}
-        {input.inputType === "pdf" && input.processingStatus === "completed" && (
+        {/* Containment Takeoff Panel — electrical sector only */}
+        {input.inputType === "pdf" && input.processingStatus === "completed" && tradePreset === "electrical" && (
           <div className="px-4 py-3">
             <ContainmentTakeoffPanel inputId={input.id} quoteId={quoteId} />
           </div>
@@ -375,6 +376,7 @@ export default function InputsPanel({
   processingInputId,
   quoteId,
   userPrompt,
+  tradePreset,
 }: InputsPanelProps) {
   const isMobile = useIsMobile();
   const selectedInput = inputs.find((i) => i.id === selectedInputId) || null;

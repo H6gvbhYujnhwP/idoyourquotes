@@ -2323,6 +2323,7 @@ export default function QuoteWorkspace() {
               processingInputId={processingInputId}
               quoteId={quoteId}
               userPrompt={userPrompt}
+              tradePreset={(quote as any).tradePreset || ''}
             />
           )}
 
