@@ -61,6 +61,8 @@ import {
 } from "./db";
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { TRADE_PRESETS, TradePresetKey } from "./tradePresets";
+import { selectEngine } from "./engines/engineRouter";
+import type { EngineInput } from "./engines/types";
 import type { ComprehensiveConfig, InsertQuote } from "../drizzle/schema";
 
 /**
@@ -3095,48 +3097,16 @@ Rules:
 
         const inputRecords = await getInputsByQuoteId(input.quoteId);
 
-        // Collect all voice notes, text content, and processed document content
-        const allContent: string[] = [];
-        for (const inp of inputRecords) {
-          if (inp.inputType === "audio" && inp.content && !inp.fileUrl) {
-            allContent.push(`Voice Note (${inp.filename || "untitled"}): ${inp.content}`);
-          } else if (inp.inputType === "audio" && inp.content && inp.fileUrl) {
-            // Transcribed audio file
-            allContent.push(`Audio Transcription (${inp.filename || "untitled"}): ${inp.content}`);
-          } else if (inp.content && !inp.fileUrl) {
-            allContent.push(`Text Input: ${inp.content}`);
-          }
-          // Also include processed/extracted content from documents
-          // Use full content — truncation causes the AI to miss critical requirements
-          if (inp.processedContent) {
-            const content = inp.processedContent.length > 50000 
-              ? inp.processedContent.substring(0, 50000) + "\n\n[Document truncated — original was " + inp.processedContent.length + " characters]"
-              : inp.processedContent;
-            allContent.push(`Document (${inp.filename || inp.inputType}): ${content}`);
-          } else if (inp.extractedText) {
-            const content = inp.extractedText.length > 50000
-              ? inp.extractedText.substring(0, 50000) + "\n\n[Document truncated — original was " + inp.extractedText.length + " characters]"
-              : inp.extractedText;
-            allContent.push(`Extracted Text (${inp.filename || inp.inputType}): ${content}`);
-          }
-        }
-
-        if (allContent.length === 0) {
-          return {
-            hasSummary: false,
-            summary: null,
-          };
-        }
-
         const tradePresetKey = (quote as any)?.tradePreset as string | null;
         const userTradeSector = ctx.user.defaultTradeSector || null;
-        const tradeLabel = tradePresetKey || userTradeSector || "general trades/construction";
 
         // Fetch catalog items — org-first for team/org consistency
         const org = await getUserPrimaryOrg(ctx.user.id);
-        const catalogItems = org 
+        const catalogItems = org
           ? await getCatalogItemsByOrgId(org.id)
           : await getCatalogItemsByUserId(ctx.user.id);
+
+        // Build catalog context string (same format as before — preserved for G1)
         let catalogContext = "";
         if (catalogItems.length > 0) {
           catalogContext = `\n\nCOMPANY CATALOG — these are the user's products and services with their set prices:
@@ -3151,111 +3121,39 @@ When extracting materials, ALWAYS include a "pricingType" field matching the cat
 CRITICAL: Look at the "Pricing:" field shown next to each catalog item above. If a catalog item says "Pricing: optional", the material MUST have "pricingType": "optional". If it says "Pricing: monthly", it MUST be "monthly". If it says "Pricing: annual", it MUST be "annual". Do NOT override the catalog's pricing type — it was set by the user for a reason. If no catalog match, default to "standard". For tenders that explicitly request annual costs (e.g. maintenance contracts), use "annual".`;
         }
 
-        const response = await invokeLLM({
-          messages: [
-            {
-              role: "system",
-              content: `You are a senior estimator for a "${tradeLabel}" business. Your job is to analyse ALL provided evidence (voice notes, emails, documents, text) and produce a structured Quote Draft Summary.
+        // Assemble EngineInput — engines receive all context via this sealed struct
+        const engineInput: EngineInput = {
+          tradePreset: tradePresetKey,
+          userTradeSector,
+          inputRecords: inputRecords.map((inp: any) => ({
+            id: inp.id,
+            inputType: inp.inputType,
+            content: inp.content ?? null,
+            fileUrl: inp.fileUrl ?? null,
+            filename: inp.filename ?? null,
+            processedContent: inp.processedContent ?? null,
+            extractedText: inp.extractedText ?? null,
+            mimeType: inp.mimeType ?? null,
+          })),
+          catalogContext,
+        };
 
-THINK LIKE AN EXPERIENCED PROFESSIONAL in the "${tradeLabel}" sector. Consider:
-- What work is ACTUALLY being requested (not just what's literally said)
-- What the standard approach would be for this type of job
-- What catalog items from this business would apply
-- What labour is realistically needed
-- What assumptions you're making that the user should verify
-- Whether this is a discovery/assessment phase or a full implementation quote
+        // Route to the correct engine — engines are sealed, only see EngineInput
+        const engine = selectEngine(tradePresetKey || userTradeSector);
+        console.log(`[parseDictationSummary] Engine selected: ${engine.constructor.name} for preset="${tradePresetKey || userTradeSector || "none"}"`);
 
-INPUT PROCESSING:
-- Inputs are listed chronologically. Later inputs override earlier ones for quantities, prices, or scope changes.
-- Emails contain conversation, signatures, disclaimers — extract ONLY the quotable content. Ignore "have a good weekend", email footers, legal disclaimers, confidentiality notices, and social pleasantries.
-- Voice notes are natural speech — "quid" means pounds, "sparky" means electrician, "a day" typically means 8 hours, "half a day" means 4 hours in UK trades.
-- When multiple inputs cover the same work, MERGE them into one coherent summary — never duplicate line items.
+        const engineOutput = await engine.analyse(engineInput);
+        console.log(`[parseDictationSummary] Engine output: engineUsed=${engineOutput.engineUsed}, materials=${engineOutput.materials?.length ?? 0}, riskNotes=${engineOutput.riskNotes ?? "none"}`);
 
-CLIENT EXTRACTION:
-- Extract client details from email signatures, headers, or mentions: name, company, email, phone.
-- The RECIPIENT of the quote is the client (the person asking for work), NOT the user (the person sending the quote).
-- Look for patterns: "Dear [name]", "Hi [name]", email From/To headers, signature blocks with company name, phone, email, address.
-- If an email chain shows the user replying to someone, the "someone" is the client.
-${catalogContext}
-
-CATALOG MATCHING RULES:
-- STEP 1: First, extract ALL items, services, and deliverables from the evidence independently. Identify what hardware, software, labour, and services are actually needed based on what the document describes. Do NOT look at the catalog yet.
-- STEP 2: Then, for each extracted item, check if there is a CLEAR and ACCURATE catalog match. "IT Labour Onsite" matches "engineer onsite for installation" — that is a good match. "Website 7 Pages" does NOT match "network infrastructure upgrade" — that is a bad match. Reject bad matches.
-- ONLY use a catalog item if the scope item genuinely IS that catalog product or service. If a catalog item is unrelated to the project scope, IGNORE it completely.
-- Never force catalog matches. If the catalog has 3 items and the project needs 10 different things, create 10 line items — only the ones that genuinely match get catalog prices, the rest get estimated prices.
-- If the user states a specific price that differs from catalog, use the USER's price.
-- If no catalog item matches, create a new line item with an estimated UK market price. Set "estimated" to true on that material. NEVER return null for unitPrice — always provide either a catalog price or a reasonable estimate.
-- For estimated prices, use realistic UK market rates for the specific trade and item type. Be specific: "Ubiquiti U6 Pro WAP" not "networking equipment"; "VoIP Desk Phone" not "phone setup".
-
-MATERIALS vs LABOUR:
-- "materials" in this system means ALL billable line items — physical products, services, deliverables, and time-based work that should appear as priced lines on the quote.
-- "labour" means the team composition — roles and durations (e.g. "1 × engineer, one day"). This describes WHO is doing the work.
-- IMPORTANT: If the catalog items already represent the services being delivered (e.g. "Discovery Session", "Email Campaign", "Website Design"), do NOT create labour entries. The catalog service items ARE the deliverables — adding separate labour entries for "marketing consultant" or "campaign specialist" duplicates the work. Only create labour entries when there is genuinely separate on-site or hands-on labour that is NOT covered by a catalog service item.
-- Physical items (cable, hardware, servers) go in materials ONLY, not labour.
-- If the user gives a lump sum price (e.g. "the server costs £4,650"), extract as a material with quantity 1 and that price.
-
-SCOPE REASONING:
-- If the client is asking "is this possible?" or "can you help with this?" — this is likely a discovery/assessment phase. Consider extracting a smaller initial scope (assessment, site survey) rather than the full project.
-- Note in the "notes" field if the full scope should be quoted separately after assessment.
-- If the client describes a problem (e.g. "server going end of life"), reason about what the ${tradeLabel} business would typically propose as a solution.
-
-DEDUPLICATION:
-- If the same item appears in multiple inputs (e.g. mentioned in email AND voice note), include it ONCE.
-- Prefer the more specific/detailed version with the most accurate quantity and price.
-- Later inputs override earlier ones for the same item.
-
-Respond ONLY with valid JSON in this exact format:
-{
-  "clientName": string | null,
-  "clientEmail": string | null,
-  "clientPhone": string | null,
-  "jobDescription": string,
-  "labour": [{"role": string, "quantity": number, "duration": string}],
-  "materials": [{"item": string, "quantity": number, "unitPrice": number, "unit": string, "description": string, "pricingType": "standard" | "monthly" | "optional" | "annual", "estimated": boolean}],
-  "markup": number | null,
-  "sundries": number | null,
-  "contingency": string | null,
-  "notes": string | null,
-  "isTradeRelevant": boolean
-}
-
-FIELD GUIDELINES:
-- clientName: Full name and/or company. E.g. "Bjorn Gladwell / Rosetti"
-- clientEmail: Email address from signature or header
-- clientPhone: Phone from signature or mentions
-- jobDescription: 2-3 detailed sentences covering the FULL scope. Include specifics — server types, cable lengths, page counts, service descriptions. Write from the perspective of the quoting business describing the work they'll do.
-- labour: Team composition with realistic durations. Only include if there is genuinely separate on-site labour not covered by catalog service items.
-- materials: Every billable line item with catalog-matched prices where possible. Use the EXACT "item" name from the catalog. Use the EXACT "unit" from the catalog (Per Hour, Per Month, Per 5,000, Session, etc.). For "description", use the catalog item's description if one exists — do NOT write your own description when the catalog already provides one. Only write a description if the catalog item has no description.
-- notes: Assumptions, site access requirements, items needing verification, phasing suggestions, anything the user should review.
-- isTradeRelevant: false only if the content has nothing to do with ${tradeLabel} work.
-
-If a field is not mentioned or cannot be determined, use null.`,
-            },
-            {
-              role: "user",
-              content: allContent.join("\n\n"),
-            },
-          ],
-          response_format: { type: "json_object" },
-          max_tokens: 1500,
-        });
-
-        const content = response.choices[0]?.message?.content;
-        console.log(`[parseDictationSummary] LLM response: ${content?.substring(0, 200)}`);
-
-        if (!content) {
+        // Guard: if engine returned empty materials and no jobDescription, treat as no summary
+        if (!engineOutput.jobDescription && (!engineOutput.materials || engineOutput.materials.length === 0)) {
           return { hasSummary: false, summary: null };
         }
 
-        try {
-          const parsed = JSON.parse(content);
-          return {
-            hasSummary: true,
-            summary: parsed,
-          };
-        } catch {
-          return { hasSummary: false, summary: null };
-        }
+        return {
+          hasSummary: true,
+          summary: engineOutput,
+        };
       }),
 
     // Quick trade-relevance check before full generation (Option A guardrail)
@@ -3381,6 +3279,11 @@ If NOT relevant: {"relevant": false, "message": "Brief explanation of why this d
         let voiceNoteIndex = 0;
         
         for (const inp of inputs) {
+          // Bug 2 fix: skip reference-only inputs (legend sheets etc.) in generateDraft.
+          // parseDictationSummary already does this — generateDraft must match.
+          // Pattern: mimeType ends with ";reference=true" when user marks PDF as reference-only.
+          if (inp.mimeType?.includes(";reference=true")) continue;
+
           if (inp.processedContent && inp.processingStatus === "completed") {
             const typeLabel = inp.inputType === "audio" ? "Audio Transcription"
               : inp.inputType === "pdf" ? "PDF Content"

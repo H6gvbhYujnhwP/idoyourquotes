@@ -1,7 +1,7 @@
 export const TRADE_SECTOR_OPTIONS = [
-  { value: "construction", label: "Construction / Engineering / Steel" },
   { value: "electrical", label: "Electrical Installation" },
-  { value: "metalwork", label: "Architectural Metalwork" },
+  { value: "construction_steel", label: "Structural Steel / Engineering" },
+  { value: "metalwork_bespoke", label: "Architectural & Bespoke Metalwork" },
   { value: "it_services", label: "IT Services / Managed Service Provider (MSP)" },
   { value: "telecoms_cabling", label: "Telecoms / Network Cabling (Data)" },
   { value: "solar_ev", label: "Solar PV / Battery / EV Charging" },

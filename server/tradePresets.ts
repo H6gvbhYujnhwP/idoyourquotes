@@ -6,8 +6,8 @@
  */
 
 export const TRADE_PRESETS = {
-  construction: {
-    name: "Construction / Engineering / Steel",
+  construction_steel: {
+    name: "Structural Steel / Engineering",
     description: "For structural steel, construction, and engineering tender packages",
     sections: {
       coverLetter: { enabled: true, template: "construction_formal", templates: [] },
@@ -178,8 +178,8 @@ PHASING BY AREA:
     },
   },
 
-  metalwork: {
-    name: "Architectural Metalwork",
+  metalwork_bespoke: {
+    name: "Architectural & Bespoke Metalwork",
     description: "For bespoke metalwork, staircases, balustrades, gates, and fabrication",
     sections: {
       coverLetter: { enabled: true, template: "metalwork_bespoke", templates: [] },
