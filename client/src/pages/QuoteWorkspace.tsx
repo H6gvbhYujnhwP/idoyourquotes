@@ -1430,7 +1430,7 @@ export default function QuoteWorkspace() {
               </Badge>
               {isComprehensive && (
                 <Badge variant="outline" className="flex items-center gap-1">
-                  <Layers className="h-3 w-3" /> Comprehensive
+                  <Layers className="h-3 w-3" /> Tender Pack
                 </Badge>
               )}
             </div>
@@ -1671,7 +1671,7 @@ export default function QuoteWorkspace() {
               </span>
               {isComprehensive && (
                 <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-100 border border-emerald-300 px-1.5 py-0.5 rounded-full">
-                  Comprehensive
+                  Tender Pack
                 </span>
               )}
             </div>

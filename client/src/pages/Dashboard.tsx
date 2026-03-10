@@ -63,11 +63,7 @@ interface QuoteData {
   reference: string | null;
   clientName: string | null;
   status: string;
-  subtotal: string | null;
   total: string | null;
-  taxRate: string | null;
-  monthlyTotal: string | null;
-  annualTotal: string | null;
   createdAt: Date;
   quoteMode?: string | null;
 }
@@ -336,7 +332,7 @@ export default function Dashboard() {
                         <div className="font-medium truncate flex items-center gap-2">
                           {quote.title || quote.reference || `Quote #${quote.id}`}
                           {(quote as any).quoteMode === "comprehensive" && (
-                            <Badge variant="outline" className="text-xs shrink-0">Comprehensive</Badge>
+                            <Badge variant="outline" className="text-xs shrink-0">Tender Pack</Badge>
                           )}
                         </div>
                         <div className="text-sm text-muted-foreground truncate">
@@ -345,41 +341,13 @@ export default function Dashboard() {
                       </div>
                     </div>
                     <div className="flex items-center gap-4">
-                      <div className="text-right hidden sm:block space-y-0.5">
-                        {(() => {
-                          const oneOff = parseFloat(quote.subtotal || "0");
-                          const monthly = parseFloat(quote.monthlyTotal || "0");
-                          const annual = parseFloat(quote.annualTotal || "0");
-                          const fmt = (n: number) => "£" + n.toLocaleString("en-GB", { minimumFractionDigits: 2 });
-                          return (
-                            <>
-                              {oneOff > 0 && (
-                                <div className="text-sm font-semibold">
-                                  <span className="text-xs font-normal text-muted-foreground mr-1">One-off</span>
-                                  {fmt(oneOff)} <span className="text-xs font-normal text-muted-foreground">ex VAT</span>
-                                </div>
-                              )}
-                              {monthly > 0 && (
-                                <div className="text-sm font-semibold text-teal-600">
-                                  <span className="text-xs font-normal text-muted-foreground mr-1">Monthly</span>
-                                  {fmt(monthly)}<span className="text-xs font-normal text-muted-foreground">/mo</span>
-                                </div>
-                              )}
-                              {annual > 0 && (
-                                <div className="text-sm font-semibold text-amber-700">
-                                  <span className="text-xs font-normal text-muted-foreground mr-1">Annual</span>
-                                  {fmt(annual)}<span className="text-xs font-normal text-muted-foreground">/yr</span>
-                                </div>
-                              )}
-                              {oneOff === 0 && monthly === 0 && annual === 0 && (
-                                <div className="text-sm text-muted-foreground">No items</div>
-                              )}
-                              <div className="text-xs text-muted-foreground">
-                                {new Date(quote.createdAt).toLocaleDateString("en-GB")}
-                              </div>
-                            </>
-                          );
-                        })()}
+                      <div className="text-right hidden sm:block">
+                        <div className="font-medium">
+                          £{parseFloat(quote.total || "0").toLocaleString("en-GB", { minimumFractionDigits: 2 })}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {new Date(quote.createdAt).toLocaleDateString("en-GB")}
+                        </div>
                       </div>
                       <Badge className={config.className}>
                         <StatusIcon className="h-3 w-3 mr-1" />
@@ -446,10 +414,10 @@ export default function Dashboard() {
                   <RadioGroupItem value="comprehensive" id="comprehensive" className="mt-0.5" />
                   <div className="flex-1">
                     <Label htmlFor="comprehensive" className="font-medium cursor-pointer">
-                      Comprehensive Quote
+                      Tender Pack
                     </Label>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Multi-section tender package with timeline, site requirements, quality compliance, and document organisation. Best for complex projects.
+                      Multi-section tender document with cover letter, timeline, site requirements, quality compliance, and document organisation. Best for complex or formal projects.
                     </p>
                   </div>
                 </div>
