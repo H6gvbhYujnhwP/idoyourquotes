@@ -150,6 +150,7 @@ function mergeSummaryWithTakeoffs(
       if (count <= 0 || excludedCodes.has(code)) continue;
       const desc = takeoff.symbolDescriptions[code] || code;
       const override = takeoffOverrides[code];
+      // Check for existing takeoff row (same source + symbolCode)
       const existing = base.materials.find((m) => m.source === materialSource && m.symbolCode === code);
       let autoPrice: number | null = null;
       let autoInstallTime: number | null = null;
@@ -160,6 +161,7 @@ function mergeSummaryWithTakeoffs(
       const itemCostPrice = catalogMatch?.costPrice ?? null;
       const itemLabourCost = (autoInstallTime && autoInstallTime > 0 && base.labourRate) ? autoInstallTime * base.labourRate * itemQty : null;
       if (existing) {
+        // Update existing takeoff row in place
         existing.quantity = itemQty;
         if (override?.item) existing.item = override.item;
         if (override?.unitPrice !== undefined) { existing.unitPrice = override.unitPrice; } else if (autoPrice !== null) { existing.unitPrice = autoPrice; }
@@ -167,7 +169,30 @@ function mergeSummaryWithTakeoffs(
         existing.installTimeHrs = autoInstallTime;
         existing.labourCost = (existing.installTimeHrs && existing.installTimeHrs > 0 && base.labourRate) ? existing.installTimeHrs * base.labourRate * existing.quantity : null;
       } else {
-        base.materials.push({ item: override?.item ?? desc, quantity: itemQty, unitPrice: override?.unitPrice ?? autoPrice, costPrice: itemCostPrice, installTimeHrs: autoInstallTime, labourCost: itemLabourCost, source: materialSource, symbolCode: code });
+        // Check if a voice/document item already exists for the same catalog item.
+        // If so, replace it — the takeoff count is authoritative for quantity.
+        const resolvedName = override?.item ?? (catalogMatch?.catalogName ?? desc);
+        const voiceDuplicate = base.materials.findIndex(
+          (m) => (m.source === "voice" || m.source === "document") &&
+                  catalogMatch &&
+                  matchCatalogPrice(m.item, catalogItems)?.catalogName === catalogMatch.catalogName
+        );
+        if (voiceDuplicate !== -1) {
+          // Replace the voice row with the takeoff row (takeoff quantity is authoritative)
+          base.materials[voiceDuplicate] = {
+            ...base.materials[voiceDuplicate],
+            item: resolvedName,
+            quantity: itemQty,
+            unitPrice: override?.unitPrice ?? autoPrice ?? base.materials[voiceDuplicate].unitPrice,
+            costPrice: itemCostPrice,
+            installTimeHrs: autoInstallTime,
+            labourCost: itemLabourCost,
+            source: materialSource,
+            symbolCode: code,
+          };
+        } else {
+          base.materials.push({ item: resolvedName, quantity: itemQty, unitPrice: override?.unitPrice ?? autoPrice, costPrice: itemCostPrice, installTimeHrs: autoInstallTime, labourCost: itemLabourCost, source: materialSource, symbolCode: code });
+        }
       }
     }
   }

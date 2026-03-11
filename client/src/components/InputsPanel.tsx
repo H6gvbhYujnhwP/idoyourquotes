@@ -179,7 +179,9 @@ function DetailContent({
 }) {
   const isApproved = takeoff?.status === "verified" || takeoff?.status === "locked";
   const isVoiceNote = input.inputType === "audio" && input.content && !input.fileUrl;
-  const isReference = input.mimeType?.includes(";reference=true") ?? false;
+  // Optimistic local state — toggles immediately on click, server confirms async
+  const [optimisticReference, setOptimisticReference] = useState<boolean | null>(null);
+  const isReference = optimisticReference !== null ? optimisticReference : (input.mimeType?.includes(";reference=true") ?? false);
 
   return (
     <div className="flex flex-col h-full">
@@ -254,7 +256,10 @@ function DetailContent({
                 <span className="text-[11px] font-bold text-white/70 whitespace-nowrap">Legend Only</span>
                 <Switch
                   checked={isReference}
-                  onCheckedChange={(checked) => onSetReferenceOnly(input, checked)}
+                  onCheckedChange={(checked) => {
+                    setOptimisticReference(checked); // immediate visual feedback
+                    onSetReferenceOnly(input, checked);
+                  }}
                   className="scale-75 origin-right"
                 />
               </div>
