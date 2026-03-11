@@ -650,8 +650,26 @@ export default function QuoteWorkspace() {
           updateFields.title = autoTitle;
         }
 
-        // Build auto-save userPrompt to mark the QDS as populated.
-        // This prevents re-analysis when navigating away and back.
+        // Persist the full QDS summary as JSON — this is the authoritative snapshot
+        // used to rehydrate on page refresh. Separate from userPrompt (which is the
+        // text instructions field). qdsSummaryJson is ONLY written here, never cleared.
+        const summaryToSave = {
+          clientName: parsed.clientName || null,
+          jobDescription: parsed.jobDescription || '',
+          labour: parsed.labour || [],
+          materials: parsed.materials || [],
+          markup: parsed.markup ?? null,
+          sundries: parsed.sundries ?? null,
+          contingency: parsed.contingency ?? null,
+          preliminaries: parsed.preliminaries ?? null,
+          labourRate: parsed.labourRate ?? null,
+          plantMarkup: parsed.plantMarkup ?? null,
+          notes: parsed.notes ?? null,
+        };
+        updateFields.qdsSummaryJson = JSON.stringify(summaryToSave);
+
+        // Build auto-save userPrompt to mark the QDS as populated (used as a presence flag).
+        // This prevents redundant re-analysis when navigating away and back.
         const autoPromptParts: string[] = [];
         if (parsed.jobDescription) autoPromptParts.push(`Job: ${parsed.jobDescription}`);
         if (parsed.clientName) autoPromptParts.push(`Client: ${parsed.clientName}`);
@@ -757,28 +775,65 @@ export default function QuoteWorkspace() {
     }
   }, [fullQuote?.inputs]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Rehydrate QDS on page load — ONLY if the QDS has never been saved before.
-  // If userPrompt exists in the DB, the user already saved the QDS — do NOT auto-analyse.
-  // The user can manually click "Re-analyse" if they want a fresh analysis.
+  // QDS Rehydration — runs once when fullQuote loads.
+  //
+  // RULE: The QDS the user last saw is ALWAYS restored exactly as they left it.
+  // We never re-run AI analysis on refresh — that would overwrite user work.
+  //
+  // Triggers for a FRESH analysis (not on refresh):
+  //   1. A new input finishes processing (handled by the wasProcessing → isProcessing effect above)
+  //   2. The legend toggle fires (handled by setReferenceOnly.onSuccess)
+  //   3. User manually clicks Re-analyse (calls triggerVoiceAnalysis directly)
+  //
+  // On refresh: restore voiceSummary from qdsSummaryJson if present. No AI call.
+  // If no qdsSummaryJson AND no userPrompt: first-time load, run initial analysis.
   const hasRehydratedRef = useRef(false);
   useEffect(() => {
     if (hasRehydratedRef.current) return;
     const allInputs = fullQuote?.inputs;
     if (!allInputs || allInputs.length === 0) return;
-    
-    // If the quote already has saved Processing Instructions, the QDS was previously saved.
-    // Do NOT re-analyse — the user's saved data takes priority (Guardrail 10: User Data Sovereignty).
+
+    const savedJson = (fullQuote?.quote as any)?.qdsSummaryJson;
+
+    // Case 1: Saved QDS snapshot exists — restore it directly, no AI call
+    if (savedJson) {
+      try {
+        const parsed = JSON.parse(savedJson);
+        setVoiceSummary({
+          clientName: parsed.clientName || null,
+          jobDescription: parsed.jobDescription || '',
+          labour: parsed.labour || [],
+          materials: (parsed.materials || []).map((m: any) => ({ ...m, source: m.source || 'voice' as const })),
+          markup: parsed.markup ?? null,
+          sundries: parsed.sundries ?? null,
+          contingency: parsed.contingency ?? null,
+          preliminaries: parsed.preliminaries ?? null,
+          labourRate: parsed.labourRate ?? null,
+          plantMarkup: parsed.plantMarkup ?? null,
+          notes: parsed.notes ?? null,
+        });
+        hasRehydratedRef.current = true;
+        return;
+      } catch {
+        // JSON parse failed — fall through to fresh analysis
+        console.warn('[QDS Rehydration] Failed to parse qdsSummaryJson, running fresh analysis');
+      }
+    }
+
+    // Case 2: Old quotes with userPrompt but no qdsSummaryJson — they had a saved QDS
+    // via the old text-marker approach. Don't re-analyse, just leave QDS empty until
+    // user manually triggers it. Prevents clobbering saved instruction text.
     const hasSavedQDS = !!(fullQuote?.quote as any)?.userPrompt;
     if (hasSavedQDS) {
       hasRehydratedRef.current = true;
       return;
     }
-    
-    // Only auto-analyse if there are analysable inputs AND no voiceSummary yet
+
+    // Case 3: Brand new quote, no saved QDS — run initial analysis if inputs are ready
     const hasAnalysableInputs = allInputs.some(
-      (i: any) => (i.inputType === "audio" && i.content && !i.fileUrl) || 
-                   (i.inputType === "text" && i.content && !i.fileUrl) ||
-                   (i.processedContent && i.processingStatus === "completed")
+      (i: any) => (i.inputType === 'audio' && i.content && !i.fileUrl) ||
+                   (i.inputType === 'text' && i.content && !i.fileUrl) ||
+                   (i.processedContent && i.processingStatus === 'completed')
     );
     if (hasAnalysableInputs && !voiceSummary) {
       hasRehydratedRef.current = true;

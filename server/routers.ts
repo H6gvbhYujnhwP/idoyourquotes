@@ -405,6 +405,7 @@ export const appRouter = router({
         taxRate: z.string().optional(),
         userPrompt: z.string().nullable().optional(),
         processingInstructions: z.string().nullable().optional(),
+        qdsSummaryJson: z.string().nullable().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
