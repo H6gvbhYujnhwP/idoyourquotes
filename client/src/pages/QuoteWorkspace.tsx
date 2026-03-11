@@ -2310,6 +2310,29 @@ export default function QuoteWorkspace() {
 
                 setUserPrompt(parts.join("\n"));
 
+                // Persist the full QDS snapshot (including takeoff rows and user edits) so
+                // refresh restores exactly what the user saved — not a stale AI-analysed version.
+                // This runs on every manual Save, complementing the auto-save in triggerVoiceAnalysis.
+                const qdsSave = {
+                  clientName: data.clientName || null,
+                  jobDescription: data.jobDescription || "",
+                  labour: data.labour || [],
+                  materials: data.materials || [],
+                  markup: data.markup ?? null,
+                  sundries: data.sundries ?? null,
+                  contingency: data.contingency ?? null,
+                  preliminaries: data.preliminaries ?? null,
+                  labourRate: data.labourRate ?? null,
+                  plantMarkup: data.plantMarkup ?? null,
+                  plantHire: data.plantHire || [],
+                  notes: data.notes ?? null,
+                };
+                updateQuote.mutate({
+                  id: quoteId,
+                  qdsSummaryJson: JSON.stringify(qdsSave),
+                  userPrompt: parts.join("\n") || undefined,
+                });
+
                 // Auto-name if client provided and title is empty
                 if (data.clientName && !title) {
                   const today = new Date().toLocaleDateString("en-GB");
