@@ -405,13 +405,25 @@ export default function QuoteWorkspace() {
   });
 
   const setReferenceOnly = trpc.inputs.setReferenceOnly.useMutation({
-    onSuccess: (_, variables) => {
-      refetch();
-      refetchTakeoffs();
+    onSuccess: async (_, variables) => {
       if (variables.isReference) {
-        toast.success("Marked as legend/reference sheet — takeoff data cleared");
+        toast.success("Marked as legend/reference sheet — re-analysing without it…");
+        // Clear the current QDS — it was built with the legend included
+        setVoiceSummary(null);
+        // Reset the rehydration guard so the auto-trigger can fire again
+        hasRehydratedRef.current = false;
+        // Await the refetch so inputs are fresh before re-analysis fires
+        await refetch();
+        refetchTakeoffs();
+        // Trigger a fresh QDS with the legend now excluded
+        triggerVoiceAnalysis();
       } else {
-        toast.success("Reference-only flag removed");
+        toast.success("Reference-only flag removed — re-analysing…");
+        setVoiceSummary(null);
+        hasRehydratedRef.current = false;
+        await refetch();
+        refetchTakeoffs();
+        triggerVoiceAnalysis();
       }
     },
     onError: (error) => toast.error("Failed to update: " + error.message),
