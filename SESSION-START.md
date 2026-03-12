@@ -552,6 +552,7 @@ At the end of every session, produce a handover note with:
 | 12 Mar 2026 | `server/db.ts` | `recalculateQuoteTotals` now also writes `monthlyTotal` and `annualTotal` to the `quotes` table. Previously these DB columns were always `0.00` even when monthly/annual line items existed. |
 | 12 Mar 2026 | `client/src/components/QuoteDraftSummary.tsx` | QDS subtotal tfoot now shows separate rows for One-off Total, Recurring Monthly (teal), Recurring Annual (amber), and Optional Items (purple). Previously all pricingTypes were summed into one misleading subtotal. Added `monthlySubtotal`, `annualSubtotal`, `optionalSubtotal` useMemos alongside existing `materialSubtotal`. |
 | 12 Mar 2026 | `client/src/pages/QuoteWorkspace.tsx` | Quote view totals section now shows Recurring monthly / Recurring annual / Optional items rows below the main Total, computed live from `lineItems` filtered by `pricingType`. Only rendered when values > 0. Labelled "Not included in total above". |
+| 12 Mar 2026 | `client/src/components/QuoteDraftSummary.tsx` | Added Re-analyse button to QDS header (alongside Edit). Calls `onTriggerVoiceAnalysis` directly — no new props. Visible only when not editing, disabled + spinner while `isLoading`. Fixes UX gap where file-only quotes had no way to trigger fresh analysis without the text input box. |
 
 ---
 

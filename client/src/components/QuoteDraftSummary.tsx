@@ -5,7 +5,7 @@ import { brand } from "@/lib/brandTheme";
 import {
   FileText, User, Wrench, Package, Percent, PoundSterling,
   AlertTriangle, Loader2, Pencil, Check, X, ClipboardList, Truck,
-  Plus,
+  Plus, RefreshCw,
 } from "lucide-react";
 
 // ---- Types ----
@@ -456,7 +456,18 @@ export default function QuoteDraftSummary({
         </div>
         <div className="flex items-center gap-2">
           {!isEditing ? (
-            <button onClick={startEditing} className="text-xs font-bold px-3 py-1.5 rounded-lg text-teal-300 bg-white/10 hover:bg-white/15 border border-white/15 transition-colors flex items-center gap-1.5"><Pencil className="h-3 w-3" />Edit</button>
+            <>
+              <button
+                onClick={onTriggerVoiceAnalysis}
+                disabled={isLoading}
+                title="Re-analyse all inputs and rebuild the summary"
+                className="text-xs font-bold px-3 py-1.5 rounded-lg text-white/70 bg-white/10 hover:bg-white/15 border border-white/15 transition-colors flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <RefreshCw className={`h-3 w-3 ${isLoading ? "animate-spin" : ""}`} />
+                Re-analyse
+              </button>
+              <button onClick={startEditing} className="text-xs font-bold px-3 py-1.5 rounded-lg text-teal-300 bg-white/10 hover:bg-white/15 border border-white/15 transition-colors flex items-center gap-1.5"><Pencil className="h-3 w-3" />Edit</button>
+            </>
           ) : (
             <button onClick={cancelEditing} className="text-xs font-bold px-3 py-1.5 rounded-lg text-white/60 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors">Cancel</button>
           )}
