@@ -109,10 +109,29 @@ CATALOG MATCHING RULES:
 
 MATERIALS vs LABOUR:
 - "materials" in this system means ALL billable line items — physical products, services, deliverables, and time-based work that should appear as priced lines on the quote.
-- "labour" means the team composition — roles and durations (e.g. "1 × engineer, one day"). This describes WHO is doing the work.
-- IMPORTANT: If the catalog items already represent the services being delivered (e.g. "Discovery Session", "Email Campaign", "Website Design"), do NOT create labour entries. The catalog service items ARE the deliverables — adding separate labour entries for "marketing consultant" or "campaign specialist" duplicates the work. Only create labour entries when there is genuinely separate on-site or hands-on labour that is NOT covered by a catalog service item.
+- "labour" means the team composition summary — roles and durations (e.g. "1 × Network Engineer — Onsite, 1 day"). This describes WHO is doing the work, for the cover narrative only. It is NOT the billable output.
 - Physical items (cable, hardware, servers) go in materials ONLY, not labour.
 - If the user gives a lump sum price (e.g. "the server costs £4,650"), extract as a material with quantity 1 and that price.
+
+LABOUR LINE ITEMS — CRITICAL: Every distinct labour engagement must become its own materials line item. Do NOT collapse or merge labour engagements just because the role name is the same. The following are always separate line items if each is separately mentioned:
+- Onsite labour (travel to client site — day rate or hourly)
+- Remote labour (phone/screen share support — hourly)
+- Workshop / bench labour (work carried out at your own premises — configuration, fabrication, testing, staging)
+- Discovery / scoping session (initial consultation to scope the work)
+- Training session (customer-facing knowledge transfer)
+- Project management (coordination, scheduling, stakeholder communication)
+- Commissioning / go-live (final setup and sign-off at client site)
+- Site survey / audit (assessment visit before quoting or starting)
+- Out-of-hours / emergency labour (premium rate callouts)
+
+EXAMPLES OF CORRECT SEPARATION — do not merge these into one line item:
+- "1 day onsite labour" + "1 day workshop labour" → TWO separate materials line items
+- "discovery session" + "installation day" → TWO separate materials line items
+- "remote configuration" + "onsite commissioning" → TWO separate materials line items
+
+ANTI-DUPLICATION RULE: The deduplication rule applies to the SAME engagement mentioned twice across inputs (e.g. email says "1 day onsite" and voice note also says "1 day onsite" — that's one item). It does NOT apply to different engagements that happen to use the same role or person.
+
+- IMPORTANT: If the catalog items already represent the services being delivered (e.g. "Discovery Session", "Email Campaign", "Website Design"), do NOT create labour entries in the labour[] array. The catalog service items ARE the deliverables. Only add to labour[] when there is genuinely separate hands-on labour not covered by a catalog item.
 
 SCOPE REASONING:
 - If the client is asking "is this possible?" or "can you help with this?" — this is likely a discovery/assessment phase. Consider extracting a smaller initial scope (assessment, site survey) rather than the full project.
@@ -159,7 +178,7 @@ FIELD GUIDELINES:
 - clientEmail: Email address from signature or header
 - clientPhone: Phone from signature or mentions
 - jobDescription: 2-3 detailed sentences covering the FULL scope. Include specifics — server types, cable lengths, page counts, service descriptions. Write from the perspective of the quoting business describing the work they'll do.
-- labour: Team composition with realistic durations. Only include if there is genuinely separate on-site labour not covered by catalog service items.
+- labour: Team composition summary — one entry per distinct role/mode combination. ALWAYS include the delivery mode in the role name so entries are unambiguous: "Network Engineer — Onsite", "Network Engineer — Workshop", "IT Consultant — Remote", "Engineer — Commissioning". Never write just "Network Engineer" if that person appears in multiple modes. Only include labour entries when there is genuinely separate hands-on labour not covered by catalog service items.
 - materials: Every billable line item with catalog-matched prices where possible. Use the EXACT "item" name from the catalog. Use the EXACT "unit" from the catalog (Per Hour, Per Month, Per 5,000, Session, etc.). For "description", use the catalog item's description if one exists — do NOT write your own description when the catalog already provides one. Only write a description if the catalog item has no description.
 - notes: Assumptions, site access requirements, items needing verification, phasing suggestions, anything the user should review.
 - isTradeRelevant: false only if the content has nothing to do with ${tradeLabel} work.
