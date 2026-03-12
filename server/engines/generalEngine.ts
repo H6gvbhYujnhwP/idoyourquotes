@@ -13,7 +13,7 @@
  * GUARDRAIL G1:  This engine must always return the EngineOutput shape.
  */
 
-import { invokeLLM } from "../_core/llm";
+import { invokeClaude } from "../_core/claude";
 import type { EngineInput, EngineOutput, SectorEngine } from "./types";
 
 export class GeneralEngine implements SectorEngine {
@@ -179,30 +179,45 @@ FIELD GUIDELINES:
 - clientPhone: Phone from signature or mentions
 - jobDescription: 2-3 detailed sentences covering the FULL scope. Include specifics — server types, cable lengths, page counts, service descriptions. Write from the perspective of the quoting business describing the work they'll do.
 - labour: Team composition summary — one entry per distinct role/mode combination. ALWAYS include the delivery mode in the role name so entries are unambiguous: "Network Engineer — Onsite", "Network Engineer — Workshop", "IT Consultant — Remote", "Engineer — Commissioning". Never write just "Network Engineer" if that person appears in multiple modes. Only include labour entries when there is genuinely separate hands-on labour not covered by catalog service items.
-- materials: Every billable line item with catalog-matched prices where possible. Use the EXACT "item" name from the catalog. Use the EXACT "unit" from the catalog (Per Hour, Per Month, Per 5,000, Session, etc.). For "description", use the catalog item's description if one exists — do NOT write your own description when the catalog already provides one. Only write a description if the catalog item has no description.
+- materials: Every billable line item with catalog-matched prices where possible. Use the EXACT "item" name from the catalog. Use the EXACT "unit" from the catalog (Per Hour, Per Month, Per 5,000, Session, etc.). For "description", write a specific 1-sentence description drawn from the evidence that explains what this item delivers in context for THIS quote — e.g. "1 day workshop to configure VLAN segregation for 9 APs and Ethernet points across 10 tenant offices" not just "workshop labour". If the catalog has a description use it as a starting point but enrich it with scope-specific detail from the evidence. Never leave description blank for labour or service items.
 - notes: Assumptions, site access requirements, items needing verification, phasing suggestions, anything the user should review.
 - isTradeRelevant: false only if the content has nothing to do with ${tradeLabel} work.
 
-If a field is not mentioned or cannot be determined, use null.`;
+BEFORE OUTPUTTING JSON — run this mental checklist:
+1. Have I created a separate materials line item for EVERY distinct labour engagement mentioned (onsite, workshop, remote, discovery, training, commissioning etc.)?
+2. Have I included ALL recurring/monthly items? Check the evidence again for any ongoing support, maintenance, monitoring, or subscription mentioned.
+3. Have I included every piece of equipment, hardware, or product mentioned — even items without explicit prices?
+4. Does every materials line item have a meaningful description drawn from the evidence?
+5. Are pricingTypes correct — standard for one-off, monthly for recurring?
+Only output JSON once all five checks pass.
 
-    // ── Step 5: Call OpenAI ───────────────────────────────────────────────────
+If a field is not mentioned or cannot be determined, use null. Respond with valid JSON only — no preamble, no explanation, no markdown fences.`;
+
+    // ── Step 5: Call Claude Sonnet ────────────────────────────────────────────
     try {
-      const response = await invokeLLM({
+      const response = await invokeClaude({
+        system: systemPrompt,
+        maxTokens: 8192,
         messages: [
-          { role: "system", content: systemPrompt },
           { role: "user", content: allContent.join("\n\n") },
         ],
-        response_format: { type: "json_object" },
-        max_tokens: 1500,
       });
 
-      const content = response.choices[0]?.message?.content;
+      // Guard: if Claude hit the token limit the JSON will be truncated and unparseable
+      if (response.stopReason === "max_tokens") {
+        console.error(`[GeneralEngine] Response truncated at max_tokens — input may be too large`);
+        return this.emptyOutput("Response truncated — quote input too large for single analysis pass");
+      }
+
+      const content = response.content;
       if (!content || typeof content !== "string") {
-        return this.emptyOutput("LLM returned no content");
+        return this.emptyOutput("Claude returned no content");
       }
 
       // ── Step 6: Parse and return EngineOutput ─────────────────────────────
-      const parsed = JSON.parse(content);
+      // Strip markdown fences if Claude wrapped the JSON (defensive)
+      const cleaned = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+      const parsed = JSON.parse(cleaned);
       return {
         clientName: parsed.clientName ?? null,
         clientEmail: parsed.clientEmail ?? null,
