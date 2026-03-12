@@ -269,7 +269,10 @@ export default function QuoteDraftSummary({
   const hasFinancials = data.markup !== null || data.sundries !== null || data.contingency !== null || data.preliminaries !== null || data.labourRate !== null || data.plantMarkup !== null;
   const isEmpty = !data.jobDescription && !hasLabour && !hasMaterials && !data.notes && !data.clientName;
 
-  const materialSubtotal = useMemo(() => data.materials.reduce((sum, m) => (m.unitPrice != null && m.unitPrice > 0) ? sum + m.unitPrice * m.quantity : sum, 0), [data.materials]);
+  const materialSubtotal = useMemo(() => data.materials.reduce((sum, m) => (m.unitPrice != null && m.unitPrice > 0 && (!m.pricingType || m.pricingType === "standard")) ? sum + m.unitPrice * m.quantity : sum, 0), [data.materials]);
+  const monthlySubtotal = useMemo(() => data.materials.reduce((sum, m) => (m.unitPrice != null && m.unitPrice > 0 && m.pricingType === "monthly") ? sum + m.unitPrice * m.quantity : sum, 0), [data.materials]);
+  const annualSubtotal = useMemo(() => data.materials.reduce((sum, m) => (m.unitPrice != null && m.unitPrice > 0 && m.pricingType === "annual") ? sum + m.unitPrice * m.quantity : sum, 0), [data.materials]);
+  const optionalSubtotal = useMemo(() => data.materials.reduce((sum, m) => (m.unitPrice != null && m.unitPrice > 0 && m.pricingType === "optional") ? sum + m.unitPrice * m.quantity : sum, 0), [data.materials]);
   const totalMargin = useMemo(() => {
     let marginAmt = 0; let pricedCount = 0;
     for (const m of data.materials) { if (m.unitPrice != null && m.costPrice != null && m.unitPrice > 0 && m.costPrice > 0) { marginAmt += (m.unitPrice - m.costPrice) * m.quantity; pricedCount++; } }
@@ -678,13 +681,36 @@ export default function QuoteDraftSummary({
                       );
                     })}
                   </tbody>
-                  {materialSubtotal > 0 && (
+                  {(materialSubtotal > 0 || monthlySubtotal > 0 || annualSubtotal > 0 || optionalSubtotal > 0) && (
                     <tfoot>
-                      <tr style={{ borderTop: `2px solid ${brand.teal}`, backgroundColor: brand.tealBg }}>
-                        <td colSpan={4} className="text-right py-2 px-2 text-sm font-bold" style={{ color: brand.navy }}>Subtotal{data.materials.some(m => !m.unitPrice || m.unitPrice <= 0) ? " (priced items)" : ""}</td>
-                        <td className="text-right py-2 px-2 text-sm font-bold" style={{ color: brand.navy }}>£{fmtGBP(materialSubtotal)}</td>
-                        <td className="py-2 px-2"></td>
-                      </tr>
+                      {materialSubtotal > 0 && (
+                        <tr style={{ borderTop: `2px solid ${brand.teal}`, backgroundColor: brand.tealBg }}>
+                          <td colSpan={4} className="text-right py-2 px-2 text-sm font-bold" style={{ color: brand.navy }}>One-off Total{data.materials.some(m => (!m.pricingType || m.pricingType === "standard") && (!m.unitPrice || m.unitPrice <= 0)) ? " (priced items)" : ""}</td>
+                          <td className="text-right py-2 px-2 text-sm font-bold" style={{ color: brand.navy }}>£{fmtGBP(materialSubtotal)}</td>
+                          <td className="py-2 px-2"></td>
+                        </tr>
+                      )}
+                      {monthlySubtotal > 0 && (
+                        <tr style={{ borderTop: materialSubtotal > 0 ? `1px solid #99f6e4` : `2px solid ${brand.teal}`, backgroundColor: "#f0fdfa" }}>
+                          <td colSpan={4} className="text-right py-2 px-2 text-sm font-bold" style={{ color: "#0d9488" }}>Recurring Monthly</td>
+                          <td className="text-right py-2 px-2 text-sm font-bold" style={{ color: "#0d9488" }}>£{fmtGBP(monthlySubtotal)}<span className="font-normal text-xs">/month</span></td>
+                          <td className="py-2 px-2"></td>
+                        </tr>
+                      )}
+                      {annualSubtotal > 0 && (
+                        <tr style={{ borderTop: `1px solid #fde68a`, backgroundColor: "#fef9ee" }}>
+                          <td colSpan={4} className="text-right py-2 px-2 text-sm font-bold" style={{ color: "#b45309" }}>Recurring Annual</td>
+                          <td className="text-right py-2 px-2 text-sm font-bold" style={{ color: "#b45309" }}>£{fmtGBP(annualSubtotal)}<span className="font-normal text-xs">/year</span></td>
+                          <td className="py-2 px-2"></td>
+                        </tr>
+                      )}
+                      {optionalSubtotal > 0 && (
+                        <tr style={{ borderTop: `1px solid #ddd6fe`, backgroundColor: "#faf5ff" }}>
+                          <td colSpan={4} className="text-right py-2 px-2 text-sm font-bold" style={{ color: "#7c3aed" }}>Optional Items</td>
+                          <td className="text-right py-2 px-2 text-sm font-bold" style={{ color: "#7c3aed" }}>£{fmtGBP(optionalSubtotal)}</td>
+                          <td className="py-2 px-2"></td>
+                        </tr>
+                      )}
                     </tfoot>
                   )}
                 </table>

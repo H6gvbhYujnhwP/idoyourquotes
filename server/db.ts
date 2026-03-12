@@ -815,7 +815,7 @@ export async function recalculateQuoteTotals(quoteId: number, userId: number): P
   if (!quote) return undefined;
 
   // Only include 'standard' pricing type in the quote total
-  // Monthly and optional items are shown separately and not included
+  // Monthly, annual, and optional items are shown separately and not included
   const subtotal = lineItems
     .filter(item => !item.pricingType || item.pricingType === 'standard')
     .reduce((sum, item) => sum + parseFloat(item.total || "0"), 0);
@@ -823,10 +823,20 @@ export async function recalculateQuoteTotals(quoteId: number, userId: number): P
   const taxAmount = subtotal * (taxRate / 100);
   const total = subtotal + taxAmount;
 
+  // Compute recurring totals for dashboard / email / future use
+  const monthlyTotal = lineItems
+    .filter(item => item.pricingType === 'monthly')
+    .reduce((sum, item) => sum + parseFloat(item.total || "0"), 0);
+  const annualTotal = lineItems
+    .filter(item => item.pricingType === 'annual')
+    .reduce((sum, item) => sum + parseFloat(item.total || "0"), 0);
+
   return updateQuote(quoteId, userId, {
     subtotal: subtotal.toFixed(2),
     taxAmount: taxAmount.toFixed(2),
     total: total.toFixed(2),
+    monthlyTotal: monthlyTotal.toFixed(2),
+    annualTotal: annualTotal.toFixed(2),
   });
 }
 

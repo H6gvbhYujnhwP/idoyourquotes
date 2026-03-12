@@ -3091,6 +3091,36 @@ export default function QuoteWorkspace() {
                   <span>Total</span>
                   <span>£{parseFloat(quote.total || "0").toFixed(2)}</span>
                 </div>
+                {/* Recurring totals — computed live from line items, not included in main total */}
+                {lineItems && (() => {
+                  const monthlyAmt = lineItems.filter((i: any) => i.pricingType === "monthly").reduce((s: number, i: any) => s + parseFloat(i.total || "0"), 0);
+                  const annualAmt = lineItems.filter((i: any) => i.pricingType === "annual").reduce((s: number, i: any) => s + parseFloat(i.total || "0"), 0);
+                  const optionalAmt = lineItems.filter((i: any) => i.pricingType === "optional").reduce((s: number, i: any) => s + parseFloat(i.total || "0"), 0);
+                  if (monthlyAmt <= 0 && annualAmt <= 0 && optionalAmt <= 0) return null;
+                  return (
+                    <div className="border-t pt-2 mt-1 space-y-1">
+                      <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "#94a3b8" }}>Not included in total above</p>
+                      {monthlyAmt > 0 && (
+                        <div className="flex justify-between items-center text-sm font-semibold rounded px-2 py-1" style={{ backgroundColor: "#f0fdfa", color: "#0d9488" }}>
+                          <span>Recurring monthly</span>
+                          <span>£{monthlyAmt.toFixed(2)}<span className="font-normal text-xs">/month</span></span>
+                        </div>
+                      )}
+                      {annualAmt > 0 && (
+                        <div className="flex justify-between items-center text-sm font-semibold rounded px-2 py-1" style={{ backgroundColor: "#fef9ee", color: "#b45309" }}>
+                          <span>Recurring annual</span>
+                          <span>£{annualAmt.toFixed(2)}<span className="font-normal text-xs">/year</span></span>
+                        </div>
+                      )}
+                      {optionalAmt > 0 && (
+                        <div className="flex justify-between items-center text-sm font-semibold rounded px-2 py-1" style={{ backgroundColor: "#faf5ff", color: "#7c3aed" }}>
+                          <span>Optional items</span>
+                          <span>£{optionalAmt.toFixed(2)}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </CardContent>
           </Card>

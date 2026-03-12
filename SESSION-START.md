@@ -549,6 +549,9 @@ At the end of every session, produce a handover note with:
 |---|---|---|
 | 12 Mar 2026 | `server/engines/generalEngine.ts` | Added `PRICING TYPE RULES` block to system prompt. Fixes recurring/monthly items (support contracts, MSP retainers) being silently ignored for all GeneralEngine sectors. AI now correctly assigns `pricingType: "monthly"` and estimates monthly costs when not stated. IT-sector specific guidance included (£150–£350/month range for ~16 managed devices). |
 | 12 Mar 2026 | `server/pdfGenerator.ts` | Fixed PDF filename. Both `generateSimpleQuoteHTML` and `generateComprehensiveProposalHTML` now set `<title>` to `{clientName} - {DD Mon YYYY}` (e.g. `Ian Frith - 12 Mar 2026`). Browser uses `<title>` as default filename in save-as-PDF dialog. Previously used quote reference (`Q-XXXX`). |
+| 12 Mar 2026 | `server/db.ts` | `recalculateQuoteTotals` now also writes `monthlyTotal` and `annualTotal` to the `quotes` table. Previously these DB columns were always `0.00` even when monthly/annual line items existed. |
+| 12 Mar 2026 | `client/src/components/QuoteDraftSummary.tsx` | QDS subtotal tfoot now shows separate rows for One-off Total, Recurring Monthly (teal), Recurring Annual (amber), and Optional Items (purple). Previously all pricingTypes were summed into one misleading subtotal. Added `monthlySubtotal`, `annualSubtotal`, `optionalSubtotal` useMemos alongside existing `materialSubtotal`. |
+| 12 Mar 2026 | `client/src/pages/QuoteWorkspace.tsx` | Quote view totals section now shows Recurring monthly / Recurring annual / Optional items rows below the main Total, computed live from `lineItems` filtered by `pricingType`. Only rendered when values > 0. Labelled "Not included in total above". |
 
 ---
 
