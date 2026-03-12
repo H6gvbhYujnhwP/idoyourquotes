@@ -584,11 +584,16 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
     : "";
   const companyName = user.companyName || organization?.name || user.name || "Your Company";
 
+  // Build a clean filename-safe PDF title: "ClientName - DD Mon YYYY"
+  const pdfDateStr = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  const pdfClientPart = quote.clientName ? quote.clientName.replace(/[^\w\s\-&]/g, "").trim() : (quote.reference || `Q-${quote.id}`);
+  const pdfTitle = `${pdfClientPart} - ${pdfDateStr}`;
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>${quote.reference || `Q-${quote.id}`}</title>
+  <title>${escapeHtml(pdfTitle)}</title>
   <style>${generateStyles(colors)}</style>
 </head>
 <body>
@@ -787,7 +792,7 @@ function generateComprehensiveProposalHTML(data: PDFQuoteData): string {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Proposal - ${escapeHtml(quote.title || quote.reference || `Q-${quote.id}`)}</title>
+  <title>${escapeHtml(quote.clientName ? `${quote.clientName.replace(/[^\w\s\-&]/g, "").trim()} - ${new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}` : (quote.title || quote.reference || `Q-${quote.id}`))}</title>
   <style>${generateStyles(colors)}</style>
 </head>
 <body>`;

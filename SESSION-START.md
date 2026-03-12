@@ -507,7 +507,7 @@ Never hardcode assumptions toward "general trades/construction" or electrical in
 | 5 | Team member sessions not invalidated when owner deletes account | `db.ts` deleteAllOrgData | Medium |
 | 6 | "Tax" label in QuoteWorkspace should be "VAT" (PDF already says VAT) | `QuoteWorkspace.tsx` totals section | Low |
 | 7 | No org-level VAT default — users must set VAT on every quote | Needs new org fields + Settings UI | Medium |
-| 8 | Phase 5 not built — DrawingEngine sectors not yet using sector-specific prompt injections | `drawingEngine.ts`, `engineRouter.ts` | Low |
+| 8 | DrawingEngine sectors not yet using sector-specific prompt injections (Phase 5) | `drawingEngine.ts`, `engineRouter.ts` | Low |
 
 ---
 
@@ -543,4 +543,13 @@ At the end of every session, produce a handover note with:
 
 ---
 
-*Single source of truth for all Claude sessions on IdoYourQuotes. Update this file whenever a flow changes, a bug is fixed, or a feature is added. Version: March 2026.*
+## Changes Log
+
+| Date | Files Changed | What Changed |
+|---|---|---|
+| 12 Mar 2026 | `server/engines/generalEngine.ts` | Added `PRICING TYPE RULES` block to system prompt. Fixes recurring/monthly items (support contracts, MSP retainers) being silently ignored for all GeneralEngine sectors. AI now correctly assigns `pricingType: "monthly"` and estimates monthly costs when not stated. IT-sector specific guidance included (£150–£350/month range for ~16 managed devices). |
+| 12 Mar 2026 | `server/pdfGenerator.ts` | Fixed PDF filename. Both `generateSimpleQuoteHTML` and `generateComprehensiveProposalHTML` now set `<title>` to `{clientName} - {DD Mon YYYY}` (e.g. `Ian Frith - 12 Mar 2026`). Browser uses `<title>` as default filename in save-as-PDF dialog. Previously used quote reference (`Q-XXXX`). |
+
+---
+
+*Single source of truth for all Claude sessions on IdoYourQuotes. Update this file whenever a flow changes, a bug is fixed, or a feature is added. Version: March 2026 — updated 12 Mar 2026.*

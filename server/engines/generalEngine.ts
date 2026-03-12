@@ -124,6 +124,21 @@ DEDUPLICATION:
 - Prefer the more specific/detailed version with the most accurate quantity and price.
 - Later inputs override earlier ones for the same item.
 
+PRICING TYPE RULES — THIS IS CRITICAL:
+Every line item must have the correct pricingType. Get this wrong and the quote totals will be wrong.
+- "standard"  → one-off supply, installation, configuration, or any item charged once. USE THIS for hardware, one-off labour, setup fees.
+- "monthly"   → any recurring charge billed every month: managed support contracts, monitoring, maintenance retainers, per-device fees, per-user fees, SaaS subscriptions, helpdesk contracts. ALWAYS use "monthly" if the evidence describes an ongoing service with a monthly cost or cadence.
+- "optional"  → add-ons or upgrades the client can choose to include or exclude. Use sparingly.
+- "annual"    → annual contracts or licences billed yearly.
+
+FOR IT SERVICES / MSP QUOTES SPECIFICALLY:
+- Managed support contracts, network monitoring, helpdesk retainers, per-device management fees → pricingType: "monthly"
+- Microsoft 365, software subscriptions, security monitoring → pricingType: "monthly"
+- Hardware supply, one-off installation days, configuration → pricingType: "standard"
+- If the evidence describes ongoing maintenance, support SLA, or a monthly fee even without a specific price — CREATE the line item with pricingType "monthly" and your best estimated UK market rate. Set estimated: true.
+- A support contract for ~16 managed devices (router, switches, APs, fibre converters) typically runs £150–£350/month in the UK depending on SLA level. Use this range if no price is stated.
+- DO NOT omit monthly items just because no price was given. Estimate and flag.
+
 Respond ONLY with valid JSON in this exact format:
 {
   "clientName": string | null,
