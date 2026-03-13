@@ -2790,19 +2790,23 @@ export default function QuoteWorkspace() {
                               <option value="annual">Annual</option>
                             </select>
                           </td>
-                          {/* Margin - internal only, calculated from catalog costPrice */}
+                          {/* Margin - internal only. Reads costPrice from line item record first, falls back to catalog match */}
                           <td className="p-3 text-right text-xs">
                             {(() => {
                               const rate = parseFloat(item.rate || "0");
                               const qty = parseFloat(item.quantity || "0");
                               if (rate <= 0 || qty <= 0) return <span className="text-muted-foreground">—</span>;
-                              // Try to find catalog cost price by matching description
-                              const desc = (item.description || "").toLowerCase();
-                              const catalogMatch = (catalogItems || []).find((c: any) => {
-                                const catName = (c.name || "").toLowerCase();
-                                return catName && desc.includes(catName.toLowerCase()) || catName.includes(desc);
-                              });
-                              const costPrice = catalogMatch?.costPrice ? parseFloat(catalogMatch.costPrice) : null;
+                              // Prefer costPrice stored on the line item (written by generateDraft from QDS)
+                              let costPrice = item.costPrice ? parseFloat(item.costPrice) : null;
+                              // Fall back to catalog match if line item has no costPrice
+                              if (!costPrice || costPrice <= 0) {
+                                const desc = (item.description || "").toLowerCase();
+                                const catalogMatch = (catalogItems || []).find((c: any) => {
+                                  const catName = (c.name || "").toLowerCase();
+                                  return catName && (desc.includes(catName.toLowerCase()) || catName.includes(desc));
+                                });
+                                costPrice = catalogMatch?.costPrice ? parseFloat(catalogMatch.costPrice) : null;
+                              }
                               if (!costPrice || costPrice <= 0) return <span className="text-muted-foreground">—</span>;
                               const marginPerUnit = rate - costPrice;
                               const totalMargin = marginPerUnit * qty;
@@ -2839,12 +2843,16 @@ export default function QuoteWorkspace() {
                       const qty = parseFloat(item.quantity || "0");
                       if (rate <= 0 || qty <= 0) return;
                       totalRevenue += rate * qty;
-                      const desc = (item.description || "").toLowerCase();
-                      const catalogMatch = (catalogItems || []).find((c: any) => {
-                        const catName = (c.name || "").toLowerCase();
-                        return catName && (desc.includes(catName) || catName.includes(desc));
-                      });
-                      const costPrice = catalogMatch?.costPrice ? parseFloat(catalogMatch.costPrice) : null;
+                      // Prefer costPrice stored on the line item, fall back to catalog match
+                      let costPrice = item.costPrice ? parseFloat(item.costPrice) : null;
+                      if (!costPrice || costPrice <= 0) {
+                        const desc = (item.description || "").toLowerCase();
+                        const catalogMatch = (catalogItems || []).find((c: any) => {
+                          const catName = (c.name || "").toLowerCase();
+                          return catName && (desc.includes(catName) || catName.includes(desc));
+                        });
+                        costPrice = catalogMatch?.costPrice ? parseFloat(catalogMatch.costPrice) : null;
+                      }
                       if (costPrice && costPrice > 0) {
                         totalCost += costPrice * qty;
                         matchedItems++;
