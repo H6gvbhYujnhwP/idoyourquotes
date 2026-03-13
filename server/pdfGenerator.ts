@@ -65,6 +65,29 @@ function escapeHtml(text: string): string {
 }
 
 /**
+ * Format a line item description for PDF rendering.
+ * If the description contains bullet points (• character), renders the opening
+ * sentence as a normal line and each bullet as an indented bullet row.
+ * Otherwise renders as plain escaped text.
+ */
+function formatLineItemDescription(text: string): string {
+  if (!text) return "";
+  if (!text.includes("•")) return escapeHtml(text);
+
+  // Split on bullet character — first segment is the summary sentence
+  const parts = text.split("•").map(p => p.trim()).filter(Boolean);
+  const summary = parts[0];
+  const bullets = parts.slice(1);
+
+  const summaryHtml = summary ? `<span>${escapeHtml(summary)}</span><br/>` : "";
+  const bulletsHtml = bullets.map(b =>
+    `<span style="display:block; padding-left:10px; line-height:1.5;">• ${escapeHtml(b)}</span>`
+  ).join("");
+
+  return summaryHtml + bulletsHtml;
+}
+
+/**
  * Generate the shared CSS styles
  */
 function generateStyles(colors: BrandColors): string {
@@ -568,7 +591,7 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
       (item, index) => `
       <tr>
         <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; font-size: 10pt;">${startIndex + index + 1}</td>
-        <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; font-size: 10pt;">${escapeHtml(item.description || "")}</td>
+        <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; font-size: 10pt;">${formatLineItemDescription(item.description || "")}</td>
         <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; text-align: center; font-size: 10pt;">${formatQuantity(item.quantity)}</td>
         <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; text-align: center; font-size: 10pt;">${item.unit || "each"}</td>
         <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; text-align: right; font-size: 10pt;">${formatCurrency(item.rate)}</td>
@@ -1412,7 +1435,7 @@ function renderLineItemsTable(items: QuoteLineItem[], colors: BrandColors): stri
         ${items.map((item, idx) => `
         <tr>
           <td style="font-size: 10pt;">${idx + 1}</td>
-          <td style="font-size: 10pt;">${escapeHtml(item.description || "")}</td>
+          <td style="font-size: 10pt;">${formatLineItemDescription(item.description || "")}</td>
           <td style="text-align: center; font-size: 10pt;">${formatQuantity(item.quantity)}</td>
           <td style="text-align: center; font-size: 10pt;">${item.unit || "each"}</td>
           <td style="text-align: right; font-size: 10pt;">${formatCurrency(item.rate)}</td>

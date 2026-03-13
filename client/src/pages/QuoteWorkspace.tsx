@@ -63,6 +63,23 @@ import FileIcon from "@/components/FileIcon";
 import { brand, symbolColors } from "@/lib/brandTheme";
 import TakeoffPanel from "@/components/TakeoffPanel";
 
+/** Render a line item description, splitting bullet points (• character) onto separate lines. */
+function formatLineItemDesc(text: string | null | undefined): React.ReactNode {
+  if (!text) return null;
+  if (!text.includes("•")) return <>{text}</>;
+  const parts = text.split("•").map(p => p.trim()).filter(Boolean);
+  const summary = parts[0];
+  const bullets = parts.slice(1);
+  return (
+    <>
+      {summary && <span>{summary}</span>}
+      {bullets.map((b, i) => (
+        <span key={i} style={{ display: "block", paddingLeft: "0.75rem" }}>• {b}</span>
+      ))}
+    </>
+  );
+}
+
 type QuoteStatus = "draft" | "sent" | "accepted" | "declined";
 
 interface LineItem {
@@ -2799,7 +2816,7 @@ export default function QuoteWorkspace() {
                                 className="cursor-pointer hover:bg-muted/50 px-2 py-1 rounded block"
                                 onClick={() => handleStartEdit(item.id, "description", item.description)}
                               >
-                                {item.description || "Click to edit"}
+                                {item.description ? formatLineItemDesc(item.description) : "Click to edit"}
                               </span>
                             )}
                           </td>
@@ -3057,7 +3074,7 @@ export default function QuoteWorkspace() {
                             <div className="font-medium">{item.name}</div>
                             {item.description && (
                               <div className="text-sm text-muted-foreground truncate max-w-xs">
-                                {item.description}
+                                {formatLineItemDesc(item.description)}
                               </div>
                             )}
                             {item.category && (
