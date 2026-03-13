@@ -1697,7 +1697,7 @@ export default function QuoteWorkspace() {
                 className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
               >
                 {isGeneratingDraft ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                {lineItems && lineItems.length > 0 ? "Regenerate Draft" : "Generate Draft"}
+                {lineItems && lineItems.length > 0 ? "Regenerate Quote" : "Generate Quote"}
               </Button>
               <div className="grid grid-cols-3 gap-1.5">
                 <Button variant="outline" onClick={handleSaveQuote} disabled={isSaving} className="border-emerald-300 text-emerald-700 hover:bg-emerald-100">
