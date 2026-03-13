@@ -2288,9 +2288,10 @@ export default function QuoteWorkspace() {
                           }
                         }
                         // Carry the QDS description through to generateDraft so it isn't lost.
-                        // generateDraft uses this verbatim as the line item description.
+                        // Normalise • bullets to || so GPT-4o JSON mode doesn't strip them.
                         if (m.description && m.description.trim()) {
-                          line += ` [desc: ${m.description.trim()}]`;
+                          const normDesc = m.description.trim().replace(/•\s*/g, "||").replace(/\|\|\s*\|\|/g, "||").trim();
+                          line += ` [desc: ${normDesc}]`;
                         }
                         return line;
                       }).join("\n"));
@@ -2305,9 +2306,10 @@ export default function QuoteWorkspace() {
                         if (m.installTimeHrs && m.installTimeHrs > 0 && (m.source === "takeoff" || m.source === "containment")) {
                           line += ` [install: ${m.installTimeHrs}hrs/unit]`;
                         }
-                        // Carry description for unpriced items too
+                        // Carry description for unpriced items too — normalise • to ||
                         if (m.description && m.description.trim()) {
-                          line += ` [desc: ${m.description.trim()}]`;
+                          const normDesc = m.description.trim().replace(/•\s*/g, "||").replace(/\|\|\s*\|\|/g, "||").trim();
+                          line += ` [desc: ${normDesc}]`;
                         }
                         return line;
                       }).join("\n"));

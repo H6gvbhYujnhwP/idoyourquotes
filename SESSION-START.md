@@ -566,6 +566,8 @@ At the end of every session, produce a handover note with:
 | 13 Mar 2026 | `server/pdfGenerator.ts` | Updated formatLineItemDescription() to split on "||" instead of "•". |
 | 13 Mar 2026 | `client/src/pages/QuoteWorkspace.tsx` | Updated formatLineItemDesc() to split on "||" instead of "•". |
 | 13 Mar 2026 | `server/engines/generalEngine.ts` | Extended "||" separator to standard items — Claude uses judgement: single sentence for simple hardware items, "||" breakdown when item covers multiple deliverables/steps. Monthly/annual always use "||" with minimum 4 features. No newlines or "•" anywhere in descriptions. |
+| 13 Mar 2026 | `client/src/pages/QuoteWorkspace.tsx` | onSave [desc:] tag now normalises • bullets to || before writing to userPrompt (regex replace). Handles legacy QDS snapshots generated before the || format was introduced. Both priced and unpriced material paths updated. |
+| 13 Mar 2026 | `client/src/components/QuoteDraftSummary.tsx` | QDS description display now renders || and • separated descriptions as bullet points. IIFE pattern handles both legacy (•) and new (||) format. Plain text descriptions unaffected. |
 
 ---
 

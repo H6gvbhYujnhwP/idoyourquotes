@@ -670,7 +670,20 @@ export default function QuoteDraftSummary({
                                 }}>{m.pricingType === "monthly" ? "Monthly" : m.pricingType === "annual" ? "Annual" : "Optional"}</span>
                               )}
                             </div>
-                            {m.description && <p className="text-xs mt-0.5 leading-snug" style={{ color: brand.navyMuted }}>{m.description}</p>}
+                            {m.description && (() => {
+                          const desc = m.description;
+                          const sep = desc.includes("||") ? "||" : desc.includes("•") ? "•" : null;
+                          if (!sep) return <p className="text-xs mt-0.5 leading-snug" style={{ color: brand.navyMuted }}>{desc}</p>;
+                          const parts = desc.split(sep).map((p: string) => p.trim()).filter(Boolean);
+                          return (
+                            <div className="text-xs mt-0.5 leading-snug" style={{ color: brand.navyMuted }}>
+                              {parts[0] && <span>{parts[0]}</span>}
+                              {parts.slice(1).map((b: string, i: number) => (
+                                <span key={i} style={{ display: "block", paddingLeft: "0.6rem" }}>• {b}</span>
+                              ))}
+                            </div>
+                          );
+                        })()}
                             {m.installTimeHrs != null && m.installTimeHrs > 0 && (
                               <div className="mt-0.5">
                                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded inline-flex items-center gap-1" style={{ backgroundColor: "#dbeafe", color: "#1d4ed8" }}>
