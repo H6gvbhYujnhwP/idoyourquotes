@@ -242,8 +242,8 @@ export default function QuoteWorkspace() {
       setHasProcessingInputs(isProcessing);
 
       // When processing just finished (was processing → no longer processing)
-      // Auto-trigger DQS analysis ONLY if QDS has never been saved (no userPrompt in DB)
-      const hasSavedQDS = !!(fullQuote?.quote as any)?.userPrompt;
+      // Auto-trigger QDS analysis ONLY if QDS has never been saved
+      const hasSavedQDS = !!(fullQuote?.quote as any)?.qdsSummaryJson;
       if (wasProcessing && !isProcessing && fullQuote.inputs.length > 0 && !hasSavedQDS && !voiceSummary) {
         const hasCompletedInputs = fullQuote.inputs.some(
           (input: QuoteInput) => input.processingStatus === "completed"
@@ -583,7 +583,6 @@ export default function QuoteWorkspace() {
     setIsGeneratingDraft(true);
     generateDraft.mutate({
       quoteId,
-      userPrompt: userPrompt || undefined,
     });
   };
 
@@ -668,23 +667,7 @@ export default function QuoteWorkspace() {
         };
         updateFields.qdsSummaryJson = JSON.stringify(summaryToSave);
 
-        // Build auto-save userPrompt to mark the QDS as populated (used as a presence flag).
-        // This prevents redundant re-analysis when navigating away and back.
-        const autoPromptParts: string[] = [];
-        if (parsed.jobDescription) autoPromptParts.push(`Job: ${parsed.jobDescription}`);
-        if (parsed.clientName) autoPromptParts.push(`Client: ${parsed.clientName}`);
-        if (parsed.materials && parsed.materials.length > 0) {
-          autoPromptParts.push("Materials:\n" + parsed.materials.map((m: any) => 
-            `  ${m.quantity || 1} × ${m.item}${m.unitPrice ? ` @ £${m.unitPrice}` : ""}`
-          ).join("\n"));
-        }
-        if (autoPromptParts.length > 0) {
-          const autoPrompt = autoPromptParts.join("\n");
-          setUserPrompt(autoPrompt);
-          updateFields.userPrompt = autoPrompt;
-        }
-
-        // Save all auto-filled fields AND userPrompt in one awaited mutation
+        // Save all auto-filled fields in one awaited mutation
         // Using mutateAsync ensures the DB write completes before the user can navigate away
         if (Object.keys(updateFields).length > 0) {
           try {
@@ -820,9 +803,8 @@ export default function QuoteWorkspace() {
       }
     }
 
-    // Case 2: Old quotes with userPrompt but no qdsSummaryJson — they had a saved QDS
-    // via the old text-marker approach. Don't re-analyse, just leave QDS empty until
-    // user manually triggers it. Prevents clobbering saved instruction text.
+    // Case 2: Legacy quotes with no qdsSummaryJson — leave QDS empty until
+    // user manually triggers Re-analyse. Prevents unwanted auto-analysis on old quotes.
     const hasSavedQDS = !!(fullQuote?.quote as any)?.userPrompt;
     if (hasSavedQDS) {
       hasRehydratedRef.current = true;
@@ -855,7 +837,6 @@ export default function QuoteWorkspace() {
         description,
         terms,
         taxRate,
-        userPrompt: userPrompt || null,
       });
     } finally {
       setIsSaving(false);
@@ -1961,44 +1942,36 @@ export default function QuoteWorkspace() {
               )}
             </div>
 
-            {/* Option B: Processing instructions with teal left accent */}
-            <div className="px-4 py-3" style={{ backgroundColor: '#f8fafc' }}>
-              <div className="flex items-center justify-between mb-1.5">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm" style={{ color: brand.teal }}>✦</span>
-                  <span className="text-[11px] font-bold" style={{ color: brand.navy }}>Processing Instructions</span>
-                  {userPrompt && (
-                    <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full" style={{ backgroundColor: `${brand.teal}15`, color: brand.teal }}>
-                      Active
-                    </span>
-                  )}
+            {/* Takeoff Instructions — electrical sector only. Controls symbol filtering in TakeoffPanel. */}
+            {(quote as any).tradePreset === "electrical" && (
+              <div className="px-4 py-3" style={{ backgroundColor: '#f8fafc' }}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm" style={{ color: brand.teal }}>✦</span>
+                    <span className="text-[11px] font-bold" style={{ color: brand.navy }}>Takeoff Instructions</span>
+                    {userPrompt && (
+                      <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full" style={{ backgroundColor: `${brand.teal}15`, color: brand.teal }}>
+                        Active
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <DictationButton
-                    variant="inline"
-                    onTranscript={(text) => {
-                      setUserPrompt((prev: string) => (prev ? prev + "\n\n" : "") + text);
-                      toast.success("Voice note added to instructions");
+                <div className="flex rounded-lg overflow-hidden" style={{ border: `1.5px solid ${brand.border}` }}>
+                  <div className="w-1 flex-shrink-0" style={{ backgroundColor: brand.teal }} />
+                  <Textarea
+                    value={userPrompt}
+                    onChange={(e) => setUserPrompt(e.target.value)}
+                    onBlur={() => {
+                      updateQuote.mutate({ id: quoteId, userPrompt: userPrompt || null });
                     }}
+                    className="w-full px-3 py-2 text-sm border-0 focus:ring-0 resize-none rounded-none"
+                    style={{ color: brand.navy, backgroundColor: brand.white }}
+                    rows={2}
+                    placeholder={"Filter which symbols are included in your takeoff...\ne.g. Lighting only — exclude fire alarm, power, access control"}
                   />
                 </div>
               </div>
-              <div className="flex rounded-lg overflow-hidden" style={{ border: `1.5px solid ${brand.border}` }}>
-                <div className="w-1 flex-shrink-0" style={{ backgroundColor: brand.teal }} />
-                <Textarea
-                  value={userPrompt}
-                  onChange={(e) => setUserPrompt(e.target.value)}
-                  onBlur={() => {
-                    // Auto-save processing instructions on blur
-                    updateQuote.mutate({ id: quoteId, userPrompt: userPrompt || null });
-                  }}
-                  className="w-full px-3 py-2 text-sm border-0 focus:ring-0 resize-none rounded-none"
-                  style={{ color: brand.navy, backgroundColor: brand.white }}
-                  rows={2}
-                  placeholder={"Tell the AI what to include or exclude when analysing...\ne.g. Lighting only — exclude fire alarm, power, access control"}
-                />
-              </div>
-            </div>
+            )}
 
             {/* Voice Dictation — floating bottom bar when dictating is active */}
             {isDictating && (
@@ -2241,104 +2214,9 @@ export default function QuoteWorkspace() {
                   materials: data.materials.filter(m => m.source === "voice"),
                 });
 
-                // Build structured text and update Processing Instructions
-                // This feeds into the AI quote generation as high-priority evidence
-                const parts: string[] = [];
-                if (data.jobDescription) parts.push(`Job: ${data.jobDescription}`);
-                if (data.clientName) parts.push(`Client: ${data.clientName}`);
-                if (data.labour.length > 0) {
-                  parts.push("Labour: " + data.labour.map(l => `${l.quantity} × ${l.role} — ${l.duration}`).join(", "));
-                }
-                if (data.materials.length > 0) {
-                  // Separate priced vs unpriced materials for the AI
-                  const pricedMaterials = data.materials.filter(m => m.unitPrice != null && m.unitPrice > 0);
-                  const unpricedMaterials = data.materials.filter(m => !m.unitPrice || m.unitPrice <= 0);
-                  
-                  if (pricedMaterials.length > 0) {
-                    parts.push("USER-CONFIRMED PRICED MATERIALS (use these EXACT prices):\n" + 
-                      pricedMaterials.map(m => {
-                        let line = `  ${m.quantity} × ${m.item} @ £${m.unitPrice} each = £${(m.quantity * (m.unitPrice || 0)).toFixed(2)}`;
-                        if (m.pricingType && m.pricingType !== "standard") {
-                          line += ` [pricing: ${m.pricingType}]`;
-                        }
-                        // Only include [install:] tags for takeoff/containment items (physical products).
-                        // Voice-sourced items may be services/labour — install tags cause AI to
-                        // duplicate them into separate "supply" + "install" lines.
-                        if (m.installTimeHrs && m.installTimeHrs > 0 && (m.source === "takeoff" || m.source === "containment")) {
-                          line += ` [install: ${m.installTimeHrs}hrs/unit]`;
-                          if (m.labourCost && m.labourCost > 0) {
-                            line += ` [labour: £${m.labourCost.toFixed(2)}]`;
-                          }
-                        }
-                        // Carry the QDS description through to generateDraft so it isn't lost.
-                        // Normalise legacy • bullets → ||. Preserve ## (numbered) as-is.
-                        // Auto-detect "1. 2. 3." user-typed lists → ##.
-                        if (m.description && m.description.trim()) {
-                          let normDesc = m.description.trim();
-                          if (!normDesc.includes("||") && !normDesc.includes("##")) {
-                            // Convert legacy • bullets
-                            normDesc = normDesc.replace(/•\s*/g, "||").replace(/\|\|\s*\|\|/g, "||").trim();
-                            // Convert user-typed numbered lines: "1. item\n2. item" → ## separated
-                            if (/^\s*\d+\.\s/m.test(normDesc)) {
-                              normDesc = normDesc.split(/\n/).map(s => s.replace(/^\s*\d+\.\s*/, "").trim()).filter(Boolean).join(" ## ");
-                            }
-                          }
-                          line += ` [desc: ${normDesc}]`;
-                        }
-                        return line;
-                      }).join("\n"));
-                  }
-                  if (unpricedMaterials.length > 0) {
-                    parts.push("Materials (need pricing from catalog or estimate):\n" + 
-                      unpricedMaterials.map(m => {
-                        let line = `  ${m.quantity} × ${m.item}`;
-                        if (m.pricingType && m.pricingType !== "standard") {
-                          line += ` [pricing: ${m.pricingType}]`;
-                        }
-                        if (m.installTimeHrs && m.installTimeHrs > 0 && (m.source === "takeoff" || m.source === "containment")) {
-                          line += ` [install: ${m.installTimeHrs}hrs/unit]`;
-                        }
-                        // Carry description for unpriced items too — normalise • to ||, detect ## patterns
-                        if (m.description && m.description.trim()) {
-                          let normDesc = m.description.trim();
-                          if (!normDesc.includes("||") && !normDesc.includes("##")) {
-                            normDesc = normDesc.replace(/•\s*/g, "||").replace(/\|\|\s*\|\|/g, "||").trim();
-                            if (/^\s*\d+\.\s/m.test(normDesc)) {
-                              normDesc = normDesc.split(/\n/).map(s => s.replace(/^\s*\d+\.\s*/, "").trim()).filter(Boolean).join(" ## ");
-                            }
-                          }
-                          line += ` [desc: ${normDesc}]`;
-                        }
-                        return line;
-                      }).join("\n"));
-                  }
-                }
-                if (data.markup !== null) parts.push(`Material Markup: ${data.markup}%`);
-                if (data.plantMarkup !== null) parts.push(`Plant Markup: ${data.plantMarkup}%`);
-                if (data.labourRate !== null) parts.push(`Labour Rate: £${data.labourRate}/hr`);
-                if (data.sundries !== null) parts.push(`Sundries: £${data.sundries}`);
-                if (data.preliminaries !== null) parts.push(`Preliminaries: ${data.preliminaries}% of total project value`);
-                if (data.contingency) parts.push(`Contingency: ${data.contingency}`);
-
-                // Plant / Hire items
-                if (data.plantHire && data.plantHire.length > 0) {
-                  parts.push("PLANT / HIRE:");
-                  parts.push(data.plantHire.map(p => {
-                    let line = `  ${p.quantity} × ${p.description}`;
-                    if (p.duration) line += ` (${p.duration})`;
-                    if (p.sellPrice != null && p.sellPrice > 0) line += ` @ £${p.sellPrice} each`;
-                    if (p.costPrice != null && p.costPrice > 0) line += ` [cost: £${p.costPrice}]`;
-                    return line;
-                  }).join("\n"));
-                }
-
-                if (data.notes) parts.push(`Notes: ${data.notes}`);
-
-                setUserPrompt(parts.join("\n"));
-
                 // Persist the full QDS snapshot (including takeoff rows and user edits) so
                 // refresh restores exactly what the user saved — not a stale AI-analysed version.
-                // This runs on every manual Save, complementing the auto-save in triggerVoiceAnalysis.
+                // generateDraft reads qdsSummaryJson directly — no text serialisation needed.
                 const qdsSave = {
                   clientName: data.clientName || null,
                   jobDescription: data.jobDescription || "",
@@ -2356,7 +2234,6 @@ export default function QuoteWorkspace() {
                 updateQuote.mutate({
                   id: quoteId,
                   qdsSummaryJson: JSON.stringify(qdsSave),
-                  userPrompt: parts.join("\n") || undefined,
                 });
 
                 // Auto-name if client provided and title is empty

@@ -3422,7 +3422,6 @@ If NOT relevant: {"relevant": false, "message": "Brief explanation of why this d
     generateDraft: protectedProcedure
       .input(z.object({
         quoteId: z.number(),
-        userPrompt: z.string().optional(), // Additional context from user (pasted email, instructions)
       }))
       .mutation(async ({ ctx, input }) => {
         await assertAIAccess(ctx.user.id);
@@ -3490,27 +3489,92 @@ If NOT relevant: {"relevant": false, "message": "Brief explanation of why this d
         }
 
         // Add user prompt if provided (this is valid evidence on its own)
-        if (input.userPrompt && input.userPrompt.trim()) {
-          processedEvidence.push(`### User Instructions/Email:\n${input.userPrompt}`);
-          
-          // Detect and scrape URLs from user prompt
-          const urls = extractUrls(input.userPrompt);
-          if (urls.length > 0) {
-            try {
-              const scrapedContent = await scrapeUrls(urls);
-              const formattedWebContent = formatScrapedContentForAI(scrapedContent);
-              if (formattedWebContent) {
-                processedEvidence.push(`### Website Content (auto-scraped from URLs in instructions):\n${formattedWebContent}`);
-              }
-            } catch (error) {
-              // Silently ignore scraping errors - the URLs are still in the user prompt
-              console.error("URL scraping error:", error);
-            }
-          }
-        }
+        // NOTE: userPrompt is now ONLY used for electrical takeoff symbol filtering.
+        // QDS items are read directly from qdsSummaryJson — not serialised into userPrompt.
 
         if (processedEvidence.length === 0) {
           throw new Error("No evidence found. Please add text in the 'Email/Instructions for AI' field, or upload and process files (transcribe audio, extract PDF text, analyze images).");
+        }
+
+        // ── QDS Direct Line Items ─────────────────────────────────────────────
+        // Parse qdsSummaryJson and convert confirmed QDS items directly into line
+        // items — bypassing GPT-4o reinterpretation entirely.
+        // GPT-4o only handles: description, title, clientName/address, assumptions,
+        // exclusions, terms, riskNotes.
+        let qdsLineItems: Array<{
+          description: string;
+          quantity: number;
+          unit: string;
+          rate: number;
+          pricingType: string;
+          sortOrder: number;
+        }> = [];
+
+        const qdsSummaryRaw = (quote as any).qdsSummaryJson;
+        if (qdsSummaryRaw) {
+          try {
+            const qds = JSON.parse(qdsSummaryRaw);
+            let sortIdx = 0;
+
+            // Materials → line items (each material is one line item)
+            if (qds.materials && Array.isArray(qds.materials)) {
+              for (const m of qds.materials) {
+                if (!m.item) continue;
+                const qty = parseFloat(m.quantity) || 1;
+                const rate = parseFloat(m.unitPrice) || 0;
+                qdsLineItems.push({
+                  description: m.description || m.item,
+                  quantity: qty,
+                  unit: m.unit || "each",
+                  rate,
+                  pricingType: m.pricingType || "standard",
+                  sortOrder: sortIdx++,
+                });
+              }
+            }
+
+            // Labour → line items
+            if (qds.labour && Array.isArray(qds.labour)) {
+              const labourRate = parseFloat(qds.labourRate) || 0;
+              for (const l of qds.labour) {
+                if (!l.role) continue;
+                const qty = parseFloat(l.quantity) || 1;
+                // Duration as unit if provided (e.g. "days", "hours")
+                const unit = l.duration || "hours";
+                qdsLineItems.push({
+                  description: l.role,
+                  quantity: qty,
+                  unit,
+                  rate: labourRate,
+                  pricingType: "standard",
+                  sortOrder: sortIdx++,
+                });
+              }
+            }
+
+            // Plant / Hire → line items
+            if (qds.plantHire && Array.isArray(qds.plantHire)) {
+              for (const p of qds.plantHire) {
+                if (!p.description) continue;
+                const qty = parseFloat(p.quantity) || 1;
+                const rate = parseFloat(p.sellPrice) || 0;
+                const desc = p.duration ? `${p.description} (${p.duration})` : p.description;
+                qdsLineItems.push({
+                  description: desc,
+                  quantity: qty,
+                  unit: "each",
+                  rate,
+                  pricingType: "standard",
+                  sortOrder: sortIdx++,
+                });
+              }
+            }
+
+            console.log(`[generateDraft] QDS direct line items: ${qdsLineItems.length} items from qdsSummaryJson`);
+          } catch (e) {
+            console.warn("[generateDraft] Failed to parse qdsSummaryJson — will rely on AI only:", e);
+            qdsLineItems = [];
+          }
         }
 
         // Log evidence summary for debugging
@@ -3529,58 +3593,17 @@ ${catalogItems.map(c => `- "${c.name}" | Rate: £${c.defaultRate}/${c.unit} | Co
 IMPORTANT: Use catalog rates as defaults, but if the user's voice dictation or instructions specify a different price, markup, or rate for an item, ALWAYS use the user's stated price instead.`;
         }
 
-        // Price hierarchy instruction — added to all prompts
-        const priceHierarchyContext = `\n\nPRICE & RATE HIERARCHY — FOLLOW THIS STRICTLY:
-When determining prices, rates, markups, labour costs, and quantities, follow this priority order:
-1. HIGHEST PRIORITY — "USER-CONFIRMED PRICED MATERIALS" from the user's instructions/draft summary. These are prices the user has reviewed and confirmed in the Quote Draft Summary. Use these EXACT prices — do not override them.
-2. SECOND PRIORITY — User's voice dictations and written instructions. If the user says "charge £700 per day" or "battens are £30 each" or "20% markup", USE THOSE EXACT FIGURES.
-3. THIRD PRIORITY — Company catalog rates. Use these when the user hasn't specified a price for that item.
-4. FOURTH PRIORITY — Company default rates from settings (day work rates, material markup %, etc.). Use these when neither the user nor the catalog provides a rate.
-5. LOWEST PRIORITY — Your own UK market rate estimates. Use these when no other source provides a rate. Estimate a realistic UK market price based on typical trade pricing for the item. NEVER set a rate to 0 — always provide a reasonable estimate. The user can adjust it later.
+        // Price hierarchy for items GPT-4o creates (comprehensive mode or no QDS).
+        // QDS-confirmed items are now inserted directly — not via AI reinterpretation.
+        const priceHierarchyContext = `\n\nPRICE & RATE HIERARCHY — for any line items you generate:
+1. Company catalog rates — use when items match by name.
+2. Company default rates from settings (markup %, labour rate).
+3. UK market rate estimates — realistic, never 0.
 
 VOICE DICTATION PROCESSING:
-- Voice dictations are numbered in order. If there are multiple, process them sequentially.
-- Later voice notes override earlier ones. If Voice Note 1 says "one electrician" and Voice Note 3 says "actually make it two electricians", use two.
-- Voice dictations may contain natural speech — extract structured data: client name, job description, labour requirements, material prices, markups, sundries, location, and timeline.
-- If the user mentions a client name (e.g. "quote for ample storage"), match it to existing client data if available.
-- If the user gives a lump sum (e.g. "charge them £700 per day for 2 days"), create line items that reflect this pricing.
-
-DRAFT SUMMARY MATERIALS:
-- If the user instructions contain "USER-CONFIRMED PRICED MATERIALS", these are items the user has explicitly priced in the Quote Draft Summary.
-- Create a line item for EACH of these with the EXACT quantity and price shown.
-- CRITICAL: Use the EXACT item name as written in the user instructions — do NOT rename, rephrase, or add the client's name to the description. "Discovery Session" must stay as "Discovery Session", not "Discovery Session to tailor marketing strategy for Griffith Elder". The user chose these names from their catalog for a reason.
-- CRITICAL: Use the EXACT unit from the catalog. If the catalog says "Per Month", use "Per Month" — not "each" or "month". If it says "Per 5,000", use "Per 5,000". If it says "Session", use "Session". Never override catalog units.
-- DESCRIPTION RULE: If the item has a "[desc: ...]" tag, use that text as the line item description — do NOT summarise, shorten, or rewrite it. Copy it verbatim. If it contains "||" or "##" separators, preserve them exactly — these are rendering markers. "||" renders as bullet points, "##" renders as a numbered list.
-- FOR MONTHLY AND ANNUAL ITEMS (pricingType: "monthly" or "annual") that do NOT have a "[desc: ...]" tag: write a description using "||" as the separator. Format: summary sentence || feature 1 || feature 2 || feature 3. Minimum 4 items. Do NOT use newlines or "•".
-- FOR STANDARD ITEMS with sequential steps (installation sequences, phased work, commissioning procedures) that do NOT have a "[desc: ...]" tag: use "##" as the separator. Format: overview sentence ## step 1 ## step 2 ## step 3.
-- FOR STANDARD ITEMS that are simple (single hardware item, straightforward labour) with no "[desc: ...]" tag: write one clear sentence.
-- NEVER use newlines, "•", or any other separator — only "||" for unordered, "##" for ordered, or plain text.
-- If the user instructions contain "Materials (need pricing from catalog or estimate)", these items need pricing — check the catalog first, then estimate.
-
-INSTALLATION LABOUR FROM MATERIALS:
-- If materials include "[install: Xhrs/unit]", this means each unit requires X hours of labour to install.
-- If materials include "[labour: £Y]", this is the pre-calculated total labour cost for that material line.
-- ONLY when "[install: Xhrs/unit]" is present, create SEPARATE line items for supply and installation. For example:
-  * "89 × Linear LED Light @ £19 [install: 2hrs/unit] [labour: £10680.00]" should produce TWO line items:
-    1. "Supply Linear LED Light" — qty: 89, rate: £19, unit: each
-    2. "Install Linear LED Light" — qty: 178 (89 × 2hrs), rate: £60/hr (use the Labour Rate), unit: hr
-- If a material does NOT have "[install: Xhrs/unit]", create ONE combined "Supply and install" line item as normal. Do NOT estimate or invent installation times — only use times explicitly provided in the data.
-- The Labour Rate from company settings should be used for all installation labour calculations.
-
-PLANT / HIRE ITEMS:
-- If the user provides a "PLANT / HIRE:" section, create separate line items for each piece of hired equipment.
-- Use the SELL price (not cost price) as the rate on the quote. The cost price is internal only.
-- Include the duration in the description, e.g. "Cherry Picker Hire (1 week)" or "Scaffold Tower Hire (3 days)".
-
-PRICING TYPE — CRITICAL:
-- Each line item MUST have a "pricingType" field set to "standard", "monthly", "optional", or "annual".
-- If a material in the user instructions has "[pricing: monthly]", "[pricing: optional]", or "[pricing: annual]", the generated line item MUST use that exact pricingType.
-- If a material matches a catalog item, use the catalog item's Pricing type (shown as "Pricing: standard/monthly/optional/annual" in the catalog).
-- If no pricing tag or catalog match, default to "standard".
-- "standard" items are included in the quote total. "monthly", "optional", and "annual" items are shown separately and NOT included in the total.
-- This is NOT optional — every lineItem in your JSON response must include the pricingType field.
-- Apply the Plant Markup percentage to plant/hire items if specified in company defaults or user data.
-- Do NOT invent plant/hire items — only include them if explicitly provided in the data.`;
+- Voice dictations are numbered. Process sequentially — later notes override earlier ones.
+- Extract: client name, job description, labour, material prices, markups, location, timeline.
+- If user gives a lump sum (e.g. "charge 700/day for 2 days"), create line items that reflect this.`;
 
         // Build company defaults context from organization profile
         let companyDefaultsContext = "";
@@ -3828,15 +3851,7 @@ You MUST respond with valid JSON in this exact format:
   "clientAddress": "string or null",
   "title": "string - brief but descriptive title for the work",
   "description": "string - COMPREHENSIVE description (3-5 sentences minimum) that includes: 1) Project overview and scope, 2) Key deliverables being quoted, 3) Client objectives or goals mentioned, 4) Any phases or timeline if discussed. This appears on the quote PDF so make it professional and informative.",
-  "lineItems": [
-    {
-      "description": "string - detailed description of the line item including site name if multiple sites",
-      "quantity": "number - MUST match the exact quantity from the BoQ/evidence. Read the Qty column carefully. Do NOT default to 1.",
-      "unit": "string (each, nr, sqm, hours, etc.)",
-      "rate": "number - use catalog rate if available, otherwise estimate",
-      "pricingType": "string - 'standard' (default, included in total), 'monthly' (recurring), 'optional' (add-on), or 'annual' (yearly recurring). Non-standard types shown separately, NOT in total. MUST match the catalog item's pricing type if matched."
-    }
-  ],
+  "lineItems": [],
   "assumptions": ["string array of assumptions made"],
   "exclusions": ["string array of what is NOT included - MUST include ALL standard exclusions from company defaults plus any project-specific exclusions"],
   "terms": "string - payment terms and conditions. Use the company defaults if provided. Include: quote validity period, payment terms, insurance limits, day work rates, return visit rates, working hours. Write as numbered clauses.",
@@ -3844,22 +3859,16 @@ You MUST respond with valid JSON in this exact format:
   "symbolMappings": { "symbol": { "meaning": "string", "confirmed": false } }
 }
 
+IMPORTANT: Line items are managed separately — leave "lineItems" as an empty array. Focus on:
+- Writing a high-quality project "description" (3-5 sentences, professional, client-facing)
+- Extracting accurate "clientName", "clientEmail", "clientPhone", "clientAddress" from the evidence
+- Generating thorough "assumptions" and "exclusions" lists
+- Writing comprehensive "terms" using the company defaults
+
 IMPORTANT for description field:
 - Write 3-5 sentences in plain professional English describing the overall project scope.
 - Do not use phrases like "This comprehensive quote covers" or "We are pleased to offer".
 - Write as if a tradesperson is explaining the scope to the client directly.
-
-IMPORTANT for lineItems descriptions:
-- For simple items (single hardware, straightforward labour): one clear plain sentence.
-- For contract/retainer items (monthly/annual): use "||" as separator — summary || feature 1 || feature 2 || feature 3 (min 4 features). Never a single sentence for a contract item.
-- For sequential/phased items (installation steps, commissioning, project phases): use "##" as separator — overview ## step 1 ## step 2 ## step 3.
-- NEVER use newlines, "•", or any other separator in descriptions. Only "||", "##", or plain text.
-
-IMPORTANT for lineItems:
-- The "quantity" field is a NUMBER not a string. Read it from the Qty column of the BoQ.
-- If the BoQ says Qty=5, the quantity must be 5. If it says Qty=10, the quantity must be 10.
-- NEVER default all quantities to 1. Each line item has its own quantity from the source document.
-- Keep items from different sites as separate line items, even if the description is similar.
 
 IMPORTANT for exclusions:
 - ALWAYS include every item from the STANDARD EXCLUSIONS in company defaults.
@@ -3868,12 +3877,9 @@ IMPORTANT for exclusions:
 IMPORTANT for terms:
 - Build the terms from company defaults: include validity period, insurance limits, day work rates, working hours, return visit rate, payment terms, and VAT status.
 
-Be thorough but realistic with pricing. Extract all client details mentioned. List specific line items with quantities. Note any assumptions you're making and things that are explicitly excluded.
+Extract all client details mentioned. Note any assumptions you are making and things that are explicitly excluded.
 
 CRITICAL RULES:
-- When the evidence contains specific quantities (e.g. "5 nr", "10 metres"), you MUST use those exact quantities. NEVER substitute your own estimates.
-- When a Bill of Quantities or Trade Bill is present, extract and price each item individually.
-- Use company catalog rates when items match. Only estimate rates for items with no catalog match.
 - Use the company defaults below for working hours, insurance, exclusions, etc. Do NOT invent these values.
 ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${priceHierarchyContext}${tradeRelevanceGuardrail}`;
         }
@@ -3908,11 +3914,6 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
             title: draft.title || quote.title,
             description: draft.description || quote.description,
           };
-
-          // Save the user's instruction text so it persists across page loads
-          if (input.userPrompt !== undefined) {
-            (quoteUpdateData as any).userPrompt = input.userPrompt || null;
-          }
 
           // Save AI-generated terms (works for both simple and comprehensive)
           if (draft.terms) {
@@ -3976,28 +3977,33 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
           await deleteLineItemsByQuoteId(input.quoteId);
 
           // Create line items
+          // For simple quotes: use QDS direct line items (exact items user confirmed in QDS).
+          // For comprehensive quotes (or no QDS): fall back to AI-generated line items.
           const createdLineItems = [];
-          if (draft.lineItems && Array.isArray(draft.lineItems)) {
-            for (let i = 0; i < draft.lineItems.length; i++) {
-              const item = draft.lineItems[i];
-              const quantity = parseFloat(item.quantity) || 1;
-              const rate = parseFloat(item.rate) || 0;
-              const total = quantity * rate;
-              
-              const lineItem = await createLineItem({
-                quoteId: input.quoteId,
-                sortOrder: i,
-                description: item.description,
-                quantity: quantity.toFixed(4),
-                unit: item.unit || "each",
-                rate: rate.toFixed(2),
-                total: total.toFixed(2),
-                phaseId: isComprehensive && item.phase ? item.phase : undefined,
-                category: isComprehensive && item.category ? item.category : undefined,
-                pricingType: item.pricingType || "standard",
-              });
-              createdLineItems.push(lineItem);
-            }
+          const useQdsItems = !isComprehensive && qdsLineItems.length > 0;
+          const itemsToCreate = useQdsItems ? qdsLineItems : (draft.lineItems && Array.isArray(draft.lineItems) ? draft.lineItems : []);
+
+          console.log(`[generateDraft] Line item source: ${useQdsItems ? "QDS direct (" + qdsLineItems.length + " items)" : "AI generated (" + itemsToCreate.length + " items)"}`);
+
+          for (let i = 0; i < itemsToCreate.length; i++) {
+            const item = itemsToCreate[i];
+            const quantity = parseFloat(String(item.quantity)) || 1;
+            const rate = parseFloat(String(item.rate)) || 0;
+            const total = quantity * rate;
+
+            const lineItem = await createLineItem({
+              quoteId: input.quoteId,
+              sortOrder: i,
+              description: item.description || "",
+              quantity: quantity.toFixed(4),
+              unit: (item as any).unit || "each",
+              rate: rate.toFixed(2),
+              total: total.toFixed(2),
+              phaseId: isComprehensive && (item as any).phase ? (item as any).phase : undefined,
+              category: isComprehensive && (item as any).category ? (item as any).category : undefined,
+              pricingType: (item as any).pricingType || "standard",
+            });
+            createdLineItems.push(lineItem);
           }
 
           // Update tender context with assumptions/exclusions
