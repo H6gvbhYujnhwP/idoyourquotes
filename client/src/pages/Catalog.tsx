@@ -223,8 +223,8 @@ export default function Catalog() {
     { label: "Description", flex: 2, mw: 120 },
     { label: "Category", flex: 1.2, mw: 90 },
     { label: "Unit", flex: 0.7, mw: 60 },
-    { label: "Sell (£)", flex: 0.8, mw: 70 },
-    { label: "Buy-in (£)", flex: 0.8, mw: 70 },
+    { label: "Sell ex VAT (£)", flex: 0.8, mw: 90 },
+    { label: "Buy-in ex VAT (£)", flex: 0.8, mw: 100 },
     { label: "Install (hrs)", flex: 0.8, mw: 70 },
     { label: "Pricing", flex: 0.9, mw: 80 },
     { label: "", flex: 0.3, mw: 36 },
@@ -271,11 +271,11 @@ export default function Catalog() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="defaultRate">Sell Price</Label>
+                  <Label htmlFor="defaultRate">Sell Price (ex VAT)</Label>
                   <Input id="defaultRate" type="number" step="0.01" placeholder="0.00" value={defaultRate} onChange={(e) => setDefaultRate(e.target.value)} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="costPrice">Buy-in Price</Label>
+                  <Label htmlFor="costPrice">Buy-in Price (ex VAT)</Label>
                   <Input id="costPrice" type="number" step="0.01" placeholder="0.00" value={costPrice} onChange={(e) => setCostPrice(e.target.value)} />
                 </div>
               </div>
