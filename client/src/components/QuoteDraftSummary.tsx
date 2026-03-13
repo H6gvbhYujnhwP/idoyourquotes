@@ -732,7 +732,7 @@ export default function QuoteDraftSummary({
                       <th className="text-left text-[10px] font-bold uppercase tracking-wider py-1.5 px-2" style={{ color: brand.navyMuted }}>Item</th>
                       <th className="text-right text-[10px] font-bold uppercase tracking-wider py-1.5 px-2" style={{ color: brand.navyMuted }}>Qty</th>
                       <th className="text-left text-[10px] font-bold uppercase tracking-wider py-1.5 px-2" style={{ color: brand.navyMuted }}>Unit</th>
-                      <th className="text-right text-[10px] font-bold uppercase tracking-wider py-1.5 px-2" style={{ color: brand.navyMuted }}>Sell Price</th>
+                      <th className="text-right text-[10px] font-bold uppercase tracking-wider py-1.5 px-2" style={{ color: brand.navyMuted }}>Sell Price <span style={{ fontWeight: 400, textTransform: "none", fontSize: "9px", color: "#0d9488" }}>ex VAT</span></th>
                       <th className="text-right text-[10px] font-bold uppercase tracking-wider py-1.5 px-2" style={{ color: brand.navyMuted }}>Total</th>
                       <th className="text-right text-[10px] font-bold uppercase tracking-wider py-1.5 px-2" style={{ color: "#0d9488" }}>Margin</th>
                     </tr>

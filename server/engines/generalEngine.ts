@@ -133,6 +133,7 @@ EXAMPLES OF CORRECT SEPARATION — do not merge these into one line item:
 ANTI-DUPLICATION RULE: The deduplication rule applies to the SAME engagement mentioned twice across inputs (e.g. email says "1 day onsite" and voice note also says "1 day onsite" — that's one item). It does NOT apply to different engagements that happen to use the same role or person.
 
 - IMPORTANT: If the catalog items already represent the services being delivered (e.g. "Discovery Session", "Email Campaign", "Website Design"), do NOT create labour entries in the labour[] array. The catalog service items ARE the deliverables. Only add to labour[] when there is genuinely separate hands-on labour not covered by a catalog item.
+- CRITICAL — NO DOUBLE-COUNTING: If a labour engagement (e.g. "IT Labour Workshop", "Network Engineer — Onsite", "Installation Labour") already appears as a materials line item, it must NOT also appear in labour[]. The labour[] array is ONLY for roles with no corresponding materials line item. If every labour role is already captured as a priced line item, leave labour[] empty.
 
 SCOPE REASONING:
 - If the client is asking "is this possible?" or "can you help with this?" — this is likely a discovery/assessment phase. Consider extracting a smaller initial scope (assessment, site survey) rather than the full project.
@@ -179,7 +180,7 @@ FIELD GUIDELINES:
 - clientEmail: Email address from signature or header
 - clientPhone: Phone from signature or mentions
 - jobDescription: 2-3 detailed sentences covering the FULL scope. Include specifics — server types, cable lengths, page counts, service descriptions. Write from the perspective of the quoting business describing the work they'll do.
-- labour: Team composition summary — one entry per distinct role/mode combination. ALWAYS include the delivery mode in the role name so entries are unambiguous: "Network Engineer — Onsite", "Network Engineer — Workshop", "IT Consultant — Remote", "Engineer — Commissioning". Never write just "Network Engineer" if that person appears in multiple modes. Only include labour entries when there is genuinely separate hands-on labour not covered by catalog service items.
+- labour: Team composition summary — one entry per distinct role/mode combination. ALWAYS include the delivery mode in the role name so entries are unambiguous: "Network Engineer — Onsite", "Network Engineer — Workshop", "IT Consultant — Remote", "Engineer — Commissioning". Never write just "Network Engineer" if that person appears in multiple modes. Only include labour entries when there is genuinely separate hands-on labour not covered by catalog service items. CRITICAL: if the labour role already exists as a materials line item (e.g. "IT Labour Workshop" is a priced line), do NOT also add it to labour[]. Check every labour entry against the materials list before including it — if it's already there as a line item, omit it from labour[].
 - materials: Every billable line item with catalog-matched prices where possible. Use the EXACT "item" name from the catalog. Use the EXACT "unit" from the catalog (Per Hour, Per Month, Per 5,000, Session, etc.).
   For "description" — choose the right format based on item type. NEVER use newlines, "•", or any other separator — only "||", "##", or plain text.
   - SIMPLE items (single hardware unit, straightforward supply): one clear plain sentence. E.g. "24-port managed PoE switch for main communications cabinet."
@@ -201,7 +202,8 @@ BEFORE OUTPUTTING JSON — run this mental checklist:
 3. Have I included every piece of equipment, hardware, or product mentioned — even items without explicit prices?
 4. Does every materials line item have a meaningful description drawn from the evidence?
 5. Are pricingTypes correct — standard for one-off, monthly for recurring?
-Only output JSON once all five checks pass.
+6. Does labour[] contain ONLY roles that are NOT already priced as materials line items? If a labour role appears in materials, remove it from labour[].
+Only output JSON once all six checks pass.
 
 If a field is not mentioned or cannot be determined, use null. Respond with valid JSON only — no preamble, no explanation, no markdown fences.`;
 
