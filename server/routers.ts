@@ -3539,8 +3539,13 @@ If NOT relevant: {"relevant": false, "message": "Brief explanation of why this d
                 if (!m.item) continue;
                 const qty = parseFloat(m.quantity) || 1;
                 const rate = parseFloat(m.unitPrice) || 0;
+                // Always prepend the item title so it appears on the quote line
+                // e.g. "8-port Gigabit PoE Switch — Edge switches for co-working mezzanine..."
+                const description = m.description
+                  ? `${m.item} — ${m.description}`
+                  : m.item;
                 qdsLineItems.push({
-                  description: m.description || m.item,
+                  description,
                   quantity: qty,
                   unit: m.unit || "each",
                   rate,
