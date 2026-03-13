@@ -561,6 +561,11 @@ At the end of every session, produce a handover note with:
 | 13 Mar 2026 | `server/engines/generalEngine.ts` | Part C of description flow fix. Materials description guideline rewritten to apply different rules by pricingType: standard items get 1-sentence scope-specific description; monthly/annual items get structured bullet-point breakdown (minimum 4 bullets) covering all contract deliverables per sector. Sector-specific examples provided for IT/MSP, cleaning, maintenance/FM, pest control. |
 | 13 Mar 2026 | `server/pdfGenerator.ts` | Added formatLineItemDescription() helper. Splits on "•" character, renders summary sentence then each bullet as indented block element. Both line item table render points updated (main table + monthly/annual table). Previously descriptions with bullets rendered as one long run-on paragraph. |
 | 13 Mar 2026 | `client/src/pages/QuoteWorkspace.tsx` | Added formatLineItemDesc() React helper. Splits on "•" character, renders summary + indented bullet spans. Applied to editable line items table row and catalog search result description display. |
+| 13 Mar 2026 | `server/engines/generalEngine.ts` | Changed monthly/annual description separator from "•" to "||" (pipe-pipe). GPT-4o JSON mode strips "•" characters from JSON string values; "||" is plain ASCII and survives. Updated prompt to instruct Claude to use "||" between each element, no newlines or bullet chars. |
+| 13 Mar 2026 | `server/routers.ts` | Updated generateDraft DESCRIPTION RULE: copy [desc:] tag verbatim including "||" separators — do not convert. For monthly/annual items without [desc:] tag, use "||" separator format. |
+| 13 Mar 2026 | `server/pdfGenerator.ts` | Updated formatLineItemDescription() to split on "||" instead of "•". |
+| 13 Mar 2026 | `client/src/pages/QuoteWorkspace.tsx` | Updated formatLineItemDesc() to split on "||" instead of "•". |
+| 13 Mar 2026 | `server/engines/generalEngine.ts` | Extended "||" separator to standard items — Claude uses judgement: single sentence for simple hardware items, "||" breakdown when item covers multiple deliverables/steps. Monthly/annual always use "||" with minimum 4 features. No newlines or "•" anywhere in descriptions. |
 
 ---
 

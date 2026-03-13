@@ -63,11 +63,11 @@ import FileIcon from "@/components/FileIcon";
 import { brand, symbolColors } from "@/lib/brandTheme";
 import TakeoffPanel from "@/components/TakeoffPanel";
 
-/** Render a line item description, splitting bullet points (• character) onto separate lines. */
+/** Render a line item description, splitting on "||" separator into bullet points. */
 function formatLineItemDesc(text: string | null | undefined): React.ReactNode {
   if (!text) return null;
-  if (!text.includes("•")) return <>{text}</>;
-  const parts = text.split("•").map(p => p.trim()).filter(Boolean);
+  if (!text.includes("||")) return <>{text}</>;
+  const parts = text.split("||").map(p => p.trim()).filter(Boolean);
   const summary = parts[0];
   const bullets = parts.slice(1);
   return (

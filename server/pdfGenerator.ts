@@ -66,16 +66,15 @@ function escapeHtml(text: string): string {
 
 /**
  * Format a line item description for PDF rendering.
- * If the description contains bullet points (• character), renders the opening
- * sentence as a normal line and each bullet as an indented bullet row.
- * Otherwise renders as plain escaped text.
+ * If the description contains "||" separators, renders the first segment as a
+ * summary sentence and each subsequent segment as an indented bullet row.
+ * Falls back to plain escaped text if no separators found.
  */
 function formatLineItemDescription(text: string): string {
   if (!text) return "";
-  if (!text.includes("•")) return escapeHtml(text);
+  if (!text.includes("||")) return escapeHtml(text);
 
-  // Split on bullet character — first segment is the summary sentence
-  const parts = text.split("•").map(p => p.trim()).filter(Boolean);
+  const parts = text.split("||").map(p => p.trim()).filter(Boolean);
   const summary = parts[0];
   const bullets = parts.slice(1);
 
