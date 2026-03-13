@@ -3550,9 +3550,11 @@ DRAFT SUMMARY MATERIALS:
 - Create a line item for EACH of these with the EXACT quantity and price shown.
 - CRITICAL: Use the EXACT item name as written in the user instructions — do NOT rename, rephrase, or add the client's name to the description. "Discovery Session" must stay as "Discovery Session", not "Discovery Session to tailor marketing strategy for Griffith Elder". The user chose these names from their catalog for a reason.
 - CRITICAL: Use the EXACT unit from the catalog. If the catalog says "Per Month", use "Per Month" — not "each" or "month". If it says "Per 5,000", use "Per 5,000". If it says "Session", use "Session". Never override catalog units.
-- DESCRIPTION RULE: If the item has a "[desc: ...]" tag, use that text as the line item description — do NOT summarise, shorten, or rewrite it. Copy it verbatim. If it contains "||" separators, preserve them exactly as-is — do not convert them to bullet points, newlines, or any other character. The "||" separators are rendering markers used by the display layer.
-- FOR MONTHLY AND ANNUAL ITEMS (pricingType: "monthly" or "annual") that do NOT have a "[desc: ...]" tag: write a description using "||" as the separator between each element. Format: summary sentence || bullet item 1 || bullet item 2 || bullet item 3. Minimum 4 items. Do NOT use newlines or "•" characters.
-- FOR STANDARD ITEMS without a "[desc: ...]" tag: you may add a brief clarifying note in the description AFTER the item name (e.g. "Discovery Session - initial consultation").
+- DESCRIPTION RULE: If the item has a "[desc: ...]" tag, use that text as the line item description — do NOT summarise, shorten, or rewrite it. Copy it verbatim. If it contains "||" or "##" separators, preserve them exactly — these are rendering markers. "||" renders as bullet points, "##" renders as a numbered list.
+- FOR MONTHLY AND ANNUAL ITEMS (pricingType: "monthly" or "annual") that do NOT have a "[desc: ...]" tag: write a description using "||" as the separator. Format: summary sentence || feature 1 || feature 2 || feature 3. Minimum 4 items. Do NOT use newlines or "•".
+- FOR STANDARD ITEMS with sequential steps (installation sequences, phased work, commissioning procedures) that do NOT have a "[desc: ...]" tag: use "##" as the separator. Format: overview sentence ## step 1 ## step 2 ## step 3.
+- FOR STANDARD ITEMS that are simple (single hardware item, straightforward labour) with no "[desc: ...]" tag: write one clear sentence.
+- NEVER use newlines, "•", or any other separator — only "||" for unordered, "##" for ordered, or plain text.
 - If the user instructions contain "Materials (need pricing from catalog or estimate)", these items need pricing — check the catalog first, then estimate.
 
 INSTALLATION LABOUR FROM MATERIALS:
@@ -3843,11 +3845,15 @@ You MUST respond with valid JSON in this exact format:
 }
 
 IMPORTANT for description field:
-- Write 3-5 sentences in plain professional English. No bullet points.
-- State what the project involves and what the client will receive.
-- Reference specific deliverables extracted from the evidence.
+- Write 3-5 sentences in plain professional English describing the overall project scope.
 - Do not use phrases like "This comprehensive quote covers" or "We are pleased to offer".
 - Write as if a tradesperson is explaining the scope to the client directly.
+
+IMPORTANT for lineItems descriptions:
+- For simple items (single hardware, straightforward labour): one clear plain sentence.
+- For contract/retainer items (monthly/annual): use "||" as separator — summary || feature 1 || feature 2 || feature 3 (min 4 features). Never a single sentence for a contract item.
+- For sequential/phased items (installation steps, commissioning, project phases): use "##" as separator — overview ## step 1 ## step 2 ## step 3.
+- NEVER use newlines, "•", or any other separator in descriptions. Only "||", "##", or plain text.
 
 IMPORTANT for lineItems:
 - The "quantity" field is a NUMBER not a string. Read it from the Qty column of the BoQ.

@@ -57,28 +57,11 @@ import TimelineTab from "@/components/comprehensive/TimelineTab";
 import SiteQualityTab from "@/components/comprehensive/SiteQualityTab";
 import DocumentsTab from "@/components/comprehensive/DocumentsTab";
 import DictationButton, { type DictationCommand } from "@/components/DictationButton";
-import QuoteDraftSummary, { type QuoteDraftData } from "@/components/QuoteDraftSummary";
+import QuoteDraftSummary, { type QuoteDraftData, renderDescNode } from "@/components/QuoteDraftSummary";
 import InputsPanel from "@/components/InputsPanel";
 import FileIcon from "@/components/FileIcon";
 import { brand, symbolColors } from "@/lib/brandTheme";
 import TakeoffPanel from "@/components/TakeoffPanel";
-
-/** Render a line item description, splitting on "||" separator into bullet points. */
-function formatLineItemDesc(text: string | null | undefined): React.ReactNode {
-  if (!text) return null;
-  if (!text.includes("||")) return <>{text}</>;
-  const parts = text.split("||").map(p => p.trim()).filter(Boolean);
-  const summary = parts[0];
-  const bullets = parts.slice(1);
-  return (
-    <>
-      {summary && <span>{summary}</span>}
-      {bullets.map((b, i) => (
-        <span key={i} style={{ display: "block", paddingLeft: "0.75rem" }}>• {b}</span>
-      ))}
-    </>
-  );
-}
 
 type QuoteStatus = "draft" | "sent" | "accepted" | "declined";
 
@@ -2288,9 +2271,18 @@ export default function QuoteWorkspace() {
                           }
                         }
                         // Carry the QDS description through to generateDraft so it isn't lost.
-                        // Normalise • bullets to || so GPT-4o JSON mode doesn't strip them.
+                        // Normalise legacy • bullets → ||. Preserve ## (numbered) as-is.
+                        // Auto-detect "1. 2. 3." user-typed lists → ##.
                         if (m.description && m.description.trim()) {
-                          const normDesc = m.description.trim().replace(/•\s*/g, "||").replace(/\|\|\s*\|\|/g, "||").trim();
+                          let normDesc = m.description.trim();
+                          if (!normDesc.includes("||") && !normDesc.includes("##")) {
+                            // Convert legacy • bullets
+                            normDesc = normDesc.replace(/•\s*/g, "||").replace(/\|\|\s*\|\|/g, "||").trim();
+                            // Convert user-typed numbered lines: "1. item\n2. item" → ## separated
+                            if (/^\s*\d+\.\s/m.test(normDesc)) {
+                              normDesc = normDesc.split(/\n/).map(s => s.replace(/^\s*\d+\.\s*/, "").trim()).filter(Boolean).join(" ## ");
+                            }
+                          }
                           line += ` [desc: ${normDesc}]`;
                         }
                         return line;
@@ -2306,9 +2298,15 @@ export default function QuoteWorkspace() {
                         if (m.installTimeHrs && m.installTimeHrs > 0 && (m.source === "takeoff" || m.source === "containment")) {
                           line += ` [install: ${m.installTimeHrs}hrs/unit]`;
                         }
-                        // Carry description for unpriced items too — normalise • to ||
+                        // Carry description for unpriced items too — normalise • to ||, detect ## patterns
                         if (m.description && m.description.trim()) {
-                          const normDesc = m.description.trim().replace(/•\s*/g, "||").replace(/\|\|\s*\|\|/g, "||").trim();
+                          let normDesc = m.description.trim();
+                          if (!normDesc.includes("||") && !normDesc.includes("##")) {
+                            normDesc = normDesc.replace(/•\s*/g, "||").replace(/\|\|\s*\|\|/g, "||").trim();
+                            if (/^\s*\d+\.\s/m.test(normDesc)) {
+                              normDesc = normDesc.split(/\n/).map(s => s.replace(/^\s*\d+\.\s*/, "").trim()).filter(Boolean).join(" ## ");
+                            }
+                          }
                           line += ` [desc: ${normDesc}]`;
                         }
                         return line;
@@ -2818,7 +2816,7 @@ export default function QuoteWorkspace() {
                                 className="cursor-pointer hover:bg-muted/50 px-2 py-1 rounded block"
                                 onClick={() => handleStartEdit(item.id, "description", item.description)}
                               >
-                                {item.description ? formatLineItemDesc(item.description) : "Click to edit"}
+                                {item.description ? renderDescNode(item.description) : "Click to edit"}
                               </span>
                             )}
                           </td>
@@ -3076,7 +3074,7 @@ export default function QuoteWorkspace() {
                             <div className="font-medium">{item.name}</div>
                             {item.description && (
                               <div className="text-sm text-muted-foreground truncate max-w-xs">
-                                {formatLineItemDesc(item.description)}
+                                {renderDescNode(item.description)}
                               </div>
                             )}
                             {item.category && (

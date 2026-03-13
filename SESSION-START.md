@@ -453,6 +453,8 @@ Stripe hard cancel → data purge (8 tables) → R2 files → org soft-delete �
 - `"[install: Xhrs/unit]"` — generateDraft creates supply+install split lines
 - `"[labour: £X]"` — generateDraft uses calculated labour cost
 - `"[desc: ...]"` — generateDraft uses this as the line item description verbatim; monthly/annual items get expanded into bullet points
+- `"||"` inside [desc:] — rendering marker for bullet lists; GPT-4o preserves verbatim
+- `"##"` inside [desc:] — rendering marker for numbered lists; GPT-4o preserves verbatim
 Never change these marker strings without updating the `generateDraft` prompt too.
 
 **G3 — Install Tag Source Filtering:** Only `source === "takeoff"` or `source === "containment"` materials get `[install:]` tags. Voice items never get them — it duplicates every service line.
@@ -568,6 +570,11 @@ At the end of every session, produce a handover note with:
 | 13 Mar 2026 | `server/engines/generalEngine.ts` | Extended "||" separator to standard items — Claude uses judgement: single sentence for simple hardware items, "||" breakdown when item covers multiple deliverables/steps. Monthly/annual always use "||" with minimum 4 features. No newlines or "•" anywhere in descriptions. |
 | 13 Mar 2026 | `client/src/pages/QuoteWorkspace.tsx` | onSave [desc:] tag now normalises • bullets to || before writing to userPrompt (regex replace). Handles legacy QDS snapshots generated before the || format was introduced. Both priced and unpriced material paths updated. |
 | 13 Mar 2026 | `client/src/components/QuoteDraftSummary.tsx` | QDS description display now renders || and • separated descriptions as bullet points. IIFE pattern handles both legacy (•) and new (||) format. Plain text descriptions unaffected. |
+| 13 Mar 2026 | `client/src/components/QuoteDraftSummary.tsx` | Added detectDescFormat, normaliseDescToFormat, renderDescNode as exported helpers. Description edit field changed from <input> to <textarea> with Plain/•Bullets/1.Numbered toolbar using lucide icons. Toolbar converts existing text to chosen format on click. Display render uses renderDescNode (handles ||, ##, •, plain). React import added. |
+| 13 Mar 2026 | `client/src/pages/QuoteWorkspace.tsx` | Replaced local formatLineItemDesc with imported renderDescNode from QuoteDraftSummary. All 3 render sites updated. onSave normalisation updated: preserves ##, converts • to ||, auto-detects 1.2.3. numbered lists → ## for both priced and unpriced material paths. |
+| 13 Mar 2026 | `server/routers.ts` | generateDraft DESCRIPTION RULE updated: preserve both || and ## verbatim. Added ## instruction for sequential/phased items. Updated lineItems schema IMPORTANT block to cover all 3 formats (plain/||/##). |
+| 13 Mar 2026 | `server/engines/generalEngine.ts` | Description rules extended with ## numbered separator for sequential items. Four distinct cases now: simple (plain sentence), multi-deliverable (||), sequential/ordered (##), monthly/annual (always ||). |
+| 13 Mar 2026 | `server/pdfGenerator.ts` | formatLineItemDescription updated to handle ##: numbered list rendered as 1. 2. 3. with indented spans. || path unchanged. Plain text fallback unchanged. |
 
 ---
 

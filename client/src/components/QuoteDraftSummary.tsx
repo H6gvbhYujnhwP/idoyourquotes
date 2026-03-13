@@ -1,11 +1,11 @@
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { brand } from "@/lib/brandTheme";
 import {
   FileText, User, Wrench, Package, Percent, PoundSterling,
   AlertTriangle, Loader2, Pencil, Check, X, ClipboardList, Truck,
-  Plus, RefreshCw,
+  Plus, RefreshCw, List, ListOrdered, AlignLeft,
 } from "lucide-react";
 
 // ---- Types ----
@@ -232,6 +232,70 @@ const sourceBadgeStyles: Record<string, { bg: string; color: string }> = {
   catalog: { bg: "#eff6ff", color: "#3b82f6" },
   estimated: { bg: "#fef3c7", color: "#b45309" },
 };
+
+// ---- Description format helpers ----
+
+/** Detect the format of a description string */
+export function detectDescFormat(text: string): "plain" | "bullets" | "numbered" {
+  if (!text) return "plain";
+  if (text.includes("##")) return "numbered";
+  if (text.includes("||")) return "bullets";
+  if (/^\s*[-•]\s/m.test(text)) return "bullets";
+  if (/^\s*\d+\.\s/m.test(text)) return "numbered";
+  return "plain";
+}
+
+/** Convert raw user text into the correct separator format */
+export function normaliseDescToFormat(text: string, format: "plain" | "bullets" | "numbered"): string {
+  if (!text.trim()) return text;
+  // First flatten any existing separators/bullets/numbers to plain segments
+  let segments: string[] = [];
+  if (text.includes("||") || text.includes("##")) {
+    const sep = text.includes("||") ? "||" : "##";
+    segments = text.split(sep).map(s => s.trim()).filter(Boolean);
+  } else if (/^\s*[-•]\s/m.test(text) || /^\s*\d+\.\s/m.test(text)) {
+    segments = text.split(/\n/).map(s => s.replace(/^\s*[-•\d.]+\s*/, "").trim()).filter(Boolean);
+  } else {
+    // Auto-detect: multiple short sentences ending in full stop on same line → split
+    const bySentence = text.split(/\.\s+/).map(s => s.trim()).filter(Boolean);
+    if (bySentence.length >= 3 && bySentence.every(s => s.length < 120)) {
+      segments = bySentence;
+    } else {
+      segments = [text.trim()];
+    }
+  }
+  if (format === "plain") return segments.join(". ").replace(/\.\.$/, ".");
+  if (format === "bullets") return segments.join(" || ");
+  // numbered
+  return segments.join(" ## ");
+}
+
+/** Render a description string as React nodes — handles ||, ##, • and plain */
+export function renderDescNode(text: string): React.ReactNode {
+  if (!text) return null;
+  if (text.includes("##")) {
+    const parts = text.split("##").map(p => p.trim()).filter(Boolean);
+    return (
+      <>
+        {parts[0] && <span>{parts[0]}</span>}
+        {parts.slice(1).map((b, i) => (
+          <span key={i} style={{ display: "block", paddingLeft: "0.75rem" }}>{i + 1}. {b}</span>
+        ))}
+      </>
+    );
+  }
+  const sep = text.includes("||") ? "||" : text.includes("•") ? "•" : null;
+  if (!sep) return <>{text}</>;
+  const parts = text.split(sep).map(p => p.trim()).filter(Boolean);
+  return (
+    <>
+      {parts[0] && <span>{parts[0]}</span>}
+      {parts.slice(1).map((b, i) => (
+        <span key={i} style={{ display: "block", paddingLeft: "0.75rem" }}>• {b}</span>
+      ))}
+    </>
+  );
+}
 
 // ---- Component ----
 
@@ -578,9 +642,39 @@ export default function QuoteDraftSummary({
                         </div>
                         <SourceBadge source={m.source} symbolCode={m.symbolCode} catalogName={m.catalogName} estimated={m.estimated} isSaved={catalogSavedItems.has(i)} />
                       </div>
-                      {/* Row 2: description */}
+                      {/* Row 2: description with format toolbar */}
                       <div className="ml-7 mb-2">
-                        <input type="text" value={m.description || ""} onChange={(e) => updateMaterial(i, "description", e.target.value)} className="w-full text-xs px-2.5 py-1 rounded outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} placeholder="Description (optional)" />
+                        <div className="flex items-center gap-1 mb-1">
+                          {(["plain", "bullets", "numbered"] as const).map((fmt) => {
+                            const active = detectDescFormat(m.description || "") === fmt;
+                            const Icon = fmt === "plain" ? AlignLeft : fmt === "bullets" ? List : ListOrdered;
+                            const label = fmt === "plain" ? "Plain" : fmt === "bullets" ? "• Bullets" : "1. Numbered";
+                            return (
+                              <button
+                                key={fmt}
+                                type="button"
+                                title={label}
+                                onClick={() => updateMaterial(i, "description", normaliseDescToFormat(m.description || "", fmt))}
+                                className="flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded border transition-colors"
+                                style={{
+                                  backgroundColor: active ? "#0d9488" : "#f0fdfa",
+                                  color: active ? "#fff" : "#0d9488",
+                                  borderColor: active ? "#0d9488" : "#99f6e4",
+                                }}
+                              >
+                                <Icon className="h-2.5 w-2.5" />{label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <textarea
+                          value={m.description || ""}
+                          onChange={(e) => updateMaterial(i, "description", e.target.value)}
+                          rows={2}
+                          className="w-full text-xs px-2.5 py-1 rounded outline-none focus:ring-1 focus:ring-teal-300 resize-none"
+                          style={inputStyle}
+                          placeholder="Description — type freely, then choose Plain / • Bullets / 1. Numbered above"
+                        />
                       </div>
                       {/* Row 3: qty, unit, rate, cost, total, margin */}
                       <div className="flex items-center gap-2.5 ml-7 flex-wrap">
@@ -670,20 +764,11 @@ export default function QuoteDraftSummary({
                                 }}>{m.pricingType === "monthly" ? "Monthly" : m.pricingType === "annual" ? "Annual" : "Optional"}</span>
                               )}
                             </div>
-                            {m.description && (() => {
-                          const desc = m.description;
-                          const sep = desc.includes("||") ? "||" : desc.includes("•") ? "•" : null;
-                          if (!sep) return <p className="text-xs mt-0.5 leading-snug" style={{ color: brand.navyMuted }}>{desc}</p>;
-                          const parts = desc.split(sep).map((p: string) => p.trim()).filter(Boolean);
-                          return (
-                            <div className="text-xs mt-0.5 leading-snug" style={{ color: brand.navyMuted }}>
-                              {parts[0] && <span>{parts[0]}</span>}
-                              {parts.slice(1).map((b: string, i: number) => (
-                                <span key={i} style={{ display: "block", paddingLeft: "0.6rem" }}>• {b}</span>
-                              ))}
-                            </div>
-                          );
-                        })()}
+                            {m.description && (
+                              <div className="text-xs mt-0.5 leading-snug" style={{ color: brand.navyMuted }}>
+                                {renderDescNode(m.description)}
+                              </div>
+                            )}
                             {m.installTimeHrs != null && m.installTimeHrs > 0 && (
                               <div className="mt-0.5">
                                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded inline-flex items-center gap-1" style={{ backgroundColor: "#dbeafe", color: "#1d4ed8" }}>

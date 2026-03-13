@@ -66,24 +66,35 @@ function escapeHtml(text: string): string {
 
 /**
  * Format a line item description for PDF rendering.
- * If the description contains "||" separators, renders the first segment as a
- * summary sentence and each subsequent segment as an indented bullet row.
+ * "||" separators → bullet list. "##" separators → numbered list.
  * Falls back to plain escaped text if no separators found.
  */
 function formatLineItemDescription(text: string): string {
   if (!text) return "";
-  if (!text.includes("||")) return escapeHtml(text);
 
-  const parts = text.split("||").map(p => p.trim()).filter(Boolean);
-  const summary = parts[0];
-  const bullets = parts.slice(1);
+  if (text.includes("##")) {
+    const parts = text.split("##").map(p => p.trim()).filter(Boolean);
+    const summary = parts[0];
+    const steps = parts.slice(1);
+    const summaryHtml = summary ? `<span>${escapeHtml(summary)}</span><br/>` : "";
+    const stepsHtml = steps.map((s, i) =>
+      `<span style="display:block; padding-left:10px; line-height:1.5;">${i + 1}. ${escapeHtml(s)}</span>`
+    ).join("");
+    return summaryHtml + stepsHtml;
+  }
 
-  const summaryHtml = summary ? `<span>${escapeHtml(summary)}</span><br/>` : "";
-  const bulletsHtml = bullets.map(b =>
-    `<span style="display:block; padding-left:10px; line-height:1.5;">• ${escapeHtml(b)}</span>`
-  ).join("");
+  if (text.includes("||")) {
+    const parts = text.split("||").map(p => p.trim()).filter(Boolean);
+    const summary = parts[0];
+    const bullets = parts.slice(1);
+    const summaryHtml = summary ? `<span>${escapeHtml(summary)}</span><br/>` : "";
+    const bulletsHtml = bullets.map(b =>
+      `<span style="display:block; padding-left:10px; line-height:1.5;">• ${escapeHtml(b)}</span>`
+    ).join("");
+    return summaryHtml + bulletsHtml;
+  }
 
-  return summaryHtml + bulletsHtml;
+  return escapeHtml(text);
 }
 
 /**
