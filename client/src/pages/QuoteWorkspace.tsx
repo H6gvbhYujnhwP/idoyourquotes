@@ -2979,12 +2979,13 @@ export default function QuoteWorkspace() {
                 </div>
                 <div className="flex justify-between items-center text-sm">
                   <div className="flex items-center gap-2">
-                    <span>Tax</span>
+                    <span>VAT</span>
                     <Input
                       type="number"
                       className="w-16 h-7 text-xs"
                       value={taxRate}
                       onChange={(e) => setTaxRate(e.target.value)}
+                      onBlur={() => handleSaveQuote()}
                     />
                     <span>%</span>
                   </div>

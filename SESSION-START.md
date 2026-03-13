@@ -18,6 +18,17 @@ Before writing a single line of code, Claude must:
 
 > This protocol catches regressions before they happen. Skipping it means touching state that feeds other features without knowing it.
 
+## MANDATORY POST-CODE PROTOCOL
+
+After every fix or feature — no exceptions, not just at session end — Claude must:
+
+1. Add a row to the **Changes Log** table at the bottom of this file (date, files changed, what changed and why)
+2. Update the **Known Bugs** table if a bug was fixed or a new one discovered
+3. Update any **Flow Map** or **Shared State Map** entries if the fix changed a flow
+4. Deliver the updated `SESSION-START.md` alongside the changed code file(s)
+
+> Wez uploads SESSION-START.md to GitHub with every push. It is the guardrail that prevents future sessions from breaking existing flows. A fix delivered without an updated SESSION-START.md is an incomplete fix.
+
 ---
 
 ## Tech Stack
@@ -508,7 +519,7 @@ Never hardcode assumptions toward "general trades/construction" or electrical in
 | 3 | Cancel subscription confirmation email not sent | `subscriptionRouter.ts` | Low |
 | 4 | Resubscribe flow after full cancellation untested | `subscriptionRouter.ts` | Medium |
 | 5 | Team member sessions not invalidated when owner deletes account | `db.ts` deleteAllOrgData | Medium |
-| 6 | "Tax" label in QuoteWorkspace should be "VAT" (PDF already says VAT) | `QuoteWorkspace.tsx` totals section | Low |
+| 6 | ~~"Tax" label + VAT not saving/recalculating~~ — FIXED: label renamed to "VAT", added `onBlur` to trigger `handleSaveQuote` → `recalculateQuoteTotals` | Fixed 13 Mar 2026 | — |
 | 7 | ~~No org-level VAT default~~ — FIXED: quotes.create now reads defaultVatRate from org.defaultDayWorkRates | Fixed 13 Mar 2026 | — |
 | 8 | DrawingEngine sectors not yet using sector-specific prompt injections (Phase 5) | `drawingEngine.ts`, `engineRouter.ts` | Low |
 
@@ -532,7 +543,7 @@ Never hardcode assumptions toward "general trades/construction" or electrical in
 
 **Storage:** `defaultVatRate` lives inside the `defaultDayWorkRates` JSON blob on the `organizations` table — not a separate column.
 
-**Known bug:** UI label says "Tax" — PDF says "VAT (X%)". Fix: rename label to "VAT" in `QuoteWorkspace.tsx`.
+**Known bug:** UI label says "Tax" — PDF says "VAT (X%)". ~~Fix: rename label to "VAT" in `QuoteWorkspace.tsx`.~~ **FIXED 13 Mar 2026** — label renamed to "VAT" and `onBlur` added to trigger save + recalculate.
 
 ---
 
@@ -587,3 +598,4 @@ At the end of every session, produce a handover note with:
 | 13 Mar 2026 | `client/src/pages/QuoteWorkspace.tsx` | **Button labels.** "Generate Draft" → "Generate Quote". "Regenerate Draft" → "Regenerate Quote". |
 
 *Single source of truth for all Claude sessions on IdoYourQuotes. Update this file whenever a flow changes, a bug is fixed, or a feature is added. Version: March 2026 — updated 13 Mar 2026.*
+| 13 Mar 2026 | `client/src/pages/QuoteWorkspace.tsx` | **VAT input fix + label rename (bug #6 resolved).** VAT input had `onChange` but no `onBlur` — user could type a rate but it was never saved and `recalculateQuoteTotals` was never triggered. Added `onBlur={() => handleSaveQuote()}`. Flow: VAT input blur → `handleSaveQuote()` → `quotes.update` with `taxRate` → server detects `data.taxRate !== undefined` → `recalculateQuoteTotals` rewrites `taxAmount` + `total` to DB → TanStack Query invalidates → totals re-render. Also renamed label "Tax" → "VAT". |
