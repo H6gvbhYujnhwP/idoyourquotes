@@ -2270,6 +2270,11 @@ export default function QuoteWorkspace() {
                             line += ` [labour: £${m.labourCost.toFixed(2)}]`;
                           }
                         }
+                        // Carry the QDS description through to generateDraft so it isn't lost.
+                        // generateDraft uses this verbatim as the line item description.
+                        if (m.description && m.description.trim()) {
+                          line += ` [desc: ${m.description.trim()}]`;
+                        }
                         return line;
                       }).join("\n"));
                   }
@@ -2282,6 +2287,10 @@ export default function QuoteWorkspace() {
                         }
                         if (m.installTimeHrs && m.installTimeHrs > 0 && (m.source === "takeoff" || m.source === "containment")) {
                           line += ` [install: ${m.installTimeHrs}hrs/unit]`;
+                        }
+                        // Carry description for unpriced items too
+                        if (m.description && m.description.trim()) {
+                          line += ` [desc: ${m.description.trim()}]`;
                         }
                         return line;
                       }).join("\n"));

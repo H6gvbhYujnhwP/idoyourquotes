@@ -3550,7 +3550,9 @@ DRAFT SUMMARY MATERIALS:
 - Create a line item for EACH of these with the EXACT quantity and price shown.
 - CRITICAL: Use the EXACT item name as written in the user instructions — do NOT rename, rephrase, or add the client's name to the description. "Discovery Session" must stay as "Discovery Session", not "Discovery Session to tailor marketing strategy for Griffith Elder". The user chose these names from their catalog for a reason.
 - CRITICAL: Use the EXACT unit from the catalog. If the catalog says "Per Month", use "Per Month" — not "each" or "month". If it says "Per 5,000", use "Per 5,000". If it says "Session", use "Session". Never override catalog units.
-- You may add a brief clarifying note in the description AFTER the item name (e.g. "Discovery Session - initial consultation"), but the core item name must match exactly.
+- DESCRIPTION RULE: If the item has a "[desc: ...]" tag, use that text as the starting point for the line item description — do NOT summarise or shorten it. Preserve all specific details.
+- FOR MONTHLY AND ANNUAL ITEMS (pricingType: "monthly" or "annual"): The description is the sales document — the client decides whether to sign up based on what they read. Expand the description into a clear, professional multi-line format with bullet points covering every element included in the service. Draw from the "[desc: ...]" tag content plus your own knowledge of what a typical contract at this price point includes for this sector. Format: first line = brief summary sentence, then bullet points (using "• " prefix) for each deliverable/feature. Never write just a single sentence for a contract item.
+- FOR STANDARD ITEMS without a "[desc: ...]" tag: you may add a brief clarifying note in the description AFTER the item name (e.g. "Discovery Session - initial consultation").
 - If the user instructions contain "Materials (need pricing from catalog or estimate)", these items need pricing — check the catalog first, then estimate.
 
 INSTALLATION LABOUR FROM MATERIALS:
