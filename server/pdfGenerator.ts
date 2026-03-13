@@ -596,11 +596,10 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
   const optionalItems = lineItems.filter(item => item.pricingType === "optional");
   const annualItems = lineItems.filter(item => item.pricingType === "annual");
 
-  const renderItemRows = (items: typeof lineItems, startIndex: number = 0) => items
+  const renderItemRows = (items: typeof lineItems) => items
     .map(
-      (item, index) => `
+      (item) => `
       <tr>
-        <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; font-size: 10pt;">${startIndex + index + 1}</td>
         <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; font-size: 10pt;">${formatLineItemDescription(item.description || "")}</td>
         <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; text-align: center; font-size: 10pt;">${formatQuantity(item.quantity)}</td>
         <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; text-align: center; font-size: 10pt;">${item.unit || "each"}</td>
@@ -675,7 +674,7 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
     <table class="items-table">
       <thead>
         <tr>
-          <th style="width: 36px;">#</th>
+
           <th>Description</th>
           <th style="width: 70px;">Qty</th>
           <th style="width: 70px;">Unit</th>
@@ -711,7 +710,7 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
       <table class="items-table">
         <thead>
           <tr>
-            <th style="width: 36px;">#</th>
+  
             <th>Description</th>
             <th style="width: 70px;">Qty</th>
             <th style="width: 70px;">Unit</th>
@@ -735,7 +734,7 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
       <table class="items-table">
         <thead>
           <tr>
-            <th style="width: 36px;">#</th>
+  
             <th>Description</th>
             <th style="width: 70px;">Qty</th>
             <th style="width: 70px;">Unit</th>
@@ -756,7 +755,7 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
       <table class="items-table">
         <thead>
           <tr>
-            <th style="width: 36px;">#</th>
+  
             <th>Description</th>
             <th style="width: 70px;">Qty</th>
             <th style="width: 70px;">Unit</th>
