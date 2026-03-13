@@ -131,6 +131,7 @@ export const appRouter = router({
           labourRate: z.number().optional(),
           materialMarkup: z.number().optional(),
           plantMarkup: z.number().optional(),
+          defaultVatRate: z.number().optional(),
         }).optional(),
         defaultExclusions: z.string().optional(),
         defaultValidityDays: z.number().optional(),
