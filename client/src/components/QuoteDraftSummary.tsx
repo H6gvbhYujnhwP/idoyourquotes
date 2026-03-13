@@ -694,6 +694,7 @@ export default function QuoteDraftSummary({
                           <span className="text-[10px] font-bold" style={{ color: brand.navyMuted }}>BUY-IN £</span>
                           <input type="number" value={m.costPrice ?? ""} onChange={(e) => updateMaterial(i, "costPrice", e.target.value ? parseFloat(e.target.value) : null)} placeholder="—" className="w-20 text-sm font-medium px-2 py-1 rounded outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} />
                         </div>
+                        <span className="text-[9px] font-medium px-1.5 py-0.5 rounded" style={{ color: "#0d9488", backgroundColor: "#f0fdfa", border: "0.5px solid #99f6e4" }}>ex VAT</span>
                         {lineTotal > 0 && <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ backgroundColor: "#f0f9ff", color: brand.navy }}>= £{fmtGBP(lineTotal)}</span>}
                         {marginAmt != null && marginPct != null && <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ backgroundColor: marginAmt >= 0 ? "#f0fdfa" : "#fef2f2", color: marginAmt >= 0 ? "#0d9488" : "#dc2626" }}>Margin: £{fmtGBP(marginAmt)} ({marginPct.toFixed(0)}%)</span>}
                       </div>
