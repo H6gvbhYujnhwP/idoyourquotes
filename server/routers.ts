@@ -3544,11 +3544,13 @@ If NOT relevant: {"relevant": false, "message": "Brief explanation of why this d
                 const description = m.description
                   ? `${m.item} — ${m.description}`
                   : m.item;
+                const costPrice = m.costPrice != null ? parseFloat(String(m.costPrice)) || null : null;
                 qdsLineItems.push({
                   description,
                   quantity: qty,
                   unit: m.unit || "each",
                   rate,
+                  costPrice: costPrice != null ? String(costPrice) : null,
                   pricingType: m.pricingType || "standard",
                   sortOrder: sortIdx++,
                 });
