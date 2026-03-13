@@ -333,10 +333,19 @@ export const appRouter = router({
           }
         }
 
+        // Pre-populate taxRate from org default VAT rate if not explicitly provided
+        const orgDefaultVatRate = (org as any)?.defaultDayWorkRates?.defaultVatRate;
+        const taxRateToUse = input?.taxRate !== undefined
+          ? input.taxRate
+          : orgDefaultVatRate !== undefined
+            ? String(orgDefaultVatRate)
+            : undefined;
+
         const quote = await createQuote({
           userId: ctx.user.id,
           orgId: org?.id,
           ...input,
+          taxRate: taxRateToUse,
           terms,
           quoteMode: quoteMode as "simple" | "comprehensive",
           tradePreset: tradePreset || undefined,
@@ -1119,6 +1128,8 @@ Respond with valid JSON:
         // Build context for email generation
         const clientName = quote.clientName || "[Client Name]";
         const contactNameForEmail = (quote as any).contactName || clientName;
+        // Use first name only for the greeting — "Hi John," not "Hi John Smith,"
+        const greetingName = contactNameForEmail.trim().split(/\s+/)[0] || contactNameForEmail;
         const projectTitle = quote.title || "[Project Name]";
         const total = quote.total ? `£${parseFloat(quote.total).toLocaleString("en-GB", { minimumFractionDigits: 2 })}` : "[Total]";
         const vatAmount = quote.taxAmount ? `£${parseFloat(quote.taxAmount).toLocaleString("en-GB", { minimumFractionDigits: 2 })}` : null;
@@ -1216,7 +1227,7 @@ ${keyNotes.length > 0 ? `Key Notes:\n${keyNotes.join("\n")}` : "No specific note
 Sender Company: ${user.companyName || "[Your Company]"}
 Sender Name: ${user.name || "[Your Name]"}
 
-IMPORTANT: Address the email greeting to the Contact Person (e.g. "Hi ${contactNameForEmail},"), NOT the company name.`,
+IMPORTANT: Address the email greeting using the first name only (e.g. "Hi ${greetingName},"), NOT the full name or company name.`,
             },
           ],
           response_format: { type: "json_object" },

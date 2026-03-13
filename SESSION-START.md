@@ -509,7 +509,7 @@ Never hardcode assumptions toward "general trades/construction" or electrical in
 | 4 | Resubscribe flow after full cancellation untested | `subscriptionRouter.ts` | Medium |
 | 5 | Team member sessions not invalidated when owner deletes account | `db.ts` deleteAllOrgData | Medium |
 | 6 | "Tax" label in QuoteWorkspace should be "VAT" (PDF already says VAT) | `QuoteWorkspace.tsx` totals section | Low |
-| 7 | No org-level VAT default — users must set VAT on every quote | Needs new org fields + Settings UI | Medium |
+| 7 | ~~No org-level VAT default~~ — FIXED: quotes.create now reads defaultVatRate from org.defaultDayWorkRates | Fixed 13 Mar 2026 | — |
 | 8 | DrawingEngine sectors not yet using sector-specific prompt injections (Phase 5) | `drawingEngine.ts`, `engineRouter.ts` | Low |
 
 ---
@@ -526,11 +526,13 @@ Never hardcode assumptions toward "general trades/construction" or electrical in
 
 ## VAT System (Current State + Planned)
 
-**Current:** `taxRate` decimal on `quotes` table. User sets per-quote. `recalculateQuoteTotals` computes `subtotal × (taxRate/100)`. VAT line suppressed in PDF when `taxRate === 0`.
+**Current:** `taxRate` decimal on `quotes` table. `recalculateQuoteTotals` computes `subtotal × (taxRate/100)`. VAT line suppressed in PDF when `taxRate === 0`.
+
+**Quote creation:** `quotes.create` now pre-populates `taxRate` from `org.defaultDayWorkRates.defaultVatRate`. Priority: explicit input value → org default → undefined. Existing quotes are not retroactively updated.
+
+**Storage:** `defaultVatRate` lives inside the `defaultDayWorkRates` JSON blob on the `organizations` table — not a separate column.
 
 **Known bug:** UI label says "Tax" — PDF says "VAT (X%)". Fix: rename label to "VAT" in `QuoteWorkspace.tsx`.
-
-**Planned feature (not yet built):** Org-level VAT setting. Two new fields on `organizations`: `defaultVatRate` (decimal, default 20.00) and `vatExempt` (boolean, default false). `quotes.create` pre-populates `taxRate` from org setting. `QuoteWorkspace` shows VAT as read-only (not editable per-quote). Settings > Tax & VAT section to configure.
 
 ---
 
@@ -579,5 +581,9 @@ At the end of every session, produce a handover note with:
 ---
 
 | 13 Mar 2026 | `server/routers.ts`, `client/src/pages/QuoteWorkspace.tsx` | **Major refactor: QDS Direct Passthrough.** generateDraft now reads qdsSummaryJson directly from DB and converts confirmed QDS items to line items without AI reinterpretation. GPT-4o only writes description, title, client details, assumptions, exclusions, terms, riskNotes. Removed: userPrompt from generateDraft zod schema, priceHierarchyContext/DRAFT SUMMARY MATERIALS prompt blocks, parts serialisation from onSave, autoPrompt building from triggerVoiceAnalysis, userPrompt from handleGenerateDraft mutate call, userPrompt from handleSaveQuote. hasSavedQDS check #1 changed from !!userPrompt to !!qdsSummaryJson. Processing Instructions textarea renamed to "Takeoff Instructions" and hidden for non-electrical sectors. userPrompt DB column now only used for electrical symbol filtering in TakeoffPanel. |
+
+| 13 Mar 2026 | `server/routers.ts` | **VAT default fix.** `quotes.create` now reads `org.defaultDayWorkRates.defaultVatRate` and passes it as `taxRate` when creating a new quote. Previously every new quote started at 0% VAT regardless of org settings. Existing quotes unaffected. |
+| 13 Mar 2026 | `server/routers.ts` | **Email greeting first name only.** `generateEmail` now extracts the first word of the contact name for the greeting. "John Smith" → "Hi John,". Previously used full name. |
+| 13 Mar 2026 | `client/src/pages/QuoteWorkspace.tsx` | **Button labels.** "Generate Draft" → "Generate Quote". "Regenerate Draft" → "Regenerate Quote". |
 
 *Single source of truth for all Claude sessions on IdoYourQuotes. Update this file whenever a flow changes, a bug is fixed, or a feature is added. Version: March 2026 — updated 13 Mar 2026.*
