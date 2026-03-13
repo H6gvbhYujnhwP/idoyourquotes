@@ -1433,7 +1433,6 @@ function renderLineItemsTable(items: QuoteLineItem[], colors: BrandColors): stri
     <table class="items-table">
       <thead>
         <tr>
-          <th style="width: 30px;">#</th>
           <th>Description</th>
           <th style="width: 65px;">Qty</th>
           <th style="width: 65px;">Unit</th>
@@ -1442,9 +1441,8 @@ function renderLineItemsTable(items: QuoteLineItem[], colors: BrandColors): stri
         </tr>
       </thead>
       <tbody>
-        ${items.map((item, idx) => `
+        ${items.map((item) => `
         <tr>
-          <td style="font-size: 10pt;">${idx + 1}</td>
           <td style="font-size: 10pt;">${formatLineItemDescription(item.description || "")}</td>
           <td style="text-align: center; font-size: 10pt;">${formatQuantity(item.quantity)}</td>
           <td style="text-align: center; font-size: 10pt;">${item.unit || "each"}</td>
