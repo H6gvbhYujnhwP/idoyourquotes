@@ -168,7 +168,11 @@ export const appRouter = router({
           if (defaultWorkingHoursEnd !== undefined) orgUpdate.defaultWorkingHoursEnd = defaultWorkingHoursEnd;
           if (defaultWorkingDays !== undefined) orgUpdate.defaultWorkingDays = defaultWorkingDays;
           if (defaultInsuranceLimits !== undefined) orgUpdate.defaultInsuranceLimits = defaultInsuranceLimits;
-          if (defaultDayWorkRates !== undefined) orgUpdate.defaultDayWorkRates = defaultDayWorkRates;
+          if (defaultDayWorkRates !== undefined) {
+            // Merge into existing blob to preserve _emailFlags and other internal fields
+            const existingRates = ((org as any)?.defaultDayWorkRates || {}) as Record<string, any>;
+            orgUpdate.defaultDayWorkRates = { ...existingRates, ...defaultDayWorkRates };
+          }
           if (defaultExclusions !== undefined) orgUpdate.defaultExclusions = defaultExclusions;
           if (defaultValidityDays !== undefined) orgUpdate.defaultValidityDays = defaultValidityDays;
           if (defaultSignatoryName !== undefined) orgUpdate.defaultSignatoryName = defaultSignatoryName;
@@ -4032,6 +4036,19 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
             await upsertInternalEstimate(input.quoteId, {
               riskNotes: draft.riskNotes,
             });
+          }
+
+          // Apply org VAT default if the quote currently has no VAT set
+          // This covers existing quotes created before the VAT default feature,
+          // and any quote where the user hasn't manually overridden the rate.
+          const orgForVat = await getUserPrimaryOrg(ctx.user.id);
+          if (orgForVat) {
+            const existingQuote = await getQuoteByIdAndOrg(input.quoteId, orgForVat.id);
+            const currentTaxRate = parseFloat((existingQuote as any)?.taxRate || "0");
+            const orgVatRate = (orgForVat as any)?.defaultDayWorkRates?.defaultVatRate;
+            if (currentTaxRate === 0 && orgVatRate !== undefined && orgVatRate > 0) {
+              await updateQuote(input.quoteId, ctx.user.id, { taxRate: String(orgVatRate) });
+            }
           }
 
           // Recalculate totals
