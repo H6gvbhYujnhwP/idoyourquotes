@@ -3472,6 +3472,7 @@ If NOT relevant: {"relevant": false, "message": "Brief explanation of why this d
           surfaceTreatment: (org as any).defaultSurfaceTreatment || null,
           returnVisitRate: (org as any).defaultReturnVisitRate || null,
           paymentTerms: (org as any).defaultPaymentTerms || null,
+          defaultTerms: (org as any).defaultTerms || ctx.user.defaultTerms || null,
         } : null;
 
         // Build context from all processed inputs
@@ -3648,6 +3649,9 @@ VOICE DICTATION PROCESSING:
             parts.push(`\nSTANDARD EXCLUSIONS — ALWAYS include these in the exclusions list:\n${orgDefaults.exclusions}`);
           }
           if (orgDefaults.paymentTerms) parts.push(`Payment Terms: ${orgDefaults.paymentTerms}`);
+          if (orgDefaults.defaultTerms) {
+            parts.push(`\nDEFAULT TERMS & CONDITIONS — Reproduce these verbatim in the "terms" field. Do not rewrite, summarise, or modify:\n${orgDefaults.defaultTerms}`);
+          }
           companyDefaultsContext = parts.join("\n");
         }
 
@@ -3840,7 +3844,7 @@ ${lineItemInstructions}
   "assumptions": ["string array of assumptions made - be thorough"],
   "exclusions": ["string array of what is NOT included - MUST include ALL standard exclusions from COMPANY DEFAULTS plus any project-specific exclusions"],
   "riskNotes": "string - internal notes about risks or concerns (not shown to client)",
-  "terms": "string - payment terms, warranty, and conditions. Build from COMPANY DEFAULTS: include quote validity period, insurance limits, day work rates, working hours, return visit rate, payment terms, VAT status. Write as numbered clauses."
+  "terms": "string - payment terms, warranty, and conditions. If the company has provided DEFAULT TERMS, reproduce them verbatim. Otherwise build from COMPANY DEFAULTS: include quote validity period, insurance limits, day work rates, working hours, return visit rate, payment terms, VAT status. Write as numbered clauses."
 }
 
 CRITICAL RULES:
@@ -3870,7 +3874,7 @@ You MUST respond with valid JSON in this exact format:
   "lineItems": [],
   "assumptions": ["string array of assumptions made"],
   "exclusions": ["string array of what is NOT included - MUST include ALL standard exclusions from company defaults plus any project-specific exclusions"],
-  "terms": "string - payment terms and conditions. Use the company defaults if provided. Include: quote validity period, payment terms, insurance limits, day work rates, return visit rates, working hours. Write as numbered clauses.",
+  "terms": "string - payment terms and conditions. If the company has provided DEFAULT TERMS, reproduce them verbatim. Otherwise use the company defaults if provided: include quote validity period, payment terms, insurance limits, day work rates, return visit rates, working hours. Write as numbered clauses.",
   "riskNotes": "string - internal notes about risks or concerns",
   "symbolMappings": { "symbol": { "meaning": "string", "confirmed": false } }
 }
@@ -3931,9 +3935,11 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
             description: draft.description || quote.description,
           };
 
-          // Save AI-generated terms (works for both simple and comprehensive)
-          if (draft.terms) {
-            quoteUpdateData.terms = draft.terms;
+          // Option C terms guardrail: org defaultTerms always wins.
+          // AI-generated terms are only used as a fallback for users who have not set defaultTerms.
+          const resolvedTerms = orgDefaults?.defaultTerms || draft.terms || null;
+          if (resolvedTerms) {
+            quoteUpdateData.terms = resolvedTerms;
           }
 
           // For comprehensive quotes, populate the comprehensiveConfig with AI-generated data
@@ -3982,9 +3988,7 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
               } : existingConfig.timeline,
             };
             quoteUpdateData.comprehensiveConfig = updatedConfig as any;
-            if (draft.terms) {
-              quoteUpdateData.terms = draft.terms;
-            }
+            // terms already resolved above via Option C guardrail — no override needed here
           }
 
           const updatedQuote = await updateQuote(input.quoteId, ctx.user.id, quoteUpdateData);
