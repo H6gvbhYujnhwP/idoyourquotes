@@ -1,5 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -14,6 +15,7 @@ import {
   Loader2,
   ArrowLeft,
   Shield,
+  AlertCircle,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -170,14 +172,30 @@ function TierCard({
   );
 }
 
+// Tier ranks for upgrade detection (client-side)
+const TIER_RANK: Record<string, number> = { trial: 0, solo: 1, pro: 2, team: 3, business: 4 };
+const TIER_PRICES: Record<string, number> = { solo: 59, pro: 99, team: 159, business: 249 };
+const TIER_QUOTES: Record<string, number | string> = { solo: 10, pro: 15, team: 50, business: -1 };
+
+function formatPence(pence: number): string {
+  return `£${(pence / 100).toFixed(2)}`;
+}
+
 export default function Pricing() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const [loadingTier, setLoadingTier] = useState<string | null>(null);
+  const [confirmTier, setConfirmTier] = useState<'solo' | 'pro' | 'team' | 'business' | null>(null);
 
   const subStatus = trpc.subscription.status.useQuery(undefined, {
     enabled: !!user,
   });
+
+  // Fetch proration when confirmation modal opens
+  const prorationQuery = trpc.subscription.getProration.useQuery(
+    { newTier: confirmTier! },
+    { enabled: !!confirmTier && !!user, retry: false }
+  );
 
   const createCheckout = trpc.subscription.createCheckout.useMutation({
     onSuccess: (data) => {
@@ -189,16 +207,34 @@ export default function Pricing() {
     },
   });
 
+  const currentTier = (subStatus.data?.tier || null) as string | null;
+  const currentRank = currentTier ? (TIER_RANK[currentTier] ?? 0) : 0;
+
   const handleSelectTier = (tier: 'solo' | 'pro' | 'team' | 'business') => {
     if (!user) {
       setLocation("/register");
       return;
     }
+    const newRank = TIER_RANK[tier] ?? 0;
+    const isUpgrade = newRank > currentRank;
+
+    // Only show confirmation modal for upgrades on active subscriptions
+    if (isUpgrade && subStatus.data?.status === 'active') {
+      setConfirmTier(tier);
+      return;
+    }
+
+    // New subscriptions or downgrades — go straight to Stripe
     setLoadingTier(tier);
     createCheckout.mutate({ tier });
   };
 
-  const currentTier = subStatus.data?.tier || null;
+  const handleConfirmUpgrade = () => {
+    if (!confirmTier) return;
+    setLoadingTier(confirmTier);
+    setConfirmTier(null);
+    createCheckout.mutate({ tier: confirmTier });
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -463,6 +499,100 @@ export default function Pricing() {
           © {new Date().getFullYear()} IdoYourQuotes. All rights reserved.
         </p>
       </footer>
+
+      {/* Upgrade confirmation modal */}
+      <Dialog open={!!confirmTier} onOpenChange={(open) => { if (!open) setConfirmTier(null); }}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="flex items-center justify-center w-10 h-10 rounded-full" style={{ backgroundColor: '#f0fdfa' }}>
+                <Crown className="h-5 w-5" style={{ color: '#0d9488' }} />
+              </div>
+              <DialogTitle className="text-lg">
+                Upgrade to {confirmTier ? confirmTier.charAt(0).toUpperCase() + confirmTier.slice(1) : ''}
+              </DialogTitle>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-3 py-1">
+            {/* Quote count reset notice */}
+            <div className="flex items-start gap-2 p-3 rounded-lg" style={{ backgroundColor: '#f0fdfa', border: '1px solid #99f6e4' }}>
+              <Check className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: '#0d9488' }} />
+              <div className="text-sm" style={{ color: '#1a2b4a' }}>
+                <p className="font-semibold mb-0.5">Your quote count resets immediately</p>
+                <p className="text-xs" style={{ color: '#6b7280' }}>
+                  You currently have {subStatus.data?.currentQuoteCount ?? 0} of {subStatus.data?.maxQuotesPerMonth} quotes used this month.
+                  Upgrading gives you {confirmTier ? (TIER_QUOTES[confirmTier] === -1 ? 'unlimited' : TIER_QUOTES[confirmTier]) : ''} quotes per month — starting now.
+                </p>
+              </div>
+            </div>
+
+            {/* Proration breakdown */}
+            <div className="rounded-lg border p-3 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Billing summary</p>
+              {prorationQuery.isLoading ? (
+                <div className="flex items-center gap-2 py-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Calculating...</span>
+                </div>
+              ) : prorationQuery.data ? (
+                <div className="space-y-1.5 text-sm">
+                  {prorationQuery.data.isNewSubscription ? (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Charged today</span>
+                      <span className="font-semibold">{formatPence(prorationQuery.data.newMonthlyPence)}</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Charged today (pro-rated)</span>
+                        <span className="font-semibold">{formatPence(prorationQuery.data.proratedAmountPence)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Then per month from</span>
+                        <span className="font-semibold">
+                          {prorationQuery.data.nextBillingDate
+                            ? new Date(prorationQuery.data.nextBillingDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+                            : '—'}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  <div className="flex justify-between pt-1 border-t">
+                    <span className="text-muted-foreground">Ongoing monthly</span>
+                    <span className="font-bold" style={{ color: '#0d9488' }}>{formatPence(prorationQuery.data.newMonthlyPence)}/month</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-sm text-amber-600">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                  <span>Pricing preview unavailable — you can still proceed.</span>
+                </div>
+              )}
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              All prices shown include VAT where applicable. You'll be taken to our secure payment page to confirm.
+            </p>
+          </div>
+
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setConfirmTier(null)} className="w-full sm:w-auto">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmUpgrade}
+              disabled={!!loadingTier}
+              className="w-full sm:w-auto"
+              style={{ backgroundColor: '#0d9488' }}
+            >
+              {loadingTier ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Confirm & Continue
+              <ArrowRight className="h-4 w-4 ml-1" />
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

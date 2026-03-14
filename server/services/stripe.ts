@@ -187,6 +187,47 @@ export async function changeSubscriptionTier(params: {
 }
 
 /**
+ * Preview the proration invoice for an upgrade.
+ * Returns today's charge (prorated) and the ongoing monthly amount.
+ */
+export async function getUpgradeProration(params: {
+  stripeSubscriptionId: string;
+  newTier: 'solo' | 'pro' | 'team' | 'business';
+}): Promise<{
+  proratedAmountPence: number;
+  newMonthlyPence: number;
+  nextBillingDate: Date;
+  currentPeriodEnd: Date;
+}> {
+  const newConfig = TIER_CONFIG[params.newTier];
+  if (!newConfig.priceId) throw new Error(`No price for tier: ${params.newTier}`);
+
+  const subscription = await stripe.subscriptions.retrieve(params.stripeSubscriptionId);
+
+  const preview = await stripe.invoices.retrieveUpcoming({
+    customer: subscription.customer as string,
+    subscription: params.stripeSubscriptionId,
+    subscription_items: [{
+      id: subscription.items.data[0].id,
+      price: newConfig.priceId,
+    }],
+    subscription_proration_behavior: 'create_prorations',
+  });
+
+  // amount_due is what they pay today (proration credit + new period charge)
+  // We want just the prorated top-up: total - next full period amount
+  const nextFullPeriod = newConfig.monthlyPrice;
+  const proratedAmountPence = Math.max(0, (preview.amount_due || 0) - nextFullPeriod);
+
+  return {
+    proratedAmountPence,
+    newMonthlyPence: newConfig.monthlyPrice,
+    nextBillingDate: new Date(preview.period_end * 1000),
+    currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+  };
+}
+
+/**
  * Cancel subscription (takes effect at period end)
  */
 export async function cancelSubscription(stripeSubscriptionId: string): Promise<void> {
@@ -248,7 +289,15 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
       console.log(`[Stripe Webhook] Subscription ${event.type}: org=${orgId}, tier=${tier}, status=${subscription.status}`);
 
       const config = TIER_CONFIG[tier];
-      await updateOrganization(orgId, {
+
+      // Detect upgrade: compare new tier rank against current org tier
+      const org = await getOrganizationById(orgId);
+      const currentTierKey = (org as any)?.subscriptionTier as SubscriptionTier | null;
+      const currentRank = currentTierKey ? getTierRank(currentTierKey) : 0;
+      const newRank = getTierRank(tier);
+      const isUpgrading = newRank > currentRank;
+
+      const updatePayload: Record<string, any> = {
         subscriptionTier: tier,
         subscriptionStatus: mapStripeStatus(subscription.status),
         stripeSubscriptionId: subscription.id,
@@ -259,7 +308,16 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
         maxUsers: config.maxUsers,
         maxQuotesPerMonth: config.maxQuotesPerMonth,
         maxCatalogItems: config.maxCatalogItems,
-      } as any);
+      };
+
+      // Reset quote count immediately on upgrade — user has paid more, deserves full allowance
+      if (isUpgrading) {
+        updatePayload.monthlyQuoteCount = 0;
+        updatePayload.quoteCountResetAt = new Date();
+        console.log(`[Stripe Webhook] Upgrade detected (${currentTierKey} → ${tier}) — resetting monthlyQuoteCount to 0 for org=${orgId}`);
+      }
+
+      await updateOrganization(orgId, updatePayload as any);
       break;
     }
 

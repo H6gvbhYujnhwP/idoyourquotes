@@ -21,6 +21,7 @@ import {
   canAddTeamMember,
   canAddCatalogItem,
   getUpgradeSuggestion,
+  getUpgradeProration,
   type SubscriptionTier,
 } from "./stripe";
 import { getUserPrimaryOrg, getOrgMembersByOrgId, getUserByEmail, addOrgMember, getDb, updateOrganization, deleteAllOrgData } from "../db";
@@ -116,6 +117,53 @@ export const subscriptionRouter = router({
   }),
 
   // Create checkout session for subscribing
+  // Preview proration for an upgrade — called before user confirms
+  // Returns today's charge and ongoing monthly amount for the confirmation modal
+  getProration: protectedProcedure
+    .input(z.object({
+      newTier: z.enum(['solo', 'pro', 'team', 'business']),
+    }))
+    .query(async ({ ctx, input }) => {
+      const org = await getUserPrimaryOrg(ctx.user.id);
+      if (!org) throw new Error("No organisation found");
+
+      const stripeSubscriptionId = (org as any).stripeSubscriptionId;
+
+      // No active subscription — just return the full price (new subscriber)
+      if (!stripeSubscriptionId) {
+        const config = TIER_CONFIG[input.newTier];
+        return {
+          proratedAmountPence: config.monthlyPrice,
+          newMonthlyPence: config.monthlyPrice,
+          nextBillingDate: null,
+          currentPeriodEnd: null,
+          isNewSubscription: true,
+        };
+      }
+
+      try {
+        const proration = await getUpgradeProration({
+          stripeSubscriptionId,
+          newTier: input.newTier,
+        });
+        return {
+          ...proration,
+          isNewSubscription: false,
+        };
+      } catch (err) {
+        // If proration preview fails, fall back to full price — never block the upgrade
+        console.warn('[getProration] Preview failed, returning full price:', err);
+        const config = TIER_CONFIG[input.newTier];
+        return {
+          proratedAmountPence: config.monthlyPrice,
+          newMonthlyPence: config.monthlyPrice,
+          nextBillingDate: null,
+          currentPeriodEnd: null,
+          isNewSubscription: false,
+        };
+      }
+    }),
+
   createCheckout: protectedProcedure
     .input(z.object({
       tier: z.enum(['solo', 'pro', 'team', 'business']),

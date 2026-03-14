@@ -1,0 +1,617 @@
+# SESSION-START — IdoYourQuotes
+## Read This File First. Every Session. Before Any Code.
+
+**This is the single source of truth for every Claude session. It replaces all separate docs.
+Lives at repo root. Always in the zip. Always read first.**
+
+---
+
+## MANDATORY PRE-CODE PROTOCOL
+
+Before writing a single line of code, Claude must:
+
+1. Read this file in full
+2. Identify which feature area the request touches
+3. Find the relevant call chain in the Flow Map below
+4. Write in chat: **"Traced call chain: [every node]"** — naming every server function, client component, state variable, and DB column in the chain
+5. Only then write code
+
+> This protocol catches regressions before they happen. Skipping it means touching state that feeds other features without knowing it.
+
+## MANDATORY POST-CODE PROTOCOL
+
+After every fix or feature — no exceptions, not just at session end — Claude must:
+
+1. Add a row to the **Changes Log** table at the bottom of this file (date, files changed, what changed and why)
+2. Update the **Known Bugs** table if a bug was fixed or a new one discovered
+3. Update any **Flow Map** or **Shared State Map** entries if the fix changed a flow
+4. Deliver the updated `SESSION-START.md` alongside the changed code file(s)
+
+> Wez uploads SESSION-START.md to GitHub with every push. It is the guardrail that prevents future sessions from breaking existing flows. A fix delivered without an updated SESSION-START.md is an incomplete fix.
+
+---
+
+## Tech Stack
+
+| Layer | Tech |
+|---|---|
+| Frontend | React 19, Tailwind CSS 4, shadcn/ui, Wouter routing, tRPC + TanStack Query |
+| Backend | Node.js 22, Express 4, tRPC 11, Drizzle ORM |
+| Database | PostgreSQL 16 on Render |
+| Storage | Cloudflare R2 (org-scoped folder structure) |
+| AI | OpenAI GPT-4o (primary), Anthropic Claude (secondary) |
+| Payments | Stripe (full lifecycle) |
+| Email | Resend |
+| Auth | JWT + bcrypt, Google OAuth |
+
+**Deployment:** GitHub Desktop → GitHub → Render auto-deploy
+**Schema changes:** `npx drizzle-kit push` on Render shell after deploy
+**File outputs:** `/mnt/user-data/outputs/` for all Claude-produced files
+
+---
+
+## Key File Locations
+
+| File | Purpose |
+|---|---|
+| `server/routers.ts` | ALL tRPC mutations and queries — the main server file |
+| `server/db.ts` | All DB access functions |
+| `server/services/stripe.ts` | Billing logic — `TIER_CONFIG` is pricing source of truth |
+| `server/services/electricalTakeoff.ts` | Symbol detection, open symbol detection, legend parse |
+| `server/engines/engineRouter.ts` | `selectEngine()` — routes to correct sector engine |
+| `server/engines/generalEngine.ts` | GeneralEngine — non-drawing sectors |
+| `server/engines/drawingEngine.ts` | DrawingEngine — drawing-aware sectors |
+| `server/engines/types.ts` | `EngineInput`, `EngineOutput`, `SectorEngine` interface |
+| `server/tradePresets.ts` | Sector-specific AI prompt guidance |
+| `drizzle/schema.ts` | DB schema — source of truth for all columns |
+| `client/src/pages/QuoteWorkspace.tsx` | Main quote page — all state lives here |
+| `client/src/components/QuoteDraftSummary.tsx` | QDS display + `mergeSummaryWithTakeoffs()` |
+| `client/src/components/InputsPanel.tsx` | File upload, legend toggle, takeoff panels |
+| `client/src/components/TakeoffPanel.tsx` | Electrical takeoff questions UI |
+| `client/src/lib/tradeSectors.ts` | 26-sector options list |
+| `client/src/lib/brandTheme.ts` | Colour constants — all UI styling references here |
+
+---
+
+## Shared State Map
+
+Every piece of state read by more than one feature. Changing any of these affects every entry in its row.
+
+| State | Lives In | Written By | Read By |
+|---|---|---|---|
+| `voiceSummary` | `QuoteWorkspace` useState | `triggerVoiceAnalysis` (all materials, source:"voice"), `onSave` handler (voice-only after user edit) | `QuoteDraftSummary` props, rehydration useEffect |
+| `qdsSummaryJson` | `quotes` DB column | `triggerVoiceAnalysis` auto-save, `onSave` handler (manual save) | Rehydration useEffect Case 1 — page refresh restore |
+| `userPrompt` | `quotes` DB column + useState | Textarea onBlur (electrical only) | `hasSavedQDS` guard (Case 2, legacy), `TakeoffPanel` symbol filtering (electrical only) |
+| `takeoffList` | tRPC query cache (`electricalTakeoff.list`) | `uploadFile` auto-takeoff, `setReferenceOnly`, `answerQuestions`, `updateExcludedCodes` | `QuoteDraftSummary` mergeSummaryWithTakeoffs, `TakeoffPanel` |
+| `takeoffOverrides` | `QuoteWorkspace` useState | `onSave` QDS handler | `mergeSummaryWithTakeoffs` in QuoteDraftSummary |
+| `mimeType` | `quote_inputs` DB column | `setReferenceOnly` (appends/removes `;reference=true`) | `parseDictationSummary` engine filter, `generateDraft` loop, auto-takeoff skip, InputsPanel toggle display |
+| `symbolMappings` | `tenderContexts` DB column (JSON) | `setReferenceOnly` ON: LLM legend parse; OFF: cleared | Auto-takeoff on upload (fetched at upload time), `answerQuestions`, `updateExcludedCodes`, `getByInputId` |
+| `hasRehydratedRef` | `QuoteWorkspace` useRef | Set true by rehydration useEffect; reset false by `setReferenceOnly.onSuccess` | Rehydration useEffect guard (prevents double-fire) |
+| `processedContent` | `quote_inputs` DB column | `uploadFile` auto-analyze, `transcribeAudio`, `extractPdfText`, `analyzeImage`, `setReferenceOnly` legend parse | `parseDictationSummary` engine input, `generateDraft` context loop |
+
+---
+
+## Flow Map — Complete Call Chains
+
+### 1. Upload a File (PDF / image / audio / document)
+
+```
+User: drops file in InputsPanel
+  → InputsPanel: onUpload prop
+  → QuoteWorkspace: uploadFile.mutate (tRPC inputs.uploadFile)
+  → server: inputs.uploadFile
+    → uploadToR2 (Cloudflare R2, org-scoped folder)
+    → db.createInput (quote_inputs row, processingStatus: "processing")
+    → [PDF] extractWithPdfJs → updateInputProcessing (processedContent, status:"completed")
+    → [PDF, not reference-only] performElectricalTakeoff(pdfBuf, filename, symbolMap from tenderContexts)
+        → createElectricalTakeoff (electrical_takeoffs row)
+        → updateInputProcessing (processedContent = formatted ELECTRICAL TAKEOFF block)
+    → [audio] Whisper transcription → updateInputProcessing
+    → [image] OpenAI vision → updateInputProcessing
+    → [document] mammoth/xlsx extract → updateInputProcessing
+    → logUsage (credits)
+  → client: uploadFile.onSuccess → refetch() → fullQuote updates
+  → QuoteWorkspace: wasProcessing→isProcessing useEffect detects completion
+    → if !hasSavedQDS && !voiceSummary → triggerVoiceAnalysis() [500ms delay]
+```
+
+**State touched:** `quote_inputs.processedContent`, `quote_inputs.processingStatus`, `electrical_takeoffs`, `takeoffList` (via refetch), `voiceSummary` (if auto-analysis fires)
+
+---
+
+### 2. QDS Auto-Analysis (triggerVoiceAnalysis)
+
+```
+triggerVoiceAnalysis()
+  → setIsSummaryLoading(true)
+  → parseDictationSummary.mutateAsync({ quoteId })
+  → server: ai.parseDictationSummary
+    → getInputsByQuoteId (ALL inputs for quote)
+    → selectEngine(tradePreset) → engine.analyse(engineInput)
+        → engine filters inputs where mimeType includes ";reference=true"
+        → builds AI prompt from processedContent of remaining inputs
+        → calls OpenAI/Anthropic LLM → returns structured JSON
+    → return { hasSummary, summary }
+  → client: setVoiceSummary({ ...result, materials: source:"voice" })
+  → auto-fill clientName, title if empty
+  → build summaryToSave JSON → updateFields.qdsSummaryJson = JSON.stringify(...)
+  → updateQuote.mutateAsync({ qdsSummaryJson, clientName, title })
+  → setIsSummaryLoading(false)
+```
+
+**State touched:** `voiceSummary`, `quotes.qds_summary_json`, `quotes.clientName`, `quotes.title`
+
+**CRITICAL:** Never trigger this on page refresh. The rehydration useEffect guards against this. Only fire when: new input processed, legend toggle fires, user clicks Re-analyse.
+
+---
+
+### 3. Page Refresh / Navigate Back to Quote
+
+```
+QuoteWorkspace mounts → trpc.quotes.getFull.useQuery fires
+  → fullQuote.quote.qdsSummaryJson populated from DB
+  → Rehydration useEffect (hasRehydratedRef guard):
+      Case 1: qdsSummaryJson exists
+          → JSON.parse → setVoiceSummary (exact snapshot from last session)
+          → hasRehydratedRef.current = true → RETURN — NO AI CALL
+      Case 2: userPrompt exists but no qdsSummaryJson (legacy quotes pre-March 2026)
+          → hasRehydratedRef.current = true → RETURN — no AI call
+      Case 3: no qdsSummaryJson, no userPrompt (brand new quote)
+          → if hasAnalysableInputs && !voiceSummary → triggerVoiceAnalysis()
+```
+
+**State touched:** `voiceSummary` (restored from DB snapshot, no AI cost)
+
+---
+
+### 4. Toggle Legend / Reference Only
+
+```
+User: flips switch on a PDF in InputsPanel
+  → InputsPanel: optimisticReference local state updates immediately (visual feedback)
+  → onSetReferenceOnly prop called
+  → QuoteWorkspace: setReferenceOnly.mutate({ inputId, quoteId, isReference })
+  → server: inputs.setReferenceOnly
+      → db.updateInput (mimeType: append/remove ";reference=true")
+      → if isReference ON:
+          → deleteElectricalTakeoffByInputId
+          → invokeLLM (extract symbol map from legend PDF text)
+          → upsertTenderContext (symbolMappings = { CODE: { meaning, confirmed } })
+          → updateInputProcessing (processedContent = "[LEGEND/KEY SHEET...]")
+          → for each non-reference PDF with takeoff:
+              → performElectricalTakeoff(pdfBuf, ref, symbolMap) [re-run all drawings]
+              → updateElectricalTakeoff + updateInputProcessing
+      → if isReference OFF:
+          → upsertTenderContext (symbolMappings = {})
+          → re-run all drawings without symbolMap
+  → client: setReferenceOnly.onSuccess
+      → await refetch() (mimeType correct, fullQuote updates)
+      → refetchTakeoffs() (takeoffList updates)
+      → hasRehydratedRef.current = false
+      → triggerVoiceAnalysis() → saves new clean qdsSummaryJson to DB
+```
+
+**State touched:** `mimeType`, `symbolMappings`, `processedContent`, `takeoffList`, `voiceSummary`, `qdsSummaryJson`, `userPrompt`
+
+⚠️ Most side-effectful action in the app. Any change to setReferenceOnly or its onSuccess MUST trace all of the above.
+
+---
+
+### 5. QDS Save (User clicks Save in QuoteDraftSummary)
+
+```
+User: clicks Save in QuoteDraftSummary
+  → QuoteDraftSummary: handleSave → onSave(sanitized data) prop
+  → QuoteWorkspace: onSave handler
+      → build takeoffOverrides from takeoff/containment materials → setTakeoffOverrides
+      → setVoiceSummary({ ...data, materials: voice-only }) [strips takeoff rows]
+      → build qdsSave JSON (ALL materials including takeoff) → updateQuote.mutate({ qdsSummaryJson })
+      → if clientName new → updateQuote.mutate({ clientName, title })
+      → saveVoiceNoteSummary.mutate({ quoteId, summary: voice-only data })
+          → onSuccess: toast "saved", refetch()
+```
+
+**State touched:** `takeoffOverrides`, `voiceSummary` (voice-only), `qdsSummaryJson` (DB), `quotes.clientName`
+
+**BOTH `triggerVoiceAnalysis` and `onSave` write `qdsSummaryJson`.** Refresh always restores last saved state. No text serialisation — generateDraft reads qdsSummaryJson directly.
+
+---
+
+### 6. Generate Quote Draft (AI → Line Items)
+
+```
+User: clicks "Regenerate Draft"
+  → QuoteWorkspace: generateDraft.mutate({ quoteId })
+  → server: ai.generateDraft
+      → getQuoteWithOrgAccess → quote (includes qdsSummaryJson)
+      → getInputsByQuoteId → skip mimeType includes ";reference=true"
+      → build processedEvidence from processedContent of remaining inputs (PDFs, voice notes, text)
+      → parse qdsSummaryJson → build qdsLineItems directly (materials, labour, plantHire)
+        — NO AI reinterpretation of QDS items
+      → call GPT-4o with evidence ONLY for: description, title, clientName/address, assumptions, exclusions, terms, riskNotes
+      → deleteLineItemsByQuoteId (ALL existing line items deleted first)
+      → if simple quote + qdsLineItems exist → insert qdsLineItems directly as line items
+      → if comprehensive OR no QDS → insert AI-generated line items
+      → recalculateQuoteTotals (standard items only)
+  → client: onSuccess → toast, setActiveTab("quote"), refetch()
+```
+
+**State touched:** `line_items` table (fully replaced), `lineItems` query cache
+
+⚠️ All manual line item edits made after last generation are lost on regenerate.
+⚠️ QDS must be saved (qdsSummaryJson non-null) before generating draft for direct line item passthrough.
+
+---
+
+### 7. Generate PDF
+
+```
+User: clicks Generate PDF
+  → QuoteWorkspace: handleGeneratePDF
+      → await updateQuote.mutateAsync({ all current fields }) [saves latest first]
+      → generatePDF.mutate({ id: quoteId })
+  → server: quotes.generatePDF
+      → getFullQuoteData (quote + lineItems + org branding)
+      → build PDF with PDFKit (cream/white bg, navy structure, brand accent)
+      → uploadToR2 → updateQuote (pdfUrl)
+  → client: opens PDF in new tab
+```
+
+---
+
+### 8. Electrical Takeoff — Answer Questions
+
+```
+User: answers a question in TakeoffPanel
+  → TakeoffPanel: handleConfirmQuestion
+      → for unknown-symbol + "define": encodes as "define:Description"
+      → answerQuestions.mutate({ takeoffId, questionId, answer })
+  → server: electricalTakeoff.answerQuestions
+      → fetch tenderContexts (symbolMappings)
+      → applyUserAnswers → recalculate counts
+      → updateElectricalTakeoff (userAnswers, counts, status)
+      → formatTakeoffForQuoteContext(result, symbolMap) → updateInputProcessing
+  → client: refetchTakeoffs() → takeoffList updates → QDS merge re-renders
+```
+
+**State touched:** `electrical_takeoffs.userAnswers/status/counts`, `quote_inputs.processedContent`, `takeoffList`
+
+---
+
+### 9. New Input Triggers QDS Update
+
+```
+wasProcessing/isProcessing useEffect in QuoteWorkspace:
+  → watches fullQuote.inputs for processingStatus changes
+  → when ANY input transitions from "processing" → "completed":
+      → if !hasSavedQDS (no qdsSummaryJson in DB) && !voiceSummary
+          → triggerVoiceAnalysis() [500ms delay]
+      → if hasSavedQDS:
+          → triggerVoiceAnalysis() regardless (new evidence should update QDS)
+```
+
+⚠️ This is the ONLY place new uploads trigger QDS re-analysis. Do not add additional triggers elsewhere.
+
+---
+
+### 10. Billing / Subscription
+
+```
+Stripe webhook → server: /api/stripe/webhook (raw body — before JSON parser)
+  → checkout.session.completed → activateSubscription → updateOrg (tier, status, limits)
+  → customer.subscription.updated → updateOrg (tier, status, cancelAtPeriodEnd)
+  → customer.subscription.deleted → updateOrg (tier:"trial", status:"canceled", maxQuotes:0)
+  → invoice.payment_succeeded → resetMonthlyCount → status:"active"
+  → invoice.payment_failed → status:"past_due"
+
+All AI mutations guarded by assertAIAccess(userId):
+  → getUserPrimaryOrg → canUseAIFeatures(org) → throws if blocked
+  → logUsage after success (credits deducted)
+
+Quote creation guarded by canCreateQuote():
+  → checks status, trial expiry, monthly count
+```
+
+---
+
+## Sector Engine Architecture
+
+### Engine Tiers
+
+```
+selectEngine(tradePreset) in server/engines/engineRouter.ts
+    ├── 'electrical' → ElectricalEngine (Tier 3)
+    ├── drawing sectors → DrawingEngine(tradePreset) (Tier 2)
+    └── everything else → GeneralEngine(tradePreset) (Tier 1)
+```
+
+### All 26 Sectors
+
+| Key | Display Name | Engine |
+|---|---|---|
+| `electrical` | Electrical Installation | ElectricalEngine |
+| `it_services` | IT Services / MSP | GeneralEngine |
+| `commercial_cleaning` | Commercial Cleaning | GeneralEngine |
+| `building_maintenance` | Building Maintenance / FM | GeneralEngine |
+| `pest_control` | Pest Control | GeneralEngine |
+| `scaffolding` | Scaffolding / Access | GeneralEngine |
+| `painting` | Painting & Decorating | GeneralEngine |
+| `custom` | Other / Custom | GeneralEngine |
+| `construction_steel` | Structural Steel / Engineering | DrawingEngine |
+| `metalwork_bespoke` | Architectural & Bespoke Metalwork | DrawingEngine |
+| `general_construction` | General Construction | DrawingEngine |
+| `bathrooms_kitchens` | Bathrooms & Kitchens | DrawingEngine |
+| `windows_doors` | Windows / Doors / Conservatories | DrawingEngine |
+| `roofing` | Roofing & Cladding | DrawingEngine |
+| `joinery` | Joinery & Carpentry | DrawingEngine |
+| `fire_protection` | Fire Stopping / Passive Fire | DrawingEngine |
+| `insulation_retrofit` | Air Tightness / Insulation | DrawingEngine |
+| `plumbing` | Plumbing & Drainage | DrawingEngine |
+| `hvac` | HVAC | DrawingEngine |
+| `groundworks` | Groundworks / Civil Engineering | DrawingEngine |
+| `solar_ev` | Solar PV / Battery / EV Charging | DrawingEngine |
+| `telecoms_cabling` | Telecoms / Network Cabling | DrawingEngine |
+| `fire_security` | Fire & Security Systems | DrawingEngine |
+| `lifts_access` | Lifts / Access Systems | DrawingEngine |
+| `mechanical_fabrication` | Mechanical Engineering | DrawingEngine |
+
+### Engine Isolation Rules (Hard — Never Violate)
+
+- Each engine may only read from `EngineInput` and write `EngineOutput`
+- No engine imports from another engine file
+- No engine calls DB functions directly — all DB data arrives via `EngineInput`
+- `ElectricalEngine` is the ONLY file permitted to import `electricalTakeoff.ts`
+- `EngineOutput` shape changes require updating `types.ts` AND all downstream consumers simultaneously
+- Every engine must catch errors and return degraded `EngineOutput` — never throw unhandled
+
+### EngineInput / EngineOutput Contract
+
+**EngineInput** (assembled in `parseDictationSummary` before calling engine):
+- `tradePreset`, `userTradeSector`, `inputRecords[]` (with mimeType for reference-only filtering), `catalogContext`
+- `electricalContext?.symbolMappings` — only populated when `tradePreset === 'electrical'`
+
+**EngineOutput** (identical shape for all engines):
+- `jobDescription`, `clientName`, `clientEmail`, `clientPhone`
+- `labour[]`, `materials[]` (with `pricingType`: standard/monthly/optional)
+- `markup`, `labourRate`, `sundries`, `contingency`, `preliminaries`, `plantMarkup`
+- `notes`, `engineUsed`, `engineVersion`
+
+---
+
+## Billing System
+
+### Subscription Tiers
+
+| Tier | Price | Quotes/Month | Users | Catalog Items |
+|---|---|---|---|---|
+| Trial | Free (14 days) | 10 | 1 | 50 |
+| Solo | £59/month | 10 | 1 | 50 |
+| Pro | £99/month | 15 | 2 | Unlimited |
+| Team | £159/month | 50 | 5 | Unlimited |
+| Business | £249/month | Unlimited | 10 | Unlimited |
+
+**Source of truth:** `TIER_CONFIG` in `server/services/stripe.ts`. All price displays must match this.
+
+### What's AI-Gated (assertAIAccess)
+
+All AI mutations: `generateDraft`, `parseDictationSummary`, `askAboutQuote`, `generateEmail`, `transcribeAudio`, `extractPdfText`, `analyzeImage`, `uploadFile`, `electricalTakeoff.analyze`, `containmentTakeoff.analyze`
+
+### What's Free (no gate)
+
+`lineItems.update`, `quotes.update`, `quotes.generatePDF`, all `.get` / `.list` queries
+
+### AI Access Logic
+
+Blocked when: `status === 'canceled'` AND `tier === 'trial'` (expired), OR `status === 'canceled'` (period ended), OR `status === 'unpaid'`
+
+NOT blocked during: `past_due` (grace period), `cancelAtPeriodEnd: true` while period still active
+
+### Quota Emails
+
+- 80% usage → "approaching limit" email (sent once per cycle via `_emailFlags`)
+- 100% usage → "limit reached" email (sent once per cycle)
+
+### Delete Account Order (never change)
+
+Stripe hard cancel → data purge (8 tables) → R2 files → org soft-delete → user deactivate → goodbye email
+
+---
+
+## Subscription Status Reference
+
+| Status | Can Create Quotes | Can Use AI | Notes |
+|---|---|---|---|
+| `trialing` | ✅ (up to 10) | ✅ | Trial banner shown |
+| `active` | ✅ (tier limit) | ✅ | Normal UI |
+| `past_due` | ❌ | ✅ (grace) | Amber banner |
+| `canceled` | ❌ | ❌ | Red banner |
+| `unpaid` | ❌ | ❌ | Similar to past_due |
+
+---
+
+## Price Hierarchy (Who Wins)
+
+| Priority | Source |
+|---|---|
+| 1 (highest) | QDS confirmed items — read directly from qdsSummaryJson, never reinterpreted |
+| 2 | User's voice/text inputs and Paste Email/Text evidence |
+| 3 | Company catalog rates |
+| 4 | Org default settings (markup %, labour rate) |
+| 5 (lowest) | AI estimates — realistic UK market rates, never £0 |
+
+---
+
+## Persistence Reference
+
+| Data | Table/Column | Written By | Read By |
+|---|---|---|---|
+| QDS JSON snapshot | `quotes.qds_summary_json` | `triggerVoiceAnalysis`, `onSave` handler | Rehydration useEffect Case 1 |
+| Takeoff Instructions (electrical) | `quotes.user_prompt` | Textarea onBlur (electrical sector only) | `TakeoffPanel` symbol filtering, `hasSavedQDS` guard (legacy fallback) |
+| Symbol mappings | `tenderContexts.symbol_mappings` | `setReferenceOnly` (legend parse) | auto-takeoff, `answerQuestions`, engine |
+| Takeoff data | `electrical_takeoffs` | `uploadFile` auto-takeoff, `analyze` | `takeoffList` query, TakeoffPanel |
+| Line items | `line_items` | `generateDraft` (replaces all) | Quote view, PDF |
+| Uploaded files | Cloudflare R2 | `uploadFile` | Signed URLs on demand |
+
+---
+
+## Guardrails — Never Break These
+
+### System Guardrails (G1–G11)
+
+**G1 — AI JSON Contract:** Never change `EngineOutput` shape without updating `types.ts` AND all consumers simultaneously.
+
+**G2 — QDS Direct Passthrough:** `generateDraft` reads `qdsSummaryJson` directly from the DB and converts it to line items without AI reinterpretation. For simple quotes:
+- Every material in `qdsSummaryJson.materials` → one line item (exact name, qty, unitPrice, unit, pricingType, description)
+- Every labour item in `qdsSummaryJson.labour` → one line item (role, qty, labourRate)
+- Every plant/hire item in `qdsSummaryJson.plantHire` → one line item
+- GPT-4o only writes: `description`, `title`, `clientName/address/email/phone`, `assumptions`, `exclusions`, `terms`, `riskNotes`
+- Comprehensive quotes still use AI-generated line items (full proposal mode needs AI structuring)
+- `userPrompt` DB column is now ONLY for electrical sector takeoff symbol filtering — never carries QDS data
+
+**G3 — Install Time Source Filtering:** Only `source === "takeoff"` or `source === "containment"` materials have `installTimeHrs` applied in QDS. Voice items never get install time — it would duplicate every service line into supply+install. This is enforced in QDS `mergeSummaryWithTakeoffs` and should not be changed.
+
+**G4 — Deep Clone in QDS Edit Mode:** `cloneData()` deep-clones before edit mode. When adding new array fields to `QuoteDraftData`, add them to `cloneData()`.
+
+**G5 — Temporal Dead Zone:** `fullQuote` is destructured at ~line 1291. Any `useEffect` before that line must use `fullQuote?.inputs` not `inputs`.
+
+**G6 — QDS Rehydration:** Never remove the `hasRehydratedRef` useEffect. Without it QDS goes blank on every reload.
+
+**G7 — voiceSummary Sources:** `voiceSummary` is set in exactly two places: `triggerVoiceAnalysis` (all materials, source:"voice") and `onSave` (voice-only). Never set it with takeoff materials — they come via the `takeoffs` prop and merge in `mergeSummaryWithTakeoffs`.
+
+**G8 — Line Items Deleted on Regenerate:** `generateDraft` deletes all line items before creating new ones. Manual post-generation edits are lost on re-generation. Warn users.
+
+**G9 — Catalog Price Matching Independence:** QDS merges catalog prices client-side in `mergeSummaryWithTakeoffs`. The AI prompt also receives the catalog. These are independent — catalog format changes in the AI prompt must be tested against `matchCatalogPrice()`.
+
+**G10 — User Data Sovereignty:** Never auto-overwrite user-edited fields without explicit user action. Every editable field must persist across page reloads and tab switches. Before adding any auto-save or auto-analysis trigger, verify it doesn't silently overwrite user edits.
+
+**G11 — Engine Isolation:** A change to any one engine file must be physically incapable of affecting any other sector's output. See Engine Isolation Rules above.
+
+### Billing Guardrails (B1–B11)
+
+**B1** — Webhook handlers must be idempotent (overwrite with absolute values, never increment).
+**B2** — Never assume subscription is active after Stripe checkout return — wait for webhook.
+**B3** — Stripe webhook route MUST receive raw body. `express.raw()` MUST be before JSON parser.
+**B4** — `STRIPE_PRICE_*` env vars must match actual Stripe Dashboard Price IDs.
+**B5** — Always include `metadata: { orgId, tier }` on Stripe customers and subscriptions.
+**B6** — All quote creation goes through `quotes.create`. Never add a second route without the quota check.
+**B7** — `monthlyQuoteCount` increment is in `quotes.create`, not in webhooks.
+**B8** — Never hard-delete user records. Deactivate only (`isActive: false`).
+**B9** — Use Stripe test mode for all development. Verify `test_` prefix in secret key.
+**B10** — Delete account order matters: Stripe cancel → data purge → session invalidate. Always.
+**B11** — VAT rate is org-controlled once the VAT settings feature is built. Not per-quote editable.
+
+### Multi-Tenancy Rule
+
+Every DB query must filter by `orgId`. `getQuoteWithOrgAccess()` must be called to verify ownership before any quote mutation. Never skip this.
+
+### Sector Agnosticism Rule
+
+Never hardcode assumptions toward "general trades/construction" or electrical in shared code. Use `quote.tradePreset || user.defaultTradeSector` throughout. Electrical UI panels (`TakeoffPanel`, `ContainmentTakeoffPanel`) are gated behind `tradePreset === "electrical"` in `InputsPanel`.
+
+---
+
+## Known Bugs / Open Work
+
+| # | Issue | Location | Priority |
+|---|---|---|---|
+| 1 | Auto-takeoff runs for all sectors (wasteful, not harmful) | `routers.ts` inputs.uploadFile ~line 1616 | Low |
+| 2 | Legend PDFs run takeoff before reference toggle (mitigated: setReferenceOnly deletes it) | `routers.ts` inputs.uploadFile | Medium |
+| 3 | Cancel subscription confirmation email not sent | `subscriptionRouter.ts` | Low |
+| 4 | Resubscribe flow after full cancellation untested | `subscriptionRouter.ts` | Medium |
+| 5 | Team member sessions not invalidated when owner deletes account | `db.ts` deleteAllOrgData | Medium |
+| 6 | ~~"Tax" label + VAT not saving/recalculating~~ — FIXED: label renamed to "VAT", added `onBlur` to trigger `handleSaveQuote` → `recalculateQuoteTotals` | Fixed 13 Mar 2026 | — |
+| 7 | ~~No org-level VAT default~~ — FIXED: quotes.create now reads defaultVatRate from org.defaultDayWorkRates | Fixed 13 Mar 2026 | — |
+| 8 | DrawingEngine sectors not yet using sector-specific prompt injections (Phase 5) | `drawingEngine.ts`, `engineRouter.ts` | Low |
+
+---
+
+## Electrical Sector Build Status
+
+- [x] Phase 1 — Sector split (construction_steel / metalwork_bespoke)
+- [x] Phase 2 — Engine infrastructure (GeneralEngine, DrawingEngine, engineRouter)
+- [x] Phase 3 — Bug fixes (legend trigger guard, generateDraft reference skip, unknown symbol handling)
+- [x] Phase 4 — Open symbol detection, legend parse flow, status marker detection, sector UI isolation
+- [ ] Phase 5 — DrawingEngine prompt injections, GeneralEngine sector guidance
+
+---
+
+## VAT System (Current State + Planned)
+
+**Current:** `taxRate` decimal on `quotes` table. `recalculateQuoteTotals` computes `subtotal × (taxRate/100)`. VAT line suppressed in PDF when `taxRate === 0`.
+
+**Quote creation:** `quotes.create` now pre-populates `taxRate` from `org.defaultDayWorkRates.defaultVatRate`. Priority: explicit input value → org default → undefined. Existing quotes are not retroactively updated.
+
+**Storage:** `defaultVatRate` lives inside the `defaultDayWorkRates` JSON blob on the `organizations` table — not a separate column.
+
+**Known bug:** UI label says "Tax" — PDF says "VAT (X%)". ~~Fix: rename label to "VAT" in `QuoteWorkspace.tsx`.~~ **FIXED 13 Mar 2026** — label renamed to "VAT" and `onBlur` added to trigger save + recalculate.
+
+---
+
+## Session Handover Template
+
+At the end of every session, produce a handover note with:
+- What was changed and the root cause (not just symptoms)
+- Files changed with paths
+- Call chain nodes touched
+- Verified-not-broken checklist: QDS persists on refresh, legend toggle works, no duplicate QDS items, non-electrical sectors unaffected, billing gates intact, orgId filters present
+- Updated copy of this SESSION-START.md if any flows changed
+- Known bugs updated
+
+---
+
+## Changes Log
+
+| Date | Files Changed | What Changed |
+|---|---|---|
+| 12 Mar 2026 | `server/engines/generalEngine.ts` | Added `PRICING TYPE RULES` block to system prompt. Fixes recurring/monthly items (support contracts, MSP retainers) being silently ignored for all GeneralEngine sectors. AI now correctly assigns `pricingType: "monthly"` and estimates monthly costs when not stated. IT-sector specific guidance included (£150–£350/month range for ~16 managed devices). |
+| 12 Mar 2026 | `server/pdfGenerator.ts` | Fixed PDF filename. Both `generateSimpleQuoteHTML` and `generateComprehensiveProposalHTML` now set `<title>` to `{clientName} - {DD Mon YYYY}` (e.g. `Ian Frith - 12 Mar 2026`). Browser uses `<title>` as default filename in save-as-PDF dialog. Previously used quote reference (`Q-XXXX`). |
+| 12 Mar 2026 | `server/db.ts` | `recalculateQuoteTotals` now also writes `monthlyTotal` and `annualTotal` to the `quotes` table. Previously these DB columns were always `0.00` even when monthly/annual line items existed. |
+| 12 Mar 2026 | `client/src/components/QuoteDraftSummary.tsx` | QDS subtotal tfoot now shows separate rows for One-off Total, Recurring Monthly (teal), Recurring Annual (amber), and Optional Items (purple). Previously all pricingTypes were summed into one misleading subtotal. Added `monthlySubtotal`, `annualSubtotal`, `optionalSubtotal` useMemos alongside existing `materialSubtotal`. |
+| 12 Mar 2026 | `client/src/pages/QuoteWorkspace.tsx` | Quote view totals section now shows Recurring monthly / Recurring annual / Optional items rows below the main Total, computed live from `lineItems` filtered by `pricingType`. Only rendered when values > 0. Labelled "Not included in total above". |
+| 12 Mar 2026 | `client/src/components/QuoteDraftSummary.tsx` | Added Re-analyse button to QDS header (alongside Edit). Calls `onTriggerVoiceAnalysis` directly — no new props. Visible only when not editing, disabled + spinner while `isLoading`. Fixes UX gap where file-only quotes had no way to trigger fresh analysis without the text input box. |
+| 12 Mar 2026 | `server/engines/generalEngine.ts` | Fixed labour type collapse. Rewrote MATERIALS vs LABOUR section: (1) Added LABOUR LINE ITEMS — CRITICAL block listing 9 distinct labour delivery modes (onsite, remote, workshop, discovery, training, PM, commissioning, site survey, out-of-hours) — each must be its own materials line item. (2) Added ANTI-DUPLICATION RULE clarifying deduplication applies to the same engagement mentioned twice, NOT to different engagements with the same role. (3) Updated labour[] field guideline to require delivery mode in role name (e.g. "Network Engineer — Onsite" not "Network Engineer") to prevent AI collapsing different modes into one entry. No schema changes. |
+| 12 Mar 2026 | `server/engines/generalEngine.ts` | Switched GeneralEngine from GPT-4o (invokeLLM) to Claude Sonnet (invokeClaude) for more reliable structured JSON output, consistent re-analysis, and richer descriptions. maxTokens set to 8192 (was 1500, ignored by invokeLLM anyway). Added stop_reason: max_tokens guard. Added markdown fence stripping on response. Fixed description guideline — now instructs Claude to write scope-specific 1-sentence descriptions from evidence rather than deferring to catalog. Added 5-point self-check instruction: Claude must verify all labour types, monthly items, equipment, descriptions, and pricingTypes before outputting JSON. |
+| 13 Mar 2026 | `client/src/pages/QuoteWorkspace.tsx` | Part A of description flow fix. onSave handler now appends `[desc: ...]` tag to every material line in userPrompt when a description is present. Both priced and unpriced material serialisation updated. No other state touched. |
+| 13 Mar 2026 | `server/routers.ts` | Part B of description flow fix. generateDraft DRAFT SUMMARY MATERIALS prompt block updated: added DESCRIPTION RULE to use `[desc:]` tag verbatim; added explicit instruction for monthly/annual items to expand description into bullet-point format with "• " prefix covering all service deliverables. Standard items without [desc:] tag retain existing brief-note behaviour. |
+| 13 Mar 2026 | `server/engines/generalEngine.ts` | Part C of description flow fix. Materials description guideline rewritten to apply different rules by pricingType: standard items get 1-sentence scope-specific description; monthly/annual items get structured bullet-point breakdown (minimum 4 bullets) covering all contract deliverables per sector. Sector-specific examples provided for IT/MSP, cleaning, maintenance/FM, pest control. |
+| 13 Mar 2026 | `server/pdfGenerator.ts` | Added formatLineItemDescription() helper. Splits on "•" character, renders summary sentence then each bullet as indented block element. Both line item table render points updated (main table + monthly/annual table). Previously descriptions with bullets rendered as one long run-on paragraph. |
+| 13 Mar 2026 | `client/src/pages/QuoteWorkspace.tsx` | Added formatLineItemDesc() React helper. Splits on "•" character, renders summary + indented bullet spans. Applied to editable line items table row and catalog search result description display. |
+| 13 Mar 2026 | `server/engines/generalEngine.ts` | Changed monthly/annual description separator from "•" to "||" (pipe-pipe). GPT-4o JSON mode strips "•" characters from JSON string values; "||" is plain ASCII and survives. Updated prompt to instruct Claude to use "||" between each element, no newlines or bullet chars. |
+| 13 Mar 2026 | `server/routers.ts` | Updated generateDraft DESCRIPTION RULE: copy [desc:] tag verbatim including "||" separators — do not convert. For monthly/annual items without [desc:] tag, use "||" separator format. |
+| 13 Mar 2026 | `server/pdfGenerator.ts` | Updated formatLineItemDescription() to split on "||" instead of "•". |
+| 13 Mar 2026 | `client/src/pages/QuoteWorkspace.tsx` | Updated formatLineItemDesc() to split on "||" instead of "•". |
+| 13 Mar 2026 | `server/engines/generalEngine.ts` | Extended "||" separator to standard items — Claude uses judgement: single sentence for simple hardware items, "||" breakdown when item covers multiple deliverables/steps. Monthly/annual always use "||" with minimum 4 features. No newlines or "•" anywhere in descriptions. |
+| 13 Mar 2026 | `client/src/pages/QuoteWorkspace.tsx` | onSave [desc:] tag now normalises • bullets to || before writing to userPrompt (regex replace). Handles legacy QDS snapshots generated before the || format was introduced. Both priced and unpriced material paths updated. |
+| 13 Mar 2026 | `client/src/components/QuoteDraftSummary.tsx` | QDS description display now renders || and • separated descriptions as bullet points. IIFE pattern handles both legacy (•) and new (||) format. Plain text descriptions unaffected. |
+| 13 Mar 2026 | `client/src/components/QuoteDraftSummary.tsx` | Added detectDescFormat, normaliseDescToFormat, renderDescNode as exported helpers. Description edit field changed from <input> to <textarea> with Plain/•Bullets/1.Numbered toolbar using lucide icons. Toolbar converts existing text to chosen format on click. Display render uses renderDescNode (handles ||, ##, •, plain). React import added. |
+| 13 Mar 2026 | `client/src/pages/QuoteWorkspace.tsx` | Replaced local formatLineItemDesc with imported renderDescNode from QuoteDraftSummary. All 3 render sites updated. onSave normalisation updated: preserves ##, converts • to ||, auto-detects 1.2.3. numbered lists → ## for both priced and unpriced material paths. |
+| 13 Mar 2026 | `server/routers.ts` | generateDraft DESCRIPTION RULE updated: preserve both || and ## verbatim. Added ## instruction for sequential/phased items. Updated lineItems schema IMPORTANT block to cover all 3 formats (plain/||/##). |
+| 13 Mar 2026 | `server/engines/generalEngine.ts` | Description rules extended with ## numbered separator for sequential items. Four distinct cases now: simple (plain sentence), multi-deliverable (||), sequential/ordered (##), monthly/annual (always ||). |
+| 13 Mar 2026 | `server/pdfGenerator.ts` | formatLineItemDescription updated to handle ##: numbered list rendered as 1. 2. 3. with indented spans. || path unchanged. Plain text fallback unchanged. |
+
+---
+
+| 13 Mar 2026 | `server/routers.ts`, `client/src/pages/QuoteWorkspace.tsx` | **Major refactor: QDS Direct Passthrough.** generateDraft now reads qdsSummaryJson directly from DB and converts confirmed QDS items to line items without AI reinterpretation. GPT-4o only writes description, title, client details, assumptions, exclusions, terms, riskNotes. Removed: userPrompt from generateDraft zod schema, priceHierarchyContext/DRAFT SUMMARY MATERIALS prompt blocks, parts serialisation from onSave, autoPrompt building from triggerVoiceAnalysis, userPrompt from handleGenerateDraft mutate call, userPrompt from handleSaveQuote. hasSavedQDS check #1 changed from !!userPrompt to !!qdsSummaryJson. Processing Instructions textarea renamed to "Takeoff Instructions" and hidden for non-electrical sectors. userPrompt DB column now only used for electrical symbol filtering in TakeoffPanel. |
+
+| 13 Mar 2026 | `server/routers.ts` | **VAT default fix.** `quotes.create` now reads `org.defaultDayWorkRates.defaultVatRate` and passes it as `taxRate` when creating a new quote. Previously every new quote started at 0% VAT regardless of org settings. Existing quotes unaffected. |
+| 13 Mar 2026 | `server/routers.ts` | **Email greeting first name only.** `generateEmail` now extracts the first word of the contact name for the greeting. "John Smith" → "Hi John,". Previously used full name. |
+| 13 Mar 2026 | `client/src/pages/QuoteWorkspace.tsx` | **Button labels.** "Generate Draft" → "Generate Quote". "Regenerate Draft" → "Regenerate Quote". |
+
+*Single source of truth for all Claude sessions on IdoYourQuotes. Update this file whenever a flow changes, a bug is fixed, or a feature is added. Version: March 2026 — updated 13 Mar 2026.*
+| 13 Mar 2026 | `client/src/pages/QuoteWorkspace.tsx` | **VAT input fix + label rename (bug #6 resolved).** VAT input had `onChange` but no `onBlur` — user could type a rate but it was never saved and `recalculateQuoteTotals` was never triggered. Added `onBlur={() => handleSaveQuote()}`. Flow: VAT input blur → `handleSaveQuote()` → `quotes.update` with `taxRate` → server detects `data.taxRate !== undefined` → `recalculateQuoteTotals` rewrites `taxAmount` + `total` to DB → TanStack Query invalidates → totals re-render. Also renamed label "Tax" → "VAT". |
+| 13 Mar 2026 | `server/routers.ts` | **VAT default not persisting from Settings (root cause fix).** `defaultVatRate` was being sent by the Settings page client inside `defaultDayWorkRates` but was silently stripped by the Zod schema on the `profile.update` mutation — the field was not declared. Added `defaultVatRate: z.number().optional()` to the `defaultDayWorkRates` Zod object. Flow: Settings save → `defaultDayWorkRates.defaultVatRate` now passes Zod → written to `organizations.defaultDayWorkRates` JSON blob → `quotes.create` reads `org.defaultDayWorkRates.defaultVatRate` → new quotes inherit org VAT rate automatically. |
+| 13 Mar 2026 | `server/routers.ts` | **VAT default not applying on existing quotes / regenerate (root cause fix 2).** Two bugs: (1) `generateDraft` called `recalculateQuoteTotals` without first checking if the quote's `taxRate` was still 0 from before the VAT feature existed. Fix: before `recalculateQuoteTotals`, fetch quote + org — if `taxRate === 0` and `org.defaultDayWorkRates.defaultVatRate > 0`, call `updateQuote` to set it first. (2) Settings `profile.update` was doing a full replace of `defaultDayWorkRates`, wiping `_emailFlags`. Fix: merge with spread — `{ ...existingRates, ...defaultDayWorkRates }`. Both in `server/routers.ts`. |
+| 13 Mar 2026 | `client/src/pages/Catalog.tsx` | **Ex VAT labelling in Catalog.** Column headers renamed: "Sell (£)" → "Sell ex VAT (£)", "Buy-in (£)" → "Buy-in ex VAT (£)". Add-item form labels updated: "Sell Price" → "Sell Price (ex VAT)", "Buy-in Price" → "Buy-in Price (ex VAT)". No logic changes — labels only. |
+| 13 Mar 2026 | `client/src/components/QuoteDraftSummary.tsx` | **Ex VAT labelling in QDS subtotal footer.** All four subtotal rows now include "(ex VAT)" in their labels: "One-off Total (ex VAT)", "Recurring Monthly (ex VAT)", "Recurring Annual (ex VAT)", "Optional Items (ex VAT)". Also tightened the partial-pricing suffix: "(priced items)" → "— priced items only". No logic changes — labels only. |
+| 13 Mar 2026 | `server/engines/generalEngine.ts` | **Explicit ex-VAT instruction added to AI pricing prompt.** Added: "ALL prices must be EXCLUSIVE of VAT (ex VAT). Never include VAT in any unitPrice. VAT is calculated separately by the system after quote generation." Prevents AI from ever returning VAT-inclusive prices. |
+| 13 Mar 2026 | `server/routers.ts` | **Terms & Conditions guardrail — Option C.** Previously `generateDraft` always overwrote `quotes.terms` with AI-generated terms, ignoring the user's "Default Terms & Conditions" from Settings. Root causes: (1) `defaultTerms` was absent from the `orgDefaults` object; (2) `draft.terms` was written unconditionally in both the shared and `isComprehensive` write-back paths. Fix: added `defaultTerms: org.defaultTerms || ctx.user.defaultTerms` to `orgDefaults`. Applied Option C guardrail: `resolvedTerms = orgDefaults.defaultTerms OR draft.terms` — org T&Cs always win, AI fallback only for users with no T&Cs set. Removed redundant second `draft.terms` write in comprehensive path. Also added `defaultTerms` to `companyDefaultsContext` so AI receives the instruction to reproduce verbatim (belt-and-braces). Updated both AI prompt `terms` field descriptions to reflect this. Flows not touched: `quotes.create` (still uses `input?.terms || ctx.user.defaultTerms`), PDF render, QuoteWorkspace terms textarea. |
+| 13 Mar 2026 | `client/src/components/QuoteDraftSummary.tsx` | **Ex VAT teal pill in QDS edit row.** Added a single teal pill ("ex VAT") between the BUY-IN £ input and the line total span in the edit row for each material. Pill style matches brand teal (#0d9488 / #f0fdfa / #99f6e4 border). One pill covers both SELL £ and BUY-IN £ fields. No logic changes — cosmetic only. |
+| 13 Mar 2026 | `client/src/components/QuoteDraftSummary.tsx` | **"Sell Price ex VAT" column header in QDS summary view.** Added teal "ex VAT" suffix to the Sell Price column header in the non-edit table view. Styled as smaller, lighter weight, teal text inline with the header. No logic changes. |
+| 13 Mar 2026 | `server/engines/generalEngine.ts` | **Labour duplication fix.** AI was putting labour roles in both materials[] (as priced line items e.g. "IT Labour Workshop") AND labour[] (as blue pill summary e.g. "Network Engineer — Workshop") simultaneously. Root cause: the anti-duplication rule was too weak. Fix: (1) Strengthened inline rule — "CRITICAL: if the labour role already exists as a materials line item, do NOT also add it to labour[]". (2) Strengthened labour[] field description — "Check every labour entry against the materials list before including it". (3) Added check #6 to the AI self-check list: "Does labour[] contain ONLY roles that are NOT already priced as materials line items?" Self-check now requires 6 passes before outputting JSON. |
+| 13 Mar 2026 | `server/routers.ts` | **Item title missing from generated quote line items (all sectors).** QDS stores both `item` (title e.g. "8-port Gigabit PoE Switch") and `description` (scope e.g. "Edge switches for co-working...") separately. `generateDraft` QDS direct passthrough was using `m.description || m.item` — so when a description existed, the item title was silently dropped from the generated line item. Fix: always build `description = "{item} — {description}"` when description is present, or just `item` when not. Works correctly with || and ## formatted descriptions — title prepends the whole string, formatLineItemDescription() splits on separators after the title. Applies to all sectors, all pricingTypes. |
+| 13 Mar 2026 | `server/pdfGenerator.ts` | **Removed # column from PDF line items table.** `renderLineItemsTable()` had a `#` header column and `idx + 1` sequential number cell on every row. Both removed. Description column gains the freed width. Timeline phases table (construction sector) unaffected. Applies to all sectors. |
+| 13 Mar 2026 | `server/routers.ts` | **Buy-in cost / margin not flowing from QDS to generated quote line items.** QDS correctly stores `costPrice` in `qdsSummaryJson` and the DB schema supports it on line items, but the `generateDraft` QDS→lineItems conversion block never read `m.costPrice` — it was silently dropped on every `qdsLineItems.push()`. Fix: parse `m.costPrice` and pass it as `costPrice: String(costPrice)` into the push. All sectors. |
+| 13 Mar 2026 | `client/src/pages/QuoteWorkspace.tsx` | **Margin not showing on generated quote line items.** QuoteWorkspace was calculating margin exclusively via live catalog fuzzy-match on description strings — completely ignoring `item.costPrice` stored on the line item record. This meant buy-in costs entered in the QDS were written to the DB correctly but never read back. Fixed both the per-row margin cell and the total margin summary footer: now reads `item.costPrice` first, falls back to catalog match only if null. QDS margin system untouched. |
+| 14 Mar 2026 | `server/routers.ts` | **costPrice still not reaching line items — missing from createLineItem call.** Previous fix correctly read `m.costPrice` into `qdsLineItems` array, but the `createLineItem()` call inside the `generateDraft` write loop explicitly listed each field and omitted `costPrice`. Added `costPrice: (item as any).costPrice ?? null` to the call. This is the final link in the chain: QDS JSON → qdsLineItems array → createLineItem → DB → QuoteWorkspace reads it back. Only one createLineItem call is in generateDraft (line 4021); the other (line 1309) is the manual UI add and correctly has no costPrice. |
+| 14 Mar 2026 | `server/routers.ts`, `client/src/pages/QuoteWorkspace.tsx`, `client/src/components/QuoteDraftSummary.tsx` | **Evidence diagnosis & clarification flow.** New two-stage QDS analysis: Stage 1 `diagnoseEvidence` mutation (fast Claude call, ~400 tokens) reads evidence and returns `{ canQuote, understood, sector, clientName, clarificationQuestion }`. If `canQuote:true` → `parseDictationSummary` runs exactly as before (zero regression on happy path). If `canQuote:false` → clarification UI renders in QDS panel showing what the AI understood + one focused question. User replies via `ClarificationInput` textarea → `addClarificationInput` mutation writes synthetic text evidence record to DB → `triggerVoiceAnalysis(skipDiagnosis=true)` re-runs bypassing diagnosis → `parseDictationSummary` runs with enriched evidence. `diagnoseEvidence` always fails-open (any error or parse failure → `canQuote:true`). Legacy `tradeRelevanceCheck` kept as no-op alias. New state: `clarificationState` in `QuoteWorkspace`. New mutations: `diagnoseEvidence`, `addClarificationInput`. `GeneralEngine`, `generateDraft`, PDF, billing — all untouched. |
+| 14 Mar 2026 | `server/services/stripe.ts`, `server/services/subscriptionRouter.ts`, `client/src/pages/Pricing.tsx` | **Upgrade confirmation modal with proration, reset notice, and billing date.** Three problems fixed: (1) Upgrading mid-cycle gave user a poor experience — paid more, got fewer remaining quotes. Fix: `customer.subscription.updated` webhook now detects tier rank increase (newRank > currentRank) and resets `monthlyQuoteCount: 0` immediately on upgrade. (2) No proration info before confirming upgrade. Fix: new `getUpgradeProration()` in `stripe.ts` calls `stripe.invoices.retrieveUpcoming()` to calculate today's prorated charge; new `getProration` tRPC query in `subscriptionRouter.ts` wraps it (fails-open to full price on error). (3) No confirmation step. Fix: `Pricing.tsx` now shows an upgrade confirmation modal for active subscribers upgrading to a higher tier — displays quote count reset notice, today's prorated charge, next billing date, and ongoing monthly amount. New subscribers and downgrades skip the modal and go straight to Stripe as before. |
