@@ -84,6 +84,8 @@ interface QuoteDraftSummaryProps {
   hasVoiceNotes: boolean;
   onSave: (data: QuoteDraftData) => void;
   onTriggerVoiceAnalysis: () => void;
+  clarificationState?: { understood: string; clarificationQuestion: string } | null;
+  onClarificationReply?: (reply: string) => Promise<void>;
 }
 
 // ---- Helpers ----
@@ -303,6 +305,7 @@ export default function QuoteDraftSummary({
   voiceSummary, takeoffs, takeoffOverrides, catalogItems,
   defaultMarkup, defaultLabourRate, defaultPlantMarkup,
   isLoading, hasVoiceNotes, onSave, onTriggerVoiceAnalysis,
+  clarificationState, onClarificationReply,
 }: QuoteDraftSummaryProps) {
   const [isEditing, setIsEditing] = useState(false);
   // Track which material indices have been saved to catalog this session
@@ -490,6 +493,33 @@ export default function QuoteDraftSummary({
             <Loader2 className="h-5 w-5 animate-spin" style={{ color: brand.teal }} />
             <span className="text-sm font-medium" style={{ color: brand.navyMuted }}>Building quote draft summary</span>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Clarification UI ────────────────────────────────────────────────────
+  // Shown when diagnoseEvidence returns canQuote:false.
+  // Replaces the empty QDS with the AI's diagnosis + one focused question.
+  if (clarificationState && !isLoading) {
+    return (
+      <div className="rounded-xl overflow-hidden mb-4" style={{ border: `1.5px solid ${brand.tealBorder}` }}>
+        <div className="px-5 py-3 flex items-center gap-2" style={{ background: `linear-gradient(135deg, ${brand.navy} 0%, #1e3a5f 100%)` }}>
+          <span className="text-sm font-extrabold text-white">Quote Draft Summary</span>
+        </div>
+        <div className="px-5 py-5" style={{ backgroundColor: brand.tealBg }}>
+          {/* AI diagnosis — what it heard */}
+          {clarificationState.understood && (
+            <div className="mb-4 px-4 py-3 rounded-lg" style={{ backgroundColor: "#f0fdfa", border: "1px solid #99f6e4" }}>
+              <p className="text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: brand.teal }}>What I heard</p>
+              <p className="text-sm" style={{ color: brand.navy, lineHeight: 1.6 }}>{clarificationState.understood}</p>
+            </div>
+          )}
+          {/* Clarification question */}
+          <p className="text-sm font-semibold mb-3" style={{ color: brand.navy }}>{clarificationState.clarificationQuestion}</p>
+          <ClarificationInput onSubmit={async (reply) => {
+            if (onClarificationReply) await onClarificationReply(reply);
+          }} />
         </div>
       </div>
     );
@@ -963,6 +993,49 @@ export default function QuoteDraftSummary({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── ClarificationInput ──────────────────────────────────────────────────────
+// Small self-contained component — text input + mic-style send button.
+// Used exclusively by the clarification UI block in QuoteDraftSummary.
+function ClarificationInput({ onSubmit }: { onSubmit: (reply: string) => Promise<void> }) {
+  const [value, setValue] = React.useState("");
+  const [sending, setSending] = React.useState(false);
+
+  const handleSend = async () => {
+    const trimmed = value.trim();
+    if (!trimmed || sending) return;
+    setSending(true);
+    try {
+      await onSubmit(trimmed);
+      setValue("");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="flex gap-2 items-end">
+      <textarea
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+        placeholder="Describe the job, client, and scope..."
+        rows={2}
+        className="flex-1 text-sm px-3 py-2 rounded-lg outline-none resize-none focus:ring-2 focus:ring-teal-300"
+        style={{ border: "1px solid #99f6e4", backgroundColor: "#fff", color: "#1a2b4a", lineHeight: 1.5 }}
+        disabled={sending}
+      />
+      <button
+        onClick={handleSend}
+        disabled={!value.trim() || sending}
+        className="flex items-center justify-center rounded-lg text-white text-sm font-semibold px-4 py-2 transition-opacity disabled:opacity-40"
+        style={{ backgroundColor: "#0d9488", minWidth: 72, height: 56 }}
+      >
+        {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send"}
+      </button>
     </div>
   );
 }

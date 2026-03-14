@@ -145,6 +145,10 @@ export default function QuoteWorkspace() {
   const [isDictating, setIsDictating] = useState(false);
   const [voiceSummary, setVoiceSummary] = useState<QuoteDraftData | null>(null);
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
+  const [clarificationState, setClarificationState] = useState<{
+    understood: string;
+    clarificationQuestion: string;
+  } | null>(null);
   // User overrides for takeoff material quantities/names (persists across re-merges)
   const [takeoffOverrides, setTakeoffOverrides] = useState<Record<string, { quantity?: number; item?: string; unitPrice?: number | null; installTimeHrs?: number | null }>>({}); 
 
@@ -534,7 +538,8 @@ export default function QuoteWorkspace() {
   const generatePDF = trpc.quotes.generatePDF.useMutation();
 
   // Trade relevance pre-check (Option A guardrail)
-  const tradeRelevanceCheck = trpc.ai.tradeRelevanceCheck.useMutation();
+  const diagnoseEvidence = trpc.ai.diagnoseEvidence.useMutation();
+  const addClarificationInput = trpc.ai.addClarificationInput.useMutation();
 
   // Dictation summary parser (Option C)
   const parseDictationSummary = trpc.ai.parseDictationSummary.useMutation();
@@ -586,10 +591,29 @@ export default function QuoteWorkspace() {
     });
   };
 
-  // Analyse voice notes and update the quote draft summary
-  const triggerVoiceAnalysis = async () => {
+  // Analyse voice notes and update the quote draft summary.
+  // Stage 1: diagnoseEvidence — fast classifier. If canQuote:false, surface clarification UI.
+  // Stage 2: parseDictationSummary — runs only when canQuote:true (or after clarification).
+  const triggerVoiceAnalysis = async (skipDiagnosis = false) => {
     try {
       setIsSummaryLoading(true);
+      setClarificationState(null); // Reset any prior clarification state
+
+      // ── Stage 1: Diagnosis gate (skip on re-run after clarification) ──────
+      if (!skipDiagnosis) {
+        const diagnosis = await diagnoseEvidence.mutateAsync({ quoteId });
+        if (!diagnosis.canQuote) {
+          // Surface the diagnosis to the user — don't proceed to parseDictationSummary
+          setClarificationState({
+            understood: diagnosis.understood || "",
+            clarificationQuestion: diagnosis.clarificationQuestion || "Can you tell me what you're quoting for — the job type, client, and rough scope?",
+          });
+          setIsSummaryLoading(false);
+          return;
+        }
+      }
+
+      // ── Stage 2: Full analysis — happy path unchanged ─────────────────────
       const result = await parseDictationSummary.mutateAsync({ quoteId });
       if (result.hasSummary && result.summary) {
         // Convert to QuoteDraftData format — mark all materials as voice-sourced
@@ -2287,6 +2311,12 @@ export default function QuoteWorkspace() {
                 });
               }}
               onTriggerVoiceAnalysis={triggerVoiceAnalysis}
+              clarificationState={clarificationState}
+              onClarificationReply={async (reply: string) => {
+                // Append user's reply as synthetic evidence then re-run analysis (skip diagnosis)
+                await addClarificationInput.mutateAsync({ quoteId, clarification: reply });
+                await triggerVoiceAnalysis(true);
+              }}
             />
           )}
 

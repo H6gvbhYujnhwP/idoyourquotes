@@ -9,7 +9,7 @@ import { adminRouter } from "./services/adminRouter";
 import { canCreateQuote, canUseAIFeatures, getUpgradeSuggestion, TIER_CONFIG, type SubscriptionTier } from "./services/stripe";
 import { sendLimitWarningEmail } from "./services/emailService";
 import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured, getFileBuffer } from "./r2Storage";
-import { analyzePdfWithClaude, analyzePdfWithOpenAI, analyzeImageWithClaude, isClaudeConfigured } from "./_core/claude";
+import { analyzePdfWithClaude, analyzePdfWithOpenAI, analyzeImageWithClaude, isClaudeConfigured, invokeClaude } from "./_core/claude";
 import { isOpenAIConfigured } from "./_core/openai";
 import { extractUrls, scrapeUrls, formatScrapedContentForAI } from "./_core/webScraper";
 import { extractBrandColors } from "./services/colorExtractor";
@@ -3360,78 +3360,128 @@ CRITICAL: Look at the "Pricing:" field shown next to each catalog item above. If
       }),
 
     // Quick trade-relevance check before full generation (Option A guardrail)
-    tradeRelevanceCheck: protectedProcedure
+    // ── diagnoseEvidence ─────────────────────────────────────────────────────
+    // Stage-1 lightweight classifier that runs BEFORE parseDictationSummary.
+    // Returns canQuote:true  → happy path, parseDictationSummary runs as normal.
+    // Returns canQuote:false → surfaces diagnosis + one clarification question to user.
+    // On failure or no inputs, always returns canQuote:true (fail-open = never blocks).
+    diagnoseEvidence: protectedProcedure
       .input(z.object({
         quoteId: z.number(),
       }))
       .mutation(async ({ ctx, input }) => {
         await assertAIAccess(ctx.user.id);
-        console.log(`[tradeRelevanceCheck] Starting for quoteId=${input.quoteId}`);
-        
+        console.log(`[diagnoseEvidence] Starting for quoteId=${input.quoteId}`);
+
         const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
-        // Gather evidence summaries
         const inputRecords = await getInputsByQuoteId(input.quoteId);
 
+        // No inputs yet — let parseDictationSummary handle gracefully
         if (inputRecords.length === 0) {
-          console.log(`[tradeRelevanceCheck] No inputs, skipping check`);
-          return { relevant: true, message: "" }; // No evidence to check — let it proceed
+          console.log(`[diagnoseEvidence] No inputs — passing through`);
+          return { canQuote: true, understood: "", sector: null, clientName: null, clarificationQuestion: null };
         }
 
-        // Build a brief summary of evidence for the check
-        const evidenceSummary = inputRecords.map((inp: any) => {
-          if (inp.inputType === "audio" && inp.content && !inp.fileUrl) {
-            return `Voice note: "${inp.content.substring(0, 200)}"`;
-          }
-          if (inp.extractedText) {
-            return `Document (${inp.filename || inp.inputType}): "${inp.extractedText.substring(0, 200)}"`;
-          }
-          if (inp.processedContent) {
-            return `Processed (${inp.filename || inp.inputType}): "${inp.processedContent.substring(0, 200)}"`;
-          }
-          return `File: ${inp.filename || inp.inputType}`;
-        }).join("\n");
+        // Build a concise evidence snapshot (first 300 chars per input — enough for diagnosis)
+        const evidenceSummary = inputRecords
+          .filter((inp: any) => !inp.mimeType?.includes(";reference=true"))
+          .map((inp: any) => {
+            if (inp.inputType === "audio" && inp.content) return `Audio recording: "${inp.content.substring(0, 300)}"`;
+            if (inp.processedContent) return `Document (${inp.filename || inp.inputType}): "${inp.processedContent.substring(0, 300)}"`;
+            if (inp.extractedText) return `Document (${inp.filename || inp.inputType}): "${inp.extractedText.substring(0, 300)}"`;
+            if (inp.content) return `Text: "${inp.content.substring(0, 300)}"`;
+            return `File: ${inp.filename || inp.inputType}`;
+          }).join("\n\n");
 
         const tradePresetKey = (quote as any)?.tradePreset as string | null;
-        // Fall back to user's default trade sector if not set on quote
         const userTradeSector = ctx.user.defaultTradeSector || null;
         const tradeLabel = tradePresetKey || userTradeSector || "general trades/construction";
-        console.log(`[tradeRelevanceCheck] Trade: ${tradeLabel} (quote: ${tradePresetKey}, user: ${userTradeSector}), evidence: ${evidenceSummary.substring(0, 100)}`);
 
-        const response = await invokeLLM({
-          messages: [
-            {
-              role: "system",
-              content: `You are a quick content classifier. Respond ONLY with valid JSON: {"relevant": true/false, "message": "string"}
+        const systemPrompt = `You are a quick evidence classifier for a quoting tool used by "${tradeLabel}" businesses.
 
-The user runs a "${tradeLabel}" business. Check if the following evidence relates to ${tradeLabel} work (even loosely — buying materials, quoting for maintenance, hiring subcontractors all count as relevant).
+Read the evidence below and decide if it contains enough information to generate a meaningful quote or quote draft.
 
-If relevant: {"relevant": true, "message": ""}
-If NOT relevant: {"relevant": false, "message": "Brief explanation of why this doesn't appear to relate to ${tradeLabel} work, and what the content actually seems to be about."}`,
-            },
-            {
-              role: "user",
-              content: evidenceSummary,
-            },
-          ],
-          response_format: { type: "json_object" },
-          max_tokens: 150,
-        });
+THRESHOLD — set canQuote: true if the evidence contains ANY of:
+- A job description, even vague ("fit bathroom", "install network", "clean offices")
+- A client name or site address
+- Any materials, quantities, or services
+- Any trade-related scope, even partially described
+- A site survey or meeting where trade work was discussed
 
-        const content = response.choices[0]?.message?.content;
-        console.log(`[tradeRelevanceCheck] LLM response: ${content}`);
-        if (!content) return { relevant: true, message: "" };
+Set canQuote: false ONLY when the evidence contains NONE of the above — e.g. a radio programme, an unrelated business meeting with no trade scope, random conversation with no job mentioned.
+
+IMPORTANT: Bias strongly toward canQuote: true. When in doubt, return true. A thin scope is still a scope.
+
+When canQuote: false, write the "understood" field as a warm, intelligent summary of what you DID hear — show the user the AI was listening. E.g. "I heard a meeting about a print company called Manning Group — discussing social media strategy, catalogue work, and a competitor called Park Communications."
+
+Write "clarificationQuestion" as one focused, friendly question. Do not ask for everything at once.
+
+Respond ONLY with valid JSON — no preamble, no markdown:
+{
+  "canQuote": boolean,
+  "understood": string,
+  "sector": string | null,
+  "clientName": string | null,
+  "clarificationQuestion": string | null
+}`;
 
         try {
-          const parsed = JSON.parse(content);
+          const result = await invokeClaude({
+            system: systemPrompt,
+            maxTokens: 400,
+            messages: [{ role: "user", content: evidenceSummary }],
+          });
+
+          const raw = result.content?.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim() || "";
+          console.log(`[diagnoseEvidence] Raw response: ${raw.substring(0, 200)}`);
+
+          const parsed = JSON.parse(raw);
           return {
-            relevant: parsed.relevant === true,
-            message: parsed.message || "",
+            canQuote: parsed.canQuote !== false, // fail-open: anything other than explicit false → proceed
+            understood: parsed.understood || "",
+            sector: parsed.sector || null,
+            clientName: parsed.clientName || null,
+            clarificationQuestion: parsed.clarificationQuestion || null,
           };
-        } catch {
-          return { relevant: true, message: "" }; // If parsing fails, proceed
+        } catch (err) {
+          console.warn(`[diagnoseEvidence] Failed — failing open:`, err);
+          // Always fail open — never block the user
+          return { canQuote: true, understood: "", sector: null, clientName: null, clarificationQuestion: null };
         }
+      }),
+
+    // ── addClarificationInput ─────────────────────────────────────────────────
+    // Appends a synthetic text input record containing the user's clarification answer.
+    // This becomes evidence for the subsequent parseDictationSummary re-run.
+    addClarificationInput: protectedProcedure
+      .input(z.object({
+        quoteId: z.number(),
+        clarification: z.string().min(1).max(2000),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+
+        await createInput({
+          quoteId: input.quoteId,
+          inputType: "text",
+          content: `User clarification: ${input.clarification}`,
+          filename: "clarification",
+          processingStatus: "completed",
+          processedContent: `User clarification: ${input.clarification}`,
+        });
+
+        console.log(`[addClarificationInput] Added clarification for quoteId=${input.quoteId}: "${input.clarification.substring(0, 80)}"`);
+        return { success: true };
+      }),
+
+    // Legacy alias — kept for any existing client calls during transition
+    tradeRelevanceCheck: protectedProcedure
+      .input(z.object({ quoteId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        return { relevant: true, message: "" };
       }),
 
     // Generate a draft quote from all processed inputs
