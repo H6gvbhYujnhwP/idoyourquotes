@@ -153,37 +153,92 @@ export async function createPortalSession(params: {
 
 /**
  * Change subscription tier (upgrade or downgrade)
- * Upgrades are immediate, downgrades take effect at period end
+ *
+ * UPGRADE behaviour:
+ *   - Subscription moves to new price immediately, proration_behavior: 'none'
+ *     so no credit/debit adjustments are generated for the current period.
+ *   - An invoice item for the full new tier price (ex-VAT) is added and
+ *     immediately invoiced + paid against the customer's saved payment method.
+ *   - automatic_tax is enabled on the invoice so Stripe calculates and
+ *     applies VAT (20% UK) based on the customer's billing address.
+ *   - Billing anchor is unchanged — the user gets the rest of the current
+ *     billing period on the new tier at no extra cost (effectively free days).
+ *   - Next renewal is on the original billing date at the new tier price.
+ *   - chargedAmountPence returned is always the ex-VAT amount. VAT is
+ *     added by Stripe; the actual card charge will be ex-VAT + VAT.
+ *
+ * DOWNGRADE behaviour:
+ *   - Takes effect at next billing period (proration_behavior: 'none').
+ *   - Webhook fires on renewal with new price.
  */
 export async function changeSubscriptionTier(params: {
   stripeSubscriptionId: string;
   newTier: 'solo' | 'pro' | 'team' | 'business';
   orgId: number;
-}): Promise<void> {
+}): Promise<{ chargedAmountPence: number; nextBillingDate: Date }> {
   const newConfig = TIER_CONFIG[params.newTier];
   if (!newConfig.priceId) throw new Error(`No price for tier: ${params.newTier}`);
 
   const subscription = await stripe.subscriptions.retrieve(params.stripeSubscriptionId);
   const currentPriceId = subscription.items.data[0]?.price.id;
   const currentConfig = getTierByPriceId(currentPriceId || '');
-  
   const upgrading = currentConfig
     ? (TIER_CONFIG[currentConfig]?.monthlyPrice || 0) < newConfig.monthlyPrice
     : true;
 
-  await stripe.subscriptions.update(params.stripeSubscriptionId, {
-    items: [{
-      id: subscription.items.data[0].id,
-      price: newConfig.priceId,
-    }],
-    // Upgrades: charge immediately with proration
-    // Downgrades: take effect at next billing period
-    proration_behavior: upgrading ? 'create_prorations' : 'none',
-    metadata: { orgId: String(params.orgId), tier: params.newTier },
-  });
+  if (upgrading) {
+    // Step 1: Move subscription to new price with no proration adjustments.
+    // Billing anchor stays — remaining days on old plan are free on new plan.
+    await stripe.subscriptions.update(params.stripeSubscriptionId, {
+      items: [{
+        id: subscription.items.data[0].id,
+        price: newConfig.priceId,
+      }],
+      proration_behavior: 'none',
+      metadata: { orgId: String(params.orgId), tier: params.newTier },
+    });
 
-  // If downgrade, it takes effect at period end via webhook
-  // If upgrade, webhook will fire with new price and we update immediately
+    // Step 2: Add a one-off invoice item for the full new tier price (ex-VAT).
+    // VAT is applied by Stripe via automatic_tax on the invoice in Step 3.
+    await stripe.invoiceItems.create({
+      customer: subscription.customer as string,
+      amount: newConfig.monthlyPrice, // ex-VAT pence
+      currency: 'gbp',
+      description: `Upgrade to ${newConfig.name} plan`,
+      metadata: { orgId: String(params.orgId), tier: params.newTier },
+    });
+
+    // Step 3: Create, finalise, and immediately pay the invoice.
+    // automatic_tax mirrors the checkout session behaviour — Stripe calculates
+    // UK VAT (20%) based on the customer's billing address and adds it to the total.
+    const invoice = await stripe.invoices.create({
+      customer: subscription.customer as string,
+      auto_advance: false, // We finalise manually
+      automatic_tax: { enabled: true },
+      metadata: { orgId: String(params.orgId), tier: params.newTier, upgradeInvoice: 'true' },
+    });
+
+    await stripe.invoices.finalizeInvoice(invoice.id);
+    await stripe.invoices.pay(invoice.id);
+
+    const nextBillingDate = new Date(subscription.current_period_end * 1000);
+    // Return ex-VAT amount — VAT is added by Stripe. UI shows both.
+    return { chargedAmountPence: newConfig.monthlyPrice, nextBillingDate };
+
+  } else {
+    // Downgrade: move to new price at next billing period, no charge today.
+    await stripe.subscriptions.update(params.stripeSubscriptionId, {
+      items: [{
+        id: subscription.items.data[0].id,
+        price: newConfig.priceId,
+      }],
+      proration_behavior: 'none',
+      metadata: { orgId: String(params.orgId), tier: params.newTier },
+    });
+
+    const nextBillingDate = new Date(subscription.current_period_end * 1000);
+    return { chargedAmountPence: 0, nextBillingDate };
+  }
 }
 
 /**

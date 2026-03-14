@@ -177,10 +177,6 @@ const TIER_RANK: Record<string, number> = { trial: 0, solo: 1, pro: 2, team: 3, 
 const TIER_PRICES: Record<string, number> = { solo: 59, pro: 99, team: 159, business: 249 };
 const TIER_QUOTES: Record<string, number | string> = { solo: 10, pro: 15, team: 50, business: -1 };
 
-function formatPence(pence: number): string {
-  return `£${(pence / 100).toFixed(2)}`;
-}
-
 export default function Pricing() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
@@ -190,12 +186,6 @@ export default function Pricing() {
   const subStatus = trpc.subscription.status.useQuery(undefined, {
     enabled: !!user,
   });
-
-  // Fetch proration when confirmation modal opens
-  const prorationQuery = trpc.subscription.getProration.useQuery(
-    { newTier: confirmTier! },
-    { enabled: !!confirmTier && !!user, retry: false }
-  );
 
   const createCheckout = trpc.subscription.createCheckout.useMutation({
     onSuccess: (data) => {
@@ -207,8 +197,26 @@ export default function Pricing() {
     },
   });
 
+  const upgradeSubscription = trpc.subscription.upgradeSubscription.useMutation({
+    onSuccess: (data) => {
+      const quotaLabel = data.newMaxQuotesPerMonth === -1 ? 'unlimited' : String(data.newMaxQuotesPerMonth);
+      toast.success(
+        `You're now on ${data.newTierName}! ${quotaLabel} quotes/month, active immediately.`,
+        { duration: 6000 }
+      );
+      setLoadingTier(null);
+      subStatus.refetch();
+    },
+    onError: (err) => {
+      toast.error(err.message || "Upgrade failed. Please try again or contact support.");
+      setLoadingTier(null);
+    },
+  });
+
   const currentTier = (subStatus.data?.tier || null) as string | null;
   const currentRank = currentTier ? (TIER_RANK[currentTier] ?? 0) : 0;
+  // True when the user already has an active paid subscription (not just a Stripe customer)
+  const hasActiveSubscription = !!(subStatus.data?.hasActiveSubscription && subStatus.data?.status === 'active');
 
   const handleSelectTier = (tier: 'solo' | 'pro' | 'team' | 'business') => {
     if (!user) {
@@ -218,13 +226,13 @@ export default function Pricing() {
     const newRank = TIER_RANK[tier] ?? 0;
     const isUpgrade = newRank > currentRank;
 
-    // Only show confirmation modal for upgrades on active subscriptions
-    if (isUpgrade && subStatus.data?.status === 'active') {
+    // Existing active subscriber upgrading — show confirmation modal (no Stripe redirect)
+    if (isUpgrade && hasActiveSubscription) {
       setConfirmTier(tier);
       return;
     }
 
-    // New subscriptions or downgrades — go straight to Stripe
+    // New subscription (no active sub) — go to Stripe Checkout
     setLoadingTier(tier);
     createCheckout.mutate({ tier });
   };
@@ -233,7 +241,8 @@ export default function Pricing() {
     if (!confirmTier) return;
     setLoadingTier(confirmTier);
     setConfirmTier(null);
-    createCheckout.mutate({ tier: confirmTier });
+    // Existing subscriber: charge full price now against saved card, no redirect
+    upgradeSubscription.mutate({ newTier: confirmTier });
   };
 
   return (
@@ -500,95 +509,123 @@ export default function Pricing() {
         </p>
       </footer>
 
-      {/* Upgrade confirmation modal */}
-      <Dialog open={!!confirmTier} onOpenChange={(open) => { if (!open) setConfirmTier(null); }}>
-        <DialogContent className="sm:max-w-[420px]">
+      {/* Upgrade confirmation modal — existing subscribers only */}
+      <Dialog open={!!confirmTier} onOpenChange={(open) => { if (!open && !loadingTier) setConfirmTier(null); }}>
+        <DialogContent className="sm:max-w-[440px]">
           <DialogHeader>
             <div className="flex items-center gap-3 mb-1">
               <div className="flex items-center justify-center w-10 h-10 rounded-full" style={{ backgroundColor: '#f0fdfa' }}>
                 <Crown className="h-5 w-5" style={{ color: '#0d9488' }} />
               </div>
-              <DialogTitle className="text-lg">
+              <DialogTitle className="text-lg" style={{ color: '#1a2b4a' }}>
                 Upgrade to {confirmTier ? confirmTier.charAt(0).toUpperCase() + confirmTier.slice(1) : ''}
               </DialogTitle>
             </div>
           </DialogHeader>
 
           <div className="space-y-3 py-1">
-            {/* Quote count reset notice */}
-            <div className="flex items-start gap-2 p-3 rounded-lg" style={{ backgroundColor: '#f0fdfa', border: '1px solid #99f6e4' }}>
-              <Check className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: '#0d9488' }} />
-              <div className="text-sm" style={{ color: '#1a2b4a' }}>
-                <p className="font-semibold mb-0.5">Your quote count resets immediately</p>
-                <p className="text-xs" style={{ color: '#6b7280' }}>
-                  You currently have {subStatus.data?.currentQuoteCount ?? 0} of {subStatus.data?.maxQuotesPerMonth} quotes used this month.
-                  Upgrading gives you {confirmTier ? (TIER_QUOTES[confirmTier] === -1 ? 'unlimited' : TIER_QUOTES[confirmTier]) : ''} quotes per month — starting now.
-                </p>
-              </div>
+
+            {/* What happens now */}
+            <div className="rounded-lg border-2 p-4 space-y-3" style={{ borderColor: '#99f6e4', backgroundColor: '#f0fdfa' }}>
+              <p className="text-sm font-semibold" style={{ color: '#1a2b4a' }}>Here's exactly what happens when you confirm:</p>
+              <ul className="space-y-2">
+                <li className="flex items-start gap-2 text-sm" style={{ color: '#1a2b4a' }}>
+                  <Check className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: '#0d9488' }} />
+                  <span>
+                    <strong>Charged immediately</strong> to your saved payment method — full monthly price.
+                  </span>
+                </li>
+                <li className="flex items-start gap-2 text-sm" style={{ color: '#1a2b4a' }}>
+                  <Check className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: '#0d9488' }} />
+                  <span>
+                    <strong>New plan active instantly</strong> — your limits update the moment payment clears.
+                  </span>
+                </li>
+                <li className="flex items-start gap-2 text-sm" style={{ color: '#1a2b4a' }}>
+                  <Check className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: '#0d9488' }} />
+                  <span>
+                    <strong>Quote count resets to zero</strong> — you get your full{' '}
+                    {confirmTier ? (TIER_QUOTES[confirmTier] === -1 ? ' unlimited ' : ` ${TIER_QUOTES[confirmTier]} `) : ' '}
+                    quotes/month right now.
+                  </span>
+                </li>
+                <li className="flex items-start gap-2 text-sm" style={{ color: '#1a2b4a' }}>
+                  <Check className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: '#0d9488' }} />
+                  <span>
+                    <strong>Rest of this month is free</strong> — your next renewal stays on your original billing date, so you get the remaining days at no extra cost.
+                  </span>
+                </li>
+              </ul>
             </div>
 
-            {/* Proration breakdown */}
-            <div className="rounded-lg border p-3 space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Billing summary</p>
-              {prorationQuery.isLoading ? (
-                <div className="flex items-center gap-2 py-2">
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">Calculating...</span>
-                </div>
-              ) : prorationQuery.data ? (
-                <div className="space-y-1.5 text-sm">
-                  {prorationQuery.data.isNewSubscription ? (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Charged today</span>
-                      <span className="font-semibold">{formatPence(prorationQuery.data.newMonthlyPence)}</span>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Charged today (pro-rated)</span>
-                        <span className="font-semibold">{formatPence(prorationQuery.data.proratedAmountPence)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Then per month from</span>
-                        <span className="font-semibold">
-                          {prorationQuery.data.nextBillingDate
-                            ? new Date(prorationQuery.data.nextBillingDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-                            : '—'}
-                        </span>
-                      </div>
-                    </>
-                  )}
-                  <div className="flex justify-between pt-1 border-t">
-                    <span className="text-muted-foreground">Ongoing monthly</span>
-                    <span className="font-bold" style={{ color: '#0d9488' }}>{formatPence(prorationQuery.data.newMonthlyPence)}/month</span>
+            {/* Billing breakdown — ex-VAT, VAT, total */}
+            {confirmTier && (() => {
+              const exVat = TIER_PRICES[confirmTier];
+              const vat = Math.round(exVat * 0.20 * 100) / 100;
+              const incVat = Math.round((exVat + vat) * 100) / 100;
+              return (
+                <div className="rounded-lg border p-3 space-y-1.5 text-sm">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Billing summary</p>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">{confirmTier.charAt(0).toUpperCase() + confirmTier.slice(1)} plan (ex VAT)</span>
+                    <span>£{exVat.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">VAT (20%)</span>
+                    <span>£{vat.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between pt-1.5 border-t font-bold" style={{ color: '#1a2b4a' }}>
+                    <span>Total charged today</span>
+                    <span style={{ color: '#0d9488' }}>£{incVat.toFixed(2)}</span>
                   </div>
                 </div>
-              ) : (
-                <div className="flex items-center gap-2 text-sm text-amber-600">
-                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                  <span>Pricing preview unavailable — you can still proceed.</span>
-                </div>
-              )}
+              );
+            })()}
+
+            {/* Current usage context */}
+            <div className="rounded-lg border p-3 flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0 text-muted-foreground" />
+              <p className="text-xs text-muted-foreground">
+                You've used <strong>{subStatus.data?.currentQuoteCount ?? 0}</strong> of your{' '}
+                <strong>{subStatus.data?.maxQuotesPerMonth}</strong> quotes this month.
+                After upgrading you'll have{' '}
+                <strong>{confirmTier ? (TIER_QUOTES[confirmTier] === -1 ? 'unlimited' : TIER_QUOTES[confirmTier]) : ''}</strong> quotes/month.
+              </p>
             </div>
 
             <p className="text-xs text-muted-foreground">
-              All prices shown include VAT where applicable. You'll be taken to our secure payment page to confirm.
+              Your saved card will be charged £{confirmTier ? (TIER_PRICES[confirmTier] * 1.20).toFixed(2) : ''} (inc VAT). No redirect — this completes here.
+              You'll receive a confirmation email once payment is processed.
             </p>
+
           </div>
 
           <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button variant="outline" onClick={() => setConfirmTier(null)} className="w-full sm:w-auto">
+            <Button
+              variant="outline"
+              onClick={() => setConfirmTier(null)}
+              disabled={!!loadingTier}
+              className="w-full sm:w-auto"
+            >
               Cancel
             </Button>
             <Button
               onClick={handleConfirmUpgrade}
               disabled={!!loadingTier}
-              className="w-full sm:w-auto"
+              className="w-full sm:w-auto font-bold"
               style={{ backgroundColor: '#0d9488' }}
             >
-              {loadingTier ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Confirm & Continue
-              <ArrowRight className="h-4 w-4 ml-1" />
+              {loadingTier ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Processing…
+                </>
+              ) : (
+                <>
+                  Confirm Upgrade — £{confirmTier ? (TIER_PRICES[confirmTier] * 1.20).toFixed(2) : ''} inc VAT
+                  <ArrowRight className="h-4 w-4 ml-1" />
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

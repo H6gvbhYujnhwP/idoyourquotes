@@ -14,6 +14,7 @@ import {
   createPortalSession,
   cancelSubscription,
   resumeSubscription,
+  changeSubscriptionTier,
   TIER_CONFIG,
   isTrialExpired,
   trialDaysRemaining,
@@ -22,6 +23,8 @@ import {
   canAddCatalogItem,
   getUpgradeSuggestion,
   getUpgradeProration,
+  isUpgrade as isTierUpgrade,
+  getTierRank,
   type SubscriptionTier,
 } from "./stripe";
 import { getUserPrimaryOrg, getOrgMembersByOrgId, getUserByEmail, addOrgMember, getDb, updateOrganization, deleteAllOrgData } from "../db";
@@ -191,6 +194,67 @@ export const subscriptionRouter = router({
       });
 
       return { url };
+    }),
+
+  // Upgrade an existing active subscription in-place (no Stripe Checkout redirect).
+  // Charges the full new tier price immediately against the saved payment method.
+  // Billing anchor unchanged — remainder of current period on new tier is free.
+  // The customer.subscription.updated webhook handles DB tier/limits update and quota reset.
+  upgradeSubscription: protectedProcedure
+    .input(z.object({
+      newTier: z.enum(['solo', 'pro', 'team', 'business']),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const org = await getUserPrimaryOrg(ctx.user.id);
+      if (!org) throw new Error("No organisation found");
+
+      // Only owners/admins can manage billing
+      const members = await getOrgMembersByOrgId(org.id);
+      const membership = members.find(m => Number(m.userId) === ctx.user.id);
+      if (!membership || (membership.role !== 'owner' && membership.role !== 'admin')) {
+        throw new Error("Only organisation owners and admins can manage billing");
+      }
+
+      const stripeSubscriptionId = (org as any).stripeSubscriptionId as string | null;
+      if (!stripeSubscriptionId) {
+        throw new Error("No active subscription found. Please subscribe first.");
+      }
+
+      const currentTier = (org as any).subscriptionTier as SubscriptionTier || 'trial';
+      if (!isTierUpgrade(currentTier, input.newTier)) {
+        throw new Error(`Cannot upgrade from ${currentTier} to ${input.newTier} — this is not an upgrade.`);
+      }
+
+      // Perform the upgrade: full charge now, billing anchor unchanged, proration_behavior: 'none'
+      const { chargedAmountPence, nextBillingDate } = await changeSubscriptionTier({
+        stripeSubscriptionId,
+        newTier: input.newTier,
+        orgId: org.id,
+      });
+
+      // Send tier change confirmation email (async, non-blocking)
+      const oldConfig = TIER_CONFIG[currentTier];
+      const newConfig = TIER_CONFIG[input.newTier];
+      sendTierChangeEmail({
+        to: (org as any).billingEmail || ctx.user.email,
+        name: ctx.user.name || undefined,
+        oldTierName: oldConfig?.name || currentTier,
+        newTierName: newConfig.name,
+        isUpgrade: true,
+        newMaxQuotes: newConfig.maxQuotesPerMonth,
+        newMaxUsers: newConfig.maxUsers,
+        newPrice: newConfig.monthlyPrice / 100,
+      }).catch(err => console.error('[Subscription] Failed to send tier change email:', err));
+
+      console.log(`[Subscription] upgradeSubscription: org=${org.id} ${currentTier}→${input.newTier}, charged=${chargedAmountPence}p, nextBilling=${nextBillingDate.toISOString()}`);
+
+      return {
+        success: true,
+        chargedAmountPence,
+        nextBillingDate,
+        newTierName: newConfig.name,
+        newMaxQuotesPerMonth: newConfig.maxQuotesPerMonth,
+      };
     }),
 
   // Create billing portal session for managing subscription
