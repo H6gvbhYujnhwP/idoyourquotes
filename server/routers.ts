@@ -4029,6 +4029,7 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
               phaseId: isComprehensive && (item as any).phase ? (item as any).phase : undefined,
               category: isComprehensive && (item as any).category ? (item as any).category : undefined,
               pricingType: (item as any).pricingType || "standard",
+              costPrice: (item as any).costPrice ?? null,
             });
             createdLineItems.push(lineItem);
           }
