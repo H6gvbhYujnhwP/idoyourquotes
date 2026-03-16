@@ -32,19 +32,28 @@ function getS3Client(): S3Client {
   return s3Client;
 }
 
+// Expiry constants — named so the intent is clear at every call site
+const SIGNED_URL_DEFAULT_EXPIRY = 604800;        // 7 days  — short-lived doc access
+const SIGNED_URL_LOGO_EXPIRY    = 315360000;     // 10 years — logos are public-facing assets,
+                                                  // never sensitive. A signed URL is still
+                                                  // required because the bucket is private,
+                                                  // but 10 years is effectively permanent.
+
 /**
  * Upload a file to R2 storage
- * @param data - File buffer or string content
- * @param filename - Original filename
+ * @param data        - File buffer or string content
+ * @param filename    - Original filename
  * @param contentType - MIME type of the file
- * @param folder - Optional folder path (e.g., "quotes/123")
- * @returns Object with key and public URL
+ * @param folder      - Optional folder path (e.g., "quotes/123")
+ * @param longLived   - When true, generates a 10-year signed URL (use for logos)
+ * @returns Object with key and signed URL
  */
 export async function uploadToR2(
   data: Buffer | Uint8Array | string,
   filename: string,
   contentType: string,
-  folder?: string
+  folder?: string,
+  longLived: boolean = false
 ): Promise<{ key: string; url: string }> {
   const client = getS3Client();
   
@@ -67,19 +76,20 @@ export async function uploadToR2(
   
   await client.send(command);
   
-  // Generate a presigned URL for access (valid for 7 days)
-  const url = await getPresignedUrl(key);
+  // Generate signed URL — long-lived for logos, standard 7-day for everything else
+  const expiresIn = longLived ? SIGNED_URL_LOGO_EXPIRY : SIGNED_URL_DEFAULT_EXPIRY;
+  const url = await getPresignedUrl(key, expiresIn);
   
   return { key, url };
 }
 
 /**
  * Get a presigned URL for downloading a file
- * @param key - The file key in R2
- * @param expiresIn - URL expiration time in seconds (default: 7 days)
+ * @param key       - The file key in R2
+ * @param expiresIn - URL expiration in seconds (default: 7 days)
  * @returns Presigned URL
  */
-export async function getPresignedUrl(key: string, expiresIn: number = 604800): Promise<string> {
+export async function getPresignedUrl(key: string, expiresIn: number = SIGNED_URL_DEFAULT_EXPIRY): Promise<string> {
   const client = getS3Client();
   
   const command = new GetObjectCommand({

@@ -202,13 +202,16 @@ export const appRouter = router({
         // Decode base64 to buffer
         const buffer = Buffer.from(input.base64Data, "base64");
 
-        // Upload to R2 with user-specific folder
+        // Upload to R2 with user-specific folder.
+        // longLived: true generates a 10-year signed URL — logos are public-facing
+        // assets that must never expire silently between redeploys.
         const folder = `logos/${ctx.user.id}`;
         const { key, url } = await uploadToR2(
           buffer,
           input.filename,
           input.contentType,
-          folder
+          folder,
+          true // longLived — 10-year signed URL
         );
 
         // Extract brand colors from logo
