@@ -6,6 +6,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
+import { sdk } from "./sdk";
 import { serveStatic, setupVite } from "./vite";
 import { registerStripeWebhook } from "../services/stripeWebhook";
 import { startEmailScheduler } from "../services/emailScheduler";
@@ -42,6 +43,73 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
+
+  // ── File proxy ──────────────────────────────────────────────────────────────
+  // Serves R2 files via an authenticated Express route.
+  // Files are stored in R2 with private ACLs; the DB holds /api/file/{key}
+  // as the permanent URL. This route authenticates the session cookie and
+  // streams the file buffer from R2 on every request — no signed URLs expire.
+  // Must be AFTER body parsers and BEFORE tRPC.
+  app.get("/api/file/*", async (req, res) => {
+    try {
+      // Authenticate via session cookie (same mechanism as tRPC context)
+      let user = null;
+      try {
+        user = await sdk.authenticateRequest(req as any);
+      } catch {
+        // fall through to 401
+      }
+      if (!user) {
+        res.status(401).json({ error: "Unauthorised" });
+        return;
+      }
+
+      // Extract the R2 key from the URL — everything after /api/file/
+      const key = (req.params as any)[0] as string;
+      if (!key) {
+        res.status(400).json({ error: "Missing file key" });
+        return;
+      }
+
+      const { getFileBuffer } = await import("../r2Storage");
+      const buffer = await getFileBuffer(key);
+
+      // Infer content-type from key extension — browsers need this to display inline
+      const ext = key.split(".").pop()?.toLowerCase() || "";
+      const mimeMap: Record<string, string> = {
+        pdf: "application/pdf",
+        png: "image/png",
+        jpg: "image/jpeg",
+        jpeg: "image/jpeg",
+        gif: "image/gif",
+        webp: "image/webp",
+        svg: "image/svg+xml",
+        mp3: "audio/mpeg",
+        mp4: "video/mp4",
+        wav: "audio/wav",
+        m4a: "audio/mp4",
+        webm: "audio/webm",
+        ogg: "audio/ogg",
+        doc: "application/msword",
+        docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        xls: "application/vnd.ms-excel",
+        xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      };
+      const contentType = mimeMap[ext] || "application/octet-stream";
+
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Content-Length", buffer.length);
+      // Cache for 5 minutes — balances performance vs freshness after logo updates
+      res.setHeader("Cache-Control", "private, max-age=300");
+      res.send(buffer);
+    } catch (err: any) {
+      console.error("[FileProxy] Error serving file:", err?.message || err);
+      if (!res.headersSent) {
+        res.status(404).json({ error: "File not found" });
+      }
+    }
+  });
+
   // tRPC API
   app.use(
     "/api/trpc",

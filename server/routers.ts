@@ -59,7 +59,7 @@ import {
   updateOrganization,
   logUsage,
 } from "./db";
-import { transcribeAudio } from "./_core/voiceTranscription";
+import { transcribeAudio, transcribeAudioFromBuffer } from "./_core/voiceTranscription";
 import { TRADE_PRESETS, TradePresetKey } from "./tradePresets";
 import { selectEngine } from "./engines/engineRouter";
 import type { EngineInput } from "./engines/types";
@@ -203,15 +203,13 @@ export const appRouter = router({
         const buffer = Buffer.from(input.base64Data, "base64");
 
         // Upload to R2 with user-specific folder.
-        // longLived: true generates a 10-year signed URL — logos are public-facing
-        // assets that must never expire silently between redeploys.
+        // Returns a permanent proxy URL (/api/file/{key}) — never expires.
         const folder = `logos/${ctx.user.id}`;
         const { key, url } = await uploadToR2(
           buffer,
           input.filename,
           input.contentType,
-          folder,
-          true // longLived — 10-year signed URL
+          folder
         );
 
         // Extract brand colors from logo
@@ -1099,7 +1097,7 @@ Respond with valid JSON:
           console.log("[generatePDF] Generating HTML...");
           console.log("[generatePDF] Org brand colors:", org?.brandPrimaryColor, org?.brandSecondaryColor);
 
-          const html = generateQuoteHTML({ quote, lineItems, user, organization: org, tenderContext });
+          const html = await generateQuoteHTML({ quote, lineItems, user, organization: org, tenderContext });
           console.log("[generatePDF] HTML generated, length:", html.length);
           
           return { html };
@@ -1783,8 +1781,8 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
           throw new Error("Input is not an audio file");
         }
 
-        if (!inputRecord.fileUrl) {
-          throw new Error("No file URL for this input");
+        if (!inputRecord.fileKey) {
+          throw new Error("No file key for this input");
         }
 
         // Mark as processing
@@ -1794,7 +1792,11 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
         });
 
         try {
-          const result = await transcribeAudio({ audioUrl: inputRecord.fileUrl });
+          // Fetch audio buffer directly from R2 — fileUrl is now a proxy URL that
+          // external services cannot reach, so we always go via getFileBuffer here.
+          const audioBuffer = await getFileBuffer(inputRecord.fileKey);
+          const mimeType = inputRecord.mimeType || "audio/mpeg";
+          const result = await transcribeAudioFromBuffer(audioBuffer, mimeType);
           
           if ("error" in result) {
             await updateInputProcessing(input.inputId, {
@@ -1933,8 +1935,8 @@ Be thorough and precise - missed details in technical drawings often lead to cos
           throw new Error("Input is not an image file");
         }
 
-        if (!inputRecord.fileUrl) {
-          throw new Error("No file URL for this input");
+        if (!inputRecord.fileKey) {
+          throw new Error("No file key for this input");
         }
 
         // Mark as processing
@@ -1944,6 +1946,13 @@ Be thorough and precise - missed details in technical drawings often lead to cos
         });
 
         try {
+          // Fetch image buffer directly from R2 and encode as base64.
+          // fileUrl is now a proxy URL — OpenAI Vision cannot reach it,
+          // so we always send the image inline as base64.
+          const imageBuffer = await getFileBuffer(inputRecord.fileKey);
+          const mimeType = (inputRecord.mimeType || "image/jpeg") as string;
+          const base64Image = imageBuffer.toString("base64");
+
           // Use LLM vision to analyze image
           const response = await invokeLLM({
             messages: [
@@ -1966,7 +1975,7 @@ Report facts only. Do not interpret or add commentary.`,
                   {
                     type: "image_url",
                     image_url: {
-                      url: inputRecord.fileUrl,
+                      url: `data:${mimeType};base64,${base64Image}`,
                       detail: "high",
                     },
                   },

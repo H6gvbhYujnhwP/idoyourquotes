@@ -32,28 +32,34 @@ function getS3Client(): S3Client {
   return s3Client;
 }
 
-// Expiry constants — named so the intent is clear at every call site
-const SIGNED_URL_DEFAULT_EXPIRY = 604800;        // 7 days  — short-lived doc access
-const SIGNED_URL_LOGO_EXPIRY    = 315360000;     // 10 years — logos are public-facing assets,
-                                                  // never sensitive. A signed URL is still
-                                                  // required because the bucket is private,
-                                                  // but 10 years is effectively permanent.
+// Default expiry for ad-hoc signed URLs (e.g. PDF logo generation at print time)
+const SIGNED_URL_DEFAULT_EXPIRY = 604800; // 7 days
 
 /**
- * Upload a file to R2 storage
+ * Returns a permanent proxy URL for a file key.
+ * This is the URL stored in the DB — it never expires because the proxy
+ * authenticates via session cookie and fetches from R2 server-side on each request.
+ */
+export function getProxyUrl(key: string): string {
+  return `/api/file/${key}`;
+}
+
+/**
+ * Upload a file to R2 storage.
+ * Returns the file key and a permanent proxy URL (/api/file/<key>).
+ * The proxy URL never expires — R2 access happens server-side at request time.
+ *
  * @param data        - File buffer or string content
  * @param filename    - Original filename
  * @param contentType - MIME type of the file
  * @param folder      - Optional folder path (e.g., "quotes/123")
- * @param longLived   - When true, generates a 10-year signed URL (use for logos)
- * @returns Object with key and signed URL
+ * @returns Object with key and permanent proxy URL
  */
 export async function uploadToR2(
   data: Buffer | Uint8Array | string,
   filename: string,
   contentType: string,
-  folder?: string,
-  longLived: boolean = false
+  folder?: string
 ): Promise<{ key: string; url: string }> {
   const client = getS3Client();
   
@@ -76,9 +82,8 @@ export async function uploadToR2(
   
   await client.send(command);
   
-  // Generate signed URL — long-lived for logos, standard 7-day for everything else
-  const expiresIn = longLived ? SIGNED_URL_LOGO_EXPIRY : SIGNED_URL_DEFAULT_EXPIRY;
-  const url = await getPresignedUrl(key, expiresIn);
+  // Return permanent proxy URL — never stored a signed URL in the DB again
+  const url = getProxyUrl(key);
   
   return { key, url };
 }
@@ -90,6 +95,7 @@ export async function uploadToR2(
  * @returns Presigned URL
  */
 export async function getPresignedUrl(key: string, expiresIn: number = SIGNED_URL_DEFAULT_EXPIRY): Promise<string> {
+  // NOTE: Cloudflare R2 caps signed URLs at 7 days (604800s) maximum.
   const client = getS3Client();
   
   const command = new GetObjectCommand({

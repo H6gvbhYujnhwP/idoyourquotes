@@ -2,7 +2,7 @@
 // Uses HTML generation for clean, professional quotes and multi-page proposals
 
 import { Quote, QuoteLineItem, User, Organization, ComprehensiveConfig } from "../drizzle/schema";
-
+import { getPresignedUrl } from "./r2Storage";
 interface PDFQuoteData {
   quote: Quote;
   lineItems: QuoteLineItem[];
@@ -559,18 +559,58 @@ function getTrialWatermarkHTML(): string {
 }
 
 /**
- * Generate HTML for a professional quote PDF
- * Routes to either simple or comprehensive format based on quote mode
+ * Resolves the company logo URL for PDF use.
+ * If the logo is stored as a proxy URL (/api/file/{key}), it cannot be used in the
+ * print dialog (no auth cookie). Extract the R2 key and generate a fresh 1-hour
+ * signed URL that the browser's print dialog can load directly.
+ * Returns a cloned data object with resolved logo set on both user and organization.
  */
-export function generateQuoteHTML(data: PDFQuoteData): string {
+async function resolvePdfLogoUrl(data: PDFQuoteData): Promise<PDFQuoteData> {
+  const rawLogo = data.organization?.companyLogo || data.user.companyLogo;
+  if (!rawLogo) return data;
+
+  let resolvedLogo = rawLogo;
+
+  if (rawLogo.startsWith("/api/file/")) {
+    const key = rawLogo.slice("/api/file/".length);
+    try {
+      resolvedLogo = await getPresignedUrl(key, 3600); // 1-hour — enough for print dialog
+    } catch (err) {
+      console.warn("[PDF] Failed to resolve signed URL for logo, falling back to proxy URL:", err);
+      // Fall back to proxy URL — logo may not render in print dialog but won't crash
+    }
+  }
+
+  // Return shallow-cloned data with resolved logo injected
+  return {
+    ...data,
+    user: { ...data.user, companyLogo: resolvedLogo },
+    organization: data.organization
+      ? { ...data.organization, companyLogo: resolvedLogo }
+      : data.organization,
+  };
+}
+
+/**
+ * Generate HTML for a professional quote PDF
+ * Routes to either simple or comprehensive format based on quote mode.
+ * Async because it resolves proxy logo URLs to fresh signed URLs for the print dialog.
+ */
+export async function generateQuoteHTML(data: PDFQuoteData): Promise<string> {
   const { quote, trialWatermark } = data;
   const isComprehensive = (quote as any).quoteMode === "comprehensive";
 
+  // Resolve the logo URL before passing into the inner generators.
+  // companyLogo is stored as /api/file/{key} (a proxy URL that requires an auth cookie).
+  // The print dialog does not carry cookies, so we must substitute a fresh 1-hour
+  // signed URL here — only for PDF rendering, never stored back to the DB.
+  const resolvedData = await resolvePdfLogoUrl(data);
+
   let html: string;
   if (isComprehensive) {
-    html = generateComprehensiveProposalHTML(data);
+    html = generateComprehensiveProposalHTML(resolvedData);
   } else {
-    html = generateSimpleQuoteHTML(data);
+    html = generateSimpleQuoteHTML(resolvedData);
   }
 
   // Inject trial watermark if applicable

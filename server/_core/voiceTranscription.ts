@@ -92,6 +92,88 @@ const getApiKey = () => {
  * @param options - Audio data and metadata
  * @returns Transcription result or error
  */
+/**
+ * Transcribe audio from a Buffer directly (no URL fetch step).
+ * Use this when the audio file has already been retrieved from R2 via getFileBuffer().
+ * The URL-based transcribeAudio is only for upload-time flows where a signed URL is fresh.
+ */
+export async function transcribeAudioFromBuffer(
+  audioBuffer: Buffer,
+  mimeType: string,
+  options?: Pick<TranscribeOptions, "language" | "prompt">
+): Promise<TranscriptionResponse | TranscriptionError> {
+  try {
+    const apiKey = getApiKey();
+    if (!apiKey) {
+      return {
+        error: "Voice transcription service authentication is missing",
+        code: "SERVICE_ERROR",
+        details: "OPENAI_API_KEY is not configured"
+      };
+    }
+
+    const sizeMB = audioBuffer.length / (1024 * 1024);
+    if (sizeMB > 16) {
+      return {
+        error: "Audio file exceeds maximum size limit",
+        code: "FILE_TOO_LARGE",
+        details: `File size is ${sizeMB.toFixed(2)}MB, maximum allowed is 16MB`
+      };
+    }
+
+    const formData = new FormData();
+    const filename = `audio.${getFileExtension(mimeType)}`;
+    const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: mimeType });
+    formData.append("file", audioBlob, filename);
+    formData.append("model", "whisper-1");
+    formData.append("response_format", "verbose_json");
+
+    const prompt = options?.prompt || (
+      options?.language
+        ? `Transcribe the user's voice to text, the user's working language is ${getLanguageName(options.language)}`
+        : "Transcribe the user's voice to text"
+    );
+    formData.append("prompt", prompt);
+
+    const response = await fetch(getTranscriptionUrl(), {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "Accept-Encoding": "identity",
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      return {
+        error: "Transcription service request failed",
+        code: "TRANSCRIPTION_FAILED",
+        details: `${response.status} ${response.statusText}${errorText ? `: ${errorText}` : ""}`
+      };
+    }
+
+    const whisperResponse = await response.json() as WhisperResponse;
+
+    if (!whisperResponse.text || typeof whisperResponse.text !== "string") {
+      return {
+        error: "Invalid transcription response",
+        code: "SERVICE_ERROR",
+        details: "Transcription service returned an invalid response format"
+      };
+    }
+
+    return whisperResponse;
+
+  } catch (error) {
+    return {
+      error: "Voice transcription failed",
+      code: "SERVICE_ERROR",
+      details: error instanceof Error ? error.message : "An unexpected error occurred"
+    };
+  }
+}
+
 export async function transcribeAudio(
   options: TranscribeOptions
 ): Promise<TranscriptionResponse | TranscriptionError> {
