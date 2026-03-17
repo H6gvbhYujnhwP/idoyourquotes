@@ -542,6 +542,7 @@ Never hardcode assumptions toward "general trades/construction" or electrical in
 |---|---|---|---|
 | 1 | Auto-takeoff runs for all sectors (wasteful, not harmful) | `routers.ts` inputs.uploadFile ~line 1616 | Low |
 | 2 | Legend PDFs run takeoff before reference toggle (mitigated: setReferenceOnly deletes it) | `routers.ts` inputs.uploadFile | Medium |
+| 11 | ~~Deleting a PDF input left orphaned containment + electrical takeoff records in DB — old results returned on reload~~ FIXED 17 Mar 2026: inputs.delete now calls deleteElectricalTakeoffByInputId + deleteContainmentTakeoffByInputId before deleteInput | Fixed | — |
 | 3 | Cancel subscription confirmation email not sent | `subscriptionRouter.ts` | Low |
 | 4 | Resubscribe flow after full cancellation — **verified working** 17 Mar 2026. After `customer.subscription.deleted` webhook, DB sets `stripeSubscriptionId: null` but keeps `stripeCustomerId`. `hasActiveSubscription` evaluates to `false` → user is correctly routed to `createCheckout`. `createCheckoutSession` reuses existing `stripeCustomerId` — no duplicate Stripe customer created. New subscription written to DB on `checkout.session.completed`. | — | No fix needed |
 | 5 | Team member sessions not invalidated when owner deletes account | `db.ts` deleteAllOrgData | Medium |

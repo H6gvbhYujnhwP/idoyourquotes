@@ -1429,6 +1429,10 @@ IMPORTANT: Address the email greeting using the first name only (e.g. "Hi ${gree
           }
         }
 
+        // Delete associated takeoff records before deleting the input
+        try { await deleteElectricalTakeoffByInputId(input.id); } catch {}
+        try { await deleteContainmentTakeoffByInputId(input.id); } catch {}
+
         // Delete the database record
         await deleteInput(input.id);
         return { success: true };
