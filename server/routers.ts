@@ -1726,6 +1726,8 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
                           userAnswers: {},
                           drawingNotes: containmentResult.drawingNotes,
                           svgOverlay: containmentSvg,
+                          rawSegmentsJson: containmentResult.rawSegments.length > 0 ? containmentResult.rawSegments as any : null,
+                          segmentAssignmentsJson: Object.keys(containmentResult.segmentAssignments).length > 0 ? containmentResult.segmentAssignments as any : null,
                         });
                         console.log(`[Auto-takeoff] Containment takeoff created: ${containmentResult.trayRuns.length} tray runs`);
                       }
@@ -2385,6 +2387,8 @@ Rules:
               userAnswers: {},
               drawingNotes: containmentResult.drawingNotes,
               svgOverlay: containmentSvg,
+              rawSegmentsJson: containmentResult.rawSegments.length > 0 ? containmentResult.rawSegments as any : null,
+              segmentAssignmentsJson: Object.keys(containmentResult.segmentAssignments).length > 0 ? containmentResult.segmentAssignments as any : null,
             });
             console.log(`[Electrical Takeoff] Containment takeoff created: ${containmentResult.trayRuns.length} tray runs`);
           }
@@ -2778,6 +2782,8 @@ Rules:
           userAnswers: {},
           drawingNotes: result.drawingNotes,
           svgOverlay,
+          rawSegmentsJson: result.rawSegments.length > 0 ? result.rawSegments as any : null,
+          segmentAssignmentsJson: Object.keys(result.segmentAssignments).length > 0 ? result.segmentAssignments as any : null,
         });
 
         // Update input's processed content with containment context

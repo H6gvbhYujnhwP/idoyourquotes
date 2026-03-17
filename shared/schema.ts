@@ -392,6 +392,23 @@ export const containmentTakeoffs = pgTable("containment_takeoffs", {
   svgOverlay: text("svg_overlay"),
   markupImageUrl: text("markup_image_url"),
 
+  // Raw vector segments from Python extraction — stored for the interactive measurement reviewer.
+  // Each entry is a coloured line segment with x1/y1/x2/y2/lengthPdfUnits/colour/x/y.
+  // Only segments with geometry (lengthPdfUnits > 0) are stored. Nullable — absent on
+  // drawings where Python extraction returned 0 segments (non-CAD / scanned drawings).
+  rawSegmentsJson: json("raw_segments_json").$type<Array<{
+    x: number; y: number; colour: string;
+    x1: number; y1: number; x2: number; y2: number;
+    lengthPdfUnits: number;
+  }>>(),
+
+  // AI auto-pass segment assignments — Record<segmentIndex, groupKey | "excluded">.
+  // segmentIndex = index into rawSegmentsJson. groupKey = e.g. "100-LV", "50-FA".
+  // "excluded" = segment was not matched to any tray group by the auto-pass.
+  // User edits via the measurement reviewer mutate this record; lengths are recalculated
+  // from it on save. Nullable — absent when rawSegmentsJson is absent.
+  segmentAssignmentsJson: json("segment_assignments_json").$type<Record<number, string>>(),
+
   // Verification
   verifiedAt: timestamp("verified_at"),
   verifiedBy: bigint("verified_by", { mode: "number" }),

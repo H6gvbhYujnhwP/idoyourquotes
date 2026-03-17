@@ -136,6 +136,12 @@ export interface ContainmentTakeoffResult {
   drawingNotes: string[];
   hasTextLayer: boolean;
   totalTextElements: number;
+  // Segment data for the interactive measurement reviewer (Phase 1).
+  // rawSegments: all geometry-bearing segments from Python extraction.
+  // segmentAssignments: AI auto-pass assignment of each segment index → group key or "excluded".
+  // Both are empty when Python extraction returned 0 segments.
+  rawSegments: Array<{ x: number; y: number; colour: string; x1: number; y1: number; x2: number; y2: number; lengthPdfUnits: number }>;
+  segmentAssignments: Record<number, string>;
 }
 
 // ---- Extraction Helpers ----
@@ -481,12 +487,19 @@ function measureTrayRunsFromVectors(
   trayAnnotationGroups: Map<string, Array<{ x: number; y: number; endX: number }>>,
   vectorSegments: ColouredLine[],
   metresPerUnit: number,
-): Map<string, number> {
-  const result = new Map<string, number>();
+): { lengths: Map<string, number>; assignments: Record<number, string> } {
+  const lengths = new Map<string, number>();
+  // assignments: key = index in vectorSegments (the rawSegments array stored in DB)
+  // value = group key e.g. "100-LV" or "excluded" (no group match found)
+  const assignments: Record<number, string> = {};
 
-  // Only segments that have geometry (lengthPdfUnits present and > 0)
-  const geoSegments = vectorSegments.filter(s => s.lengthPdfUnits != null && s.lengthPdfUnits > 0);
-  if (geoSegments.length === 0) return result;
+  // Only segments that have geometry (lengthPdfUnits present and > 0).
+  // Track original indices so assignments map back to rawSegmentsJson positions.
+  const geoSegments = vectorSegments
+    .map((s, i) => ({ ...s, originalIndex: i }))
+    .filter(s => s.lengthPdfUnits != null && s.lengthPdfUnits > 0);
+
+  if (geoSegments.length === 0) return { lengths, assignments };
 
   // Step 1: For each annotation group, find its dominant colour via proximity
   const groupColours = new Map<string, string | null>();
@@ -502,13 +515,18 @@ function measureTrayRunsFromVectors(
     colourToGroups.get(colour)!.push(key);
   }
 
-  // Step 3: For each segment, assign to a group and accumulate length
+  // Step 3: For each segment, assign to a group and accumulate length.
+  // Also record the assignment by original index for the measurement reviewer.
   const rawLengths = new Map<string, number>();
   for (const [key] of trayAnnotationGroups) rawLengths.set(key, 0);
 
   for (const seg of geoSegments) {
     const wantingGroups = colourToGroups.get(seg.colour);
-    if (!wantingGroups || wantingGroups.length === 0) continue;
+    if (!wantingGroups || wantingGroups.length === 0) {
+      // No group matched this colour — mark excluded so reviewer can see it
+      assignments[seg.originalIndex] = 'excluded';
+      continue;
+    }
 
     let assignedKey: string;
 
@@ -531,23 +549,24 @@ function measureTrayRunsFromVectors(
       }
     }
 
+    assignments[seg.originalIndex] = assignedKey;
     rawLengths.set(assignedKey, (rawLengths.get(assignedKey) || 0) + (seg.lengthPdfUnits || 0));
   }
 
   // Step 4: Convert to metres, only include groups that got actual segments
   for (const [key, totalPdfUnits] of rawLengths) {
     if (totalPdfUnits > 0) {
-      result.set(key, totalPdfUnits * metresPerUnit);
+      lengths.set(key, totalPdfUnits * metresPerUnit);
     }
   }
 
   // Log results for debugging
-  for (const [key, metres] of result) {
+  for (const [key, metres] of lengths) {
     const colour = groupColours.get(key);
     console.log(`[Vector Measure] ${key}: ${metres.toFixed(1)}m (colour: ${colour || 'none'})`);
   }
 
-  return result;
+  return { lengths, assignments };
 }
 
 /**
@@ -746,9 +765,12 @@ export async function performContainmentTakeoff(
 
   // Attempt vector measurement when we have geometry-rich segments
   let vectorMeasurements: Map<string, number> | null = null;
+  let segmentAssignments: Record<number, string> = {};
   if (hasColouredLines && colouredLines.some(l => l.lengthPdfUnits != null && l.lengthPdfUnits > 0)) {
     console.log(`[Containment Takeoff] Attempting vector length measurement from ${colouredLines.filter(l => l.lengthPdfUnits).length} geometry segments`);
-    vectorMeasurements = measureTrayRunsFromVectors(trayGroups, colouredLines, metresPerUnit);
+    const vectorResult = measureTrayRunsFromVectors(trayGroups, colouredLines, metresPerUnit);
+    vectorMeasurements = vectorResult.lengths;
+    segmentAssignments = vectorResult.assignments;
     console.log(`[Containment Takeoff] Vector measurement returned lengths for ${vectorMeasurements.size} groups`);
   }
 
@@ -1011,6 +1033,16 @@ export async function performContainmentTakeoff(
 
   console.log(`[Containment Takeoff] Complete: ${trayRuns.length} runs, ${Object.keys(fittingSummary).length} sizes`);
 
+  // Build rawSegments: only geometry-bearing segments (those Python returned with x1/y1/x2/y2).
+  // These are stored in DB for the interactive measurement reviewer.
+  const rawSegments = colouredLines
+    .filter(l => l.x1 != null && l.y1 != null && l.x2 != null && l.y2 != null && l.lengthPdfUnits != null && l.lengthPdfUnits > 0)
+    .map(l => ({
+      x: l.x, y: l.y, colour: l.colour,
+      x1: l.x1!, y1: l.y1!, x2: l.x2!, y2: l.y2!,
+      lengthPdfUnits: l.lengthPdfUnits!,
+    }));
+
   return {
     drawingRef,
     pageWidth,
@@ -1023,6 +1055,8 @@ export async function performContainmentTakeoff(
     drawingNotes,
     hasTextLayer: true,
     totalTextElements: words.length,
+    rawSegments,
+    segmentAssignments,
   };
 }
 
