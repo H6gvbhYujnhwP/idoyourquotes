@@ -201,10 +201,14 @@ export async function changeSubscriptionTier(params: {
     // Step 2: Create the invoice first (empty, manual finalisation).
     // automatic_tax mirrors checkout session behaviour — Stripe calculates UK VAT (20%).
     // auto_advance: false means Stripe will not auto-finalise — we control the lifecycle.
+    // pending_invoice_items_behavior: 'exclude' is CRITICAL — without it Stripe sweeps
+    // any existing pending items (e.g. from a previous failed attempt) onto this invoice,
+    // causing a double charge. We only want the item we explicitly attach in Step 3.
     const invoice = await stripe.invoices.create({
       customer: subscription.customer as string,
       auto_advance: false,
       automatic_tax: { enabled: true },
+      pending_invoice_items_behavior: 'exclude',
       metadata: { orgId: String(params.orgId), tier: params.newTier, upgradeInvoice: 'true' },
     });
 
