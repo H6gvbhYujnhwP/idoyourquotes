@@ -393,6 +393,10 @@ function OrgDetail({ orgId, onBack }: { orgId: number; onBack: () => void }) {
   const [quotaValue, setQuotaValue] = useState("");
   const [quotaResult, setQuotaResult] = useState<string | null>(null);
 
+  // Tier override state
+  const [tierValue, setTierValue] = useState("");
+  const [tierResult, setTierResult] = useState<string | null>(null);
+
   // Delete state
   const [showDelete, setShowDelete] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
@@ -412,6 +416,11 @@ function OrgDetail({ orgId, onBack }: { orgId: number; onBack: () => void }) {
   const updateQuotaMut = trpc.admin.updateQuotaLimit.useMutation({
     onSuccess: () => { setQuotaResult("Quota updated"); refetch(); },
     onError: (err) => setQuotaResult(`Error: ${err.message}`),
+  });
+
+  const setTierMut = trpc.admin.setSubscriptionTier.useMutation({
+    onSuccess: () => { setTierResult("Tier updated"); setTierValue(""); refetch(); },
+    onError: (err) => setTierResult(`Error: ${err.message}`),
   });
 
   const deleteOrgMut = trpc.admin.deleteOrganization.useMutation({
@@ -688,7 +697,44 @@ function OrgDetail({ orgId, onBack }: { orgId: number; onBack: () => void }) {
               </div>
               {quotaResult && <div style={{ marginTop: 6, fontSize: 12, color: quotaResult.startsWith("Error") ? "#dc2626" : "#166534" }}>{quotaResult}</div>}
             </div>
-          </div>
+
+            {/* Set Subscription Tier */}
+            <div style={{ marginTop: 16 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: brand.navyMuted, display: "block", marginBottom: 6 }}>
+                Set Subscription Tier (current: <strong>{org.tier}</strong>)
+              </label>
+              <div style={{ display: "flex", gap: 8 }}>
+                <select
+                  value={tierValue}
+                  onChange={(e) => setTierValue(e.target.value)}
+                  style={{
+                    flex: 1, padding: "8px 12px", borderRadius: 6, border: `1px solid ${brand.border}`,
+                    fontSize: 13, outline: "none", background: "white",
+                  }}
+                >
+                  <option value="">— select tier —</option>
+                  <option value="trial">Trial</option>
+                  <option value="solo">Solo</option>
+                  <option value="pro">Pro</option>
+                  <option value="team">Team</option>
+                  <option value="business">Business</option>
+                </select>
+                <button
+                  onClick={() => {
+                    if (!tierValue) return;
+                    setTierMut.mutate({ orgId: org.id, tier: tierValue as any });
+                  }}
+                  disabled={!tierValue || setTierMut.isLoading}
+                  style={{
+                    padding: "8px 16px", borderRadius: 6, border: "none",
+                    background: tierValue ? brand.teal : "#d1d5db",
+                    color: "white", cursor: tierValue ? "pointer" : "default",
+                    fontSize: 13, fontWeight: 600,
+                  }}
+                >Set</button>
+              </div>
+              {tierResult && <div style={{ marginTop: 6, fontSize: 12, color: tierResult.startsWith("Error") ? "#dc2626" : "#166534" }}>{tierResult}</div>}
+            </div>
 
           {/* Danger Zone */}
           <div style={{

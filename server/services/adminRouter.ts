@@ -277,7 +277,30 @@ export const adminRouter = router({
     }),
 
   /**
-   * Get platform-wide stats (total users, orgs, quotes across all tiers)
+   * Manually set subscription tier for an org (admin override — bypasses Stripe)
+   * Use to fix DB/Stripe sync issues without needing shell access.
+   */
+  setSubscriptionTier: adminProcedure
+    .input(z.object({
+      orgId: z.number(),
+      tier: z.enum(['trial', 'solo', 'pro', 'team', 'business']),
+    }))
+    .mutation(async ({ input }) => {
+      const { TIER_CONFIG } = await import('./stripe');
+      const config = TIER_CONFIG[input.tier];
+
+      await updateOrganization(input.orgId, {
+        subscriptionTier: input.tier,
+        maxUsers: config.maxUsers,
+        maxQuotesPerMonth: config.maxQuotesPerMonth,
+        maxCatalogItems: config.maxCatalogItems,
+      } as any);
+
+      console.log(`[Admin] Subscription tier manually set for org ${input.orgId} → ${input.tier}`);
+      return { success: true };
+    }),
+
+  /**
    */
   platformStats: adminProcedure.query(async () => {
     const db = await getDb();
