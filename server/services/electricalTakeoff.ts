@@ -425,26 +425,52 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Coloured
             pathPoints.push({ x: subArgs[ai + 4], y: subArgs[ai + 5] }); ai += 6;
           } else if ((sn === 'curveTo2' || sn === 'curveTo3') && ai + 3 < subArgs.length) {
             pathPoints.push({ x: subArgs[ai + 2], y: subArgs[ai + 3] }); ai += 4;
-          } else if (sn === 'rectangle') { ai += 4; }
+          } else if (sn === 'rectangle' && ai + 3 < subArgs.length) {
+            // rectangle(x, y, w, h) — expand into 4 corner points so geometry is captured
+            // AutoCAD draws tray lines as thin filled rectangles; without this they emit nothing
+            const rx = subArgs[ai], ry = subArgs[ai + 1], rw = subArgs[ai + 2], rh = subArgs[ai + 3];
+            pathPoints.push({ x: rx,      y: ry });
+            pathPoints.push({ x: rx + rw, y: ry });
+            pathPoints.push({ x: rx + rw, y: ry + rh });
+            pathPoints.push({ x: rx,      y: ry + rh });
+            pathPoints.push({ x: rx,      y: ry }); // close
+            ai += 4;
+          }
           else if (sn === 'closePath') { /* no args */ }
           else { ai = Math.min(ai + 2, subArgs.length); }
         }
         // In some pdfjs versions, constructPath IS the final painting op (no separate stroke)
-        // Record one segment per consecutive point pair (not just the whole-path midpoint)
+        // For rectangles (tray lines drawn as filled rects): emit only the LONGEST segment.
+        // A rectangle produces 4 sides — 2 long (the tray run) + 2 short (the tray width).
+        // Emitting all 4 would double-count the length. Taking the longest gives the correct run.
+        // For polylines (non-rect paths): emit all segments as before.
         if (pathPoints.length >= 2) {
           const hex = resolveColour();
           if (hex) {
+            // Collect all valid segments first
+            const segs: Array<{ p1: {x:number,y:number}, p2: {x:number,y:number}, len: number }> = [];
             for (let k = 0; k < pathPoints.length - 1; k++) {
               const p1 = pathPoints[k], p2 = pathPoints[k + 1];
               const segLen = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
               if (segLen < 0.5) continue;
+              segs.push({ p1, p2, len: segLen });
+            }
+            // If this looks like a rectangle (closed path, 4-5 points, 2 distinct lengths),
+            // only emit the longest segment to avoid double-counting opposite sides
+            const isRect = pathPoints.length >= 4 &&
+              Math.abs(pathPoints[0].x - pathPoints[pathPoints.length - 1].x) < 1 &&
+              Math.abs(pathPoints[0].y - pathPoints[pathPoints.length - 1].y) < 1;
+            const toEmit = isRect
+              ? segs.filter(s => s.len === Math.max(...segs.map(x => x.len))).slice(0, 1)
+              : segs;
+            for (const { p1, p2, len } of toEmit) {
               results.push({
                 x: (p1.x + p2.x) / 2,
                 y: pageHeight - (p1.y + p2.y) / 2,
                 colour: hex,
                 x1: p1.x, y1: pageHeight - p1.y,
                 x2: p2.x, y2: pageHeight - p2.y,
-                lengthPdfUnits: segLen,
+                lengthPdfUnits: len,
               });
             }
             colourOpsUsed.add('constructPath+paint');
