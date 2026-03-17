@@ -1702,6 +1702,7 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
                           trayFilter: "LV", trayDuty: "medium",
                           extraDropPerFitting: 2.0, firstPointRunLength: 15.0,
                           numberOfCircuits: 0, additionalCablePercent: 10,
+                          wholesalerLengthMetres: 3,
                         };
                         const cableSummary = calculateCableSummary(containmentResult.trayRuns, defaultUserInputs);
                         await createContainmentTakeoff({
@@ -2360,6 +2361,7 @@ Rules:
               trayFilter: "LV", trayDuty: "medium",
               extraDropPerFitting: 2.0, firstPointRunLength: 15.0,
               numberOfCircuits: 0, additionalCablePercent: 10,
+              wholesalerLengthMetres: 3,
             };
             const cableSummary = calculateCableSummary(containmentResult.trayRuns, defaultUserInputs);
             await createContainmentTakeoff({
@@ -2748,6 +2750,7 @@ Rules:
           firstPointRunLength: 15.0,
           numberOfCircuits: 0,
           additionalCablePercent: 10,
+          wholesalerLengthMetres: 3,
         };
 
         // Calculate initial cable summary
@@ -2801,6 +2804,7 @@ Rules:
           firstPointRunLength: z.number(),
           numberOfCircuits: z.number(),
           additionalCablePercent: z.number(),
+          wholesalerLengthMetres: z.number().min(0.5).max(12).default(3),
         }),
       }))
       .mutation(async ({ ctx, input }) => {
@@ -2875,12 +2879,14 @@ Rules:
 
         // Merge user edits with existing segment data
         const existingRuns = (takeoff.trayRuns || []) as any[];
+        const storedUserInputs = (takeoff.userInputs || {}) as any;
+        const stickLen = storedUserInputs.wholesalerLengthMetres || 3;
         const updatedRuns = input.trayRuns.map(edited => {
           const existing = existingRuns.find((r: any) => r.id === edited.id);
           return {
             ...existing,
             ...edited,
-            wholesalerLengths: Math.ceil(edited.lengthMetres / 3),
+            wholesalerLengths: Math.ceil(edited.lengthMetres / stickLen),
             segments: existing?.segments || [],
           };
         });

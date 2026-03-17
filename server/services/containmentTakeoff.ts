@@ -106,6 +106,7 @@ export interface UserInputs {
   firstPointRunLength: number;
   numberOfCircuits: number;
   additionalCablePercent: number;
+  wholesalerLengthMetres: number; // Length of each tray stick from supplier (default 3m)
 }
 
 export interface CableSummary {
@@ -469,6 +470,7 @@ export async function performContainmentTakeoff(
   drawingRef: string = "Unknown",
   extractWithPdfJs: (buffer: Buffer) => Promise<{ chars: any[]; words: ExtractedWord[]; pageWidth: number; pageHeight: number }>,
   extractLineColours?: (buffer: Buffer) => Promise<Array<{ x: number; y: number; colour: string }>>,
+  wholesalerLengthMetres: number = WHOLESALER_LENGTH_METRES,
 ): Promise<ContainmentTakeoffResult> {
   console.log(`[Containment Takeoff] Starting extraction for: ${drawingRef}`);
 
@@ -685,7 +687,7 @@ export async function performContainmentTakeoff(
     }
 
     totalLengthMetres = Math.round(totalLengthMetres * 10) / 10;
-    const wholesalerLengths = Math.ceil(totalLengthMetres / WHOLESALER_LENGTH_METRES);
+    const wholesalerLengths = Math.ceil(totalLengthMetres / wholesalerLengthMetres);
 
     // Count fittings: estimate from direction changes in annotations
     let tPieces = 0;
@@ -826,6 +828,20 @@ export async function performContainmentTakeoff(
     });
   }
 
+  // Q: Tray stick length from supplier
+  // Asked always — 3m is standard but user must confirm. Stored in userInputs.wholesalerLengthMetres.
+  questions.push({
+    id: "wholesaler-length",
+    question: `What length are your tray sticks from the supplier? (Standard is ${wholesalerLengthMetres}m)`,
+    context: "Cable tray is typically sold in 3m lengths in the UK. Some larger trays (225mm+) may be available in 6m lengths. Confirm the length your supplier delivers — this is used to calculate how many sticks to order.",
+    options: [
+      { label: "3m (standard)", value: "3" },
+      { label: "6m", value: "6" },
+      { label: "1.5m", value: "1.5" },
+    ],
+    defaultValue: String(wholesalerLengthMetres),
+  });
+
   // Q: Tray duty
   questions.push({
     id: "tray-duty",
@@ -852,7 +868,7 @@ export async function performContainmentTakeoff(
   }
   drawingNotes.push(`Found ${dropAnnotations.length} drop annotations (${dropAnnotations.length * DEFAULT_DROP_METRES}m cable allowance)`);
   for (const run of trayRuns) {
-    drawingNotes.push(`${run.sizeMillimetres}mm ${run.trayType}: ${run.lengthMetres}m (${run.wholesalerLengths} x 3m lengths) @ ${run.heightMetres}m`);
+    drawingNotes.push(`${run.sizeMillimetres}mm ${run.trayType}: ${run.lengthMetres}m (${run.wholesalerLengths} x ${wholesalerLengthMetres}m lengths) @ ${run.heightMetres}m`);
   }
 
   console.log(`[Containment Takeoff] Complete: ${trayRuns.length} runs, ${Object.keys(fittingSummary).length} sizes`);
@@ -886,6 +902,11 @@ export function calculateCableSummary(
   const filteredRuns = userInputs.trayFilter === "all"
     ? trayRuns
     : trayRuns.filter(r => r.trayType === userInputs.trayFilter);
+
+  // Recalculate wholesalerLengths using the confirmed stick length from userInputs.
+  // The value stored on each TrayRun was calculated at analysis time using the default (3m).
+  // If the user has since changed the stick length, we must recalculate here.
+  const stickLength = userInputs.wholesalerLengthMetres || WHOLESALER_LENGTH_METRES;
 
   const trayRouteLengthMetres = filteredRuns.reduce((sum, r) => sum + r.lengthMetres, 0);
 
@@ -1014,14 +1035,11 @@ export function formatContainmentForQuoteContext(
   lines.push("## Containment Takeoff");
 
   // Apply tray type filter — only include tray types in scope.
-  // e.g. for a lighting-only quote, trayFilter='LV' excludes FA and ELV tray entirely.
-  // The passed-in fittingSummary is also unfiltered (keyed by size only, not type),
-  // so we rebuild it from the filtered runs to avoid mixing ELV/FA fittings into LV counts.
   const filteredRuns = (userInputs && userInputs.trayFilter && userInputs.trayFilter !== "all")
     ? trayRuns.filter(r => r.trayType === userInputs.trayFilter)
     : trayRuns;
 
-  // Rebuild fittingSummary from filtered runs only
+  // Rebuild fittingSummary from filtered runs only (avoids mixing ELV/FA fittings into LV)
   const filteredFittingSummary: Record<string, FittingSummaryBySize> = {};
   for (const run of filteredRuns) {
     const sizeKey = `${run.sizeMillimetres}mm`;
@@ -1035,13 +1053,17 @@ export function formatContainmentForQuoteContext(
     filteredFittingSummary[sizeKey].couplers += Math.max(0, run.wholesalerLengths - 1);
   }
 
+  // Stick length — use confirmed value from userInputs, fall back to standard 3m
+  const stickLen = userInputs?.wholesalerLengthMetres || WHOLESALER_LENGTH_METRES;
+
   // Tray runs
   lines.push("\n### Cable Tray Runs");
   if (filteredRuns.length === 0) {
     lines.push(`- No tray runs found for filter: ${userInputs?.trayFilter || 'all'}`);
   }
   for (const run of filteredRuns) {
-    lines.push(`- ${run.sizeMillimetres}mm ${run.trayType} tray: ${run.lengthMetres}m (${run.wholesalerLengths} x 3m lengths) at ${run.heightMetres}m height`);
+    const lengths = Math.ceil(run.lengthMetres / stickLen);
+    lines.push(`- ${run.sizeMillimetres}mm ${run.trayType} tray: ${run.lengthMetres}m (${lengths} x ${stickLen}m lengths) at ${run.heightMetres}m height`);
   }
 
   // Fittings (rebuilt from filtered runs)
@@ -1071,8 +1093,10 @@ export function formatContainmentForQuoteContext(
   if (userInputs) {
     lines.push(`\n### Installation Notes`);
     lines.push(`- Tray duty: ${userInputs.trayDuty}`);
+    lines.push(`- Stick length: ${stickLen}m`);
     lines.push(`- Circuits: ${userInputs.numberOfCircuits}`);
   }
 
   return lines.join("\n");
 }
+

@@ -58,6 +58,7 @@ export default function ContainmentTakeoffPanel({ inputId, quoteId }: { inputId:
   const userInputs = (takeoff.userInputs || {
     trayFilter: "LV", trayDuty: "medium", extraDropPerFitting: 2.0,
     firstPointRunLength: 15.0, numberOfCircuits: 0, additionalCablePercent: 10,
+    wholesalerLengthMetres: 3,
   }) as any;
   const cableSummary = takeoff.cableSummary as any;
   const isVerified = takeoff.status === "verified";
@@ -82,9 +83,10 @@ export default function ContainmentTakeoffPanel({ inputId, quoteId }: { inputId:
     setIsEditingInputs(false);
   };
   const updateRun = (i: number, field: keyof TrayRun, value: number) => {
+    const stickLen = (userInputs.wholesalerLengthMetres as number) || 3;
     setEditedRuns(prev => {
       const u = [...prev];
-      u[i] = { ...u[i], [field]: value, wholesalerLengths: field === "lengthMetres" ? Math.ceil(value / 3) : u[i].wholesalerLengths };
+      u[i] = { ...u[i], [field]: value, wholesalerLengths: field === "lengthMetres" ? Math.ceil(value / stickLen) : u[i].wholesalerLengths };
       return u;
     });
   };
@@ -142,7 +144,7 @@ export default function ContainmentTakeoffPanel({ inputId, quoteId }: { inputId:
               <th className="text-left px-3 py-1.5 font-medium" style={{ color: brand.navyMuted }}>Size</th>
               <th className="text-left px-3 py-1.5 font-medium" style={{ color: brand.navyMuted }}>Type</th>
               <th className="text-right px-3 py-1.5 font-medium" style={{ color: brand.navyMuted }}>Length</th>
-              <th className="text-right px-3 py-1.5 font-medium" style={{ color: brand.navyMuted }}>×3m</th>
+              <th className="text-right px-3 py-1.5 font-medium" style={{ color: brand.navyMuted }}>×{userInputs.wholesalerLengthMetres ?? 3}m</th>
               <th className="text-right px-3 py-1.5 font-medium" style={{ color: brand.navyMuted }}>Height</th>
               <th className="text-center px-2 py-1.5 font-medium" style={{ color: brand.navyMuted }} title="T-pieces">T</th>
               <th className="text-center px-2 py-1.5 font-medium" style={{ color: brand.navyMuted }} title="Cross-pieces">+</th>
@@ -257,6 +259,16 @@ export default function ContainmentTakeoffPanel({ inputId, quoteId }: { inputId:
               <Input type="number" value={editedInputs.additionalCablePercent}
                 onChange={e => setEditedInputs((p: any) => ({ ...p, additionalCablePercent: parseInt(e.target.value) || 0 }))} className="h-8 text-xs mt-0.5" />
             </div>
+            <div>
+              <label className="text-[10px] font-medium uppercase" style={{ color: brand.navyMuted }}>Stick length (m)</label>
+              <select value={editedInputs.wholesalerLengthMetres ?? 3}
+                onChange={e => setEditedInputs((p: any) => ({ ...p, wholesalerLengthMetres: parseFloat(e.target.value) }))}
+                className="w-full h-8 text-xs rounded border px-2 mt-0.5" style={{ borderColor: brand.border, color: brand.navy }}>
+                <option value="3">3m (standard)</option>
+                <option value="6">6m</option>
+                <option value="1.5">1.5m</option>
+              </select>
+            </div>
           </>) : (<>
             <div><span className="text-[10px] font-medium uppercase" style={{ color: brand.navyMuted }}>Tray Filter</span><p className="text-xs font-medium mt-0.5" style={{ color: brand.navy }}>{userInputs.trayFilter}</p></div>
             <div><span className="text-[10px] font-medium uppercase" style={{ color: brand.navyMuted }}>Tray Duty</span><p className="text-xs font-medium mt-0.5" style={{ color: brand.navy }}>{userInputs.trayDuty}</p></div>
@@ -264,6 +276,7 @@ export default function ContainmentTakeoffPanel({ inputId, quoteId }: { inputId:
             <div><span className="text-[10px] font-medium uppercase" style={{ color: brand.navyMuted }}>First point run</span><p className="text-xs font-medium mt-0.5" style={{ color: brand.navy }}>{userInputs.firstPointRunLength}m</p></div>
             <div><span className="text-[10px] font-medium uppercase" style={{ color: brand.navyMuted }}>Circuits</span><p className="text-xs font-medium mt-0.5" style={{ color: brand.navy }}>{userInputs.numberOfCircuits}</p></div>
             <div><span className="text-[10px] font-medium uppercase" style={{ color: brand.navyMuted }}>Extra cable</span><p className="text-xs font-medium mt-0.5" style={{ color: brand.navy }}>{userInputs.additionalCablePercent}%</p></div>
+            <div><span className="text-[10px] font-medium uppercase" style={{ color: brand.navyMuted }}>Stick length</span><p className="text-xs font-medium mt-0.5" style={{ color: brand.navy }}>{userInputs.wholesalerLengthMetres ?? 3}m</p></div>
           </>)}
         </div>
       </div>
