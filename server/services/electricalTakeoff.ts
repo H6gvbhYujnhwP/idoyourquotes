@@ -416,11 +416,14 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Coloured
         const subArgs = args[1];
         let ai = 0;
         pathPoints = [];
-        // DIAGNOSTIC: log first 5 constructPath calls to understand structure
+        // DIAGNOSTIC: log first 5 constructPath calls — use index access (subOps is a typed array)
         if (results.length === 0 && _diagCount < 5) {
           _diagCount++;
-          const subOpNames = subOps.map((v: number) => opsNameMap[v] || `op${v}`).join(',');
-          console.log(`[PDF Colours DIAG] constructPath #${_diagCount}: subOps=[${subOpNames}] subArgs=[${subArgs.slice(0,8).join(',')}] stroke=(${sR.toFixed(2)},${sG.toFixed(2)},${sB.toFixed(2)}) fill=(${fR.toFixed(2)},${fG.toFixed(2)},${fB.toFixed(2)})`);
+          const subOpNames: string[] = [];
+          for (let di = 0; di < Math.min(subOps.length, 10); di++) subOpNames.push(opsNameMap[subOps[di]] || `op${subOps[di]}`);
+          const subArgsSample: any[] = [];
+          for (let di = 0; di < Math.min(subArgs.length, 8); di++) subArgsSample.push(subArgs[di]);
+          console.log(`[PDF Colours DIAG] constructPath #${_diagCount}: subOps=[${subOpNames.join(',')}] subArgs=[${subArgsSample.join(',')}] stroke=(${sR.toFixed(2)},${sG.toFixed(2)},${sB.toFixed(2)}) fill=(${fR.toFixed(2)},${fG.toFixed(2)},${fB.toFixed(2)}) pathPts=${pathPoints.length}`);
         }
         for (let j = 0; j < subOps.length; j++) {
           const sn = opsNameMap[subOps[j]] || '';
