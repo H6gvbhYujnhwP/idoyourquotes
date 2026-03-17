@@ -297,6 +297,15 @@ export const subscriptionRouter = router({
       const oldConfig = TIER_CONFIG[currentTier];
       const newConfig = TIER_CONFIG[input.newTier];
 
+      // Update DB immediately so the UI reflects the scheduled downgrade.
+      // We update subscriptionTier only — NOT the limit columns (maxUsers, maxQuotesPerMonth,
+      // maxCatalogItems). The user has already paid for the current period so they keep their
+      // current limits until renewal. The customer.subscription.updated webhook at renewal
+      // will update the limit columns when the period actually ends.
+      await updateOrganization(org.id, {
+        subscriptionTier: input.newTier,
+      } as any);
+
       // Send tier change notification email (async, non-blocking)
       sendTierChangeEmail({
         to: (org as any).billingEmail || ctx.user.email,
