@@ -299,10 +299,33 @@ wasProcessing/isProcessing useEffect in QuoteWorkspace:
 ```
 Stripe webhook → server: /api/stripe/webhook (raw body — before JSON parser)
   → checkout.session.completed → activateSubscription → updateOrg (tier, status, limits)
-  → customer.subscription.updated → updateOrg (tier, status, cancelAtPeriodEnd)
+  → customer.subscription.updated → updateOrg (tier, status, cancelAtPeriodEnd, quota reset if upgrading)
   → customer.subscription.deleted → updateOrg (tier:"trial", status:"canceled", maxQuotes:0)
   → invoice.payment_succeeded → resetMonthlyCount → status:"active"
   → invoice.payment_failed → status:"past_due"
+
+Upgrade flow (existing subscriber, higher tier):
+  → Pricing.tsx: handleSelectTier detects isUpgrade && hasActiveSubscription → upgrade modal
+  → handleConfirmUpgrade → upgradeSubscription.mutate
+  → server: subscription.upgradeSubscription → changeSubscriptionTier() upgrade path
+      → subscriptions.update (new price, proration_behavior:none)
+      → invoices.create (auto_advance:false, automatic_tax:true, pending_invoice_items_behavior:exclude)
+      → invoiceItems.create (invoice:invoice.id — attached directly, never dangling)
+      → finalizeInvoice → pay (catches invoice_already_paid — Stripe auto-collect)
+      → updateOrganization immediately (tier, limits, monthlyQuoteCount:0)
+  → customer.subscription.updated webhook fires — idempotent, confirms DB state
+
+Downgrade flow (existing subscriber, lower tier):
+  → Pricing.tsx: handleSelectTier detects isDowngrade && hasActiveSubscription → downgrade modal
+  → handleConfirmDowngrade → downgradeSubscription.mutate
+  → server: subscription.downgradeSubscription → changeSubscriptionTier() downgrade path
+      → subscriptions.update (new price, proration_behavior:none) — effective at period end
+      → no invoice, no charge today
+  → customer.subscription.updated webhook fires at renewal → updateOrg (new tier limits)
+
+New subscriber flow:
+  → Pricing.tsx: handleSelectTier (no active sub) → createCheckout → Stripe Checkout redirect
+  → checkout.session.completed webhook → activateSubscription → updateOrg
 
 All AI mutations guarded by assertAIAccess(userId):
   → getUserPrimaryOrg → canUseAIFeatures(org) → throws if blocked
@@ -525,6 +548,8 @@ Never hardcode assumptions toward "general trades/construction" or electrical in
 | 6 | ~~"Tax" label + VAT not saving/recalculating~~ — FIXED: label renamed to "VAT", added `onBlur` to trigger `handleSaveQuote` → `recalculateQuoteTotals` | Fixed 13 Mar 2026 | — |
 | 7 | ~~No org-level VAT default~~ — FIXED: quotes.create now reads defaultVatRate from org.defaultDayWorkRates | Fixed 13 Mar 2026 | — |
 | 8 | DrawingEngine sectors not yet using sector-specific prompt injections (Phase 5) | `drawingEngine.ts`, `engineRouter.ts` | Low |
+| 9 | Wez (westley@sweetbyte.co.uk) has a £99 dangling pending Stripe invoice item (`ii_1TBt7iPMGUpLvQsyNcsMHTUX`) from failed upgrade attempt on 17 Mar. Must be deleted in Stripe dashboard before 1 Apr renewal or it will charge £198 instead of £99. DB already fixed to Pro via admin panel. | Stripe Dashboard → Customers → Wez → Pending invoice items | **Critical — action before 1 Apr** |
+| 10 | `monthlyQuoteCount` not reset for Wez after manual admin tier fix (still shows 10/15). Run `UPDATE organizations SET monthly_quote_count = 0 WHERE id = 7;` on Render shell, or wait for 1 Apr renewal to auto-reset. | Render DB shell | Low |
 
 ---
 
@@ -599,6 +624,11 @@ At the end of every session, produce a handover note with:
 | 13 Mar 2026 | `server/routers.ts` | **VAT default fix.** `quotes.create` now reads `org.defaultDayWorkRates.defaultVatRate` and passes it as `taxRate` when creating a new quote. Previously every new quote started at 0% VAT regardless of org settings. Existing quotes unaffected. |
 | 13 Mar 2026 | `server/routers.ts` | **Email greeting first name only.** `generateEmail` now extracts the first word of the contact name for the greeting. "John Smith" → "Hi John,". Previously used full name. |
 | 13 Mar 2026 | `client/src/pages/QuoteWorkspace.tsx` | **Button labels.** "Generate Draft" → "Generate Quote". "Regenerate Draft" → "Regenerate Quote". |
+
+| 17 Mar 2026 | `server/services/stripe.ts` | **Upgrade invoice item ordering bug — root cause fix.** Previous code created the invoice item before the invoice existed, leaving a £99 dangling pending item on the customer account. When `invoices.create` was called next, the invoice was empty (£0), Stripe auto-paid it immediately, and `.pay()` threw `invoice_already_paid` on a zero-value invoice. The £99 item was left as a pending item that would have rolled into the next renewal, causing a double charge. Fix: (1) Create the invoice first (`auto_advance: false`, `automatic_tax: enabled`, `pending_invoice_items_behavior: 'exclude'`). (2) Create the invoice item with `invoice: invoice.id` to attach it directly — never left as a pending item. (3) Catch `invoice_already_paid` from `.pay()` and treat as success (Stripe sometimes auto-collects on finalise). (4) Update DB immediately after confirmed payment (`subscriptionTier`, `maxUsers`, `maxQuotesPerMonth`, `maxCatalogItems`, `monthlyQuoteCount: 0`, `quoteCountResetAt`) — no longer relies solely on webhook for DB update. `pending_invoice_items_behavior: 'exclude'` prevents any pre-existing dangling items from being swept into the upgrade invoice on retry. Applies to all upgrade paths: Solo→Pro, Solo→Team, Solo→Business, Pro→Team, Pro→Business, Team→Business. |
+| 17 Mar 2026 | `server/services/subscriptionRouter.ts` | **`downgradeSubscription` mutation added.** New mutation handles Pro→Solo, Team→Pro, Team→Solo, Business→any downgrades. Validates it is a genuine downgrade (rank check). Calls `changeSubscriptionTier()` downgrade path (already correct — `proration_behavior: none`, takes effect at renewal). Sends tier change email async. Returns `{ success, newTierName, effectiveDate }`. Previously all lower-tier button clicks for existing subscribers fell through to `createCheckout`, which would have created a second Stripe subscription — a double-charge bug. |
+| 17 Mar 2026 | `client/src/pages/Pricing.tsx` | **Downgrade flow built end-to-end.** `handleSelectTier` now has three branches: upgrade (existing sub, higher tier) → upgrade modal; downgrade (existing sub, lower tier) → new downgrade modal; new sub → Stripe Checkout. Added `downgradeTier` state, `downgradeSubscription` mutation, `handleConfirmDowngrade` handler. New amber downgrade modal: shows no charge today, exact effective date from `subStatus.data.currentPeriodEnd`, new tier limits at renewal, cancel = "Keep Current Plan". Button labels on tier cards now context-aware: Solo card shows "Downgrade to Solo" when user is on Pro/Team/Business; Pro card shows "Downgrade to Pro" when on Team/Business; Team card shows "Downgrade to Team" when on Business. |
+| 17 Mar 2026 | `server/services/adminRouter.ts`, `client/src/pages/AdminPanel.tsx` | **Admin panel tier override.** New `setSubscriptionTier` admin mutation sets `subscriptionTier`, `maxUsers`, `maxQuotesPerMonth`, `maxCatalogItems` in one call — used to fix DB/Stripe sync issues without shell access. Reads tier limits from `TIER_CONFIG`. New "Set Subscription Tier" dropdown in Admin Actions section of OrgDetail view, styled consistently with existing controls. Fixes the gap where a failed upgrade left Stripe on Pro but DB on Solo with no admin UI remedy. |
 
 *Single source of truth for all Claude sessions on IdoYourQuotes. Update this file whenever a flow changes, a bug is fixed, or a feature is added. Version: March 2026 — updated 13 Mar 2026.*
 | 13 Mar 2026 | `client/src/pages/QuoteWorkspace.tsx` | **VAT input fix + label rename (bug #6 resolved).** VAT input had `onChange` but no `onBlur` — user could type a rate but it was never saved and `recalculateQuoteTotals` was never triggered. Added `onBlur={() => handleSaveQuote()}`. Flow: VAT input blur → `handleSaveQuote()` → `quotes.update` with `taxRate` → server detects `data.taxRate !== undefined` → `recalculateQuoteTotals` rewrites `taxAmount` + `total` to DB → TanStack Query invalidates → totals re-render. Also renamed label "Tax" → "VAT". |

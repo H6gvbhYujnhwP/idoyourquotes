@@ -257,6 +257,67 @@ export const subscriptionRouter = router({
       };
     }),
 
+  // Downgrade an existing active subscription (takes effect at next billing period).
+  // No charge today — user keeps current plan until renewal, then moves to lower tier.
+  downgradeSubscription: protectedProcedure
+    .input(z.object({
+      newTier: z.enum(['solo', 'pro', 'team', 'business']),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const org = await getUserPrimaryOrg(ctx.user.id);
+      if (!org) throw new Error("No organisation found");
+
+      // Only owners/admins can manage billing
+      const members = await getOrgMembersByOrgId(org.id);
+      const membership = members.find(m => Number(m.userId) === ctx.user.id);
+      if (!membership || (membership.role !== 'owner' && membership.role !== 'admin')) {
+        throw new Error("Only organisation owners and admins can manage billing");
+      }
+
+      const stripeSubscriptionId = (org as any).stripeSubscriptionId as string | null;
+      if (!stripeSubscriptionId) {
+        throw new Error("No active subscription found.");
+      }
+
+      const currentTier = (org as any).subscriptionTier as SubscriptionTier || 'trial';
+
+      // Validate this is actually a downgrade
+      if (getTierRank(input.newTier) >= getTierRank(currentTier)) {
+        throw new Error(`Cannot downgrade from ${currentTier} to ${input.newTier} — use upgrade instead.`);
+      }
+
+      // Perform the downgrade: moves to new price at next billing period, no charge now.
+      // changeSubscriptionTier handles the downgrade path (proration_behavior: none).
+      const { nextBillingDate } = await changeSubscriptionTier({
+        stripeSubscriptionId,
+        newTier: input.newTier,
+        orgId: org.id,
+      });
+
+      const oldConfig = TIER_CONFIG[currentTier];
+      const newConfig = TIER_CONFIG[input.newTier];
+
+      // Send tier change notification email (async, non-blocking)
+      sendTierChangeEmail({
+        to: (org as any).billingEmail || ctx.user.email,
+        name: ctx.user.name || undefined,
+        oldTierName: oldConfig?.name || currentTier,
+        newTierName: newConfig.name,
+        isUpgrade: false,
+        newMaxQuotes: newConfig.maxQuotesPerMonth,
+        newMaxUsers: newConfig.maxUsers,
+        newPrice: newConfig.monthlyPrice / 100,
+      }).catch(err => console.error('[Subscription] Failed to send tier change email:', err));
+
+      console.log(`[Subscription] downgradeSubscription: org=${org.id} ${currentTier}→${input.newTier}, effective=${nextBillingDate.toISOString()}`);
+
+      return {
+        success: true,
+        newTierName: newConfig.name,
+        effectiveDate: nextBillingDate,
+      };
+    }),
+
   // Create billing portal session for managing subscription
   createPortal: protectedProcedure.mutation(async ({ ctx }) => {
     const org = await getUserPrimaryOrg(ctx.user.id);

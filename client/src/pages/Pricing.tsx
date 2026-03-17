@@ -182,6 +182,7 @@ export default function Pricing() {
   const [, setLocation] = useLocation();
   const [loadingTier, setLoadingTier] = useState<string | null>(null);
   const [confirmTier, setConfirmTier] = useState<'solo' | 'pro' | 'team' | 'business' | null>(null);
+  const [downgradeTier, setDowngradeTier] = useState<'solo' | 'pro' | 'team' | 'business' | null>(null);
 
   const subStatus = trpc.subscription.status.useQuery(undefined, {
     enabled: !!user,
@@ -213,6 +214,24 @@ export default function Pricing() {
     },
   });
 
+  const downgradeSubscription = trpc.subscription.downgradeSubscription.useMutation({
+    onSuccess: (data) => {
+      const date = data.effectiveDate ? new Date(data.effectiveDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'your next renewal';
+      toast.success(
+        `Plan change scheduled — you'll move to ${data.newTierName} on ${date}.`,
+        { duration: 8000 }
+      );
+      setLoadingTier(null);
+      setDowngradeTier(null);
+      subStatus.refetch();
+    },
+    onError: (err) => {
+      toast.error(err.message || "Downgrade failed. Please try again or contact support.");
+      setLoadingTier(null);
+      setDowngradeTier(null);
+    },
+  });
+
   const currentTier = (subStatus.data?.tier || null) as string | null;
   const currentRank = currentTier ? (TIER_RANK[currentTier] ?? 0) : 0;
   // True when the user already has an active paid subscription (not just a Stripe customer)
@@ -225,10 +244,17 @@ export default function Pricing() {
     }
     const newRank = TIER_RANK[tier] ?? 0;
     const isUpgrade = newRank > currentRank;
+    const isDowngrade = newRank < currentRank;
 
-    // Existing active subscriber upgrading — show confirmation modal (no Stripe redirect)
+    // Existing active subscriber upgrading — show upgrade confirmation modal
     if (isUpgrade && hasActiveSubscription) {
       setConfirmTier(tier);
+      return;
+    }
+
+    // Existing active subscriber downgrading — show downgrade confirmation modal
+    if (isDowngrade && hasActiveSubscription) {
+      setDowngradeTier(tier);
       return;
     }
 
@@ -243,6 +269,12 @@ export default function Pricing() {
     setConfirmTier(null);
     // Existing subscriber: charge full price now against saved card, no redirect
     upgradeSubscription.mutate({ newTier: confirmTier });
+  };
+
+  const handleConfirmDowngrade = () => {
+    if (!downgradeTier) return;
+    setLoadingTier(downgradeTier);
+    downgradeSubscription.mutate({ newTier: downgradeTier });
   };
 
   return (
@@ -344,7 +376,7 @@ export default function Pricing() {
             currentTier={currentTier === 'solo'}
             onSelect={() => handleSelectTier('solo')}
             loading={loadingTier === 'solo'}
-            buttonLabel="Get Started"
+            buttonLabel={currentRank > 1 ? "Downgrade to Solo" : "Get Started"}
           />
 
           <TierCard
@@ -388,7 +420,7 @@ export default function Pricing() {
             currentTier={currentTier === 'pro'}
             onSelect={() => handleSelectTier('pro')}
             loading={loadingTier === 'pro'}
-            buttonLabel="Upgrade to Pro"
+            buttonLabel={currentRank > 2 ? "Downgrade to Pro" : "Upgrade to Pro"}
           />
 
           <TierCard
@@ -431,7 +463,7 @@ export default function Pricing() {
             currentTier={currentTier === 'team'}
             onSelect={() => handleSelectTier('team')}
             loading={loadingTier === 'team'}
-            buttonLabel="Upgrade to Team"
+            buttonLabel={currentRank > 3 ? "Downgrade to Team" : "Upgrade to Team"}
           />
 
           <TierCard
@@ -510,6 +542,107 @@ export default function Pricing() {
       </footer>
 
       {/* Upgrade confirmation modal — existing subscribers only */}
+      {/* Downgrade Confirmation Modal */}
+      <Dialog open={!!downgradeTier} onOpenChange={(open) => { if (!open && !loadingTier) setDowngradeTier(null); }}>
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="flex items-center justify-center w-10 h-10 rounded-full" style={{ backgroundColor: '#fef3c7' }}>
+                <ArrowLeft className="h-5 w-5" style={{ color: '#d97706' }} />
+              </div>
+              <DialogTitle className="text-lg" style={{ color: '#1a2b4a' }}>
+                Downgrade to {downgradeTier ? downgradeTier.charAt(0).toUpperCase() + downgradeTier.slice(1) : ''}
+              </DialogTitle>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-3 py-1">
+
+            {/* What happens */}
+            <div className="rounded-lg border-2 p-4 space-y-3" style={{ borderColor: '#fde68a', backgroundColor: '#fffbeb' }}>
+              <p className="text-sm font-semibold" style={{ color: '#1a2b4a' }}>Here's exactly what happens when you confirm:</p>
+              <ul className="space-y-2">
+                <li className="flex items-start gap-2 text-sm" style={{ color: '#1a2b4a' }}>
+                  <Check className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: '#d97706' }} />
+                  <span>
+                    <strong>No charge today</strong> — your current plan continues until your billing date.
+                  </span>
+                </li>
+                <li className="flex items-start gap-2 text-sm" style={{ color: '#1a2b4a' }}>
+                  <Check className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: '#d97706' }} />
+                  <span>
+                    <strong>New plan starts on{' '}
+                    {subStatus.data?.currentPeriodEnd
+                      ? new Date(subStatus.data.currentPeriodEnd).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+                      : 'your next renewal'
+                    }</strong> — you keep all current features until then.
+                  </span>
+                </li>
+                <li className="flex items-start gap-2 text-sm" style={{ color: '#1a2b4a' }}>
+                  <Check className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: '#d97706' }} />
+                  <span>
+                    <strong>New limits apply from renewal</strong> — your quote count and team size will adjust to{' '}
+                    {downgradeTier ? downgradeTier.charAt(0).toUpperCase() + downgradeTier.slice(1) : ''} limits.
+                  </span>
+                </li>
+              </ul>
+            </div>
+
+            {/* New limits summary */}
+            {downgradeTier && (
+              <div className="rounded-lg border p-3 space-y-1.5 text-sm">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                  {downgradeTier.charAt(0).toUpperCase() + downgradeTier.slice(1)} plan limits from renewal
+                </p>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Monthly price</span>
+                  <span>£{TIER_PRICES[downgradeTier].toFixed(2)} + VAT / month</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Quotes per month</span>
+                  <span>{TIER_QUOTES[downgradeTier] === -1 ? 'Unlimited' : TIER_QUOTES[downgradeTier]}</span>
+                </div>
+              </div>
+            )}
+
+            <p className="text-xs text-muted-foreground">
+              You can upgrade again at any time. Your existing quotes and data are never deleted.
+            </p>
+
+          </div>
+
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setDowngradeTier(null)}
+              disabled={!!loadingTier}
+              className="w-full sm:w-auto"
+            >
+              Keep Current Plan
+            </Button>
+            <Button
+              onClick={handleConfirmDowngrade}
+              disabled={!!loadingTier}
+              className="w-full sm:w-auto font-bold"
+              style={{ backgroundColor: '#d97706' }}
+            >
+              {loadingTier ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Scheduling…
+                </>
+              ) : (
+                <>
+                  Confirm Downgrade
+                  <ArrowRight className="h-4 w-4 ml-1" />
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Upgrade Confirmation Modal */}
       <Dialog open={!!confirmTier} onOpenChange={(open) => { if (!open && !loadingTier) setConfirmTier(null); }}>
         <DialogContent className="sm:max-w-[440px]">
           <DialogHeader>
