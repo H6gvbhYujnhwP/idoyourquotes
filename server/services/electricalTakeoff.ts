@@ -253,7 +253,13 @@ export async function extractWithPdfJs(pdfBuffer: Buffer): Promise<{
  * Returns an array of { x, y, colour } for coloured (non-black, non-grey) stroked paths.
  * Completely non-fatal — returns empty array on any error.
  */
-export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Array<{ x: number; y: number; colour: string }>> {
+export type ColouredSegment = {
+  x: number; y: number; colour: string;  // midpoint (preserved for backward compat)
+  x1: number; y1: number; x2: number; y2: number;  // actual start/end in page coords (y-flipped)
+  lengthPdfUnits: number; // Euclidean length in PDF user units
+};
+
+export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<ColouredSegment[]> {
   console.log(`[PDF Colours] Function called, buffer size: ${pdfBuffer?.length || 0}`);
   let pdfjsLib: any;
   try {
@@ -296,7 +302,7 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Array<{ 
       if (typeof val === 'number') opsNameMap[val] = name;
     }
 
-    const results: Array<{ x: number; y: number; colour: string }> = [];
+    const results: ColouredSegment[] = [];
     let sR = 0, sG = 0, sB = 0; // current stroke colour (0-1 range)
     let pathPoints: Array<{ x: number; y: number }> = [];
     const colourOpsUsed = new Set<string>();
@@ -384,7 +390,7 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Array<{ 
           else { ai = Math.min(ai + 2, subArgs.length); }
         }
         // In some pdfjs versions, constructPath IS the final painting op (no separate stroke)
-        // Record coloured path immediately after constructPath
+        // Record one segment per consecutive point pair (not just the whole-path midpoint)
         if (pathPoints.length >= 2) {
           const r = Math.round(sR * 255), g = Math.round(sG * 255), b = Math.round(sB * 255);
           const brightness = (r + g + b) / 3;
@@ -392,9 +398,19 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Array<{ 
           const sat = maxC > 0 ? (maxC - minC) / maxC : 0;
           if (brightness > 20 && brightness < 240 && sat > 0.15) {
             const hex = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-            const midX = pathPoints.reduce((s, p) => s + p.x, 0) / pathPoints.length;
-            const midY = pathPoints.reduce((s, p) => s + p.y, 0) / pathPoints.length;
-            results.push({ x: midX, y: pageHeight - midY, colour: hex });
+            for (let k = 0; k < pathPoints.length - 1; k++) {
+              const p1 = pathPoints[k], p2 = pathPoints[k + 1];
+              const segLen = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
+              if (segLen < 0.5) continue; // skip degenerate segments
+              results.push({
+                x: (p1.x + p2.x) / 2,
+                y: pageHeight - (p1.y + p2.y) / 2,
+                colour: hex,
+                x1: p1.x, y1: pageHeight - p1.y,
+                x2: p2.x, y2: pageHeight - p2.y,
+                lengthPdfUnits: segLen,
+              });
+            }
             colourOpsUsed.add('constructPath+stroke');
           }
         }
@@ -413,9 +429,20 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Array<{ 
           // Only keep clearly coloured lines (not black, grey, or white)
           if (brightness > 20 && brightness < 240 && sat > 0.15) {
             const hex = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-            const midX = pathPoints.reduce((s, p) => s + p.x, 0) / pathPoints.length;
-            const midY = pathPoints.reduce((s, p) => s + p.y, 0) / pathPoints.length;
-            results.push({ x: midX, y: pageHeight - midY, colour: hex });
+            // Emit one record per consecutive point pair (preserves actual segment geometry)
+            for (let k = 0; k < pathPoints.length - 1; k++) {
+              const p1 = pathPoints[k], p2 = pathPoints[k + 1];
+              const segLen = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
+              if (segLen < 0.5) continue; // skip degenerate segments
+              results.push({
+                x: (p1.x + p2.x) / 2,
+                y: pageHeight - (p1.y + p2.y) / 2,
+                colour: hex,
+                x1: p1.x, y1: pageHeight - p1.y,
+                x2: p2.x, y2: pageHeight - p2.y,
+                lengthPdfUnits: segLen,
+              });
+            }
           }
         }
         pathPoints = [];

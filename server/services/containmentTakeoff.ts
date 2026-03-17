@@ -376,9 +376,12 @@ function getMetresPerPdfUnit(scale: string | null, paperSize: string | null, pag
 // ---- PDF Vector Colour Extraction ----
 
 interface ColouredLine {
-  x: number;  // midpoint x
+  x: number;  // midpoint x (preserved for backward compat)
   y: number;  // midpoint y
   colour: string; // hex colour e.g. "#3b82f6"
+  // Geometry fields — populated when extractPdfLineColours returns full segment data
+  x1?: number; y1?: number; x2?: number; y2?: number;
+  lengthPdfUnits?: number;
 }
 
 /**
@@ -458,7 +461,94 @@ function findGroupColour(
   return bestColour || null;
 }
 
-// ---- Main Analysis Function ----
+/**
+ * Measure tray run lengths from extracted vector geometry.
+ *
+ * This replaces the annotation-spacing estimate when vector data is available.
+ * It is colour-aware but NOT colour-deterministic — it does NOT assume a colour means
+ * a particular tray type. Instead it:
+ *   1. Finds which colour dominates near each tray annotation group
+ *   2. Sums all segments of that colour
+ *   3. When two groups share a colour (e.g. 100mm LV + 50mm LV both use same blue layer),
+ *      splits segments by proximity to the nearest annotation
+ *
+ * @param trayAnnotationGroups  Map<"size-TYPE", Array<{x, y, endX}>>
+ * @param vectorSegments        All coloured segments from extractPdfLineColours
+ * @param metresPerUnit         Metres per PDF unit (from scale detection)
+ * @returns Map<"size-TYPE", lengthMetres>
+ */
+function measureTrayRunsFromVectors(
+  trayAnnotationGroups: Map<string, Array<{ x: number; y: number; endX: number }>>,
+  vectorSegments: ColouredLine[],
+  metresPerUnit: number,
+): Map<string, number> {
+  const result = new Map<string, number>();
+
+  // Only segments that have geometry (lengthPdfUnits present and > 0)
+  const geoSegments = vectorSegments.filter(s => s.lengthPdfUnits != null && s.lengthPdfUnits > 0);
+  if (geoSegments.length === 0) return result;
+
+  // Step 1: For each annotation group, find its dominant colour via proximity
+  const groupColours = new Map<string, string | null>();
+  for (const [key, annotations] of trayAnnotationGroups) {
+    groupColours.set(key, findGroupColour(annotations, geoSegments));
+  }
+
+  // Step 2: Build colour → [group keys] mapping
+  const colourToGroups = new Map<string, string[]>();
+  for (const [key, colour] of groupColours) {
+    if (!colour) continue;
+    if (!colourToGroups.has(colour)) colourToGroups.set(colour, []);
+    colourToGroups.get(colour)!.push(key);
+  }
+
+  // Step 3: For each segment, assign to a group and accumulate length
+  const rawLengths = new Map<string, number>();
+  for (const [key] of trayAnnotationGroups) rawLengths.set(key, 0);
+
+  for (const seg of geoSegments) {
+    const wantingGroups = colourToGroups.get(seg.colour);
+    if (!wantingGroups || wantingGroups.length === 0) continue;
+
+    let assignedKey: string;
+
+    if (wantingGroups.length === 1) {
+      // Unique colour → straightforward assignment
+      assignedKey = wantingGroups[0];
+    } else {
+      // Shared colour (e.g. two sizes of LV tray on same layer)
+      // Assign to the group whose annotations are closest to this segment's midpoint
+      assignedKey = wantingGroups[0];
+      let bestDist = Infinity;
+      for (const key of wantingGroups) {
+        const annotations = trayAnnotationGroups.get(key)!;
+        for (const ann of annotations) {
+          const dx = seg.x - ann.x;
+          const dy = seg.y - ann.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < bestDist) { bestDist = dist; assignedKey = key; }
+        }
+      }
+    }
+
+    rawLengths.set(assignedKey, (rawLengths.get(assignedKey) || 0) + (seg.lengthPdfUnits || 0));
+  }
+
+  // Step 4: Convert to metres, only include groups that got actual segments
+  for (const [key, totalPdfUnits] of rawLengths) {
+    if (totalPdfUnits > 0) {
+      result.set(key, totalPdfUnits * metresPerUnit);
+    }
+  }
+
+  // Log results for debugging
+  for (const [key, metres] of result) {
+    const colour = groupColours.get(key);
+    console.log(`[Vector Measure] ${key}: ${metres.toFixed(1)}m (colour: ${colour || 'none'})`);
+  }
+
+  return result;
+}
 
 /**
  * Perform containment takeoff on a PDF drawing
@@ -469,7 +559,7 @@ export async function performContainmentTakeoff(
   pdfBuffer: Buffer,
   drawingRef: string = "Unknown",
   extractWithPdfJs: (buffer: Buffer) => Promise<{ chars: any[]; words: ExtractedWord[]; pageWidth: number; pageHeight: number }>,
-  extractLineColours?: (buffer: Buffer) => Promise<Array<{ x: number; y: number; colour: string }>>,
+  extractLineColours?: (buffer: Buffer) => Promise<Array<{ x: number; y: number; colour: string; x1?: number; y1?: number; x2?: number; y2?: number; lengthPdfUnits?: number }>>,
   wholesalerLengthMetres: number = WHOLESALER_LENGTH_METRES,
 ): Promise<ContainmentTakeoffResult> {
   console.log(`[Containment Takeoff] Starting extraction for: ${drawingRef}`);
@@ -643,9 +733,17 @@ export async function performContainmentTakeoff(
     trayGroups.get(key)!.push(ann);
   }
 
-  // Step 7: Estimate lengths from annotation spacing
+  // Step 7: Estimate lengths — use vector geometry if available, fall back to annotation spacing
   const trayRuns: TrayRun[] = [];
   let runId = 0;
+
+  // Attempt vector measurement when we have geometry-rich segments
+  let vectorMeasurements: Map<string, number> | null = null;
+  if (hasColouredLines && colouredLines.some(l => l.lengthPdfUnits != null && l.lengthPdfUnits > 0)) {
+    console.log(`[Containment Takeoff] Attempting vector length measurement from ${colouredLines.filter(l => l.lengthPdfUnits).length} geometry segments`);
+    vectorMeasurements = measureTrayRunsFromVectors(trayGroups, colouredLines, metresPerUnit);
+    console.log(`[Containment Takeoff] Vector measurement returned lengths for ${vectorMeasurements.size} groups`);
+  }
 
   for (const [key, annotations] of trayGroups) {
     const [sizeStr, type] = key.split("-");
@@ -655,38 +753,67 @@ export async function performContainmentTakeoff(
     // Sort by position (left to right, top to bottom)
     annotations.sort((a, b) => a.y - b.y || a.x - b.x);
 
-    // Estimate total length from the bounding area of annotations
-    // This is an approximation — vector extraction (Option B) will refine this
     let totalLengthMetres = 0;
     const segments: TraySegment[] = [];
+    let usedVectorMeasurement = false;
 
-    for (let i = 0; i < annotations.length - 1; i++) {
-      const a = annotations[i];
-      const b = annotations[i + 1];
+    // --- Try vector measurement first ---
+    if (vectorMeasurements) {
+      const vectorLength = vectorMeasurements.get(key);
+      if (vectorLength && vectorLength > 0) {
+        totalLengthMetres = Math.round(vectorLength * 10) / 10;
+        usedVectorMeasurement = true;
+        console.log(`[Containment Takeoff] ${key}: using vector length ${totalLengthMetres}m`);
 
-      // Calculate distance between annotation positions
-      const dx = Math.abs(b.x - a.x);
-      const dy = Math.abs(b.y - a.y);
-      const distPdfUnits = Math.sqrt(dx * dx + dy * dy);
-      const distMetres = distPdfUnits * metresPerUnit;
-
-      // Only count if annotations are on the same approximate line (horizontal or vertical)
-      if (dx > 20 || dy > 20) {
-        segments.push({
-          x1: a.x, y1: a.y,
-          x2: b.x, y2: b.y,
-          lengthMetres: Math.round(distMetres * 10) / 10,
-        });
-        totalLengthMetres += distMetres;
+        // Build synthetic segments for SVG overlay — use annotation positions as approximate waypoints
+        for (let i = 0; i < annotations.length - 1; i++) {
+          const a = annotations[i];
+          const b = annotations[i + 1];
+          const dx = Math.abs(b.x - a.x);
+          const dy = Math.abs(b.y - a.y);
+          if (dx > 20 || dy > 20) {
+            // Apportion vector length by the relative distance between annotations
+            const distPdfUnits = Math.sqrt(dx * dx + dy * dy);
+            segments.push({
+              x1: a.x, y1: a.y,
+              x2: b.x, y2: b.y,
+              // Note: lengthMetres here is approximate for overlay display only
+              lengthMetres: Math.round(distPdfUnits * metresPerUnit * 10) / 10,
+            });
+          }
+        }
       }
     }
 
-    // If we only have one annotation, estimate a minimum run
-    if (annotations.length === 1 && totalLengthMetres === 0) {
-      totalLengthMetres = 10; // Default minimum estimate
-    }
+    // --- Fall back to annotation-spacing estimate if no vector data ---
+    if (!usedVectorMeasurement) {
+      for (let i = 0; i < annotations.length - 1; i++) {
+        const a = annotations[i];
+        const b = annotations[i + 1];
 
-    totalLengthMetres = Math.round(totalLengthMetres * 10) / 10;
+        const dx = Math.abs(b.x - a.x);
+        const dy = Math.abs(b.y - a.y);
+        const distPdfUnits = Math.sqrt(dx * dx + dy * dy);
+        const distMetres = distPdfUnits * metresPerUnit;
+
+        if (dx > 20 || dy > 20) {
+          segments.push({
+            x1: a.x, y1: a.y,
+            x2: b.x, y2: b.y,
+            lengthMetres: Math.round(distMetres * 10) / 10,
+          });
+          totalLengthMetres += distMetres;
+        }
+      }
+
+      // If we only have one annotation, estimate a minimum run
+      if (annotations.length === 1 && totalLengthMetres === 0) {
+        totalLengthMetres = 10; // Default minimum estimate
+      }
+
+      totalLengthMetres = Math.round(totalLengthMetres * 10) / 10;
+      console.log(`[Containment Takeoff] ${key}: using annotation-spacing fallback: ${totalLengthMetres}m`);
+    }
     const wholesalerLengths = Math.ceil(totalLengthMetres / wholesalerLengthMetres);
 
     // Count fittings: estimate from direction changes in annotations
@@ -858,6 +985,11 @@ export async function performContainmentTakeoff(
   const drawingNotes: string[] = [];
   if (detectedScale) drawingNotes.push(`Scale detected: ${detectedScale}`);
   if (paperSize) drawingNotes.push(`Paper size: ${paperSize}`);
+  if (vectorMeasurements && vectorMeasurements.size > 0) {
+    drawingNotes.push(`Measurement method: Vector geometry (${colouredLines.filter(l => l.lengthPdfUnits).length} segments measured)`);
+  } else {
+    drawingNotes.push(`Measurement method: Annotation spacing estimate (vector data unavailable)`);
+  }
   drawingNotes.push(`Found ${trayAnnotations.length} NEW tray annotations across ${trayRuns.length} tray runs`);
   if (existingAnnotations.length > 0) {
     drawingNotes.push(`Excluded ${existingAnnotations.length} EXISTING tray annotations`);
