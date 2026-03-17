@@ -303,6 +303,7 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Coloured
     }
 
     const results: ColouredSegment[] = [];
+    let _diagCount = 0; // temporary diagnostic counter
     let sR = 0, sG = 0, sB = 0; // current stroke colour (0-1 range)
     let fR = 0, fG = 0, fB = 0; // current fill colour (0-1 range)
     let pathPoints: Array<{ x: number; y: number }> = [];
@@ -415,6 +416,12 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Coloured
         const subArgs = args[1];
         let ai = 0;
         pathPoints = [];
+        // DIAGNOSTIC: log first 5 constructPath calls to understand structure
+        if (results.length === 0 && _diagCount < 5) {
+          _diagCount++;
+          const subOpNames = subOps.map((v: number) => opsNameMap[v] || `op${v}`).join(',');
+          console.log(`[PDF Colours DIAG] constructPath #${_diagCount}: subOps=[${subOpNames}] subArgs=[${subArgs.slice(0,8).join(',')}] stroke=(${sR.toFixed(2)},${sG.toFixed(2)},${sB.toFixed(2)}) fill=(${fR.toFixed(2)},${fG.toFixed(2)},${fB.toFixed(2)})`);
+        }
         for (let j = 0; j < subOps.length; j++) {
           const sn = opsNameMap[subOps[j]] || '';
           if (sn === 'moveTo' && ai + 1 < subArgs.length) {
