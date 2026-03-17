@@ -2139,9 +2139,31 @@ export default function QuoteWorkspace() {
                 ...(containmentList || []).map((ct: any) => {
                   const counts: Record<string, number> = {};
                   const descriptions: Record<string, string> = {};
-                  const trayRuns = (ct.trayRuns || []) as any[];
-                  const fittingSummary = (ct.fittingSummary || {}) as Record<string, any>;
+                  const allTrayRuns = (ct.trayRuns || []) as any[];
                   const cableSummary = ct.cableSummary as any;
+
+                  // Apply tray type filter — only include runs in scope (e.g. LV only for lighting).
+                  // userInputs.trayFilter is stored on the containment_takeoffs record.
+                  // fittingSummary stored in DB is keyed by size only (not type) so it mixes
+                  // LV and ELV fittings — we rebuild it from the filtered runs instead.
+                  const trayFilter: string = (ct.userInputs as any)?.trayFilter || 'LV';
+                  const trayRuns = trayFilter === 'all'
+                    ? allTrayRuns
+                    : allTrayRuns.filter((r: any) => r.trayType === trayFilter);
+
+                  // Rebuild fittingSummary from filtered runs only (avoids mixing ELV/FA fittings into LV)
+                  const filteredFittingSummary: Record<string, any> = {};
+                  for (const run of trayRuns) {
+                    const sizeKey = `${run.sizeMillimetres}mm`;
+                    if (!filteredFittingSummary[sizeKey]) {
+                      filteredFittingSummary[sizeKey] = { tPieces: 0, crossPieces: 0, bends90: 0, drops: 0, couplers: 0 };
+                    }
+                    filteredFittingSummary[sizeKey].tPieces += run.tPieces || 0;
+                    filteredFittingSummary[sizeKey].crossPieces += run.crossPieces || 0;
+                    filteredFittingSummary[sizeKey].bends90 += run.bends90 || 0;
+                    filteredFittingSummary[sizeKey].drops += run.drops || 0;
+                    filteredFittingSummary[sizeKey].couplers += Math.max(0, (run.wholesalerLengths || 0) - 1);
+                  }
 
                   // Tray runs → material lines (3m lengths)
                   for (const run of trayRuns) {
@@ -2150,8 +2172,8 @@ export default function QuoteWorkspace() {
                     descriptions[key] = `${run.sizeMillimetres}mm ${run.trayType} Cable Tray (3m lengths)`;
                   }
 
-                  // Fittings → material lines
-                  for (const [sizeKey, fittings] of Object.entries(fittingSummary)) {
+                  // Fittings → material lines (from filtered summary)
+                  for (const [sizeKey, fittings] of Object.entries(filteredFittingSummary)) {
                     const f = fittings as any;
                     if (f.bends90 > 0) {
                       const key = `fitting-${sizeKey}-bend90`;

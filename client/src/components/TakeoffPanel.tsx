@@ -519,8 +519,10 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
           containmentCounts={(() => {
             if (!containmentData) return undefined;
             const ct = containmentData as any;
-            const trayRuns = (ct.trayRuns || []) as any[];
-            if (trayRuns.length === 0) return undefined;
+            const allRuns = (ct.trayRuns || []) as any[];
+            if (allRuns.length === 0) return undefined;
+            const trayFilter: string = (ct.userInputs as any)?.trayFilter || 'LV';
+            const trayRuns = trayFilter === 'all' ? allRuns : allRuns.filter((r: any) => r.trayType === trayFilter);
             const c: Record<string, number> = {};
             for (const run of trayRuns) {
               const key = `tray-${run.sizeMillimetres}mm-${run.trayType}`;
@@ -531,8 +533,10 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
           containmentDescriptions={(() => {
             if (!containmentData) return undefined;
             const ct = containmentData as any;
-            const trayRuns = (ct.trayRuns || []) as any[];
-            if (trayRuns.length === 0) return undefined;
+            const allRuns = (ct.trayRuns || []) as any[];
+            if (allRuns.length === 0) return undefined;
+            const trayFilter: string = (ct.userInputs as any)?.trayFilter || 'LV';
+            const trayRuns = trayFilter === 'all' ? allRuns : allRuns.filter((r: any) => r.trayType === trayFilter);
             const d: Record<string, string> = {};
             for (const run of trayRuns) {
               const key = `tray-${run.sizeMillimetres}mm-${run.trayType}`;
@@ -543,8 +547,10 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
           containmentColours={(() => {
             if (!containmentData) return undefined;
             const ct = containmentData as any;
-            const trayRuns = (ct.trayRuns || []) as any[];
-            if (trayRuns.length === 0) return undefined;
+            const allRuns = (ct.trayRuns || []) as any[];
+            if (allRuns.length === 0) return undefined;
+            const trayFilter: string = (ct.userInputs as any)?.trayFilter || 'LV';
+            const trayRuns = trayFilter === 'all' ? allRuns : allRuns.filter((r: any) => r.trayType === trayFilter);
             const c: Record<string, string> = {};
             for (const run of trayRuns) {
               const key = `tray-${run.sizeMillimetres}mm-${run.trayType}`;
