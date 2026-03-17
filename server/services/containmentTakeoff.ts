@@ -817,14 +817,13 @@ export async function performContainmentTakeoff(
   if (trayTypesFound.length > 1) {
     questions.push({
       id: "tray-filter",
-      question: `We found ${trayTypesFound.join(", ")} tray types. Which should be included in the takeoff?`,
-      context: `This drawing contains ${trayTypesFound.map(t => `${t} (${trayAnnotations.filter(a => a.type === t).length} annotations)`).join(", ")}. For lighting-only quotes, typically only LV tray is needed.`,
+      question: `Found ${trayTypesFound.join(", ")} tray types on this drawing. Which are in your scope?`,
+      context: `This drawing contains: ${trayTypesFound.map(t => `${t} (${trayAnnotations.filter(a => a.type === t).length} annotations)`).join(", ")}. Select only the tray types you are responsible for. Common examples: LV only for lighting packages, LV + FA for combined lighting and fire alarm scopes. Do not assume — confirm based on your tender scope.`,
       options: [
-        { label: "LV only", value: "LV" },
         { label: "All types", value: "all" },
         ...trayTypesFound.map(t => ({ label: `${t} only`, value: t })),
       ],
-      defaultValue: "LV",
+      defaultValue: "all",
     });
   }
 

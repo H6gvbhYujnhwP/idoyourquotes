@@ -521,7 +521,7 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
             const ct = containmentData as any;
             const allRuns = (ct.trayRuns || []) as any[];
             if (allRuns.length === 0) return undefined;
-            const trayFilter: string = (ct.userInputs as any)?.trayFilter || 'LV';
+            const trayFilter: string = (ct.userInputs as any)?.trayFilter || 'all';
             const trayRuns = trayFilter === 'all' ? allRuns : allRuns.filter((r: any) => r.trayType === trayFilter);
             const c: Record<string, number> = {};
             for (const run of trayRuns) {
@@ -535,7 +535,7 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
             const ct = containmentData as any;
             const allRuns = (ct.trayRuns || []) as any[];
             if (allRuns.length === 0) return undefined;
-            const trayFilter: string = (ct.userInputs as any)?.trayFilter || 'LV';
+            const trayFilter: string = (ct.userInputs as any)?.trayFilter || 'all';
             const trayRuns = trayFilter === 'all' ? allRuns : allRuns.filter((r: any) => r.trayType === trayFilter);
             const d: Record<string, string> = {};
             for (const run of trayRuns) {
@@ -549,7 +549,7 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
             const ct = containmentData as any;
             const allRuns = (ct.trayRuns || []) as any[];
             if (allRuns.length === 0) return undefined;
-            const trayFilter: string = (ct.userInputs as any)?.trayFilter || 'LV';
+            const trayFilter: string = (ct.userInputs as any)?.trayFilter || 'all';
             const trayRuns = trayFilter === 'all' ? allRuns : allRuns.filter((r: any) => r.trayType === trayFilter);
             const c: Record<string, string> = {};
             for (const run of trayRuns) {

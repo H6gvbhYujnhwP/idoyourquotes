@@ -2146,7 +2146,7 @@ export default function QuoteWorkspace() {
                   // userInputs.trayFilter is stored on the containment_takeoffs record.
                   // fittingSummary stored in DB is keyed by size only (not type) so it mixes
                   // LV and ELV fittings — we rebuild it from the filtered runs instead.
-                  const trayFilter: string = (ct.userInputs as any)?.trayFilter || 'LV';
+                  const trayFilter: string = (ct.userInputs as any)?.trayFilter || 'all';
                   const trayRuns = trayFilter === 'all'
                     ? allTrayRuns
                     : allTrayRuns.filter((r: any) => r.trayType === trayFilter);

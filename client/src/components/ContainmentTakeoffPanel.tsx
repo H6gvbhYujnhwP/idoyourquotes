@@ -44,6 +44,7 @@ export default function ContainmentTakeoffPanel({ inputId, quoteId }: { inputId:
   const updateTrayRunsMut = trpc.containmentTakeoff.updateTrayRuns.useMutation({ onSuccess: () => refetch() });
   const verifyMut = trpc.containmentTakeoff.verify.useMutation({ onSuccess: () => refetch() });
   const unlockMut = trpc.containmentTakeoff.unlock.useMutation({ onSuccess: () => refetch() });
+  const analyzeMut = trpc.containmentTakeoff.analyze.useMutation({ onSuccess: () => refetch() });
 
   const [isEditingRuns, setIsEditingRuns] = useState(false);
   const [isEditingInputs, setIsEditingInputs] = useState(false);
@@ -51,12 +52,44 @@ export default function ContainmentTakeoffPanel({ inputId, quoteId }: { inputId:
   const [editedRuns, setEditedRuns] = useState<TrayRun[]>([]);
   const [editedInputs, setEditedInputs] = useState<any>(null);
 
-  if (!takeoff || !takeoff.trayRuns || (takeoff.trayRuns as any[]).length === 0) return null;
+  // No takeoff record yet — show manual trigger button.
+  // Auto-detection runs on upload but can miss if the drawing is unusual
+  // or if the auto-detection score was below threshold. This gives the user
+  // an explicit fallback to run containment takeoff on any PDF drawing.
+  if (!takeoff || !takeoff.trayRuns || (takeoff.trayRuns as any[]).length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed px-4 py-3 flex items-center justify-between" style={{ borderColor: brand.border }}>
+        <div className="flex items-center gap-2">
+          <Cable className="h-4 w-4" style={{ color: brand.navyMuted }} />
+          <span className="text-xs" style={{ color: brand.navyMuted }}>
+            {analyzeMut.isPending ? "Running containment takeoff…" : "No containment takeoff found for this drawing."}
+          </span>
+        </div>
+        {!analyzeMut.isPending && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs"
+            onClick={() => analyzeMut.mutate({ inputId, quoteId })}
+          >
+            <Cable className="h-3 w-3 mr-1" />
+            Run Containment Takeoff
+          </Button>
+        )}
+        {analyzeMut.isPending && (
+          <span className="text-xs animate-pulse" style={{ color: brand.teal }}>Analysing…</span>
+        )}
+        {analyzeMut.isError && (
+          <span className="text-xs text-red-500">Failed — {(analyzeMut.error as any)?.message || "try again"}</span>
+        )}
+      </div>
+    );
+  }
 
   const trayRuns = (takeoff.trayRuns || []) as TrayRun[];
   const fittingSummary = (takeoff.fittingSummary || {}) as Record<string, any>;
   const userInputs = (takeoff.userInputs || {
-    trayFilter: "LV", trayDuty: "medium", extraDropPerFitting: 2.0,
+    trayFilter: "all", trayDuty: "medium", extraDropPerFitting: 2.0,
     firstPointRunLength: 15.0, numberOfCircuits: 0, additionalCablePercent: 10,
     wholesalerLengthMetres: 3,
   }) as any;
@@ -164,7 +197,7 @@ export default function ContainmentTakeoffPanel({ inputId, quoteId }: { inputId:
                   <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">{run.trayType}</Badge></td>
                   {isEditingRuns ? (<>
                     <td className="px-2 py-1"><Input type="number" value={run.lengthMetres} onChange={e => updateRun(i, "lengthMetres", parseFloat(e.target.value) || 0)} className="h-7 w-20 text-xs text-right ml-auto" /></td>
-                    <td className="text-right px-2 py-2 text-xs" style={{ color: brand.navyMuted }}>{Math.ceil(run.lengthMetres / 3)}</td>
+                    <td className="text-right px-2 py-2 text-xs" style={{ color: brand.navyMuted }}>{Math.ceil(run.lengthMetres / ((userInputs.wholesalerLengthMetres as number) || 3))}</td>
                     <td className="px-2 py-1"><Input type="number" value={run.heightMetres} onChange={e => updateRun(i, "heightMetres", parseFloat(e.target.value) || 0)} className="h-7 w-16 text-xs text-right ml-auto" /></td>
                     <td className="px-1 py-1 text-center"><Input type="number" value={run.tPieces} onChange={e => updateRun(i, "tPieces", parseInt(e.target.value) || 0)} className="h-7 w-12 text-xs text-center mx-auto" /></td>
                     <td className="px-1 py-1 text-center"><Input type="number" value={run.crossPieces} onChange={e => updateRun(i, "crossPieces", parseInt(e.target.value) || 0)} className="h-7 w-12 text-xs text-center mx-auto" /></td>

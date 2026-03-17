@@ -1699,7 +1699,7 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
                           containmentResult.pageHeight,
                         );
                         const defaultUserInputs = {
-                          trayFilter: "LV", trayDuty: "medium",
+                          trayFilter: "all", trayDuty: "medium",
                           extraDropPerFitting: 2.0, firstPointRunLength: 15.0,
                           numberOfCircuits: 0, additionalCablePercent: 10,
                           wholesalerLengthMetres: 3,
@@ -2358,7 +2358,7 @@ Rules:
               containmentResult.pageHeight,
             );
             const defaultUserInputs = {
-              trayFilter: "LV", trayDuty: "medium",
+              trayFilter: "all", trayDuty: "medium",
               extraDropPerFitting: 2.0, firstPointRunLength: 15.0,
               numberOfCircuits: 0, additionalCablePercent: 10,
               wholesalerLengthMetres: 3,
@@ -2744,7 +2744,7 @@ Rules:
 
         // Default user inputs
         const defaultUserInputs = {
-          trayFilter: "LV",
+          trayFilter: "all",
           trayDuty: "medium",
           extraDropPerFitting: 2.0,
           firstPointRunLength: 15.0,
