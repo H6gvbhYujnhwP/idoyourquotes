@@ -404,7 +404,12 @@ export default function QuoteWorkspace() {
   });
 
   const deleteInput = trpc.inputs.delete.useMutation({
-    onSuccess: () => refetch(),
+    onSuccess: async () => {
+      await refetch();
+      refetchTakeoffs();
+      hasRehydratedRef.current = false;
+      triggerVoiceAnalysis();
+    },
     onError: (error) => toast.error("Failed to delete: " + error.message),
   });
 
