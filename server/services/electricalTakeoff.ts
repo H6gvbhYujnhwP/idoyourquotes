@@ -303,7 +303,6 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Coloured
     }
 
     const results: ColouredSegment[] = [];
-    let _diagCount = 0; // temporary diagnostic counter
     let sR = 0, sG = 0, sB = 0; // current stroke colour (0-1 range)
     let fR = 0, fG = 0, fB = 0; // current fill colour (0-1 range)
     let pathPoints: Array<{ x: number; y: number }> = [];
@@ -416,38 +415,53 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Coloured
         const subArgs = args[1];
         let ai = 0;
         pathPoints = [];
-        // DIAGNOSTIC: log first 5 constructPath calls — use index access (subOps is a typed array)
-        if (results.length === 0 && _diagCount < 5) {
-          _diagCount++;
-          const subOpNames: string[] = [];
-          for (let di = 0; di < Math.min(subOps.length, 10); di++) subOpNames.push(opsNameMap[subOps[di]] || `op${subOps[di]}`);
-          const subArgsSample: any[] = [];
-          for (let di = 0; di < Math.min(subArgs.length, 8); di++) subArgsSample.push(subArgs[di]);
-          console.log(`[PDF Colours DIAG] constructPath #${_diagCount}: subOps=[${subOpNames.join(',')}] subArgs=[${subArgsSample.join(',')}] stroke=(${sR.toFixed(2)},${sG.toFixed(2)},${sB.toFixed(2)}) fill=(${fR.toFixed(2)},${fG.toFixed(2)},${fB.toFixed(2)}) pathPts=${pathPoints.length}`);
-        }
-        for (let j = 0; j < subOps.length; j++) {
-          const sn = opsNameMap[subOps[j]] || '';
-          if (sn === 'moveTo' && ai + 1 < subArgs.length) {
-            pathPoints.push({ x: subArgs[ai], y: subArgs[ai + 1] }); ai += 2;
-          } else if (sn === 'lineTo' && ai + 1 < subArgs.length) {
-            pathPoints.push({ x: subArgs[ai], y: subArgs[ai + 1] }); ai += 2;
-          } else if (sn === 'curveTo' && ai + 5 < subArgs.length) {
-            pathPoints.push({ x: subArgs[ai + 4], y: subArgs[ai + 5] }); ai += 6;
-          } else if ((sn === 'curveTo2' || sn === 'curveTo3') && ai + 3 < subArgs.length) {
-            pathPoints.push({ x: subArgs[ai + 2], y: subArgs[ai + 3] }); ai += 4;
-          } else if (sn === 'rectangle' && ai + 3 < subArgs.length) {
-            // rectangle(x, y, w, h) — expand into 4 corner points so geometry is captured
-            // AutoCAD draws tray lines as thin filled rectangles; without this they emit nothing
-            const rx = subArgs[ai], ry = subArgs[ai + 1], rw = subArgs[ai + 2], rh = subArgs[ai + 3];
-            pathPoints.push({ x: rx,      y: ry });
-            pathPoints.push({ x: rx + rw, y: ry });
-            pathPoints.push({ x: rx + rw, y: ry + rh });
-            pathPoints.push({ x: rx,      y: ry + rh });
-            pathPoints.push({ x: rx,      y: ry }); // close
-            ai += 4;
+
+        if (subOps.length > 0) {
+          // Standard pdfjs encoding: separate subOps array + subArgs coordinates
+          for (let j = 0; j < subOps.length; j++) {
+            const sn = opsNameMap[subOps[j]] || '';
+            if (sn === 'moveTo' && ai + 1 < subArgs.length) {
+              pathPoints.push({ x: subArgs[ai], y: subArgs[ai + 1] }); ai += 2;
+            } else if (sn === 'lineTo' && ai + 1 < subArgs.length) {
+              pathPoints.push({ x: subArgs[ai], y: subArgs[ai + 1] }); ai += 2;
+            } else if (sn === 'curveTo' && ai + 5 < subArgs.length) {
+              pathPoints.push({ x: subArgs[ai + 4], y: subArgs[ai + 5] }); ai += 6;
+            } else if ((sn === 'curveTo2' || sn === 'curveTo3') && ai + 3 < subArgs.length) {
+              pathPoints.push({ x: subArgs[ai + 2], y: subArgs[ai + 3] }); ai += 4;
+            } else if (sn === 'rectangle' && ai + 3 < subArgs.length) {
+              const rx = subArgs[ai], ry = subArgs[ai + 1], rw = subArgs[ai + 2], rh = subArgs[ai + 3];
+              pathPoints.push({ x: rx,      y: ry });
+              pathPoints.push({ x: rx + rw, y: ry });
+              pathPoints.push({ x: rx + rw, y: ry + rh });
+              pathPoints.push({ x: rx,      y: ry + rh });
+              pathPoints.push({ x: rx,      y: ry });
+              ai += 4;
+            } else if (sn === 'closePath') { /* no args */ }
+            else { ai = Math.min(ai + 2, subArgs.length); }
           }
-          else if (sn === 'closePath') { /* no args */ }
-          else { ai = Math.min(ai + 2, subArgs.length); }
+        } else {
+          // Interleaved encoding: subOps is empty, subArgs contains [opcode, x, y, opcode, x, y, ...]
+          // Observed in this pdfjs version: 0=moveTo, 1=lineTo, 2=curveTo(6 coords), 6=closePath
+          let ii = 0;
+          while (ii < subArgs.length) {
+            const cmd = subArgs[ii];
+            if (cmd === 0 && ii + 2 < subArgs.length) {
+              // moveTo
+              pathPoints.push({ x: subArgs[ii + 1], y: subArgs[ii + 2] }); ii += 3;
+            } else if (cmd === 1 && ii + 2 < subArgs.length) {
+              // lineTo
+              pathPoints.push({ x: subArgs[ii + 1], y: subArgs[ii + 2] }); ii += 3;
+            } else if (cmd === 2 && ii + 6 < subArgs.length) {
+              // curveTo — take endpoint only
+              pathPoints.push({ x: subArgs[ii + 5], y: subArgs[ii + 6] }); ii += 7;
+            } else if (cmd === 6) {
+              // closePath — no coords
+              ii += 1;
+            } else {
+              // Unknown — skip 1 to avoid infinite loop
+              ii += 1;
+            }
+          }
         }
         // In some pdfjs versions, constructPath IS the final painting op (no separate stroke)
         // For rectangles (tray lines drawn as filled rects): emit only the LONGEST segment.
