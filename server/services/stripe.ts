@@ -198,28 +198,62 @@ export async function changeSubscriptionTier(params: {
       metadata: { orgId: String(params.orgId), tier: params.newTier },
     });
 
-    // Step 2: Add a one-off invoice item for the full new tier price (ex-VAT).
-    // VAT is applied by Stripe via automatic_tax on the invoice in Step 3.
+    // Step 2: Create the invoice first (empty, manual finalisation).
+    // automatic_tax mirrors checkout session behaviour — Stripe calculates UK VAT (20%).
+    // auto_advance: false means Stripe will not auto-finalise — we control the lifecycle.
+    const invoice = await stripe.invoices.create({
+      customer: subscription.customer as string,
+      auto_advance: false,
+      automatic_tax: { enabled: true },
+      metadata: { orgId: String(params.orgId), tier: params.newTier, upgradeInvoice: 'true' },
+    });
+
+    // Step 3: Add the invoice item AFTER creating the invoice, passing invoice: invoice.id.
+    // This attaches the item directly to this invoice rather than leaving it as a
+    // pending item (which would cause it to roll onto the next renewal invoice instead).
+    // Root cause of the £198 renewal bug: item was created before the invoice existed,
+    // so Stripe left it as a dangling pending item not attached to anything.
     await stripe.invoiceItems.create({
       customer: subscription.customer as string,
-      amount: newConfig.monthlyPrice, // ex-VAT pence
+      invoice: invoice.id, // CRITICAL: attach directly — never leave as pending item
+      amount: newConfig.monthlyPrice, // ex-VAT pence — VAT added by automatic_tax
       currency: 'gbp',
       description: `Upgrade to ${newConfig.name} plan`,
       metadata: { orgId: String(params.orgId), tier: params.newTier },
     });
 
-    // Step 3: Create, finalise, and immediately pay the invoice.
-    // automatic_tax mirrors the checkout session behaviour — Stripe calculates
-    // UK VAT (20%) based on the customer's billing address and adds it to the total.
-    const invoice = await stripe.invoices.create({
-      customer: subscription.customer as string,
-      auto_advance: false, // We finalise manually
-      automatic_tax: { enabled: true },
-      metadata: { orgId: String(params.orgId), tier: params.newTier, upgradeInvoice: 'true' },
-    });
-
+    // Step 4: Finalise and immediately pay.
+    // Stripe may auto-collect on finalisation if the customer has auto-pay enabled.
+    // In that case .pay() throws invoice_already_paid — money went through fine.
+    // Any other error (card declined etc.) is rethrown so the caller sees the failure.
     await stripe.invoices.finalizeInvoice(invoice.id);
-    await stripe.invoices.pay(invoice.id);
+
+    try {
+      await stripe.invoices.pay(invoice.id);
+    } catch (payErr: any) {
+      const stripeCode = payErr?.raw?.code || payErr?.code;
+      if (stripeCode !== 'invoice_already_paid') {
+        throw payErr; // Real payment failure — bubble up to client
+      }
+      console.log(`[Stripe] Invoice ${invoice.id} auto-paid on finalise — upgrade succeeded.`);
+    }
+
+    // Update DB immediately after confirmed payment.
+    // The customer.subscription.updated webhook will also fire and is idempotent,
+    // but updating here ensures the UI reflects the new tier without waiting for
+    // the webhook round-trip (which can take a few seconds).
+    const config = newConfig;
+    await updateOrganization(params.orgId, {
+      subscriptionTier: params.newTier,
+      subscriptionStatus: 'active',
+      maxUsers: config.maxUsers,
+      maxQuotesPerMonth: config.maxQuotesPerMonth,
+      maxCatalogItems: config.maxCatalogItems,
+      monthlyQuoteCount: 0,
+      quoteCountResetAt: new Date(),
+    } as any);
+
+    console.log(`[Stripe] DB updated immediately after upgrade: org=${params.orgId} → ${params.newTier}`);
 
     const nextBillingDate = new Date(subscription.current_period_end * 1000);
     // Return ex-VAT amount — VAT is added by Stripe. UI shows both.
