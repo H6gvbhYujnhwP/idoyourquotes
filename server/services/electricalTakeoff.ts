@@ -279,21 +279,14 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Coloured
   const { writeFile, unlink } = await import('fs/promises');
   const { join } = await import('path');
   const { tmpdir } = await import('os');
-  const { fileURLToPath } = await import('url');
 
   const tmpPath = join(tmpdir(), `iyq_colours_${Date.now()}_${Math.random().toString(36).slice(2)}.pdf`);
 
-  // Resolve path to the Python script relative to this file's location.
-  // In production (Render), __dirname equivalent via import.meta.url:
-  //   server/services/electricalTakeoff.ts  →  server/scripts/extractColours.py
-  let scriptPath: string;
-  try {
-    const thisDir = fileURLToPath(new URL('.', import.meta.url));
-    scriptPath = join(thisDir, '..', 'scripts', 'extractColours.py');
-  } catch {
-    // Fallback for environments where import.meta.url is unavailable
-    scriptPath = join(process.cwd(), 'server', 'scripts', 'extractColours.py');
-  }
+  // process.cwd() on Render is always /opt/render/project/src (the repo root).
+  // The script lives at server/scripts/extractColours.py from that root.
+  // We do NOT use import.meta.url - the compiled output path differs from the
+  // source path and caused it to resolve to src/scripts/ instead of src/server/scripts/.
+  const scriptPath = join(process.cwd(), 'server', 'scripts', 'extractColours.py');
 
   console.log(`[PDF Colours] Python extraction starting — buffer: ${pdfBuffer?.length || 0} bytes`);
 
