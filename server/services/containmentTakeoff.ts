@@ -1013,15 +1013,40 @@ export function formatContainmentForQuoteContext(
   const lines: string[] = [];
   lines.push("## Containment Takeoff");
 
+  // Apply tray type filter — only include tray types in scope.
+  // e.g. for a lighting-only quote, trayFilter='LV' excludes FA and ELV tray entirely.
+  // The passed-in fittingSummary is also unfiltered (keyed by size only, not type),
+  // so we rebuild it from the filtered runs to avoid mixing ELV/FA fittings into LV counts.
+  const filteredRuns = (userInputs && userInputs.trayFilter && userInputs.trayFilter !== "all")
+    ? trayRuns.filter(r => r.trayType === userInputs.trayFilter)
+    : trayRuns;
+
+  // Rebuild fittingSummary from filtered runs only
+  const filteredFittingSummary: Record<string, FittingSummaryBySize> = {};
+  for (const run of filteredRuns) {
+    const sizeKey = `${run.sizeMillimetres}mm`;
+    if (!filteredFittingSummary[sizeKey]) {
+      filteredFittingSummary[sizeKey] = { tPieces: 0, crossPieces: 0, bends90: 0, drops: 0, couplers: 0 };
+    }
+    filteredFittingSummary[sizeKey].tPieces += run.tPieces;
+    filteredFittingSummary[sizeKey].crossPieces += run.crossPieces;
+    filteredFittingSummary[sizeKey].bends90 += run.bends90;
+    filteredFittingSummary[sizeKey].drops += run.drops;
+    filteredFittingSummary[sizeKey].couplers += Math.max(0, run.wholesalerLengths - 1);
+  }
+
   // Tray runs
   lines.push("\n### Cable Tray Runs");
-  for (const run of trayRuns) {
+  if (filteredRuns.length === 0) {
+    lines.push(`- No tray runs found for filter: ${userInputs?.trayFilter || 'all'}`);
+  }
+  for (const run of filteredRuns) {
     lines.push(`- ${run.sizeMillimetres}mm ${run.trayType} tray: ${run.lengthMetres}m (${run.wholesalerLengths} x 3m lengths) at ${run.heightMetres}m height`);
   }
 
-  // Fittings
+  // Fittings (rebuilt from filtered runs)
   lines.push("\n### Tray Fittings");
-  for (const [size, fittings] of Object.entries(fittingSummary)) {
+  for (const [size, fittings] of Object.entries(filteredFittingSummary)) {
     const parts: string[] = [];
     if (fittings.tPieces > 0) parts.push(`${fittings.tPieces} T-pieces`);
     if (fittings.crossPieces > 0) parts.push(`${fittings.crossPieces} cross-pieces`);
