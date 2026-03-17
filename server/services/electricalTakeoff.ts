@@ -260,287 +260,120 @@ export type ColouredSegment = {
 };
 
 export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<ColouredSegment[]> {
-  console.log(`[PDF Colours] Function called, buffer size: ${pdfBuffer?.length || 0}`);
-  let pdfjsLib: any;
+  // -----------------------------------------------------------------------
+  // Electrical sector only — used exclusively by performContainmentTakeoff.
+  // No other sector, QDS flow, billing path, or data flow calls this function.
+  //
+  // Uses a Python subprocess (pdfminer.six) instead of pdfjs-dist's operator
+  // list API. pdfjs resolves AutoCAD layer colours (setGState) internally for
+  // rendering but does NOT re-emit those resolved colours into the operator
+  // stream, so our colour tracking variables stayed at (0,0,0) black on every
+  // AutoCAD drawing. pdfminer.six is a content stream analyser — not a
+  // renderer — and exposes stroking_color / non_stroking_color already resolved
+  // from the graphics state dictionary, which is exactly what we need.
+  //
+  // Fail-safe: any error (script missing, pdfminer not installed, parse error)
+  // returns [] and performContainmentTakeoff falls back to annotation-spacing.
+  // -----------------------------------------------------------------------
+  const { execFile } = await import('child_process');
+  const { writeFile, unlink } = await import('fs/promises');
+  const { join } = await import('path');
+  const { tmpdir } = await import('os');
+  const { fileURLToPath } = await import('url');
+
+  const tmpPath = join(tmpdir(), `iyq_colours_${Date.now()}_${Math.random().toString(36).slice(2)}.pdf`);
+
+  // Resolve path to the Python script relative to this file's location.
+  // In production (Render), __dirname equivalent via import.meta.url:
+  //   server/services/electricalTakeoff.ts  →  server/scripts/extractColours.py
+  let scriptPath: string;
   try {
-    pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-    console.log('[PDF Colours] Loaded pdfjs-dist/legacy/build/pdf.mjs');
+    const thisDir = fileURLToPath(new URL('.', import.meta.url));
+    scriptPath = join(thisDir, '..', 'scripts', 'extractColours.py');
   } catch {
-    try {
-      pdfjsLib = await import('pdfjs-dist');
-      console.log('[PDF Colours] Loaded pdfjs-dist (fallback)');
-    } catch {
-      console.log('[PDF Colours] pdfjs-dist not available');
-      return [];
-    }
+    // Fallback for environments where import.meta.url is unavailable
+    scriptPath = join(process.cwd(), 'server', 'scripts', 'extractColours.py');
   }
 
+  console.log(`[PDF Colours] Python extraction starting — buffer: ${pdfBuffer?.length || 0} bytes`);
+
   try {
-    const data = new Uint8Array(pdfBuffer);
-    const getDocument = pdfjsLib.getDocument || pdfjsLib.default?.getDocument;
-    if (!getDocument) {
-      console.log('[PDF Colours] getDocument not found on pdfjsLib');
+    // Write buffer to temp file — Python reads from disk, not stdin
+    await writeFile(tmpPath, pdfBuffer);
+
+    const raw = await new Promise<string>((resolve, reject) => {
+      execFile('python3', [scriptPath, tmpPath], { maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
+        if (stderr && stderr.trim()) {
+          console.log(`[PDF Colours] Python stderr: ${stderr.trim()}`);
+        }
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(stdout);
+      });
+    });
+
+    const parsed: Array<{
+      x1: number; y1: number; x2: number; y2: number;
+      lengthPdfUnits: number; colour: string; x: number; y: number;
+    }> = JSON.parse(raw);
+
+    if (!Array.isArray(parsed)) {
+      console.log('[PDF Colours] Python returned non-array — falling back');
       return [];
     }
 
-    const OPS = pdfjsLib.OPS || pdfjsLib.default?.OPS;
-    if (!OPS) {
-      console.log('[PDF Colours] OPS constants not available');
+    // pdfminer uses bottom-left origin (y increases upward).
+    // We need to y-flip to match the pdfjs coordinate system used everywhere else:
+    //   y_flipped = pageHeight - y_pdfminer
+    // To do the flip we need pageHeight. Extract it from the bounding box of all
+    // returned segments (max y value before flip = page height in pdfminer space).
+    // If no segments returned, flip is moot — return empty array.
+    if (parsed.length === 0) {
+      console.log('[PDF Colours] Python returned 0 segments');
       return [];
     }
-    console.log('[PDF Colours] pdfjs loaded OK, parsing document...');
 
-    const doc = await getDocument({ data }).promise;
-    const page = await doc.getPage(1);
-    const viewport = page.getViewport({ scale: 1.0 });
-    const pageHeight = viewport.height;
-    const ops = await page.getOperatorList();
-
-    // Build reverse lookup: OPS value -> name
-    const opsNameMap: Record<number, string> = {};
-    for (const [name, val] of Object.entries(OPS)) {
-      if (typeof val === 'number') opsNameMap[val] = name;
+    // Find the pdfminer page height from the highest y coordinate seen.
+    // This is used solely for the y-flip — no effect on length calculations.
+    let maxY = 0;
+    for (const seg of parsed) {
+      if (seg.y1 > maxY) maxY = seg.y1;
+      if (seg.y2 > maxY) maxY = seg.y2;
     }
+    // Use the pdfminer page bbox height if we can get it more accurately,
+    // otherwise use the max y seen. A0 at 72dpi is ~3370 units — maxY will
+    // be very close to the real page height for well-drawn geometry.
+    const pageHeight = maxY;
 
-    const results: ColouredSegment[] = [];
-    let sR = 0, sG = 0, sB = 0; // current stroke colour (0-1 range)
-    let fR = 0, fG = 0, fB = 0; // current fill colour (0-1 range)
-    let pathPoints: Array<{ x: number; y: number }> = [];
-    const colourOpsUsed = new Set<string>();
+    const results: ColouredSegment[] = parsed.map(seg => ({
+      x1: seg.x1,
+      y1: pageHeight - seg.y1,  // y-flip: pdfminer bottom-left → pdfjs top-left
+      x2: seg.x2,
+      y2: pageHeight - seg.y2,
+      lengthPdfUnits: seg.lengthPdfUnits,
+      colour: seg.colour,
+      x: seg.x,
+      y: pageHeight - seg.y,    // midpoint y also flipped
+    }));
 
-    // DEBUG: Log ALL unique operator names in this PDF
-    const allOpNames = new Set<string>();
-    for (let i = 0; i < ops.fnArray.length; i++) {
-      allOpNames.add(opsNameMap[ops.fnArray[i]] || `unknown_${ops.fnArray[i]}`);
-    }
-    console.log(`[PDF Colours] Total ops: ${ops.fnArray.length}. Unique op names: ${Array.from(allOpNames).sort().join(', ')}`);
-
-    // Helper: parse colour args which may be hex string "#RRGGBB" or numeric floats (0-1)
-    function parseStrokeColour(args: any[]): { r: number; g: number; b: number } | null {
-      if (!args || args.length === 0) return null;
-      // pdfjs may return a single hex string like "#636466"
-      if (typeof args[0] === 'string' && args[0].startsWith('#')) {
-        const hex = args[0];
-        const r = parseInt(hex.slice(1, 3), 16) / 255;
-        const g = parseInt(hex.slice(3, 5), 16) / 255;
-        const b = parseInt(hex.slice(5, 7), 16) / 255;
-        return { r, g, b };
-      }
-      // Numeric floats (0-1 range) — 3 args = RGB, 1 arg = grayscale
-      if (typeof args[0] === 'number') {
-        if (args.length >= 3) return { r: args[0], g: args[1], b: args[2] };
-        if (args.length === 1) return { r: args[0], g: args[0], b: args[0] };
-      }
-      return null;
-    }
-
-    function parseCMYK(args: any[]): { r: number; g: number; b: number } | null {
-      if (!args || args.length < 4) return null;
-      if (typeof args[0] === 'string' && args[0].startsWith('#')) {
-        // If pdfjs already converted to hex, just parse it
-        return parseStrokeColour(args);
-      }
-      if (typeof args[0] === 'number') {
-        const c = args[0], m = args[1], y = args[2], k = args[3];
-        return { r: (1 - c) * (1 - k), g: (1 - m) * (1 - k), b: (1 - y) * (1 - k) };
-      }
-      return null;
-    }
-
-    // resolveColour: picks stroke colour if clearly coloured, else fill colour, else null.
-    // Returns hex string or null if neither colour passes the brightness/saturation check.
-    // This handles AutoCAD drawings where tray lines are drawn as filled shapes (fill colour
-    // carries the layer colour) rather than stroked lines (stroke colour stays black).
-    function resolveColour(): string | null {
-      function isColoured(r: number, g: number, b: number): boolean {
-        const brightness = (r + g + b) / 3;
-        const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
-        const sat = maxC > 0 ? (maxC - minC) / maxC : 0;
-        return brightness > 20 && brightness < 240 && sat > 0.15;
-      }
-      function toHex(r: number, g: number, b: number): string {
-        return '#' + r.toString(16).padStart(2, '0') + g.toString(16).padStart(2, '0') + b.toString(16).padStart(2, '0');
-      }
-      const sr = Math.round(sR * 255), sg = Math.round(sG * 255), sb = Math.round(sB * 255);
-      if (isColoured(sr, sg, sb)) return toHex(sr, sg, sb);
-      const fr = Math.round(fR * 255), fg = Math.round(fG * 255), fb = Math.round(fB * 255);
-      if (isColoured(fr, fg, fb)) return toHex(fr, fg, fb);
-      return null;
-    }
-
-    for (let i = 0; i < ops.fnArray.length; i++) {
-      const fn = ops.fnArray[i];
-      const args = ops.argsArray[i];
-      const opName = opsNameMap[fn] || '';
-
-      // --- Stroke colour setters ---
-      if (opName === 'setStrokeRGBColor') {
-        const c = parseStrokeColour(args);
-        if (c) { sR = c.r; sG = c.g; sB = c.b; colourOpsUsed.add(opName); }
-      } else if (opName === 'setStrokeGray') {
-        const c = parseStrokeColour(args);
-        if (c) { sR = c.r; sG = c.g; sB = c.b; colourOpsUsed.add(opName); }
-      } else if (opName === 'setStrokeColorN') {
-        const c = (args?.length === 4) ? parseCMYK(args) : parseStrokeColour(args);
-        if (c) { sR = c.r; sG = c.g; sB = c.b; colourOpsUsed.add(opName); }
-      } else if (opName === 'setStrokeColor') {
-        const c = parseStrokeColour(args);
-        if (c) { sR = c.r; sG = c.g; sB = c.b; colourOpsUsed.add(opName); }
-      } else if (opName === 'setStrokeCMYKColor') {
-        const c = parseCMYK(args);
-        if (c) { sR = c.r; sG = c.g; sB = c.b; colourOpsUsed.add(opName); }
-      }
-
-      // --- Fill colour setters (AutoCAD often draws tray lines as filled shapes) ---
-      if (opName === 'setFillRGBColor') {
-        const c = parseStrokeColour(args);
-        if (c) { fR = c.r; fG = c.g; fB = c.b; colourOpsUsed.add(opName); }
-      } else if (opName === 'setFillGray') {
-        const c = parseStrokeColour(args);
-        if (c) { fR = c.r; fG = c.g; fB = c.b; colourOpsUsed.add(opName); }
-      } else if (opName === 'setFillColorN') {
-        const c = (args?.length === 4) ? parseCMYK(args) : parseStrokeColour(args);
-        if (c) { fR = c.r; fG = c.g; fB = c.b; colourOpsUsed.add(opName); }
-      } else if (opName === 'setFillColor') {
-        const c = parseStrokeColour(args);
-        if (c) { fR = c.r; fG = c.g; fB = c.b; colourOpsUsed.add(opName); }
-      } else if (opName === 'setFillCMYKColor') {
-        const c = parseCMYK(args);
-        if (c) { fR = c.r; fG = c.g; fB = c.b; colourOpsUsed.add(opName); }
-      }
-
-      // --- Path construction ---
-      if (opName === 'constructPath' && args?.[0] && args?.[1]) {
-        const subOps = args[0];
-        const subArgs = args[1];
-        let ai = 0;
-        pathPoints = [];
-
-        if (subOps.length > 0) {
-          // Standard pdfjs encoding: separate subOps array + subArgs coordinates
-          for (let j = 0; j < subOps.length; j++) {
-            const sn = opsNameMap[subOps[j]] || '';
-            if (sn === 'moveTo' && ai + 1 < subArgs.length) {
-              pathPoints.push({ x: subArgs[ai], y: subArgs[ai + 1] }); ai += 2;
-            } else if (sn === 'lineTo' && ai + 1 < subArgs.length) {
-              pathPoints.push({ x: subArgs[ai], y: subArgs[ai + 1] }); ai += 2;
-            } else if (sn === 'curveTo' && ai + 5 < subArgs.length) {
-              pathPoints.push({ x: subArgs[ai + 4], y: subArgs[ai + 5] }); ai += 6;
-            } else if ((sn === 'curveTo2' || sn === 'curveTo3') && ai + 3 < subArgs.length) {
-              pathPoints.push({ x: subArgs[ai + 2], y: subArgs[ai + 3] }); ai += 4;
-            } else if (sn === 'rectangle' && ai + 3 < subArgs.length) {
-              const rx = subArgs[ai], ry = subArgs[ai + 1], rw = subArgs[ai + 2], rh = subArgs[ai + 3];
-              pathPoints.push({ x: rx,      y: ry });
-              pathPoints.push({ x: rx + rw, y: ry });
-              pathPoints.push({ x: rx + rw, y: ry + rh });
-              pathPoints.push({ x: rx,      y: ry + rh });
-              pathPoints.push({ x: rx,      y: ry });
-              ai += 4;
-            } else if (sn === 'closePath') { /* no args */ }
-            else { ai = Math.min(ai + 2, subArgs.length); }
-          }
-        } else {
-          // Interleaved encoding: subOps is empty, subArgs contains [opcode, x, y, opcode, x, y, ...]
-          // Observed in this pdfjs version: 0=moveTo, 1=lineTo, 2=curveTo(6 coords), 6=closePath
-          let ii = 0;
-          while (ii < subArgs.length) {
-            const cmd = subArgs[ii];
-            if (cmd === 0 && ii + 2 < subArgs.length) {
-              // moveTo
-              pathPoints.push({ x: subArgs[ii + 1], y: subArgs[ii + 2] }); ii += 3;
-            } else if (cmd === 1 && ii + 2 < subArgs.length) {
-              // lineTo
-              pathPoints.push({ x: subArgs[ii + 1], y: subArgs[ii + 2] }); ii += 3;
-            } else if (cmd === 2 && ii + 6 < subArgs.length) {
-              // curveTo — take endpoint only
-              pathPoints.push({ x: subArgs[ii + 5], y: subArgs[ii + 6] }); ii += 7;
-            } else if (cmd === 6) {
-              // closePath — no coords
-              ii += 1;
-            } else {
-              // Unknown — skip 1 to avoid infinite loop
-              ii += 1;
-            }
-          }
-        }
-        // In some pdfjs versions, constructPath IS the final painting op (no separate stroke)
-        // For rectangles (tray lines drawn as filled rects): emit only the LONGEST segment.
-        // A rectangle produces 4 sides — 2 long (the tray run) + 2 short (the tray width).
-        // Emitting all 4 would double-count the length. Taking the longest gives the correct run.
-        // For polylines (non-rect paths): emit all segments as before.
-        if (pathPoints.length >= 2) {
-          const hex = resolveColour();
-          if (hex) {
-            // Collect all valid segments first
-            const segs: Array<{ p1: {x:number,y:number}, p2: {x:number,y:number}, len: number }> = [];
-            for (let k = 0; k < pathPoints.length - 1; k++) {
-              const p1 = pathPoints[k], p2 = pathPoints[k + 1];
-              const segLen = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
-              if (segLen < 0.5) continue;
-              segs.push({ p1, p2, len: segLen });
-            }
-            // If this looks like a rectangle (closed path, 4-5 points, 2 distinct lengths),
-            // only emit the longest segment to avoid double-counting opposite sides
-            const isRect = pathPoints.length >= 4 &&
-              Math.abs(pathPoints[0].x - pathPoints[pathPoints.length - 1].x) < 1 &&
-              Math.abs(pathPoints[0].y - pathPoints[pathPoints.length - 1].y) < 1;
-            const toEmit = isRect
-              ? segs.filter(s => s.len === Math.max(...segs.map(x => x.len))).slice(0, 1)
-              : segs;
-            for (const { p1, p2, len } of toEmit) {
-              results.push({
-                x: (p1.x + p2.x) / 2,
-                y: pageHeight - (p1.y + p2.y) / 2,
-                colour: hex,
-                x1: p1.x, y1: pageHeight - p1.y,
-                x2: p2.x, y2: pageHeight - p2.y,
-                lengthPdfUnits: len,
-              });
-            }
-            colourOpsUsed.add('constructPath+paint');
-          }
-        }
-      }
-      if (opName === 'moveTo' && args?.length >= 2) { pathPoints = [{ x: args[0], y: args[1] }]; }
-      if (opName === 'lineTo' && args?.length >= 2) { pathPoints.push({ x: args[0], y: args[1] }); }
-
-      // --- Stroke / Fill paint ops — emit segments for any painting operation ---
-      const isPaintOp = opName === 'stroke' || opName === 'closeStroke' || opName === 'paintStroke'
-        || opName === 'fill' || opName === 'eoFill' || opName === 'fillStroke' || opName === 'eoFillStroke';
-      if (isPaintOp) {
-        if (pathPoints.length >= 2) {
-          const hex = resolveColour();
-          if (hex) {
-            for (let k = 0; k < pathPoints.length - 1; k++) {
-              const p1 = pathPoints[k], p2 = pathPoints[k + 1];
-              const segLen = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
-              if (segLen < 0.5) continue;
-              results.push({
-                x: (p1.x + p2.x) / 2,
-                y: pageHeight - (p1.y + p2.y) / 2,
-                colour: hex,
-                x1: p1.x, y1: pageHeight - p1.y,
-                x2: p2.x, y2: pageHeight - p2.y,
-                lengthPdfUnits: segLen,
-              });
-            }
-          }
-        }
-        pathPoints = [];
-      }
-    }
-
-    console.log(`[PDF Colours] Extracted ${results.length} coloured segments. Ops used: ${Array.from(colourOpsUsed).join(', ') || 'none'}`);
+    // Log colour distribution (top 8) for Render diagnostics
     const uniq: Record<string, number> = {};
     for (const r of results) uniq[r.colour] = (uniq[r.colour] || 0) + 1;
+    console.log(`[PDF Colours] Python extraction: ${results.length} segments`);
     for (const [c, n] of Object.entries(uniq).sort((a, b) => b[1] - a[1]).slice(0, 8)) {
       console.log(`[PDF Colours]   ${c} x${n}`);
     }
 
     return results;
+
   } catch (err: any) {
     console.log(`[PDF Colours] Extraction failed (non-fatal): ${err.message}`);
     return [];
+  } finally {
+    // Always clean up the temp file — even if parsing threw
+    try { await unlink(tmpPath); } catch { /* already gone */ }
   }
 }
 

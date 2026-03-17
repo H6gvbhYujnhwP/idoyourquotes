@@ -606,7 +606,14 @@ export async function performContainmentTakeoff(
   if (extractLineColours) {
     try {
       const rawLines = await extractLineColours(pdfBuffer);
-      colouredLines = rawLines.map(l => ({ x: l.x, y: l.y, colour: l.colour }));
+      // Preserve all geometry fields — x1/y1/x2/y2/lengthPdfUnits are required by
+      // measureTrayRunsFromVectors. Previously this map stripped them, causing the
+      // vector measurement branch to be silently skipped on every drawing.
+      colouredLines = rawLines.map(l => ({
+        x: l.x, y: l.y, colour: l.colour,
+        x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2,
+        lengthPdfUnits: l.lengthPdfUnits,
+      }));
       console.log(`[Containment Takeoff] Received ${colouredLines.length} coloured line segments from PDF`);
     } catch (err: any) {
       console.log(`[Containment Takeoff] Colour extraction failed (non-fatal): ${err.message}`);
