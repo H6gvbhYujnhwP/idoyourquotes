@@ -304,6 +304,7 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Coloured
 
     const results: ColouredSegment[] = [];
     let sR = 0, sG = 0, sB = 0; // current stroke colour (0-1 range)
+    let fR = 0, fG = 0, fB = 0; // current fill colour (0-1 range)
     let pathPoints: Array<{ x: number; y: number }> = [];
     const colourOpsUsed = new Set<string>();
 
@@ -346,6 +347,27 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Coloured
       return null;
     }
 
+    // resolveColour: picks stroke colour if clearly coloured, else fill colour, else null.
+    // Returns hex string or null if neither colour passes the brightness/saturation check.
+    // This handles AutoCAD drawings where tray lines are drawn as filled shapes (fill colour
+    // carries the layer colour) rather than stroked lines (stroke colour stays black).
+    function resolveColour(): string | null {
+      function isColoured(r: number, g: number, b: number): boolean {
+        const brightness = (r + g + b) / 3;
+        const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
+        const sat = maxC > 0 ? (maxC - minC) / maxC : 0;
+        return brightness > 20 && brightness < 240 && sat > 0.15;
+      }
+      function toHex(r: number, g: number, b: number): string {
+        return '#' + r.toString(16).padStart(2, '0') + g.toString(16).padStart(2, '0') + b.toString(16).padStart(2, '0');
+      }
+      const sr = Math.round(sR * 255), sg = Math.round(sG * 255), sb = Math.round(sB * 255);
+      if (isColoured(sr, sg, sb)) return toHex(sr, sg, sb);
+      const fr = Math.round(fR * 255), fg = Math.round(fG * 255), fb = Math.round(fB * 255);
+      if (isColoured(fr, fg, fb)) return toHex(fr, fg, fb);
+      return null;
+    }
+
     for (let i = 0; i < ops.fnArray.length; i++) {
       const fn = ops.fnArray[i];
       const args = ops.argsArray[i];
@@ -367,6 +389,24 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Coloured
       } else if (opName === 'setStrokeCMYKColor') {
         const c = parseCMYK(args);
         if (c) { sR = c.r; sG = c.g; sB = c.b; colourOpsUsed.add(opName); }
+      }
+
+      // --- Fill colour setters (AutoCAD often draws tray lines as filled shapes) ---
+      if (opName === 'setFillRGBColor') {
+        const c = parseStrokeColour(args);
+        if (c) { fR = c.r; fG = c.g; fB = c.b; colourOpsUsed.add(opName); }
+      } else if (opName === 'setFillGray') {
+        const c = parseStrokeColour(args);
+        if (c) { fR = c.r; fG = c.g; fB = c.b; colourOpsUsed.add(opName); }
+      } else if (opName === 'setFillColorN') {
+        const c = (args?.length === 4) ? parseCMYK(args) : parseStrokeColour(args);
+        if (c) { fR = c.r; fG = c.g; fB = c.b; colourOpsUsed.add(opName); }
+      } else if (opName === 'setFillColor') {
+        const c = parseStrokeColour(args);
+        if (c) { fR = c.r; fG = c.g; fB = c.b; colourOpsUsed.add(opName); }
+      } else if (opName === 'setFillCMYKColor') {
+        const c = parseCMYK(args);
+        if (c) { fR = c.r; fG = c.g; fB = c.b; colourOpsUsed.add(opName); }
       }
 
       // --- Path construction ---
@@ -392,16 +432,12 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Coloured
         // In some pdfjs versions, constructPath IS the final painting op (no separate stroke)
         // Record one segment per consecutive point pair (not just the whole-path midpoint)
         if (pathPoints.length >= 2) {
-          const r = Math.round(sR * 255), g = Math.round(sG * 255), b = Math.round(sB * 255);
-          const brightness = (r + g + b) / 3;
-          const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
-          const sat = maxC > 0 ? (maxC - minC) / maxC : 0;
-          if (brightness > 20 && brightness < 240 && sat > 0.15) {
-            const hex = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+          const hex = resolveColour();
+          if (hex) {
             for (let k = 0; k < pathPoints.length - 1; k++) {
               const p1 = pathPoints[k], p2 = pathPoints[k + 1];
               const segLen = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
-              if (segLen < 0.5) continue; // skip degenerate segments
+              if (segLen < 0.5) continue;
               results.push({
                 x: (p1.x + p2.x) / 2,
                 y: pageHeight - (p1.y + p2.y) / 2,
@@ -411,29 +447,24 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Coloured
                 lengthPdfUnits: segLen,
               });
             }
-            colourOpsUsed.add('constructPath+stroke');
+            colourOpsUsed.add('constructPath+paint');
           }
         }
       }
       if (opName === 'moveTo' && args?.length >= 2) { pathPoints = [{ x: args[0], y: args[1] }]; }
       if (opName === 'lineTo' && args?.length >= 2) { pathPoints.push({ x: args[0], y: args[1] }); }
 
-      // --- Stroke: record coloured line (for pdfjs versions with separate stroke ops) ---
-      if (opName === 'stroke' || opName === 'closeStroke' || opName === 'paintStroke') {
+      // --- Stroke / Fill paint ops — emit segments for any painting operation ---
+      const isPaintOp = opName === 'stroke' || opName === 'closeStroke' || opName === 'paintStroke'
+        || opName === 'fill' || opName === 'eoFill' || opName === 'fillStroke' || opName === 'eoFillStroke';
+      if (isPaintOp) {
         if (pathPoints.length >= 2) {
-          const r = Math.round(sR * 255), g = Math.round(sG * 255), b = Math.round(sB * 255);
-          const brightness = (r + g + b) / 3;
-          const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
-          const sat = maxC > 0 ? (maxC - minC) / maxC : 0;
-
-          // Only keep clearly coloured lines (not black, grey, or white)
-          if (brightness > 20 && brightness < 240 && sat > 0.15) {
-            const hex = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-            // Emit one record per consecutive point pair (preserves actual segment geometry)
+          const hex = resolveColour();
+          if (hex) {
             for (let k = 0; k < pathPoints.length - 1; k++) {
               const p1 = pathPoints[k], p2 = pathPoints[k + 1];
               const segLen = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
-              if (segLen < 0.5) continue; // skip degenerate segments
+              if (segLen < 0.5) continue;
               results.push({
                 x: (p1.x + p2.x) / 2,
                 y: pageHeight - (p1.y + p2.y) / 2,
