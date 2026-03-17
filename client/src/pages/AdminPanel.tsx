@@ -736,6 +736,8 @@ function OrgDetail({ orgId, onBack }: { orgId: number; onBack: () => void }) {
               {tierResult && <div style={{ marginTop: 6, fontSize: 12, color: tierResult.startsWith("Error") ? "#dc2626" : "#166534" }}>{tierResult}</div>}
             </div>
 
+          </div>
+
           {/* Danger Zone */}
           <div style={{
             ...sectionStyle, borderColor: "#fca5a5", background: "#fff5f5",
