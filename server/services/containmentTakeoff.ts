@@ -616,6 +616,8 @@ export async function performContainmentTakeoff(
       drawingNotes: [],
       hasTextLayer: false,
       totalTextElements: 0,
+      rawSegments: [],
+      segmentAssignments: {},
     };
   }
 
@@ -660,6 +662,8 @@ export async function performContainmentTakeoff(
       drawingNotes: [],
       hasTextLayer: false,
       totalTextElements: 0,
+      rawSegments: [],
+      segmentAssignments: {},
     };
   }
 
