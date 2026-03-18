@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Check, Pencil, Lock, Unlock, Cable, Zap,
-  ChevronDown, ChevronUp, Save, X, ScanEye,
+  ChevronDown, ChevronUp, Save, X, Ruler,
 } from "lucide-react";
 import ContainmentMeasurementReview from "@/components/ContainmentMeasurementReview";
 
@@ -152,7 +152,7 @@ export default function ContainmentTakeoffPanel({ inputId, quoteId }: { inputId:
               style={{ borderColor: brand.teal, color: brand.teal }}
               onClick={() => setShowReviewer(true)}
             >
-              <ScanEye className="h-3 w-3 mr-1" /> Review Measurements
+              <Ruler className="h-3 w-3 mr-1" /> Review Measurements
             </Button>
           )}
           {isVerified ? (
