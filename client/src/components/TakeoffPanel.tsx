@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Loader2, Zap, CheckCircle, AlertTriangle, X,
   ZoomIn, ZoomOut, Maximize, Eye, EyeOff,
-  Bot, MessageCircle, Send, Image, ChevronDown, ChevronUp, Lock,
+  Bot, MessageCircle, Send, ImageIcon, ChevronDown, ChevronUp, Lock,
   Plus, Save, MousePointer2,
 } from "lucide-react";
 import { brand } from "@/lib/brandTheme";
@@ -382,7 +382,7 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
                 className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-white/15 text-white hover:bg-white/25 border border-white/20 transition-colors"
                 onClick={() => setShowViewer(true)}
               >
-                <Image className="h-3 w-3 mr-1 inline" />
+                <ImageIcon className="h-3 w-3 mr-1 inline" />
                 View Marked Drawing
               </button>
             )}

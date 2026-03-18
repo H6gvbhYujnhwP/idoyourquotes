@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Check, Pencil, Lock, Unlock, Cable, Zap,
-  ChevronDown, ChevronUp, Save, X, Image,
+  ChevronDown, ChevronUp, Save, X, ImageIcon,
 } from "lucide-react";
 import ContainmentDrawingViewer from "@/components/ContainmentDrawingViewer";
 
@@ -151,7 +151,7 @@ export default function ContainmentTakeoffPanel({ inputId, quoteId }: { inputId:
               style={{ borderColor: brand.teal, color: brand.teal }}
               onClick={() => setShowReviewer(true)}
             >
-              <Image className="h-3 w-3 mr-1" /> View Drawing
+              <ImageIcon className="h-3 w-3 mr-1" /> View Drawing
             </Button>
           )}
           {/* Re-run button — always visible when takeoff exists and not verified.
