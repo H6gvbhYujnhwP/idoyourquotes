@@ -489,6 +489,7 @@ export default function InputsPanel({
         style={{
           border: `1.5px solid ${brand.border}`,
           minHeight: 300,
+          height: "calc(100vh - 320px)",
           maxHeight: "calc(100vh - 320px)",
         }}
       >
