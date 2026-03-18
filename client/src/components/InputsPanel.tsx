@@ -301,8 +301,8 @@ function DetailContent({
             </div>
           </div>
         )}
-        {/* TakeoffPanel for PDFs — electrical sector only */}
-        {input.inputType === "pdf" && input.processingStatus === "completed" && tradePreset === "electrical" && (
+        {/* TakeoffPanel for PDFs — renders for all sectors, self-manages via tRPC */}
+        {input.inputType === "pdf" && input.processingStatus === "completed" && (
           <TakeoffPanel
             inputId={input.id}
             quoteId={quoteId}
@@ -312,8 +312,8 @@ function DetailContent({
           />
         )}
 
-        {/* Containment Takeoff Panel — electrical sector only */}
-        {input.inputType === "pdf" && input.processingStatus === "completed" && tradePreset === "electrical" && (
+        {/* Containment Takeoff Panel — renders for all sectors, self-manages via tRPC */}
+        {input.inputType === "pdf" && input.processingStatus === "completed" && (
           <div className="px-4 py-3">
             <ContainmentTakeoffPanel inputId={input.id} quoteId={quoteId} />
           </div>
