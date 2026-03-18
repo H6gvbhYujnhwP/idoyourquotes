@@ -15,7 +15,7 @@ import { extractUrls, scrapeUrls, formatScrapedContentForAI } from "./_core/webS
 import { extractBrandColors } from "./services/colorExtractor";
 import { parseWordDocument, isWordDocument } from "./services/wordParser";
 import { performElectricalTakeoff, applyUserAnswers, formatTakeoffForQuoteContext, SYMBOL_STYLES, SYMBOL_DESCRIPTIONS, extractWithPdfJs, extractPdfLineColours } from "./services/electricalTakeoff";
-import { performContainmentTakeoff, calculateCableSummary, generateContainmentSvgOverlay, isContainmentDrawing, formatContainmentForQuoteContext, TRAY_SIZE_COLOURS } from "./services/containmentTakeoff";
+import { performContainmentTakeoff, calculateCableSummary, generateContainmentSvgOverlay, isContainmentDrawing, formatContainmentForQuoteContext, TRAY_SIZE_COLOURS, getMetresPerPdfUnit, recalculateLengthsFromAssignments, WHOLESALER_LENGTH_METRES } from "./services/containmentTakeoff";
 import { generateSvgOverlay } from "./services/takeoffMarkup";
 import { createElectricalTakeoff, getElectricalTakeoffsByQuoteId, getElectricalTakeoffById, getElectricalTakeoffByInputId, updateElectricalTakeoff, deleteElectricalTakeoffByInputId } from "./db";
 import { createContainmentTakeoff, getContainmentTakeoffsByQuoteId, getContainmentTakeoffById, getContainmentTakeoffByInputId, updateContainmentTakeoff, deleteContainmentTakeoffByInputId, updateInputMimeType } from "./db";
@@ -2989,6 +2989,111 @@ Rules:
           userAnswers: userAnswers as any,
         });
 
+        return { updated: true, takeoff: updated };
+      }),
+
+    // ---- Phase 2: Interactive Measurement Reviewer mutations ----
+
+    // Save user-edited segment assignments and recalculate tray run lengths.
+    // Only touches segmentAssignmentsJson and trayRuns on the containment_takeoffs row.
+    // No AI call — pure arithmetic recalculation from segment geometry.
+    // Zero impact on symbol takeoff, QDS, billing, other sectors.
+    updateSegmentAssignments: protectedProcedure
+      .input(z.object({
+        takeoffId: z.number(),
+        assignments: z.record(z.string(), z.string()), // segmentIndex (as string) -> groupKey | "excluded"
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const takeoff = await getContainmentTakeoffById(input.takeoffId);
+        if (!takeoff) throw new Error("Takeoff not found");
+
+        const quote = await getQuoteWithOrgAccess(takeoff.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Access denied");
+
+        const rawSegments = (takeoff.rawSegmentsJson || []) as Array<{ lengthPdfUnits: number }>;
+        if (rawSegments.length === 0) throw new Error("No raw segments stored for this takeoff");
+
+        // Convert string-keyed record to number-keyed
+        const numericAssignments: Record<number, string> = {};
+        for (const [k, v] of Object.entries(input.assignments)) {
+          numericAssignments[parseInt(k, 10)] = v;
+        }
+
+        // Recalculate metres per unit from stored scale/paper/page data
+        const metresPerUnit = getMetresPerPdfUnit(
+          takeoff.detectedScale,
+          takeoff.paperSize,
+          parseFloat(takeoff.pageWidth || "3370"),
+        );
+
+        // Recalculate lengths from new assignments
+        const newLengths = recalculateLengthsFromAssignments(rawSegments, numericAssignments, metresPerUnit);
+
+        // Rebuild trayRuns with updated lengths — preserve all other fields (fittings, height etc.)
+        const wholesalerLen = ((takeoff.userInputs as any)?.wholesalerLengthMetres) || WHOLESALER_LENGTH_METRES;
+        const currentRuns = (takeoff.trayRuns || []) as any[];
+        const updatedRuns = currentRuns.map((run: any) => {
+          const key = `${run.sizeMillimetres}-${run.trayType}`;
+          const newLen = newLengths.get(key);
+          if (newLen != null) {
+            return {
+              ...run,
+              lengthMetres: newLen,
+              wholesalerLengths: Math.ceil(newLen / wholesalerLen),
+            };
+          }
+          return run;
+        });
+
+        const updated = await updateContainmentTakeoff(takeoff.id, {
+          trayRuns: updatedRuns as any,
+          segmentAssignmentsJson: numericAssignments as any,
+          status: "verified", // Mark as user-verified after manual review
+        });
+
+        console.log(`[Containment Reviewer] Assignments saved for takeoff ${takeoff.id}: ${Object.keys(numericAssignments).length} segments, ${newLengths.size} groups updated`);
+        return { updated: true, takeoff: updated };
+      }),
+
+    // Reset segment assignments back to the AI auto-pass.
+    // Reads rawSegmentsJson, re-runs the colour-proximity assignment logic,
+    // and recalculates lengths — identical to what happens on initial upload.
+    resetSegmentAssignments: protectedProcedure
+      .input(z.object({ takeoffId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const takeoff = await getContainmentTakeoffById(input.takeoffId);
+        if (!takeoff) throw new Error("Takeoff not found");
+
+        const quote = await getQuoteWithOrgAccess(takeoff.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Access denied");
+
+        // Re-run the full containment takeoff from the stored PDF
+        // (simplest correct approach — avoids duplicating assignment logic server-side)
+        // The inputId lets us fetch the original PDF buffer and re-process it
+        const inputRecord = await getInputById(takeoff.inputId);
+        if (!inputRecord?.fileKey) throw new Error("Original PDF not found");
+
+        const { getFileBuffer } = await import("./r2Storage");
+        const { extractWithPdfJs } = await import("./services/electricalTakeoff");
+        const { extractPdfLineColours } = await import("./services/electricalTakeoff");
+
+        const pdfBuf = await getFileBuffer(inputRecord.fileKey);
+        const result = await performContainmentTakeoff(
+          pdfBuf,
+          inputRecord.filename || "Unknown",
+          extractWithPdfJs,
+          extractPdfLineColours,
+        );
+
+        const wholesalerLen = ((takeoff.userInputs as any)?.wholesalerLengthMetres) || WHOLESALER_LENGTH_METRES;
+        const updated = await updateContainmentTakeoff(takeoff.id, {
+          trayRuns: result.trayRuns as any,
+          segmentAssignmentsJson: Object.keys(result.segmentAssignments).length > 0 ? result.segmentAssignments as any : null,
+          rawSegmentsJson: result.rawSegments.length > 0 ? result.rawSegments as any : null,
+          status: "draft",
+        });
+
+        console.log(`[Containment Reviewer] Assignments reset for takeoff ${takeoff.id}`);
         return { updated: true, takeoff: updated };
       }),
   }),

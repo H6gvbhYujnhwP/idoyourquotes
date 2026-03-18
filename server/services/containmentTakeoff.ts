@@ -355,7 +355,7 @@ function detectDropAnnotations(words: ExtractedWord[]): DropAnnotation[] {
  * Calculate scale factor: how many real-world metres per PDF unit
  * Based on standard paper sizes and scale ratio
  */
-function getMetresPerPdfUnit(scale: string | null, paperSize: string | null, pageWidth: number): number {
+export function getMetresPerPdfUnit(scale: string | null, paperSize: string | null, pageWidth: number): number {
   // Default: assume 1:100 on A0
   let scaleRatio = 100;
   if (scale) {
@@ -1066,6 +1066,38 @@ export async function performContainmentTakeoff(
  * Calculate cable requirements from tray runs + user inputs
  * Now includes drop cable allowance from detected drop annotations
  */
+/**
+ * Recalculate tray run lengths from user-edited segment assignments.
+ * Called by the updateSegmentAssignments mutation after the user corrects
+ * the interactive measurement reviewer. Pure arithmetic — no AI call.
+ *
+ * @param rawSegments       All raw segments stored in rawSegmentsJson
+ * @param assignments       User-edited Record<segmentIndex, groupKey | "excluded">
+ * @param metresPerUnit     From getMetresPerPdfUnit — stored on the takeoff record
+ * @param wholesalerLen     Stick length in metres (default 3m)
+ * @returns Map<groupKey, lengthMetres>
+ */
+export function recalculateLengthsFromAssignments(
+  rawSegments: Array<{ lengthPdfUnits: number }>,
+  assignments: Record<number, string>,
+  metresPerUnit: number,
+  wholesalerLen: number = WHOLESALER_LENGTH_METRES,
+): Map<string, number> {
+  const rawLengths = new Map<string, number>();
+  for (const [idxStr, groupKey] of Object.entries(assignments)) {
+    if (groupKey === 'excluded') continue;
+    const idx = parseInt(idxStr, 10);
+    const seg = rawSegments[idx];
+    if (!seg) continue;
+    rawLengths.set(groupKey, (rawLengths.get(groupKey) || 0) + seg.lengthPdfUnits);
+  }
+  const result = new Map<string, number>();
+  for (const [key, pdfUnits] of rawLengths) {
+    result.set(key, Math.round(pdfUnits * metresPerUnit * 10) / 10);
+  }
+  return result;
+}
+
 export function calculateCableSummary(
   trayRuns: TrayRun[],
   userInputs: UserInputs,

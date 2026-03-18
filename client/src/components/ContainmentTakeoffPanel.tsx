@@ -10,8 +10,9 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Check, Pencil, Lock, Unlock, Cable, Zap,
-  ChevronDown, ChevronUp, Save, X,
+  ChevronDown, ChevronUp, Save, X, ScanEye,
 } from "lucide-react";
+import ContainmentMeasurementReview from "@/components/ContainmentMeasurementReview";
 
 const brand = {
   navy: "#1a2b4a", teal: "#1fb5a3", white: "#ffffff",
@@ -49,6 +50,7 @@ export default function ContainmentTakeoffPanel({ inputId, quoteId }: { inputId:
   const [isEditingRuns, setIsEditingRuns] = useState(false);
   const [isEditingInputs, setIsEditingInputs] = useState(false);
   const [showCableCalc, setShowCableCalc] = useState(true);
+  const [showReviewer, setShowReviewer] = useState(false);
   const [editedRuns, setEditedRuns] = useState<TrayRun[]>([]);
   const [editedInputs, setEditedInputs] = useState<any>(null);
 
@@ -98,6 +100,7 @@ export default function ContainmentTakeoffPanel({ inputId, quoteId }: { inputId:
   const isUpdating = updateUserInputsMut.isPending || updateTrayRunsMut.isPending;
   const totalMetres = trayRuns.reduce((s, r) => s + r.lengthMetres, 0);
   const totalLengths = trayRuns.reduce((s, r) => s + r.wholesalerLengths, 0);
+  const hasRawSegments = !!(takeoff.rawSegmentsJson && (takeoff.rawSegmentsJson as any[]).length > 0);
 
   const startEditRuns = () => { setEditedRuns(trayRuns.map(r => ({ ...r }))); setIsEditingRuns(true); };
   const cancelEditRuns = () => { setIsEditingRuns(false); setEditedRuns([]); };
@@ -141,6 +144,17 @@ export default function ContainmentTakeoffPanel({ inputId, quoteId }: { inputId:
           )}
         </div>
         <div className="flex gap-1.5">
+          {hasRawSegments && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              style={{ borderColor: brand.teal, color: brand.teal }}
+              onClick={() => setShowReviewer(true)}
+            >
+              <ScanEye className="h-3 w-3 mr-1" /> Review Measurements
+            </Button>
+          )}
           {isVerified ? (
             <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => unlockMut.mutate({ takeoffId: takeoff.id })}>
               <Unlock className="h-3 w-3 mr-1" /> Unlock
@@ -153,6 +167,21 @@ export default function ContainmentTakeoffPanel({ inputId, quoteId }: { inputId:
           )}
         </div>
       </div>
+
+      {/* Interactive Measurement Reviewer — full-screen overlay */}
+      {showReviewer && hasRawSegments && (
+        <ContainmentMeasurementReview
+          takeoffId={takeoff.id}
+          rawSegments={(takeoff.rawSegmentsJson as any[]) || []}
+          initialAssignments={(takeoff.segmentAssignmentsJson as Record<number, string>) || {}}
+          trayRuns={trayRuns}
+          pageWidth={parseFloat(takeoff.pageWidth || "3370")}
+          pageHeight={parseFloat(takeoff.pageHeight || "2384")}
+          detectedScale={takeoff.detectedScale || null}
+          onClose={() => setShowReviewer(false)}
+          onSaved={() => { setShowReviewer(false); refetch(); }}
+        />
+      )}
 
       {/* Tray Runs Table */}
       <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${brand.border}` }}>
