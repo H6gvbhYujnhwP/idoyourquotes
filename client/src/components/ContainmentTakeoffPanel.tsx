@@ -10,9 +10,9 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Check, Pencil, Lock, Unlock, Cable, Zap,
-  ChevronDown, ChevronUp, Save, X, Ruler,
+  ChevronDown, ChevronUp, Save, X, Image,
 } from "lucide-react";
-import ContainmentMeasurementReview from "@/components/ContainmentMeasurementReview";
+import ContainmentDrawingViewer from "@/components/ContainmentDrawingViewer";
 
 const brand = {
   navy: "#1a2b4a", teal: "#1fb5a3", white: "#ffffff",
@@ -46,7 +46,6 @@ export default function ContainmentTakeoffPanel({ inputId, quoteId }: { inputId:
   const verifyMut = trpc.containmentTakeoff.verify.useMutation({ onSuccess: () => refetch() });
   const unlockMut = trpc.containmentTakeoff.unlock.useMutation({ onSuccess: () => refetch() });
   const analyzeMut = trpc.containmentTakeoff.analyze.useMutation({ onSuccess: () => refetch() });
-
   const [isEditingRuns, setIsEditingRuns] = useState(false);
   const [isEditingInputs, setIsEditingInputs] = useState(false);
   const [showCableCalc, setShowCableCalc] = useState(true);
@@ -144,7 +143,7 @@ export default function ContainmentTakeoffPanel({ inputId, quoteId }: { inputId:
           )}
         </div>
         <div className="flex gap-1.5">
-          {hasRawSegments && (
+          {trayRuns.some(r => (r as any).segments?.length > 0) && (
             <Button
               variant="outline"
               size="sm"
@@ -152,7 +151,27 @@ export default function ContainmentTakeoffPanel({ inputId, quoteId }: { inputId:
               style={{ borderColor: brand.teal, color: brand.teal }}
               onClick={() => setShowReviewer(true)}
             >
-              <Ruler className="h-3 w-3 mr-1" /> Review Measurements
+              <Image className="h-3 w-3 mr-1" /> View Drawing
+            </Button>
+          )}
+          {/* Re-run button — always visible when takeoff exists and not verified.
+              Deletes the existing record server-side and re-runs performContainmentTakeoff,
+              so fresh segment geometry is stored and "View Drawing" becomes available. */}
+          {!isVerified && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              style={{ borderColor: brand.navyMuted, color: brand.navyMuted }}
+              onClick={() => analyzeMut.mutate({ inputId, quoteId, force: true } as any)}
+              disabled={analyzeMut.isPending}
+              title="Re-run the containment takeoff — replaces existing measurements with a fresh extraction"
+            >
+              {analyzeMut.isPending ? (
+                <span className="animate-pulse">Re-running…</span>
+              ) : (
+                <>↺ Re-run Takeoff</>
+              )}
             </Button>
           )}
           {isVerified ? (
@@ -168,16 +187,17 @@ export default function ContainmentTakeoffPanel({ inputId, quoteId }: { inputId:
         </div>
       </div>
 
-      {/* Interactive Measurement Reviewer — full-screen overlay */}
-      {showReviewer && hasRawSegments && (
-        <ContainmentMeasurementReview
+      {/* Interactive Drawing Viewer — full-screen overlay */}
+      {showReviewer && (
+        <ContainmentDrawingViewer
+          inputId={inputId}
           takeoffId={takeoff.id}
-          rawSegments={(takeoff.rawSegmentsJson as any[]) || []}
-          initialAssignments={(takeoff.segmentAssignmentsJson as Record<number, string>) || {}}
           trayRuns={trayRuns}
           pageWidth={parseFloat(takeoff.pageWidth || "3370")}
           pageHeight={parseFloat(takeoff.pageHeight || "2384")}
-          detectedScale={takeoff.detectedScale || null}
+          drawingRef={takeoff.drawingRef || "Drawing"}
+          isVerified={isVerified}
+          wholesalerLengthMetres={userInputs.wholesalerLengthMetres ?? 3}
           onClose={() => setShowReviewer(false)}
           onSaved={() => { setShowReviewer(false); refetch(); }}
         />

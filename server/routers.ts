@@ -2721,6 +2721,7 @@ Rules:
       .input(z.object({
         inputId: z.number(),
         quoteId: z.number(),
+        force: z.boolean().optional(), // true = re-run even if a record already exists
       }))
       .mutation(async ({ ctx, input }) => {
         await assertAIAccess(ctx.user.id);
@@ -2730,6 +2731,15 @@ Rules:
         const inputRecord = await getInputById(input.inputId);
         if (!inputRecord || !inputRecord.fileKey) {
           throw new Error("Input file not found");
+        }
+
+        // When force=true (Re-run Takeoff button), delete existing record first so the
+        // fresh run is cleanly inserted. Without this, duplicate rows accumulate and
+        // getByInputId (no ORDER BY) may return a stale row with empty segments,
+        // preventing the "View Drawing" button from ever appearing.
+        if (input.force) {
+          await deleteContainmentTakeoffByInputId(input.inputId);
+          console.log(`[Containment Takeoff] Force re-run: deleted existing record for input ${input.inputId}`);
         }
 
         // Download PDF from R2
