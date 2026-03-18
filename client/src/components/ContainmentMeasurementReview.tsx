@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   ZoomIn, ZoomOut, Maximize, Save, RotateCcw, X,
-  Eye, EyeOff, MousePointer, Square, Info,
+  Eye, EyeOff, MousePointer2, Square, Info,
 } from "lucide-react";
 
 // ---- Brand colours (matches brandTheme.ts) ----
@@ -343,7 +343,7 @@ export default function ContainmentMeasurementReview({
               className={`px-3 py-1.5 text-xs flex items-center gap-1.5 transition-colors ${mode === "pan" ? "bg-slate-700 text-white" : "text-slate-400 hover:text-white"}`}
               onClick={() => setMode("pan")}
             >
-              <MousePointer className="h-3 w-3" /> Pan
+              <MousePointer2 className="h-3 w-3" /> Pan
             </button>
             <button
               className={`px-3 py-1.5 text-xs flex items-center gap-1.5 transition-colors ${mode === "select" ? "bg-teal-600 text-white" : "text-slate-400 hover:text-white"}`}
