@@ -798,21 +798,39 @@ export async function performContainmentTakeoff(
         usedVectorMeasurement = true;
         console.log(`[Containment Takeoff] ${key}: using vector length ${totalLengthMetres}m`);
 
-        // Build synthetic segments for SVG overlay — use annotation positions as approximate waypoints
-        for (let i = 0; i < annotations.length - 1; i++) {
-          const a = annotations[i];
-          const b = annotations[i + 1];
-          const dx = Math.abs(b.x - a.x);
-          const dy = Math.abs(b.y - a.y);
-          if (dx > 20 || dy > 20) {
-            // Apportion vector length by the relative distance between annotations
-            const distPdfUnits = Math.sqrt(dx * dx + dy * dy);
-            segments.push({
-              x1: a.x, y1: a.y,
-              x2: b.x, y2: b.y,
-              // Note: lengthMetres here is approximate for overlay display only
-              lengthMetres: Math.round(distPdfUnits * metresPerUnit * 10) / 10,
-            });
+        // Use the actual Python vector segments assigned to this run.
+        // segmentAssignments maps colouredLine index → group key — built by
+        // measureTrayRunsFromVectors above. This gives the viewer accurate line
+        // positions that match the real drawing, not guesses from label spacing.
+        for (const [idxStr, groupKey] of Object.entries(segmentAssignments)) {
+          if (groupKey !== key) continue;
+          const idx = parseInt(idxStr, 10);
+          const seg = colouredLines[idx];
+          if (!seg || seg.x1 == null || seg.y1 == null || seg.x2 == null || seg.y2 == null) continue;
+          segments.push({
+            x1: seg.x1,
+            y1: seg.y1,
+            x2: seg.x2,
+            y2: seg.y2,
+            lengthMetres: Math.round((seg.lengthPdfUnits || 0) * metresPerUnit * 10) / 10,
+          });
+        }
+        // If Python extraction returned no geometry for this run, fall back to
+        // annotation waypoints so the overlay still shows something.
+        if (segments.length === 0) {
+          for (let i = 0; i < annotations.length - 1; i++) {
+            const a = annotations[i];
+            const b = annotations[i + 1];
+            const dx = Math.abs(b.x - a.x);
+            const dy = Math.abs(b.y - a.y);
+            if (dx > 20 || dy > 20) {
+              const distPdfUnits = Math.sqrt(dx * dx + dy * dy);
+              segments.push({
+                x1: a.x, y1: a.y,
+                x2: b.x, y2: b.y,
+                lengthMetres: Math.round(distPdfUnits * metresPerUnit * 10) / 10,
+              });
+            }
           }
         }
       }
