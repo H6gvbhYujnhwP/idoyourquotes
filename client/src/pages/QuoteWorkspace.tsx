@@ -1972,7 +1972,7 @@ export default function QuoteWorkspace() {
             </div>
 
             {/* Takeoff Instructions — electrical sector only. Controls symbol filtering in TakeoffPanel. */}
-            {(quote as any).tradePreset === "electrical" && (
+            {((quote as any).tradePreset || (user as any)?.defaultTradeSector) === "electrical" && (
               <div className="px-4 py-3" style={{ backgroundColor: '#f8fafc' }}>
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-2">
@@ -2366,7 +2366,7 @@ export default function QuoteWorkspace() {
               processingInputId={processingInputId}
               quoteId={quoteId}
               userPrompt={userPrompt}
-              tradePreset={(quote as any).tradePreset || ''}
+              tradePreset={(quote as any).tradePreset || (user as any)?.defaultTradeSector || ''}
             />
           )}
 
