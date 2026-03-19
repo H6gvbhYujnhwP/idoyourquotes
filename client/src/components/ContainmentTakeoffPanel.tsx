@@ -99,7 +99,6 @@ export default function ContainmentTakeoffPanel({ inputId, quoteId }: { inputId:
   const isUpdating = updateUserInputsMut.isPending || updateTrayRunsMut.isPending;
   const totalMetres = trayRuns.reduce((s, r) => s + r.lengthMetres, 0);
   const totalLengths = trayRuns.reduce((s, r) => s + r.wholesalerLengths, 0);
-  const hasRawSegments = !!(takeoff.rawSegmentsJson && (takeoff.rawSegmentsJson as any[]).length > 0);
 
   const startEditRuns = () => { setEditedRuns(trayRuns.map(r => ({ ...r }))); setIsEditingRuns(true); };
   const cancelEditRuns = () => { setIsEditingRuns(false); setEditedRuns([]); };
