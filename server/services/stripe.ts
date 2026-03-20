@@ -468,7 +468,20 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
         return;
       }
 
-      console.log(`[Stripe Webhook] Subscription deleted: org=${orgId}`);
+      console.log(`[Stripe Webhook] Subscription deleted: org=${orgId}, sub=${subscription.id}`);
+
+      // CRITICAL GUARD: Only reset the org if the deleted subscription is the org's
+      // CURRENT subscription. During an upgrade via createCheckout, the old subscription
+      // is cancelled and a new one is created. The delete webhook for the old one fires
+      // AFTER the org has already been updated to point at the new subscription.
+      // Without this guard, the delete unconditionally wipes the org back to trial —
+      // even though the org is already active on a new subscription.
+      const org = await getOrganizationById(orgId);
+      const currentSubId = (org as any)?.stripeSubscriptionId;
+      if (currentSubId && currentSubId !== subscription.id) {
+        console.log(`[Stripe Webhook] Ignoring delete for old sub ${subscription.id} — org already on ${currentSubId}`);
+        return;
+      }
 
       // Downgrade to trial-like state (read-only — can view but not create)
       await updateOrganization(orgId, {
