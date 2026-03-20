@@ -91,12 +91,12 @@ export default function SetPassword() {
     return (
       <div className="min-h-screen flex flex-col bg-slate-50">
         <header className="border-b bg-white">
-          <div className="container flex h-36 items-center justify-between">
+          <div className="container flex h-14 md:h-36 items-center justify-between">
             <Link href="/" className="flex items-center gap-2">
               <img 
                 src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png" 
                 alt="IdoYourQuotes" 
-                className="h-32 object-contain"
+                className="h-9 md:h-28 w-auto object-contain"
               />
             </Link>
           </div>
@@ -116,12 +116,12 @@ export default function SetPassword() {
     return (
       <div className="min-h-screen flex flex-col bg-slate-50">
         <header className="border-b bg-white">
-          <div className="container flex h-36 items-center justify-between">
+          <div className="container flex h-14 md:h-36 items-center justify-between">
             <Link href="/" className="flex items-center gap-2">
               <img 
                 src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png" 
                 alt="IdoYourQuotes" 
-                className="h-32 object-contain"
+                className="h-9 md:h-28 w-auto object-contain"
               />
             </Link>
           </div>
@@ -152,12 +152,12 @@ export default function SetPassword() {
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
       <header className="border-b bg-white">
-        <div className="container flex h-36 items-center justify-between">
+        <div className="container flex h-14 md:h-36 items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
             <img 
               src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png" 
               alt="IdoYourQuotes" 
-              className="h-32 object-contain"
+              className="h-9 md:h-28 w-auto object-contain"
             />
           </Link>
         </div>

@@ -43,7 +43,7 @@ export default function Home() {
             <img
               src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png"
               alt="IdoYourQuotes"
-              className="h-10 md:h-32 object-contain"
+              className="h-9 md:h-28 w-auto object-contain"
             />
           </div>
           <div className="flex items-center gap-2 md:gap-4 shrink-0">
@@ -440,7 +440,7 @@ export default function Home() {
               <img
                 src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png"
                 alt="IdoYourQuotes"
-                className="h-10 object-contain"
+                className="h-9 w-auto object-contain"
               />
             </div>
             <p className="text-sm text-muted-foreground">
