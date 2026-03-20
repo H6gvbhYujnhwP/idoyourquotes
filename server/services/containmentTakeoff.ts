@@ -570,6 +570,173 @@ function measureTrayRunsFromVectors(
 }
 
 /**
+ * Detect fittings (bends, T-pieces, cross-pieces) from real vector segment geometry.
+ *
+ * Called after all trayRuns are built with their segments[]. Replaces the
+ * annotation-direction-change heuristic when C1 vector data is available.
+ *
+ * Algorithm:
+ *   1. Collect every segment endpoint (start + end) with a unit direction vector
+ *      pointing AWAY from the junction along the segment.
+ *   2. Cluster endpoints within 0.5m real-world distance of each other.
+ *   3. Per cluster:
+ *      - 2 endpoints, same run, dot product > -0.5 → 90° bend
+ *        (dot ≈ -1 = straight through; dot ≈ 0 = 90° turn)
+ *      - 3 endpoints → T-piece, attributed to run with most endpoints
+ *        (tie-break: larger tray size wins — matches Mitch's convention)
+ *      - 4+ endpoints → cross-piece, attributed to largest tray run
+ *
+ * Mutates trayRuns in-place. Only affects runs that have real vector segments.
+ * Runs using annotation-spacing fallback (no segments) are left unchanged.
+ */
+function detectFittingsFromGeometry(trayRuns: TrayRun[], metresPerUnit: number): void {
+  interface EndpointRecord {
+    x: number;
+    y: number;
+    runIndex: number;
+    dirX: number; // unit vector pointing AWAY from junction along segment
+    dirY: number;
+  }
+
+  const endpoints: EndpointRecord[] = [];
+
+  for (let ri = 0; ri < trayRuns.length; ri++) {
+    const run = trayRuns[ri];
+    if (!run.segments || run.segments.length === 0) continue;
+
+    for (const seg of run.segments) {
+      const len = Math.sqrt((seg.x2 - seg.x1) ** 2 + (seg.y2 - seg.y1) ** 2);
+      if (len < 0.001) continue;
+
+      // Start endpoint: away direction = towards segment end
+      endpoints.push({
+        x: seg.x1, y: seg.y1, runIndex: ri,
+        dirX: (seg.x2 - seg.x1) / len,
+        dirY: (seg.y2 - seg.y1) / len,
+      });
+
+      // End endpoint: away direction = towards segment start
+      endpoints.push({
+        x: seg.x2, y: seg.y2, runIndex: ri,
+        dirX: (seg.x1 - seg.x2) / len,
+        dirY: (seg.y1 - seg.y2) / len,
+      });
+    }
+  }
+
+  if (endpoints.length === 0) return;
+
+  // Junction proximity threshold: 0.5m in real-world distance, converted to PDF units.
+  // Segment endpoints within this distance of each other represent the same physical junction.
+  const junctionThreshold = metresPerUnit > 0 ? 0.5 / metresPerUnit : 15;
+  const junctionThresholdSq = junctionThreshold * junctionThreshold;
+
+  // Reset fitting counts for runs that have real vector segments.
+  // Annotation-based estimates (segments.length === 0) are left unchanged.
+  for (const run of trayRuns) {
+    if (run.segments.length > 0) {
+      run.tPieces = 0;
+      run.crossPieces = 0;
+      run.bends90 = 0;
+    }
+  }
+
+  // Cluster endpoints by proximity — O(n²), bounded by number of segments
+  const used = new Set<number>();
+  const junctions: EndpointRecord[][] = [];
+
+  for (let i = 0; i < endpoints.length; i++) {
+    if (used.has(i)) continue;
+    const cluster: EndpointRecord[] = [endpoints[i]];
+    used.add(i);
+
+    for (let j = i + 1; j < endpoints.length; j++) {
+      if (used.has(j)) continue;
+      const dx = endpoints[j].x - endpoints[i].x;
+      const dy = endpoints[j].y - endpoints[i].y;
+      if (dx * dx + dy * dy < junctionThresholdSq) {
+        cluster.push(endpoints[j]);
+        used.add(j);
+      }
+    }
+
+    if (cluster.length >= 2) {
+      junctions.push(cluster);
+    }
+  }
+
+  console.log(`[Fitting Detection] ${endpoints.length} endpoints → ${junctions.length} junctions to classify`);
+
+  for (const junction of junctions) {
+    const n = junction.length;
+
+    if (n === 2) {
+      // Two endpoints meeting: bend (same run, turns > ~60°) or straight coupler join
+      const [a, b] = junction;
+      if (a.runIndex === b.runIndex) {
+        // dot(away-A, away-B):
+        //   ≈ -1 → straight through (back-to-back directions = no turn)
+        //   ≈  0 → 90° bend
+        //   ≈ +1 → U-turn (unusual)
+        // Threshold -0.5: count as bend when paths diverge by more than ~60°
+        const dot = a.dirX * b.dirX + a.dirY * b.dirY;
+        if (dot > -0.5) {
+          trayRuns[a.runIndex].bends90++;
+        }
+        // dot ≤ -0.5: essentially straight join — coupler, already handled separately
+      }
+      // Two endpoints from different runs: boundary crossing, not a fitting
+    }
+
+    if (n === 3) {
+      // T-piece: three segment ends meeting at one point.
+      // Attribute to the run with the most endpoints here (it's the main run).
+      // Tie-break: larger tray size wins — physically it carries the fitting.
+      const runCounts: Record<number, number> = {};
+      for (const ep of junction) {
+        runCounts[ep.runIndex] = (runCounts[ep.runIndex] || 0) + 1;
+      }
+      let targetRunIdx = junction[0].runIndex;
+      let maxCount = 0;
+      for (const [ridxStr, count] of Object.entries(runCounts)) {
+        const ridx = parseInt(ridxStr, 10);
+        if (
+          count > maxCount ||
+          (count === maxCount &&
+            trayRuns[ridx].sizeMillimetres > trayRuns[targetRunIdx].sizeMillimetres)
+        ) {
+          maxCount = count;
+          targetRunIdx = ridx;
+        }
+      }
+      trayRuns[targetRunIdx].tPieces++;
+    }
+
+    if (n >= 4) {
+      // Cross-piece: four or more segment ends at one point.
+      // Assign to the largest tray run (they supply the fitting at the crossing).
+      const runIndices = [...new Set(junction.map(ep => ep.runIndex))];
+      const targetRunIdx = runIndices.reduce(
+        (best, ri) =>
+          trayRuns[ri].sizeMillimetres > trayRuns[best].sizeMillimetres ? ri : best,
+        runIndices[0],
+      );
+      trayRuns[targetRunIdx].crossPieces++;
+    }
+  }
+
+  // Log detected fittings per run
+  for (const run of trayRuns) {
+    if (run.segments.length > 0 && (run.tPieces + run.crossPieces + run.bends90) > 0) {
+      console.log(
+        `[Fitting Detection] ${run.sizeMillimetres}mm ${run.trayType}: ` +
+        `${run.bends90} bends, ${run.tPieces} T-pieces, ${run.crossPieces} cross-pieces`,
+      );
+    }
+  }
+}
+
+/**
  * Perform containment takeoff on a PDF drawing
  * This uses the same PDF extraction as electrical takeoff
  * but focuses on tray annotations and measurements
@@ -766,6 +933,9 @@ export async function performContainmentTakeoff(
   // Step 7: Estimate lengths — use vector geometry if available, fall back to annotation spacing
   const trayRuns: TrayRun[] = [];
   let runId = 0;
+  // Tracks whether any run successfully used vector geometry.
+  // When true: detectFittingsFromGeometry() is called after the loop.
+  let anyRunUsedVectorMeasurement = false;
 
   // Attempt vector measurement when we have geometry-rich segments
   let vectorMeasurements: Map<string, number> | null = null;
@@ -796,6 +966,7 @@ export async function performContainmentTakeoff(
       if (vectorLength && vectorLength > 0) {
         totalLengthMetres = Math.round(vectorLength * 10) / 10;
         usedVectorMeasurement = true;
+        anyRunUsedVectorMeasurement = true;
         console.log(`[Containment Takeoff] ${key}: using vector length ${totalLengthMetres}m`);
 
         // Use the actual Python vector segments assigned to this run.
@@ -867,24 +1038,29 @@ export async function performContainmentTakeoff(
     }
     const wholesalerLengths = Math.ceil(totalLengthMetres / wholesalerLengthMetres);
 
-    // Count fittings: estimate from direction changes in annotations
+    // Count fittings.
+    // When vector measurement was used: initialise to 0 — detectFittingsFromGeometry()
+    // will populate these accurately from real junction analysis after the loop.
+    // When using annotation-spacing fallback: estimate from direction changes in label positions.
     let tPieces = 0;
     let crossPieces = 0;
     let bends90 = 0;
 
-    for (let i = 1; i < annotations.length - 1; i++) {
-      const prev = annotations[i - 1];
-      const curr = annotations[i];
-      const next = annotations[i + 1];
+    if (!usedVectorMeasurement) {
+      for (let i = 1; i < annotations.length - 1; i++) {
+        const prev = annotations[i - 1];
+        const curr = annotations[i];
+        const next = annotations[i + 1];
 
-      const dx1 = curr.x - prev.x;
-      const dy1 = curr.y - prev.y;
-      const dx2 = next.x - curr.x;
-      const dy2 = next.y - curr.y;
+        const dx1 = curr.x - prev.x;
+        const dy1 = curr.y - prev.y;
+        const dx2 = next.x - curr.x;
+        const dy2 = next.y - curr.y;
 
-      const angle = Math.abs(Math.atan2(dy2, dx2) - Math.atan2(dy1, dx1));
-      if (angle > Math.PI / 4) {
-        bends90++;
+        const angle = Math.abs(Math.atan2(dy2, dx2) - Math.atan2(dy1, dx1));
+        if (angle > Math.PI / 4) {
+          bends90++;
+        }
       }
     }
 
@@ -914,6 +1090,14 @@ export async function performContainmentTakeoff(
         ? (findGroupColour(annotations, colouredLines) || TRAY_TYPE_COLOURS[type] || TRAY_SIZE_COLOURS[size]?.stroke || '#888888')
         : (TRAY_TYPE_COLOURS[type] || TRAY_SIZE_COLOURS[size]?.stroke || '#888888'),
     });
+  }
+
+  // Step 7b: Geometry-based fitting detection.
+  // When vector segments are available (C1), detect bends, T-pieces and cross-pieces
+  // from real line endpoint coincidence rather than annotation position heuristics.
+  // Only runs when at least one tray run used vector measurement.
+  if (anyRunUsedVectorMeasurement) {
+    detectFittingsFromGeometry(trayRuns, metresPerUnit);
   }
 
   // Step 8: Build fitting summary (aggregated by size, cross-pieces use larger size)
@@ -1038,8 +1222,11 @@ export async function performContainmentTakeoff(
   if (paperSize) drawingNotes.push(`Paper size: ${paperSize}`);
   if (vectorMeasurements && vectorMeasurements.size > 0) {
     drawingNotes.push(`Measurement method: Vector geometry (${colouredLines.filter(l => l.lengthPdfUnits).length} segments measured)`);
+    const totalFittings = trayRuns.reduce((s, r) => s + r.bends90 + r.tPieces + r.crossPieces, 0);
+    drawingNotes.push(`Fitting detection: Junction geometry analysis (${totalFittings} fittings detected from segment endpoints)`);
   } else {
     drawingNotes.push(`Measurement method: Annotation spacing estimate (vector data unavailable)`);
+    drawingNotes.push(`Fitting detection: Annotation direction change estimate`);
   }
   drawingNotes.push(`Found ${trayAnnotations.length} NEW tray annotations across ${trayRuns.length} tray runs`);
   if (existingAnnotations.length > 0) {
