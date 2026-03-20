@@ -38,7 +38,6 @@ interface InputsPanelProps {
   onTakeoffChanged: () => void;
   processingInputId: number | null;
   quoteId: number;
-  userPrompt: string;
   tradePreset?: string; // Used to gate electrical-only panels (TakeoffPanel, ContainmentTakeoffPanel)
 }
 
@@ -160,7 +159,6 @@ function DetailContent({
   onTriggerVoiceAnalysis,
   processingInputId,
   quoteId,
-  userPrompt,
   tradePreset,
   isMobile,
 }: {
@@ -173,7 +171,6 @@ function DetailContent({
   onTriggerVoiceAnalysis: () => void;
   processingInputId: number | null;
   quoteId: number;
-  userPrompt: string;
   tradePreset?: string;
   isMobile: boolean;
 }) {
@@ -308,7 +305,6 @@ function DetailContent({
             quoteId={quoteId}
             filename={input.filename || "Drawing"}
             fileUrl={input.fileUrl || undefined}
-            processingInstructions={userPrompt}
           />
         )}
 
@@ -382,7 +378,6 @@ export default function InputsPanel({
   onTakeoffChanged,
   processingInputId,
   quoteId,
-  userPrompt,
   tradePreset,
 }: InputsPanelProps) {
   const isMobile = useIsMobile();
@@ -461,7 +456,6 @@ export default function InputsPanel({
                     onTriggerVoiceAnalysis={onTriggerVoiceAnalysis}
                     processingInputId={processingInputId}
                     quoteId={quoteId}
-                    userPrompt={userPrompt}
                     tradePreset={tradePreset}
                     isMobile={true}
                   />
@@ -562,7 +556,6 @@ export default function InputsPanel({
               onTriggerVoiceAnalysis={onTriggerVoiceAnalysis}
               processingInputId={processingInputId}
               quoteId={quoteId}
-              userPrompt={userPrompt}
               tradePreset={tradePreset}
               isMobile={false}
             />

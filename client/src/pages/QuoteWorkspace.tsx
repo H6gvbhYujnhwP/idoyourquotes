@@ -1971,37 +1971,6 @@ export default function QuoteWorkspace() {
               )}
             </div>
 
-            {/* Takeoff Instructions — electrical sector only. Controls symbol filtering in TakeoffPanel. */}
-            {((quote as any).tradePreset || (user as any)?.defaultTradeSector) === "electrical" && (
-              <div className="px-4 py-3" style={{ backgroundColor: '#f8fafc' }}>
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm" style={{ color: brand.teal }}>✦</span>
-                    <span className="text-[11px] font-bold" style={{ color: brand.navy }}>Takeoff Instructions</span>
-                    {userPrompt && (
-                      <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full" style={{ backgroundColor: `${brand.teal}15`, color: brand.teal }}>
-                        Active
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex rounded-lg overflow-hidden" style={{ border: `1.5px solid ${brand.border}` }}>
-                  <div className="w-1 flex-shrink-0" style={{ backgroundColor: brand.teal }} />
-                  <Textarea
-                    value={userPrompt}
-                    onChange={(e) => setUserPrompt(e.target.value)}
-                    onBlur={() => {
-                      updateQuote.mutate({ id: quoteId, userPrompt: userPrompt || null });
-                    }}
-                    className="w-full px-3 py-2 text-sm border-0 focus:ring-0 resize-none rounded-none"
-                    style={{ color: brand.navy, backgroundColor: brand.white }}
-                    rows={2}
-                    placeholder={"Filter which symbols are included in your takeoff...\ne.g. Lighting only — exclude fire alarm, power, access control"}
-                  />
-                </div>
-              </div>
-            )}
-
             {/* Voice Dictation — floating bottom bar when dictating is active */}
             {isDictating && (
               <div style={{
@@ -2365,7 +2334,6 @@ export default function QuoteWorkspace() {
               onTakeoffChanged={refetchTakeoffs}
               processingInputId={processingInputId}
               quoteId={quoteId}
-              userPrompt={userPrompt}
               tradePreset={(quote as any).tradePreset || (user as any)?.defaultTradeSector || ''}
             />
           )}

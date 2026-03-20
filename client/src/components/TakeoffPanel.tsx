@@ -20,12 +20,11 @@ interface TakeoffPanelProps {
   quoteId: number;
   filename: string;
   fileUrl?: string;
-  processingInstructions?: string;
   reanalyzeTrigger?: number;
   onAfterSave?: () => void; // Called after marker edits saved — triggers QDS re-analysis in parent
 }
 
-export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, processingInstructions, reanalyzeTrigger, onAfterSave }: TakeoffPanelProps) {
+export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, reanalyzeTrigger, onAfterSave }: TakeoffPanelProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showViewer, setShowViewer] = useState(false);
   const [showChat, setShowChat] = useState(true);
@@ -152,110 +151,9 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
   const rawCounts = (takeoffData?.counts || {}) as Record<string, number>;
   const rawSymbolDescriptions = (takeoffData?.symbolDescriptions || {}) as Record<string, string>;
 
-  const excludedCodes = useMemo(() => {
-    if (!processingInstructions || !takeoffData) return new Set<string>();
-    // Don't apply instruction filtering to locked/verified takeoffs
-    if (takeoffData.status === 'verified') return new Set<string>();
-    const lower = processingInstructions.toLowerCase().trim();
-    const excluded = new Set<string>();
-
-    // Build a lookup: code -> description, and description words -> code
-    const codeList = Object.keys(rawCounts);
-    const descToCode: Record<string, string[]> = {};
-    for (const code of codeList) {
-      const desc = (rawSymbolDescriptions[code] || '').toLowerCase();
-      // Map whole description and individual meaningful words to this code
-      if (desc) {
-        if (!descToCode[desc]) descToCode[desc] = [];
-        descToCode[desc].push(code);
-        // Also map key words (e.g. "smoke" from "Optical Smoke Detector")
-        const words = desc.split(/\s+/).filter(w => w.length > 3);
-        for (const word of words) {
-          if (!descToCode[word]) descToCode[word] = [];
-          if (!descToCode[word].includes(code)) descToCode[word].push(code);
-        }
-      }
-    }
-
-    // Helper: check if a term matches a symbol code or description
-    const findMatchingCodes = (term: string): string[] => {
-      const t = term.trim().toLowerCase();
-      if (!t) return [];
-      const matches: string[] = [];
-
-      for (const code of codeList) {
-        // Direct code match (case insensitive)
-        if (code.toLowerCase() === t) {
-          matches.push(code);
-          continue;
-        }
-        // Description contains the term
-        const desc = (rawSymbolDescriptions[code] || '').toLowerCase();
-        if (desc && (desc.includes(t) || t.includes(desc))) {
-          matches.push(code);
-        }
-      }
-
-      // Also check common aliases — but only using description-based matching now
-      // (No hardcoded symbol codes here — everything goes through symbolDescriptions)
-
-      return matches;
-    };
-
-    // === CATEGORY-LEVEL PATTERNS ===
-
-    // "lighting only" / "lights only" → exclude everything that isn't lighting
-    const isLightingOnly = lower.includes('lighting only') || lower.includes('lights only');
-    if (isLightingOnly) {
-      for (const code of codeList) {
-        const desc = (rawSymbolDescriptions[code] || '').toLowerCase();
-        const isLighting = desc.includes('light') || desc.includes('led') || desc.includes('emergency') ||
-          desc.includes('exit') || desc.includes('luminaire') || desc.includes('downlight') ||
-          desc.includes('batten') || desc.includes('pendant');
-        const isControl = desc.includes('pir') || desc.includes('presence') || desc.includes('control') ||
-          desc.includes('sensor') || desc.includes('lcm') || desc.includes('dimmer');
-        if (!isLighting && !isControl) {
-          excluded.add(code);
-        }
-      }
-    }
-
-    // === ITEM-LEVEL PATTERNS ===
-    // Match: "remove X", "exclude X", "no X", "without X", "drop X", "delete X", "ignore X"
-    const excludePatterns = [
-      /(?:remove|exclude|excluding|no|without|drop|delete|ignore|take out|take off|minus|less|not|don'?t (?:include|count|want))\s+(.+)/gi,
-    ];
-
-    for (const pattern of excludePatterns) {
-      let match;
-      // Reset lastIndex for global regex
-      pattern.lastIndex = 0;
-      while ((match = pattern.exec(lower)) !== null) {
-        const remainder = match[1].trim();
-        // Split on commas, "and", "&" to handle "remove X, Y and Z"
-        const terms = remainder.split(/[,&]|\band\b/).map(s => s.trim()).filter(Boolean);
-        for (const term of terms) {
-          // Clean trailing punctuation
-          const cleaned = term.replace(/[.\s]+$/, '');
-          const codes = findMatchingCodes(cleaned);
-          for (const code of codes) {
-            excluded.add(code);
-          }
-        }
-      }
-    }
-
-    return excluded;
-  }, [processingInstructions, rawCounts, rawSymbolDescriptions, takeoffData]);
-
-  // Combined exclusions: instruction-based + user-toggled
-  const allExcludedCodes = useMemo(() => {
-    const combined = new Set(excludedCodes);
-    for (const code of userExcludedCodes) {
-      combined.add(code);
-    }
-    return combined;
-  }, [excludedCodes, userExcludedCodes]);
+  // Takeoff Instructions field removed — exclusions are now user-toggled only.
+  // userExcludedCodes: persisted to DB via saveExcludedMutation on every toggle.
+  const allExcludedCodes = userExcludedCodes;
 
   const filteredCounts = useMemo(() => {
     const filtered: Record<string, number> = {};
@@ -326,7 +224,6 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
 
   const toggleChipExclusion = (code: string) => {
     if (isVerified) return;
-    if (excludedCodes.has(code)) return;
     setUserExcludedCodes(prev => {
       const next = new Set(prev);
       if (next.has(code)) {
@@ -394,10 +291,8 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
           {Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)).map(([code, count]) => {
             const style = symbolStyles[code];
             const colour = style?.colour || '#888888';
-            const isInstructionExcluded = excludedCodes.has(code);
-            const isUserExcluded = userExcludedCodes.has(code);
             const isExcluded = allExcludedCodes.has(code);
-            const isClickable = !isVerified && !isInstructionExcluded;
+            const isClickable = !isVerified;
             return (
               <button
                 key={code}
@@ -405,14 +300,13 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
                 disabled={!isClickable}
                 className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all ${
                   isExcluded ? 'opacity-40' : 'hover:shadow-md'
-                } ${isClickable ? 'cursor-pointer' : isInstructionExcluded ? 'cursor-not-allowed' : 'cursor-default'}`}
+                } ${isClickable ? 'cursor-pointer' : 'cursor-default'}`}
                 style={{
                   borderColor: isExcluded ? '#e5e7eb' : `${colour}30`,
                   backgroundColor: isExcluded ? '#f9fafb' : `${colour}06`,
                 }}
                 title={
-                  isInstructionExcluded ? `${code} excluded by processing instructions`
-                  : isUserExcluded ? `${code} excluded — click to include`
+                  isExcluded ? `${code} excluded — click to include`
                   : isVerified ? `${code}: ${symbolDescriptions[code] || code}`
                   : `Click to exclude ${code} from quote`
                 }
@@ -428,8 +322,7 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, proc
                 <span className={`text-[10px] font-medium ${isExcluded ? 'line-through' : ''}`} style={{ color: isExcluded ? '#9ca3af' : brand.navyMuted }}>
                   {symbolDescriptions[code] || code}
                 </span>
-                {isInstructionExcluded && <span className="text-[8px] text-gray-400 ml-0.5">instructions</span>}
-                {isUserExcluded && <span className="text-[8px] ml-0.5" style={{ color: brand.teal }}>click to restore</span>}
+                {isExcluded && <span className="text-[8px] ml-0.5" style={{ color: brand.teal }}>click to restore</span>}
               </button>
             );
           })}
