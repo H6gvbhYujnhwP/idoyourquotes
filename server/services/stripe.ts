@@ -226,14 +226,52 @@ export async function changeSubscriptionTier(params: {
       metadata: { orgId: String(params.orgId), tier: params.newTier },
     });
 
-    // Step 4: Finalise and immediately pay.
+    // Step 4: Resolve the payment method to charge.
+    // Stripe Checkout does not always set invoice_settings.default_payment_method
+    // on the customer object, so invoices.pay() with no payment_method parameter
+    // throws "There is no default_payment_method set on this Customer or Invoice".
+    // We resolve in priority order:
+    //   1. subscription.default_payment_method (set by Checkout on the subscription)
+    //   2. customer.invoice_settings.default_payment_method
+    //   3. First payment method from paymentMethods.list (the saved card)
+    let resolvedPaymentMethodId: string | undefined;
+    const subDefaultPm = typeof subscription.default_payment_method === 'string'
+      ? subscription.default_payment_method
+      : (subscription.default_payment_method as any)?.id;
+
+    if (subDefaultPm) {
+      resolvedPaymentMethodId = subDefaultPm;
+      console.log(`[Stripe] Using subscription default_payment_method: ${resolvedPaymentMethodId}`);
+    } else {
+      const customer = await stripe.customers.retrieve(subscription.customer as string) as Stripe.Customer;
+      const custDefaultPm = typeof customer.invoice_settings?.default_payment_method === 'string'
+        ? customer.invoice_settings.default_payment_method
+        : (customer.invoice_settings?.default_payment_method as any)?.id;
+      if (custDefaultPm) {
+        resolvedPaymentMethodId = custDefaultPm;
+        console.log(`[Stripe] Using customer invoice_settings.default_payment_method: ${resolvedPaymentMethodId}`);
+      } else {
+        // Fall back to the first saved payment method on the customer
+        const pms = await stripe.paymentMethods.list({ customer: subscription.customer as string, type: 'card', limit: 1 });
+        if (pms.data.length > 0) {
+          resolvedPaymentMethodId = pms.data[0].id;
+          console.log(`[Stripe] Using first listed payment method: ${resolvedPaymentMethodId}`);
+        }
+      }
+    }
+
+    if (!resolvedPaymentMethodId) {
+      throw new Error('No payment method found on customer — cannot charge upgrade invoice.');
+    }
+
+    // Step 5: Finalise and immediately pay.
     // Stripe may auto-collect on finalisation if the customer has auto-pay enabled.
     // In that case .pay() throws invoice_already_paid — money went through fine.
     // Any other error (card declined etc.) is rethrown so the caller sees the failure.
     await stripe.invoices.finalizeInvoice(invoice.id);
 
     try {
-      await stripe.invoices.pay(invoice.id);
+      await stripe.invoices.pay(invoice.id, { payment_method: resolvedPaymentMethodId });
     } catch (payErr: any) {
       const stripeCode = payErr?.raw?.code || payErr?.code;
       if (stripeCode !== 'invoice_already_paid') {
@@ -395,8 +433,15 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
         subscriptionStatus: mapStripeStatus(subscription.status),
         stripeSubscriptionId: subscription.id,
         stripePriceId: priceId,
-        subscriptionCurrentPeriodStart: new Date(subscription.current_period_start * 1000),
-        subscriptionCurrentPeriodEnd: new Date(subscription.current_period_end * 1000),
+        // Guard against null/undefined Unix timestamps — `undefined * 1000 = NaN`
+        // which produces an invalid Date that throws RangeError in Drizzle's
+        // PgTimestamp.mapToDriverValue when it calls .toISOString().
+        subscriptionCurrentPeriodStart: subscription.current_period_start
+          ? new Date(subscription.current_period_start * 1000)
+          : undefined,
+        subscriptionCurrentPeriodEnd: subscription.current_period_end
+          ? new Date(subscription.current_period_end * 1000)
+          : undefined,
         subscriptionCancelAtPeriodEnd: subscription.cancel_at_period_end,
         maxUsers: config.maxUsers,
         maxQuotesPerMonth: config.maxQuotesPerMonth,
