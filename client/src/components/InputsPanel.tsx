@@ -159,6 +159,7 @@ function DetailContent({
   onTriggerVoiceAnalysis,
   processingInputId,
   quoteId,
+  onExclusionChanged,
   tradePreset,
   isMobile,
 }: {
@@ -171,6 +172,7 @@ function DetailContent({
   onTriggerVoiceAnalysis: () => void;
   processingInputId: number | null;
   quoteId: number;
+  onExclusionChanged: () => void;
   tradePreset?: string;
   isMobile: boolean;
 }) {
@@ -305,6 +307,7 @@ function DetailContent({
             quoteId={quoteId}
             filename={input.filename || "Drawing"}
             fileUrl={input.fileUrl || undefined}
+            onExclusionChanged={onExclusionChanged}
           />
         )}
 
@@ -456,6 +459,7 @@ export default function InputsPanel({
                     onTriggerVoiceAnalysis={onTriggerVoiceAnalysis}
                     processingInputId={processingInputId}
                     quoteId={quoteId}
+                    onExclusionChanged={onTakeoffChanged}
                     tradePreset={tradePreset}
                     isMobile={true}
                   />
@@ -556,6 +560,7 @@ export default function InputsPanel({
               onTriggerVoiceAnalysis={onTriggerVoiceAnalysis}
               processingInputId={processingInputId}
               quoteId={quoteId}
+              onExclusionChanged={onTakeoffChanged}
               tradePreset={tradePreset}
               isMobile={false}
             />

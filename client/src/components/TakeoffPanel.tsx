@@ -22,9 +22,10 @@ interface TakeoffPanelProps {
   fileUrl?: string;
   reanalyzeTrigger?: number;
   onAfterSave?: () => void; // Called after marker edits saved — triggers QDS re-analysis in parent
+  onExclusionChanged?: () => void; // Called after chip exclusion saved — triggers takeoffList refetch in parent (no AI call)
 }
 
-export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, reanalyzeTrigger, onAfterSave }: TakeoffPanelProps) {
+export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, reanalyzeTrigger, onAfterSave, onExclusionChanged }: TakeoffPanelProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showViewer, setShowViewer] = useState(false);
   const [showChat, setShowChat] = useState(true);
@@ -125,8 +126,16 @@ export default function TakeoffPanel({ inputId, quoteId, filename, fileUrl, rean
     }
   }, [takeoffData?.userAnswers]);
 
-  // Mutation to persist excluded codes to backend
-  const saveExcludedMutation = trpc.electricalTakeoff.updateExcludedCodes.useMutation();
+  // Mutation to persist excluded codes to backend.
+  // onSuccess calls onExclusionChanged which triggers refetchTakeoffs() in QuoteWorkspace.
+  // That causes takeoffList to reload with updated userAnswers._excludedCodes, so
+  // mergeSummaryWithTakeoffs re-runs and drops the excluded symbol from QDS materials —
+  // no AI call, no re-analysis, no risk to user edits.
+  const saveExcludedMutation = trpc.electricalTakeoff.updateExcludedCodes.useMutation({
+    onSuccess: () => {
+      onExclusionChanged?.();
+    },
+  });
 
   useEffect(() => {
     if (reanalyzeTrigger && reanalyzeTrigger > lastTrigger && takeoffData && takeoffData.status !== 'verified') {
