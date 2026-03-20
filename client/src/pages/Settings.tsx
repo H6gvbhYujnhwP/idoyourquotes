@@ -1337,6 +1337,12 @@ function TeamTab() {
   const isAtLimit = sub && sub.currentUsers >= sub.maxUsers;
   const myMembership = teamMembers?.find((m: any) => m.userId === (user as any)?.id);
   const isOwnerOrAdmin = myMembership?.role === 'owner' || myMembership?.role === 'admin';
+  // canInviteNewMembers: gates the invite form — requires Pro+ tier with seats available
+  const canInviteNewMembers = canManageTeam;
+  // canManageExistingMembers: gates per-member actions (reset, remove, set password)
+  // Always true for owner/admin regardless of plan tier — you can always manage people
+  // already in your org, even if you can't add new ones on Solo/Trial.
+  const canManageExistingMembers = isOwnerOrAdmin;
 
   return (
     <div className="space-y-6">
@@ -1402,7 +1408,7 @@ function TeamTab() {
                         <Select
                           value={member.role}
                           onValueChange={(val) => changeRole.mutate({ memberId: member.memberId, role: val as 'admin' | 'member' })}
-                          disabled={!canManageTeam || myMembership?.role === 'member'}
+                          disabled={!canManageExistingMembers || myMembership?.role === 'member'}
                         >
                           <SelectTrigger className="h-7 w-24 text-xs">
                             <SelectValue />
@@ -1413,7 +1419,7 @@ function TeamTab() {
                           </SelectContent>
                         </Select>
 
-                        {canManageTeam && isOwnerOrAdmin && member.userId !== (user as any)?.id && (
+                        {canManageExistingMembers && member.userId !== (user as any)?.id && (
                           <>
                             {/* Send reset link / resend invite */}
                             {resetConfirmId === member.memberId ? (
@@ -1499,7 +1505,7 @@ function TeamTab() {
       </Card>
 
       {/* Invite form */}
-      {canManageTeam && (
+      {canInviteNewMembers && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -1578,7 +1584,7 @@ function TeamTab() {
       )}
 
       {/* Activity / audit log — owner/admin only */}
-      {canManageTeam && isOwnerOrAdmin && (
+      {canManageExistingMembers && (
         <Card>
           <CardHeader className="pb-3">
             <button type="button" className="flex items-center justify-between w-full text-left"
