@@ -38,16 +38,16 @@ export default function Home() {
     <div className="min-h-screen bg-background">
       {/* Navigation */}
       <nav className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container flex h-36 items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="container flex h-16 md:h-36 items-center justify-between gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <img
               src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png"
               alt="IdoYourQuotes"
-              className="h-32 object-contain"
+              className="h-10 md:h-32 object-contain"
             />
           </div>
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" onClick={() => setLocation("/pricing")}>
+          <div className="flex items-center gap-2 md:gap-4 shrink-0">
+            <Button variant="ghost" className="hidden sm:inline-flex" onClick={() => setLocation("/pricing")}>
               Pricing
             </Button>
             {loading ? null : user ? (

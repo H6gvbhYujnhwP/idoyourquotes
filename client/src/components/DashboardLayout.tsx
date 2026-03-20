@@ -59,10 +59,11 @@ export default function DashboardLayout({
     return <DashboardLayoutSkeleton />
   }
 
-  // Redirect to home page if not logged in
+  // Redirect to home page if not logged in — return skeleton while browser navigates
+  // (returning null here causes a blank flash before window.location.href fires)
   if (!user) {
     window.location.href = "/";
-    return null;
+    return <DashboardLayoutSkeleton />;
   }
 
   return (
@@ -354,7 +355,11 @@ function DashboardLayoutContent({
                   <SidebarMenuItem key={item.path}>
                     <SidebarMenuButton
                       isActive={isActive}
-                      onClick={() => setLocation(item.path)}
+                      onClick={() => {
+                        setLocation(item.path);
+                        // Close sidebar overlay on mobile after navigation
+                        if (isMobile) toggleSidebar();
+                      }}
                       tooltip={item.label}
                       className={`h-10 transition-all font-normal`}
                     >

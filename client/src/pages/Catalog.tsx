@@ -317,7 +317,7 @@ export default function Catalog() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-lg">{cat}</CardTitle>
               </CardHeader>
-              <CardContent className="p-0 overflow-x-auto">
+              <CardContent className="p-0" style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
                 {/* Column headers */}
                 <div style={{ display: "flex", alignItems: "center", padding: "8px 16px", borderBottom: "1px solid #e8ecf1", background: "#f8fafc", minWidth: 800 }}>
                   {columns.map((col) => (
