@@ -666,6 +666,9 @@ export const subscriptionRouter = router({
       await db.delete(orgMembers).where(eq(orgMembers.id, BigInt(input.memberId) as any));
       await logTeamAction(org.id, ctx.user.id, Number(target.userId), 'remove', `Removed member from organisation`).catch(() => {});
       return { success: true };
+    }),
+
+  // Change team member role
   changeTeamMemberRole: protectedProcedure
     .input(z.object({
       memberId: z.number(),
