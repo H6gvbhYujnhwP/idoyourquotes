@@ -341,6 +341,24 @@ export type ContainmentTakeoff = typeof containmentTakeoffs.$inferSelect;
 export type InsertContainmentTakeoff = typeof containmentTakeoffs.$inferInsert;
 
 /**
+/**
+ * Team Audit Log — records all admin actions on team members
+ * action values: 'invite' | 'resend_invite' | 'remove' | 'role_change' | 'set_password' | 'reset_password'
+ */
+export const teamAuditLog = pgTable("team_audit_log", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  orgId: bigint("org_id", { mode: "number" }).notNull(),
+  actorUserId: bigint("actor_user_id", { mode: "number" }).notNull(),  // who performed the action
+  targetUserId: bigint("target_user_id", { mode: "number" }).notNull(), // who it was done to
+  action: varchar("action", { length: 50 }).notNull(),
+  detail: text("detail"),  // human-readable e.g. "Role changed from member → admin"
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type TeamAuditLog = typeof teamAuditLog.$inferSelect;
+export type InsertTeamAuditLog = typeof teamAuditLog.$inferInsert;
+
+/**
  * Product/Service Catalog - reusable items for quotes
  * Now owned by organization
  * IMPORTANT: Column names use snake_case to match PostgreSQL

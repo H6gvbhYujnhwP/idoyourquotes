@@ -1242,9 +1242,381 @@ function TeamTab() {
   const [inviteRole, setInviteRole] = useState<'member' | 'admin'>('member');
   const [showRoleInfo, setShowRoleInfo] = useState(false);
   const [resetConfirmId, setResetConfirmId] = useState<number | null>(null);
+  const [setPasswordMemberId, setSetPasswordMemberId] = useState<number | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState('');
+  const [showAuditLog, setShowAuditLog] = useState(false);
 
   const { data: sub } = trpc.subscription.status.useQuery();
   const { data: teamMembers, refetch: refetchTeam } = trpc.subscription.teamMembers.useQuery();
+  const { data: auditLog } = trpc.subscription.teamAuditLog.useQuery(undefined, { enabled: showAuditLog });
+
+  const inviteMember = trpc.subscription.inviteTeamMember.useMutation({
+    onSuccess: (data: any) => {
+      if (data?.created) {
+        toast.success("Invitation sent! Ask them to check their junk/spam folder if they don't see it within a few minutes.");
+      } else {
+        toast.success('Team member added');
+      }
+      setInviteEmail('');
+      refetchTeam();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const removeMember = trpc.subscription.removeTeamMember.useMutation({
+    onSuccess: () => { toast.success('Team member removed'); refetchTeam(); },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const changeRole = trpc.subscription.changeTeamMemberRole.useMutation({
+    onSuccess: () => { toast.success('Role updated'); refetchTeam(); },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const resetPassword = trpc.subscription.resetTeamMemberPassword.useMutation({
+    onSuccess: () => {
+      toast.success('Reset link sent — ask them to check their junk/spam folder too.');
+      setResetConfirmId(null);
+      refetchTeam();
+    },
+    onError: (err) => { toast.error(err.message); setResetConfirmId(null); },
+  });
+
+  const setPassword = trpc.subscription.setTeamMemberPassword.useMutation({
+    onSuccess: () => {
+      toast.success('Password updated — they can now sign in immediately.');
+      setSetPasswordMemberId(null);
+      setNewPassword('');
+      setNewPasswordConfirm('');
+      refetchTeam();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const handleInvite = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteEmail.trim()) return;
+    inviteMember.mutate({ email: inviteEmail.trim(), role: inviteRole });
+  };
+
+  const handleSetPassword = (memberId: number) => {
+    if (newPassword.length < 8) { toast.error('Password must be at least 8 characters'); return; }
+    if (newPassword !== newPasswordConfirm) { toast.error('Passwords do not match'); return; }
+    setPassword.mutate({ memberId, newPassword });
+  };
+
+  const formatLastSeen = (date: string | Date | null) => {
+    if (!date) return 'Never';
+    const d = new Date(date);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffMins < 2) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: diffDays > 365 ? 'numeric' : undefined });
+  };
+
+  const formatAuditAction = (action: string) => {
+    const map: Record<string, string> = {
+      invite: '✉ Invited',
+      resend_invite: '✉ Resent invite',
+      remove: '🗑 Removed',
+      role_change: '↕ Role changed',
+      set_password: '🔑 Password set',
+      reset_password: '🔗 Reset link sent',
+    };
+    return map[action] || action;
+  };
+
+  const canManageTeam = sub && sub.tier !== 'solo' && sub.tier !== 'trial';
+  const isAtLimit = sub && sub.currentUsers >= sub.maxUsers;
+  const myMembership = teamMembers?.find((m: any) => m.userId === (user as any)?.id);
+  const isOwnerOrAdmin = myMembership?.role === 'owner' || myMembership?.role === 'admin';
+
+  return (
+    <div className="space-y-6">
+      {/* Team members card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            Team Members
+          </CardTitle>
+          <CardDescription>
+            {sub ? `${sub.currentUsers} of ${sub.maxUsers} seats used on your ${sub.tierName} plan` : 'Loading...'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {(sub?.tier === 'solo' || sub?.tier === 'trial') && (
+            <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200">
+              <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-amber-800">
+                  {sub.tier === 'trial' ? 'Trial' : 'Solo'} plan — single user only
+                </p>
+                <p className="text-xs text-amber-600 mt-1">
+                  Upgrade to Pro (2 users), Team (5 users), or Business (10 users) to invite team members.
+                </p>
+                <Button size="sm" variant="outline" className="mt-2 text-xs" onClick={() => window.location.href = '/pricing'}>
+                  View Plans
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Member list */}
+          <div className="divide-y">
+            {teamMembers?.map((member: any) => (
+              <div key={member.id} className="py-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-full bg-gray-100 flex items-center justify-center text-sm font-medium text-gray-600 shrink-0">
+                      {member.name?.charAt(0)?.toUpperCase() || member.email?.charAt(0)?.toUpperCase() || '?'}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-medium">{member.name || member.email}</p>
+                        {member.isPending && (
+                          <span className="text-xs font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
+                            Pending
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground">{member.email}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {member.isPending ? 'Has not logged in yet' : `Last seen: ${formatLastSeen(member.lastSignedIn)}`}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    {member.role === 'owner' ? (
+                      <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-100 text-gray-600">Owner</span>
+                    ) : (
+                      <>
+                        <Select
+                          value={member.role}
+                          onValueChange={(val) => changeRole.mutate({ memberId: member.memberId, role: val as 'admin' | 'member' })}
+                          disabled={!canManageTeam || myMembership?.role === 'member'}
+                        >
+                          <SelectTrigger className="h-7 w-24 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="admin">Admin</SelectItem>
+                            <SelectItem value="member">Member</SelectItem>
+                          </SelectContent>
+                        </Select>
+
+                        {canManageTeam && isOwnerOrAdmin && member.userId !== (user as any)?.id && (
+                          <>
+                            {/* Send reset link / resend invite */}
+                            {resetConfirmId === member.memberId ? (
+                              <div className="flex items-center gap-1">
+                                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                  {member.isPending ? 'Resend invite?' : 'Send reset?'}
+                                </span>
+                                <Button size="sm" variant="outline" className="h-7 text-xs px-2"
+                                  onClick={() => resetPassword.mutate({ memberId: member.memberId })}
+                                  disabled={resetPassword.isPending}>Yes</Button>
+                                <Button size="sm" variant="ghost" className="h-7 text-xs px-2"
+                                  onClick={() => setResetConfirmId(null)}>No</Button>
+                              </div>
+                            ) : (
+                              <Button size="sm" variant="ghost"
+                                className="h-7 w-7 p-0 text-muted-foreground hover:text-teal-600"
+                                title={member.isPending ? 'Resend invite email' : 'Send password reset link'}
+                                onClick={() => setResetConfirmId(member.memberId)}>
+                                <Mail className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+
+                            {/* Set password directly */}
+                            <Button size="sm" variant="ghost"
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-blue-600"
+                              title="Set password directly"
+                              onClick={() => {
+                                setSetPasswordMemberId(member.memberId);
+                                setNewPassword('');
+                                setNewPasswordConfirm('');
+                              }}>
+                              <Shield className="h-3.5 w-3.5" />
+                            </Button>
+
+                            {/* Remove */}
+                            <Button size="sm" variant="ghost"
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                              onClick={() => removeMember.mutate({ memberId: member.memberId })}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Inline set-password form — expands below member row */}
+                {setPasswordMemberId === member.memberId && (
+                  <div className="ml-12 p-3 rounded-lg border border-blue-200 bg-blue-50 space-y-2">
+                    <p className="text-xs font-medium text-blue-800">Set password for {member.name || member.email}</p>
+                    <div className="flex gap-2">
+                      <Input
+                        type="password"
+                        placeholder="New password (min 8 chars)"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="h-8 text-xs flex-1"
+                      />
+                      <Input
+                        type="password"
+                        placeholder="Confirm password"
+                        value={newPasswordConfirm}
+                        onChange={(e) => setNewPasswordConfirm(e.target.value)}
+                        className="h-8 text-xs flex-1"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" className="h-7 text-xs"
+                        onClick={() => handleSetPassword(member.memberId)}
+                        disabled={setPassword.isPending || !newPassword || !newPasswordConfirm}>
+                        {setPassword.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Set Password'}
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 text-xs"
+                        onClick={() => setSetPasswordMemberId(null)}>Cancel</Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Invite form */}
+      {canManageTeam && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5" />
+              Invite Team Member
+            </CardTitle>
+            <CardDescription>
+              {isAtLimit
+                ? `You've reached your ${sub?.maxUsers}-user limit. Upgrade for more seats.`
+                : 'Add a new member to your organisation'
+              }
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Role descriptions */}
+            <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
+              <button type="button" className="flex items-center justify-between w-full text-left"
+                onClick={() => setShowRoleInfo(!showRoleInfo)}>
+                <span className="text-xs font-medium text-blue-800">What can each role do?</span>
+                <span className="text-xs text-blue-600">{showRoleInfo ? '▲ Hide' : '▼ Show'}</span>
+              </button>
+              {showRoleInfo && (
+                <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+                  <div className="bg-white rounded-md p-2.5 border border-blue-100">
+                    <p className="font-semibold text-gray-800 mb-1.5">Member</p>
+                    <ul className="space-y-1 text-gray-600">
+                      <li className="flex items-start gap-1.5"><span className="text-teal-600 mt-0.5">✓</span>View and create quotes</li>
+                      <li className="flex items-start gap-1.5"><span className="text-teal-600 mt-0.5">✓</span>Generate PDFs</li>
+                      <li className="flex items-start gap-1.5"><span className="text-teal-600 mt-0.5">✓</span>Use the AI tools</li>
+                      <li className="flex items-start gap-1.5"><span className="text-teal-600 mt-0.5">✓</span>View catalog</li>
+                      <li className="flex items-start gap-1.5"><span className="text-red-400 mt-0.5">✗</span>Cannot invite team</li>
+                      <li className="flex items-start gap-1.5"><span className="text-red-400 mt-0.5">✗</span>Cannot manage billing</li>
+                    </ul>
+                  </div>
+                  <div className="bg-white rounded-md p-2.5 border border-blue-100">
+                    <p className="font-semibold text-gray-800 mb-1.5">Admin</p>
+                    <ul className="space-y-1 text-gray-600">
+                      <li className="flex items-start gap-1.5"><span className="text-teal-600 mt-0.5">✓</span>Everything a Member can do</li>
+                      <li className="flex items-start gap-1.5"><span className="text-teal-600 mt-0.5">✓</span>Invite &amp; remove members</li>
+                      <li className="flex items-start gap-1.5"><span className="text-teal-600 mt-0.5">✓</span>Reset / set passwords</li>
+                      <li className="flex items-start gap-1.5"><span className="text-teal-600 mt-0.5">✓</span>Edit catalog &amp; settings</li>
+                      <li className="flex items-start gap-1.5"><span className="text-red-400 mt-0.5">✗</span>Cannot manage billing</li>
+                      <li className="flex items-start gap-1.5"><span className="text-red-400 mt-0.5">✗</span>Cannot delete account</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <form onSubmit={handleInvite} className="flex gap-3">
+              <Input type="email" placeholder="colleague@company.com"
+                value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)}
+                disabled={!!isAtLimit} className="flex-1" />
+              <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as 'member' | 'admin')} disabled={!!isAtLimit}>
+                <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="member">Member</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button type="submit" disabled={!!isAtLimit || inviteMember.isPending || !inviteEmail.trim()}>
+                {inviteMember.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+              </Button>
+            </form>
+            <p className="text-xs text-muted-foreground">
+              Enter their email address. If they don't have an account yet, we'll create one and send them an invitation to set their password.
+            </p>
+            <div className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2">
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-600 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-amber-700">
+                <strong>Remind your invitee</strong> to check their <strong>junk or spam folder</strong> — invitation emails sometimes land there.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Activity / audit log — owner/admin only */}
+      {canManageTeam && isOwnerOrAdmin && (
+        <Card>
+          <CardHeader className="pb-3">
+            <button type="button" className="flex items-center justify-between w-full text-left"
+              onClick={() => setShowAuditLog(!showAuditLog)}>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Clock className="h-4 w-4" />
+                Team Activity Log
+              </CardTitle>
+              <span className="text-xs text-muted-foreground">{showAuditLog ? '▲ Hide' : '▼ Show'}</span>
+            </button>
+          </CardHeader>
+          {showAuditLog && (
+            <CardContent className="pt-0">
+              {!auditLog || auditLog.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-2">No activity recorded yet.</p>
+              ) : (
+                <div className="divide-y text-xs">
+                  {(auditLog as any[]).map((entry: any) => (
+                    <div key={entry.id} className="flex items-start justify-between py-2 gap-4">
+                      <div>
+                        <span className="font-medium text-gray-800">{formatAuditAction(entry.action)}</span>
+                        {entry.detail && <span className="text-muted-foreground ml-1">— {entry.detail}</span>}
+                        <p className="text-muted-foreground mt-0.5">by {entry.actorName}</p>
+                      </div>
+                      <span className="text-muted-foreground whitespace-nowrap shrink-0">
+                        {new Date(entry.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          )}
+        </Card>
+      )}
+    </div>
+  );
+}
 
   const inviteMember = trpc.subscription.inviteTeamMember.useMutation({
     onSuccess: (data: any) => {

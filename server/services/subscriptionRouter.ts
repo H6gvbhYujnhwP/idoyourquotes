@@ -33,6 +33,26 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
 const PAID_TIERS = ['solo', 'pro', 'team', 'business'] as const;
+
+// ---- Audit log helper ----
+async function logTeamAction(
+  orgId: number,
+  actorUserId: number,
+  targetUserId: number,
+  action: string,
+  detail: string,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const { teamAuditLog } = await import("../../drizzle/schema");
+  await db.insert(teamAuditLog).values({
+    orgId: orgId as any,
+    actorUserId: actorUserId as any,
+    targetUserId: targetUserId as any,
+    action,
+    detail,
+  });
+}
 type PaidTier = typeof PAID_TIERS[number];
 
 export const subscriptionRouter = router({
@@ -529,6 +549,7 @@ export const subscriptionRouter = router({
         name: user?.name || null,
         joinedAt: member.acceptedAt || member.createdAt,
         isPending: !user?.emailVerified, // true = invited but hasn't set password yet
+        lastSignedIn: user?.lastSignedIn || null,
       });
     }
     return result;
@@ -566,6 +587,8 @@ export const subscriptionRouter = router({
         }
 
         await addOrgMember(org.id, targetUser.id, input.role);
+        // Audit log
+        await logTeamAction(org.id, ctx.user.id, targetUser.id, 'invite', `Invited existing user ${input.email} as ${input.role}`).catch(() => {});
         return { success: true, created: false };
       }
 
@@ -609,6 +632,7 @@ export const subscriptionRouter = router({
       }).catch(err => console.error("[Team] Failed to send invite email:", err));
 
       console.log(`[Team] Created invited user ${newUser.id} (${input.email}) for org ${org.id}`);
+      await logTeamAction(org.id, ctx.user.id, newUser.id, 'invite', `Invited new user ${input.email} as ${input.role}`).catch(() => {});
       return { success: true, created: true };
     }),
 
@@ -640,11 +664,8 @@ export const subscriptionRouter = router({
       const { orgMembers } = await import("../../drizzle/schema");
       const { eq } = await import("drizzle-orm");
       await db.delete(orgMembers).where(eq(orgMembers.id, BigInt(input.memberId) as any));
-      
+      await logTeamAction(org.id, ctx.user.id, Number(target.userId), 'remove', `Removed member from organisation`).catch(() => {});
       return { success: true };
-    }),
-
-  // Change team member role
   changeTeamMemberRole: protectedProcedure
     .input(z.object({
       memberId: z.number(),
@@ -671,7 +692,7 @@ export const subscriptionRouter = router({
       const { orgMembers } = await import("../../drizzle/schema");
       const { eq } = await import("drizzle-orm");
       await db.update(orgMembers).set({ role: input.role }).where(eq(orgMembers.id, BigInt(input.memberId) as any));
-      
+      await logTeamAction(org.id, ctx.user.id, Number(target.userId), 'role_change', `Role changed from ${target.role} → ${input.role}`).catch(() => {});
       return { success: true };
     }),
 
@@ -725,8 +746,87 @@ export const subscriptionRouter = router({
       });
 
       console.log(`[Team] Password reset link sent to ${targetUser.email} by ${ctx.user.email}`);
+      await logTeamAction(org.id, ctx.user.id, Number(target.userId), 'reset_password', `Password reset link sent to ${targetUser.email}`).catch(() => {});
       return { success: true };
     }),
+
+  // Set a team member's password directly — admin sets it for them, no email required
+  setTeamMemberPassword: protectedProcedure
+    .input(z.object({
+      memberId: z.number(),
+      newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const org = await getUserPrimaryOrg(ctx.user.id);
+      if (!org) throw new Error("No organization found");
+
+      // Only owner or admin
+      const members = await getOrgMembersByOrgId(org.id);
+      const myMembership = members.find(m => Number(m.userId) === ctx.user.id);
+      if (!myMembership || myMembership.role === 'member') {
+        throw new Error("Only owners and admins can set team member passwords");
+      }
+
+      const target = members.find(m => m.id === input.memberId);
+      if (!target) throw new Error("Member not found");
+      if (target.role === 'owner') throw new Error("Cannot change the owner's password");
+      if (Number(target.userId) === ctx.user.id) throw new Error("Use the Profile tab to change your own password");
+
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+
+      const { users } = await import("../../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+
+      const [targetUser] = await db.select().from(users).where(eq(users.id, BigInt(target.userId) as any)).limit(1);
+      if (!targetUser) throw new Error("User not found");
+
+      const passwordHash = await bcrypt.hash(input.newPassword, 12);
+
+      // Set password, mark email verified (they now have access), clear any pending invite token
+      await db.update(users).set({
+        passwordHash,
+        emailVerified: true,
+        emailVerificationToken: null,
+      }).where(eq(users.id, BigInt(target.userId) as any));
+
+      console.log(`[Team] Password set directly for ${targetUser.email} by ${ctx.user.email}`);
+      await logTeamAction(org.id, ctx.user.id, Number(target.userId), 'set_password', `Password set directly for ${targetUser.email}`).catch(() => {});
+      return { success: true };
+    }),
+
+  // Fetch team audit log — owner/admin only
+  teamAuditLog: protectedProcedure.query(async ({ ctx }) => {
+    const org = await getUserPrimaryOrg(ctx.user.id);
+    if (!org) return [];
+
+    const members = await getOrgMembersByOrgId(org.id);
+    const myMembership = members.find(m => Number(m.userId) === ctx.user.id);
+    if (!myMembership || myMembership.role === 'member') return [];
+
+    const db = await getDb();
+    if (!db) return [];
+
+    const { teamAuditLog, users } = await import("../../drizzle/schema");
+    const { eq, desc } = await import("drizzle-orm");
+
+    const logs = await db.select().from(teamAuditLog)
+      .where(eq(teamAuditLog.orgId, org.id as any))
+      .orderBy(desc(teamAuditLog.createdAt))
+      .limit(100);
+
+    // Enrich with actor names
+    const result = [];
+    for (const log of logs) {
+      const [actor] = await db.select({ name: users.name, email: users.email })
+        .from(users).where(eq(users.id, log.actorUserId as any)).limit(1);
+      result.push({
+        ...log,
+        actorName: actor?.name || actor?.email || 'Unknown',
+      });
+    }
+    return result;
+  }),
 
   // Delete account — permanently removes all org data, cancels subscription, sends goodbye email
   deleteAccount: protectedProcedure
