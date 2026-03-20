@@ -15,7 +15,7 @@
  * GUARDRAIL G1:  This engine must always return the EngineOutput shape.
  */
 
-import { invokeLLM } from "../_core/llm";
+import { invokeClaude } from "../_core/claude";
 import { TRADE_PRESETS } from "../tradePresets";
 import type { EngineInput, EngineOutput, SectorEngine } from "./types";
 
@@ -94,7 +94,7 @@ THINK LIKE AN EXPERIENCED PROFESSIONAL in the "${tradeLabel}" sector. Consider:
 - What labour is realistically needed
 - What assumptions you're making that the user should verify
 - Whether this is a discovery/assessment phase or a full implementation quote
-- Any structured takeoff counts in processedContent (e.g. DRAWING ANALYSIS sections) — treat these as authoritative quantities
+- Any structured takeoff counts in processedContent (e.g. DRAWING ANALYSIS sections) — treat these as authoritative quantities for items WITHIN scope. "Authoritative" means the count is accurate, NOT that the item is immune to scope exclusion.
 
 INPUT PROCESSING:
 - Inputs are listed chronologically. Later inputs override earlier ones for quantities, prices, or scope changes.
@@ -102,6 +102,12 @@ INPUT PROCESSING:
 - Voice notes are natural speech — "quid" means pounds, "sparky" means electrician, "a day" typically means 8 hours, "half a day" means 4 hours in UK trades.
 - When multiple inputs cover the same work, MERGE them into one coherent summary — never duplicate line items.
 - If a document contains structured measurement/quantity data (takeoff counts, room schedules, BoQ lines), extract these as precise line items rather than estimating.
+
+SCOPE EXCLUSION INSTRUCTIONS — HIGHEST PRIORITY:
+- If ANY text note or voice note says to exclude, remove, omit, or not include a specific item type, that instruction OVERRIDES the takeoff counts entirely. Do NOT include excluded items in materials even if they appear in the ELECTRICAL TAKEOFF block.
+- Examples: "no smoke detectors" → omit all smoke detector line items. "exclude fire alarm" → omit fire alarm devices. "lighting only" → include only lighting items. "remove PIRs" → omit PIR/presence sensors.
+- Apply the exclusion to the item type across all symbol codes that match that description.
+- If an item is excluded, do NOT mention it in notes either — treat it as out of scope completely.
 
 CLIENT EXTRACTION:
 - Extract client details from email signatures, headers, or mentions: name, company, email, phone.
