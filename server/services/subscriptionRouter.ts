@@ -528,6 +528,7 @@ export const subscriptionRouter = router({
         email: user?.email || 'Unknown',
         name: user?.name || null,
         joinedAt: member.acceptedAt || member.createdAt,
+        isPending: !user?.emailVerified, // true = invited but hasn't set password yet
       });
     }
     return result;
@@ -671,6 +672,59 @@ export const subscriptionRouter = router({
       const { eq } = await import("drizzle-orm");
       await db.update(orgMembers).set({ role: input.role }).where(eq(orgMembers.id, BigInt(input.memberId) as any));
       
+      return { success: true };
+    }),
+
+  // Reset a team member's password — sends them a fresh set-password invite link
+  resetTeamMemberPassword: protectedProcedure
+    .input(z.object({
+      memberId: z.number(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const org = await getUserPrimaryOrg(ctx.user.id);
+      if (!org) throw new Error("No organization found");
+
+      // Only owner or admin can trigger a password reset
+      const members = await getOrgMembersByOrgId(org.id);
+      const myMembership = members.find(m => Number(m.userId) === ctx.user.id);
+      if (!myMembership || myMembership.role === 'member') {
+        throw new Error("Only owners and admins can reset team member passwords");
+      }
+
+      const target = members.find(m => m.id === input.memberId);
+      if (!target) throw new Error("Member not found");
+      if (target.role === 'owner') throw new Error("Cannot reset the owner's password");
+      if (Number(target.userId) === ctx.user.id) throw new Error("Use the Profile tab to change your own password");
+
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+
+      const { users } = await import("../../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+
+      // Fetch the target user record
+      const [targetUser] = await db.select().from(users).where(eq(users.id, BigInt(target.userId) as any)).limit(1);
+      if (!targetUser) throw new Error("User not found");
+
+      // Generate a fresh invite token — reuses the same emailVerificationToken column
+      // and the same /set-password?token= endpoint used by the original invite flow.
+      const newToken = crypto.randomBytes(32).toString("hex");
+      await db.update(users)
+        .set({ emailVerificationToken: newToken, emailVerificationSentAt: new Date() })
+        .where(eq(users.id, BigInt(target.userId) as any));
+
+      // Reuse the team invite email — subject and body are appropriate for both
+      // initial invite and password reset (both say "set your password")
+      const inviterName = ctx.user.name || ctx.user.email;
+      const orgName = (org as any).companyName || org.name || "your team";
+      await sendTeamInviteEmail({
+        to: targetUser.email,
+        inviterName,
+        orgName,
+        token: newToken,
+      });
+
+      console.log(`[Team] Password reset link sent to ${targetUser.email} by ${ctx.user.email}`);
       return { success: true };
     }),
 

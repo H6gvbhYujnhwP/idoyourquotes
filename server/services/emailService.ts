@@ -818,7 +818,7 @@ export async function sendTeamInviteEmail(params: {
   <div style="max-width: 480px; margin: 0 auto; padding: 40px 20px;">
     
     <div style="text-align: center; margin-bottom: 32px;">
-      <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png" alt="IdoYourQuotes" style="height: 48px;" />
+      <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png" alt="IdoYourQuotes" style="height: 48px; width: auto; max-width: 180px;" />
     </div>
 
     <div style="background: white; border-radius: 12px; padding: 32px; border: 1px solid #e2e8f0;">
@@ -834,7 +834,7 @@ export async function sendTeamInviteEmail(params: {
       
       <div style="text-align: center; margin: 28px 0;">
         <a href="${setPasswordUrl}" style="display: inline-block; background-color: #0d9488; color: white; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 8px;">
-          Set My Password & Join
+          Set My Password &amp; Join
         </a>
       </div>
 
@@ -844,6 +844,12 @@ export async function sendTeamInviteEmail(params: {
       <p style="font-size: 12px; color: #0d9488; word-break: break-all; margin: 0 0 24px;">
         ${setPasswordUrl}
       </p>
+
+      <div style="background: #fefce8; border: 1px solid #fde047; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px;">
+        <p style="font-size: 12px; color: #713f12; margin: 0;">
+          <strong>&#9993; Tip:</strong> If you don't see this email in your inbox, please check your <strong>junk or spam folder</strong> and mark it as safe.
+        </p>
+      </div>
 
       <div style="border-top: 1px solid #e2e8f0; padding-top: 16px;">
         <p style="font-size: 12px; color: #94a3b8; margin: 0;">

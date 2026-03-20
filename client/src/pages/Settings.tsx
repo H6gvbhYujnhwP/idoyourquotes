@@ -1240,6 +1240,8 @@ function TeamTab() {
   const { user } = useAuth();
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'member' | 'admin'>('member');
+  const [showRoleInfo, setShowRoleInfo] = useState(false);
+  const [resetConfirmId, setResetConfirmId] = useState<number | null>(null);
 
   const { data: sub } = trpc.subscription.status.useQuery();
   const { data: teamMembers, refetch: refetchTeam } = trpc.subscription.teamMembers.useQuery();
@@ -1247,7 +1249,7 @@ function TeamTab() {
   const inviteMember = trpc.subscription.inviteTeamMember.useMutation({
     onSuccess: (data: any) => {
       if (data?.created) {
-        toast.success('Invitation sent! They\'ll receive an email to set their password.');
+        toast.success('Invitation sent! Ask them to check their junk/spam folder if they don\'t see it within a few minutes.');
       } else {
         toast.success('Team member added');
       }
@@ -1279,6 +1281,18 @@ function TeamTab() {
     },
   });
 
+  const resetPassword = trpc.subscription.resetTeamMemberPassword.useMutation({
+    onSuccess: () => {
+      toast.success('Password reset link sent — ask them to check their junk/spam folder too.');
+      setResetConfirmId(null);
+      refetchTeam();
+    },
+    onError: (err) => {
+      toast.error(err.message);
+      setResetConfirmId(null);
+    },
+  });
+
   const handleInvite = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inviteEmail.trim()) return;
@@ -1287,6 +1301,8 @@ function TeamTab() {
 
   const canManageTeam = sub && sub.tier !== 'solo' && sub.tier !== 'trial';
   const isAtLimit = sub && sub.currentUsers >= sub.maxUsers;
+  const myMembership = teamMembers?.find((m: any) => m.userId === (user as any)?.id);
+  const isOwnerOrAdmin = myMembership?.role === 'owner' || myMembership?.role === 'admin';
 
   return (
     <div className="space-y-6">
@@ -1334,7 +1350,14 @@ function TeamTab() {
                     {member.name?.charAt(0)?.toUpperCase() || member.email?.charAt(0)?.toUpperCase() || '?'}
                   </div>
                   <div>
-                    <p className="text-sm font-medium">{member.name || member.email}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium">{member.name || member.email}</p>
+                      {member.isPending && (
+                        <span className="text-xs font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
+                          Pending
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground">{member.email}</p>
                   </div>
                 </div>
@@ -1346,7 +1369,7 @@ function TeamTab() {
                       <Select
                         value={member.role}
                         onValueChange={(val) => changeRole.mutate({ memberId: member.memberId, role: val as 'admin' | 'member' })}
-                        disabled={!canManageTeam}
+                        disabled={!canManageTeam || myMembership?.role === 'member'}
                       >
                         <SelectTrigger className="h-7 w-24 text-xs">
                           <SelectValue />
@@ -1356,7 +1379,42 @@ function TeamTab() {
                           <SelectItem value="member">Member</SelectItem>
                         </SelectContent>
                       </Select>
-                      {canManageTeam && member.userId !== user?.id && (
+                      {/* Reset password — shown to owner/admin for non-owner members */}
+                      {canManageTeam && isOwnerOrAdmin && member.userId !== (user as any)?.id && (
+                        resetConfirmId === member.memberId ? (
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-muted-foreground">Send reset?</span>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs px-2"
+                              onClick={() => resetPassword.mutate({ memberId: member.memberId })}
+                              disabled={resetPassword.isPending}
+                            >
+                              Yes
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 text-xs px-2"
+                              onClick={() => setResetConfirmId(null)}
+                            >
+                              No
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-teal-600"
+                            title="Send password reset link"
+                            onClick={() => setResetConfirmId(member.memberId)}
+                          >
+                            <Mail className="h-3.5 w-3.5" />
+                          </Button>
+                        )
+                      )}
+                      {canManageTeam && isOwnerOrAdmin && member.userId !== (user as any)?.id && (
                         <Button
                           size="sm"
                           variant="ghost"
@@ -1390,7 +1448,46 @@ function TeamTab() {
               }
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {/* Role descriptions */}
+            <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
+              <button
+                type="button"
+                className="flex items-center justify-between w-full text-left"
+                onClick={() => setShowRoleInfo(!showRoleInfo)}
+              >
+                <span className="text-xs font-medium text-blue-800">What can each role do?</span>
+                <span className="text-xs text-blue-600">{showRoleInfo ? '▲ Hide' : '▼ Show'}</span>
+              </button>
+              {showRoleInfo && (
+                <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+                  <div className="bg-white rounded-md p-2.5 border border-blue-100">
+                    <p className="font-semibold text-gray-800 mb-1.5">Member</p>
+                    <ul className="space-y-1 text-gray-600">
+                      <li className="flex items-start gap-1.5"><span className="text-teal-600 mt-0.5">✓</span> View and create quotes</li>
+                      <li className="flex items-start gap-1.5"><span className="text-teal-600 mt-0.5">✓</span> Generate PDFs</li>
+                      <li className="flex items-start gap-1.5"><span className="text-teal-600 mt-0.5">✓</span> Use the AI tools</li>
+                      <li className="flex items-start gap-1.5"><span className="text-teal-600 mt-0.5">✓</span> View catalog</li>
+                      <li className="flex items-start gap-1.5"><span className="text-red-400 mt-0.5">✗</span> Cannot invite team</li>
+                      <li className="flex items-start gap-1.5"><span className="text-red-400 mt-0.5">✗</span> Cannot manage billing</li>
+                      <li className="flex items-start gap-1.5"><span className="text-red-400 mt-0.5">✗</span> Cannot edit settings</li>
+                    </ul>
+                  </div>
+                  <div className="bg-white rounded-md p-2.5 border border-blue-100">
+                    <p className="font-semibold text-gray-800 mb-1.5">Admin</p>
+                    <ul className="space-y-1 text-gray-600">
+                      <li className="flex items-start gap-1.5"><span className="text-teal-600 mt-0.5">✓</span> Everything a Member can do</li>
+                      <li className="flex items-start gap-1.5"><span className="text-teal-600 mt-0.5">✓</span> Invite &amp; remove members</li>
+                      <li className="flex items-start gap-1.5"><span className="text-teal-600 mt-0.5">✓</span> Reset member passwords</li>
+                      <li className="flex items-start gap-1.5"><span className="text-teal-600 mt-0.5">✓</span> Edit catalog &amp; settings</li>
+                      <li className="flex items-start gap-1.5"><span className="text-red-400 mt-0.5">✗</span> Cannot manage billing</li>
+                      <li className="flex items-start gap-1.5"><span className="text-red-400 mt-0.5">✗</span> Cannot delete account</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <form onSubmit={handleInvite} className="flex gap-3">
               <Input
                 type="email"
@@ -1417,9 +1514,15 @@ function TeamTab() {
                 )}
               </Button>
             </form>
-            <p className="text-xs text-muted-foreground mt-2">
+            <p className="text-xs text-muted-foreground">
               Enter their email address. If they don't have an account yet, we'll create one and send them an invitation to set their password.
             </p>
+            <div className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2">
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-600 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-amber-700">
+                <strong>Remind your invitee</strong> to check their <strong>junk or spam folder</strong> — invitation emails sometimes land there.
+              </p>
+            </div>
           </CardContent>
         </Card>
       )}
