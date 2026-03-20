@@ -198,6 +198,16 @@ export default function Pricing() {
     },
   });
 
+  const createPortal = trpc.subscription.createPortal.useMutation({
+    onSuccess: (data) => {
+      window.location.href = data.url;
+    },
+    onError: (err) => {
+      toast.error(err.message || 'Failed to open billing portal.');
+      setLoadingTier(null);
+    },
+  });
+
   const upgradeSubscription = trpc.subscription.upgradeSubscription.useMutation({
     onSuccess: (data) => {
       const quotaLabel = data.newMaxQuotesPerMonth === -1 ? 'unlimited' : String(data.newMaxQuotesPerMonth);
@@ -242,6 +252,20 @@ export default function Pricing() {
       setLocation("/register");
       return;
     }
+
+    // Past-due subscribers must resolve their payment before changing tier.
+    // Routing them through createCheckout would create a second Stripe subscription
+    // on the same customer while the existing one is still open and past-due.
+    // Redirect them to the billing portal where Stripe handles payment recovery.
+    if (subStatus.data?.status === 'past_due') {
+      toast.error(
+        'Your last payment failed. Please update your payment method before changing plan.',
+        { duration: 8000 }
+      );
+      createPortal.mutate();
+      return;
+    }
+
     const newRank = TIER_RANK[tier] ?? 0;
     const isUpgrade = newRank > currentRank;
     const isDowngrade = newRank < currentRank;

@@ -303,13 +303,28 @@ export async function changeSubscriptionTier(params: {
 
   } else {
     // Downgrade: move to new price at next billing period, no charge today.
+    //
+    // We set downgradeEffectiveAt = current_period_end (Unix timestamp string) in metadata.
+    // The customer.subscription.updated webhook fires immediately when Stripe receives this
+    // update — NOT at the billing period end. Without the flag, the webhook would apply the
+    // lower tier limits (maxUsers, maxQuotesPerMonth, maxCatalogItems) right now, even though
+    // the user has already paid for the current period on their existing tier.
+    //
+    // The webhook handler checks this flag:
+    //   - If now < downgradeEffectiveAt → skip limits columns, user keeps current limits
+    //   - If now >= downgradeEffectiveAt → apply limits normally (period has ended, renewal fired)
+    //     and clear the flag from Stripe metadata so subsequent webhooks are not affected.
     await stripe.subscriptions.update(params.stripeSubscriptionId, {
       items: [{
         id: subscription.items.data[0].id,
         price: newConfig.priceId,
       }],
       proration_behavior: 'none',
-      metadata: { orgId: String(params.orgId), tier: params.newTier },
+      metadata: {
+        orgId: String(params.orgId),
+        tier: params.newTier,
+        downgradeEffectiveAt: String(subscription.current_period_end),
+      },
     });
 
     const nextBillingDate = new Date(subscription.current_period_end * 1000);
@@ -428,6 +443,46 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
       const newRank = getTierRank(tier);
       const isUpgrading = newRank > currentRank;
 
+      // Deferred downgrade guard.
+      //
+      // When a downgrade is scheduled, changeSubscriptionTier writes
+      // downgradeEffectiveAt (= current_period_end as a Unix timestamp string)
+      // into Stripe subscription metadata. Stripe fires this webhook immediately
+      // on any subscription mutation — not only at the billing period boundary —
+      // so we must not apply the lower limits until the period has actually ended.
+      //
+      //   isPendingDowngrade=true  → now < effective timestamp
+      //     Skip limits columns; user keeps current limits until renewal.
+      //
+      //   shouldClearDowngradeFlag=true → flag set but now >= effective timestamp
+      //     Period has ended; apply limits normally and clear the flag from Stripe
+      //     so subsequent webhooks are not affected. Clearing fires another
+      //     subscription.updated event, but on that event downgradeEffectiveAt=''
+      //     so isPendingDowngrade=false, limits apply, and the clear does not
+      //     re-fire — no infinite loop.
+      const downgradeEffectiveAt = subscription.metadata?.downgradeEffectiveAt;
+      const nowUnix = Math.floor(Date.now() / 1000);
+      const isPendingDowngrade = !!downgradeEffectiveAt &&
+        downgradeEffectiveAt !== '' &&
+        nowUnix < Number(downgradeEffectiveAt);
+
+      const shouldClearDowngradeFlag = !!downgradeEffectiveAt &&
+        downgradeEffectiveAt !== '' &&
+        !isPendingDowngrade;
+
+      if (shouldClearDowngradeFlag) {
+        console.log(`[Stripe Webhook] Deferred downgrade now effective for org=${orgId} — clearing downgradeEffectiveAt flag`);
+        // Fire-and-forget — failure to clear is non-fatal; the flag expires naturally
+        // (next renewal the timestamp is in the past so isPendingDowngrade stays false)
+        stripe.subscriptions.update(subscription.id, {
+          metadata: { ...subscription.metadata, downgradeEffectiveAt: '' },
+        }).catch(err => console.warn(`[Stripe Webhook] Failed to clear downgradeEffectiveAt for sub ${subscription.id}:`, err));
+      }
+
+      if (isPendingDowngrade) {
+        console.log(`[Stripe Webhook] Deferred downgrade pending for org=${orgId} — effective at ${new Date(Number(downgradeEffectiveAt) * 1000).toISOString()} — skipping limits update`);
+      }
+
       const updatePayload: Record<string, any> = {
         subscriptionTier: tier,
         subscriptionStatus: mapStripeStatus(subscription.status),
@@ -443,9 +498,15 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
           ? new Date(subscription.current_period_end * 1000)
           : undefined,
         subscriptionCancelAtPeriodEnd: subscription.cancel_at_period_end,
-        maxUsers: config.maxUsers,
-        maxQuotesPerMonth: config.maxQuotesPerMonth,
-        maxCatalogItems: config.maxCatalogItems,
+        // Limits are only applied when this is NOT a deferred downgrade still within
+        // the paid period. When isPendingDowngrade=true the user has already paid for
+        // their current tier limits through to current_period_end, so we leave those
+        // columns untouched. At renewal isPendingDowngrade=false and limits apply normally.
+        ...(!isPendingDowngrade && {
+          maxUsers: config.maxUsers,
+          maxQuotesPerMonth: config.maxQuotesPerMonth,
+          maxCatalogItems: config.maxCatalogItems,
+        }),
       };
 
       // Reset quote count immediately on upgrade — user has paid more, deserves full allowance
