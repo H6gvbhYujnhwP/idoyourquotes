@@ -3665,12 +3665,14 @@ Respond ONLY with valid JSON — no preamble, no markdown:
                 if (!p.description) continue;
                 const qty = parseFloat(p.quantity) || 1;
                 const rate = parseFloat(p.sellPrice) || 0;
+                const costPrice = p.costPrice != null ? parseFloat(p.costPrice) : null;
                 const desc = p.duration ? `${p.description} (${p.duration})` : p.description;
                 qdsLineItems.push({
                   description: desc,
                   quantity: qty,
                   unit: "each",
                   rate,
+                  costPrice: costPrice != null ? String(costPrice) : null,
                   pricingType: "standard",
                   sortOrder: sortIdx++,
                 });
