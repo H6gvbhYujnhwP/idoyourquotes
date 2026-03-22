@@ -18,10 +18,18 @@ interface LabourItem {
 
 interface PlantHireItem {
   description: string;
-  costPrice: number | null;
-  sellPrice: number | null;
+  costPrice: number | null;   // stored buy-in total (auto-computed from rate fields when present)
+  sellPrice: number | null;   // stored sell price (auto-computed)
   quantity: number;
-  duration: string;
+  duration: string;           // auto-generated display string, e.g. "2 days + 3 weeks"
+  // Structured hire cost fields (new)
+  dailyRate: number | null;
+  numDays: number | null;
+  weeklyRate: number | null;
+  numWeeks: number | null;
+  deliveryCharge: number | null;
+  collectionCharge: number | null;
+  markup: number | null;      // per-row markup %, overrides settings default
 }
 
 interface MaterialItem {
@@ -370,7 +378,32 @@ export default function QuoteDraftSummary({
   };
   const updatePlantHire = (index: number, field: string, value: string | number | null) => {
     setEdited((prev) => {
-      const plantHire = (prev.plantHire || []).map((p, i) => i === index ? { ...p, [field]: value } : p);
+      const plantHire = (prev.plantHire || []).map((p, i) => {
+        if (i !== index) return p;
+        const updated = { ...p, [field]: value };
+        // Auto-calc: recompute buyInCost and sellPrice whenever any rate/count/charge/markup field changes
+        const rateFields = ["dailyRate","numDays","weeklyRate","numWeeks","deliveryCharge","collectionCharge","markup"];
+        if (rateFields.includes(field)) {
+          const dailyCost = (updated.dailyRate || 0) * (updated.numDays || 0);
+          const weeklyCost = (updated.weeklyRate || 0) * (updated.numWeeks || 0);
+          const buyIn = dailyCost + weeklyCost + (updated.deliveryCharge || 0) + (updated.collectionCharge || 0);
+          updated.costPrice = buyIn > 0 ? buyIn : null;
+          const effectiveMarkup = updated.markup ?? defaultPlantMarkup;
+          if (buyIn > 0 && effectiveMarkup != null) {
+            updated.sellPrice = buyIn * (1 + effectiveMarkup / 100);
+          } else if (buyIn > 0) {
+            updated.sellPrice = buyIn; // no markup configured — sell = buy-in
+          } else {
+            updated.sellPrice = null;
+          }
+          // Auto-generate duration string
+          const parts: string[] = [];
+          if (updated.numDays && updated.numDays > 0) parts.push(`${updated.numDays} day${updated.numDays !== 1 ? "s" : ""}`);
+          if (updated.numWeeks && updated.numWeeks > 0) parts.push(`${updated.numWeeks} week${updated.numWeeks !== 1 ? "s" : ""}`);
+          updated.duration = parts.join(" + ");
+        }
+        return updated;
+      });
       return { ...prev, plantHire };
     });
   };
@@ -378,7 +411,11 @@ export default function QuoteDraftSummary({
     setEdited((prev) => ({ ...prev, plantHire: (prev.plantHire || []).filter((_, i) => i !== index) }));
   };
   const addPlantHire = () => {
-    setEdited((prev) => ({ ...prev, plantHire: [...(prev.plantHire || []), { description: "", costPrice: null, sellPrice: null, quantity: 1, duration: "" }] }));
+    setEdited((prev) => ({ ...prev, plantHire: [...(prev.plantHire || []), {
+      description: "", costPrice: null, sellPrice: null, quantity: 1, duration: "",
+      dailyRate: null, numDays: null, weeklyRate: null, numWeeks: null,
+      deliveryCharge: null, collectionCharge: null, markup: null,
+    }] }));
   };
   const addMaterial = () => {
     setEdited((prev) => ({ ...prev, materials: [...prev.materials, { item: "", quantity: 1, unitPrice: null, costPrice: null, installTimeHrs: null, labourCost: null, unit: "each", description: "", pricingType: "standard" as const, source: "voice" as const }] }));
@@ -410,6 +447,13 @@ export default function QuoteDraftSummary({
         quantity: Number(p.quantity) || 1,
         costPrice: p.costPrice != null ? Number(p.costPrice) || 0 : null,
         sellPrice: p.sellPrice != null ? Number(p.sellPrice) || 0 : null,
+        dailyRate: p.dailyRate != null ? Number(p.dailyRate) || 0 : null,
+        numDays: p.numDays != null ? Number(p.numDays) || 0 : null,
+        weeklyRate: p.weeklyRate != null ? Number(p.weeklyRate) || 0 : null,
+        numWeeks: p.numWeeks != null ? Number(p.numWeeks) || 0 : null,
+        deliveryCharge: p.deliveryCharge != null ? Number(p.deliveryCharge) || 0 : null,
+        collectionCharge: p.collectionCharge != null ? Number(p.collectionCharge) || 0 : null,
+        markup: p.markup != null ? Number(p.markup) || 0 : null,
       })),
       markup: edited.markup != null ? Number(edited.markup) || 0 : null,
       sundries: edited.sundries != null ? Number(edited.sundries) || 0 : null,
@@ -881,37 +925,100 @@ export default function QuoteDraftSummary({
             <div className="flex-1">
               <p className="text-[11px] font-bold uppercase tracking-wider mb-1.5" style={{ color: brand.navyMuted }}>Plant / Hire</p>
               {isEditing ? (
-                <div className="space-y-2">
-                  {(edited.plantHire || []).map((p, i) => (
-                    <div key={i} className="flex items-center gap-2 flex-wrap">
-                      <span className="text-red-400 cursor-pointer text-sm font-bold" onClick={() => removePlantHire(i)} title="Remove">×</span>
-                      <input type="number" min="1" value={p.quantity} onChange={(e) => updatePlantHire(i, "quantity", parseInt(e.target.value) || 1)} className="w-14 text-sm font-bold px-2 py-1.5 rounded outline-none focus:ring-1 focus:ring-amber-300" style={inputStyle} />
-                      <span className="text-sm" style={{ color: brand.navyMuted }}>×</span>
-                      <input value={p.description} onChange={(e) => updatePlantHire(i, "description", e.target.value)} placeholder="Equipment description" className="flex-1 min-w-[180px] text-sm px-2.5 py-1.5 rounded outline-none focus:ring-1 focus:ring-amber-300" style={inputStyle} />
-                      <input value={p.duration} onChange={(e) => updatePlantHire(i, "duration", e.target.value)} placeholder="Duration" className="w-28 text-sm px-2 py-1.5 rounded outline-none focus:ring-1 focus:ring-amber-300" style={inputStyle} />
-                      <div className="flex items-center gap-1"><span className="text-[10px]" style={{ color: brand.navyMuted }}>Cost £</span><input type="number" step="0.01" value={p.costPrice ?? ""} onChange={(e) => updatePlantHire(i, "costPrice", e.target.value ? parseFloat(e.target.value) : null)} placeholder="—" className="w-20 text-sm px-2 py-1.5 rounded outline-none focus:ring-1 focus:ring-amber-300" style={inputStyle} /></div>
-                      <div className="flex items-center gap-1"><span className="text-[10px]" style={{ color: brand.navyMuted }}>Sell £</span><input type="number" step="0.01" value={p.sellPrice ?? ""} onChange={(e) => updatePlantHire(i, "sellPrice", e.target.value ? parseFloat(e.target.value) : null)} placeholder="—" className="w-20 text-sm px-2 py-1.5 rounded outline-none focus:ring-1 focus:ring-amber-300" style={inputStyle} /></div>
-                      {p.costPrice != null && p.sellPrice != null && p.sellPrice > 0 && p.costPrice > 0 && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ backgroundColor: "#f0fdfa", color: "#0d9488" }}>Margin: £{fmtGBP((p.sellPrice - p.costPrice) * p.quantity)} ({((p.sellPrice - p.costPrice) / p.sellPrice * 100).toFixed(0)}%)</span>
-                      )}
-                    </div>
-                  ))}
+                <div className="space-y-3">
+                  {(edited.plantHire || []).map((p, i) => {
+                    const buyIn = (p.costPrice ?? 0);
+                    const sell = (p.sellPrice ?? 0);
+                    const profit = sell - buyIn;
+                    const hasStructured = p.dailyRate != null || p.numDays != null || p.weeklyRate != null || p.numWeeks != null || p.deliveryCharge != null || p.collectionCharge != null;
+                    return (
+                      <div key={i} className="rounded-lg p-2.5 space-y-2" style={{ backgroundColor: "#fffbeb", border: "1px solid #fde68a" }}>
+                        {/* Row 1: remove + qty + description */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-red-400 cursor-pointer text-sm font-bold leading-none" onClick={() => removePlantHire(i)} title="Remove">×</span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px]" style={{ color: brand.navyMuted }}>Qty</span>
+                            <input type="number" min="1" value={p.quantity} onChange={(e) => updatePlantHire(i, "quantity", parseInt(e.target.value) || 1)} className="w-12 text-sm font-bold px-2 py-1.5 rounded outline-none focus:ring-1 focus:ring-amber-300" style={inputStyle} />
+                          </div>
+                          <input value={p.description} onChange={(e) => updatePlantHire(i, "description", e.target.value)} placeholder="Equipment description" className="flex-1 min-w-[180px] text-sm font-medium px-2.5 py-1.5 rounded outline-none focus:ring-1 focus:ring-amber-300" style={inputStyle} />
+                        </div>
+                        {/* Row 2: daily + weekly rate inputs */}
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-medium" style={{ color: brand.navyMuted }}>Daily £</span>
+                            <input type="number" step="0.01" value={p.dailyRate ?? ""} onChange={(e) => updatePlantHire(i, "dailyRate", e.target.value ? parseFloat(e.target.value) : null)} placeholder="—" className="w-20 text-sm px-2 py-1.5 rounded outline-none focus:ring-1 focus:ring-amber-300" style={inputStyle} />
+                            <span className="text-[10px]" style={{ color: brand.navyMuted }}>×</span>
+                            <input type="number" min="0" value={p.numDays ?? ""} onChange={(e) => updatePlantHire(i, "numDays", e.target.value ? parseFloat(e.target.value) : null)} placeholder="days" className="w-16 text-sm px-2 py-1.5 rounded outline-none focus:ring-1 focus:ring-amber-300" style={inputStyle} />
+                            <span className="text-[10px]" style={{ color: brand.navyMuted }}>days</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-medium" style={{ color: brand.navyMuted }}>Weekly £</span>
+                            <input type="number" step="0.01" value={p.weeklyRate ?? ""} onChange={(e) => updatePlantHire(i, "weeklyRate", e.target.value ? parseFloat(e.target.value) : null)} placeholder="—" className="w-20 text-sm px-2 py-1.5 rounded outline-none focus:ring-1 focus:ring-amber-300" style={inputStyle} />
+                            <span className="text-[10px]" style={{ color: brand.navyMuted }}>×</span>
+                            <input type="number" min="0" value={p.numWeeks ?? ""} onChange={(e) => updatePlantHire(i, "numWeeks", e.target.value ? parseFloat(e.target.value) : null)} placeholder="weeks" className="w-16 text-sm px-2 py-1.5 rounded outline-none focus:ring-1 focus:ring-amber-300" style={inputStyle} />
+                            <span className="text-[10px]" style={{ color: brand.navyMuted }}>wks</span>
+                          </div>
+                        </div>
+                        {/* Row 3: delivery + collection + markup */}
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-medium" style={{ color: brand.navyMuted }}>Delivery £</span>
+                            <input type="number" step="0.01" value={p.deliveryCharge ?? ""} onChange={(e) => updatePlantHire(i, "deliveryCharge", e.target.value ? parseFloat(e.target.value) : null)} placeholder="—" className="w-20 text-sm px-2 py-1.5 rounded outline-none focus:ring-1 focus:ring-amber-300" style={inputStyle} />
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-medium" style={{ color: brand.navyMuted }}>Collection £</span>
+                            <input type="number" step="0.01" value={p.collectionCharge ?? ""} onChange={(e) => updatePlantHire(i, "collectionCharge", e.target.value ? parseFloat(e.target.value) : null)} placeholder="—" className="w-20 text-sm px-2 py-1.5 rounded outline-none focus:ring-1 focus:ring-amber-300" style={inputStyle} />
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-medium" style={{ color: brand.navyMuted }}>Markup</span>
+                            <input type="number" step="1" value={p.markup ?? ""} onChange={(e) => updatePlantHire(i, "markup", e.target.value ? parseFloat(e.target.value) : null)} placeholder={defaultPlantMarkup != null ? String(defaultPlantMarkup) : "—"} className="w-14 text-sm px-2 py-1.5 rounded outline-none focus:ring-1 focus:ring-amber-300" style={inputStyle} />
+                            <span className="text-[10px]" style={{ color: brand.navyMuted }}>%</span>
+                          </div>
+                        </div>
+                        {/* Row 4: computed totals */}
+                        {(hasStructured && buyIn > 0) && (
+                          <div className="flex items-center gap-2 flex-wrap pt-0.5">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ backgroundColor: "#fff7ed", color: "#d97706" }}>Buy-in: £{fmtGBP(buyIn)}</span>
+                            {sell > 0 && <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ backgroundColor: "#eff6ff", color: "#3b82f6" }}>Sell: £{fmtGBP(sell)}</span>}
+                            {sell > 0 && <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ backgroundColor: "#f0fdfa", color: "#0d9488" }}>Profit: £{fmtGBP(profit)} ({sell > 0 ? ((profit / sell) * 100).toFixed(0) : 0}%)</span>}
+                          </div>
+                        )}
+                        {/* Fallback: old-style cost/sell for items without structured data */}
+                        {!hasStructured && (
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <div className="flex items-center gap-1"><span className="text-[10px]" style={{ color: brand.navyMuted }}>Cost £</span><input type="number" step="0.01" value={p.costPrice ?? ""} onChange={(e) => updatePlantHire(i, "costPrice", e.target.value ? parseFloat(e.target.value) : null)} placeholder="—" className="w-20 text-sm px-2 py-1.5 rounded outline-none focus:ring-1 focus:ring-amber-300" style={inputStyle} /></div>
+                            <div className="flex items-center gap-1"><span className="text-[10px]" style={{ color: brand.navyMuted }}>Sell £</span><input type="number" step="0.01" value={p.sellPrice ?? ""} onChange={(e) => updatePlantHire(i, "sellPrice", e.target.value ? parseFloat(e.target.value) : null)} placeholder="—" className="w-20 text-sm px-2 py-1.5 rounded outline-none focus:ring-1 focus:ring-amber-300" style={inputStyle} /></div>
+                            {p.costPrice != null && p.sellPrice != null && p.sellPrice > 0 && p.costPrice > 0 && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ backgroundColor: "#f0fdfa", color: "#0d9488" }}>Margin: £{fmtGBP((p.sellPrice - p.costPrice) * p.quantity)} ({((p.sellPrice - p.costPrice) / p.sellPrice * 100).toFixed(0)}%)</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                   <button onClick={addPlantHire} className="text-xs font-medium px-2.5 py-1.5 rounded hover:opacity-80 flex items-center gap-1" style={{ color: "#d97706", backgroundColor: "#fef3c7" }}><Plus className="h-3 w-3" /> Add Plant / Hire Item</button>
                 </div>
               ) : (
                 <div className="space-y-1">
-                  {(data.plantHire || []).map((p, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm font-medium py-1.5 px-2.5 rounded-lg flex-wrap" style={{ backgroundColor: "#fffbeb", border: "1px solid #fde68a" }}>
-                      <span className="font-extrabold" style={{ color: "#d97706", minWidth: 28 }}>{p.quantity}</span>
-                      <span style={{ color: brand.navyMuted }}>×</span>
-                      <span style={{ color: brand.navy }}>{p.description}</span>
-                      {p.duration && <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ backgroundColor: "#fef3c7", color: "#92400e" }}>{p.duration}</span>}
-                      {p.sellPrice != null && p.sellPrice > 0 && <span className="text-xs" style={{ color: brand.navyMuted }}>@ £{fmtGBP(p.sellPrice)}</span>}
-                      {p.costPrice != null && p.sellPrice != null && p.sellPrice > 0 && p.costPrice > 0 && (
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#f0fdfa", color: "#0d9488" }}>Margin: £{fmtGBP((p.sellPrice - p.costPrice) * p.quantity)} ({((p.sellPrice - p.costPrice) / p.sellPrice * 100).toFixed(0)}%)</span>
-                      )}
-                    </div>
-                  ))}
+                  {(data.plantHire || []).map((p, i) => {
+                    const buyIn = p.costPrice ?? 0;
+                    const sell = p.sellPrice ?? 0;
+                    const profit = sell - buyIn;
+                    const hasStructured = p.dailyRate != null || p.weeklyRate != null;
+                    return (
+                      <div key={i} className="flex items-center gap-2 text-sm font-medium py-1.5 px-2.5 rounded-lg flex-wrap" style={{ backgroundColor: "#fffbeb", border: "1px solid #fde68a" }}>
+                        <span className="font-extrabold" style={{ color: "#d97706", minWidth: 28 }}>{p.quantity}</span>
+                        <span style={{ color: brand.navyMuted }}>×</span>
+                        <span style={{ color: brand.navy }}>{p.description}</span>
+                        {p.duration && <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ backgroundColor: "#fef3c7", color: "#92400e" }}>{p.duration}</span>}
+                        {hasStructured && buyIn > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ backgroundColor: "#fff7ed", color: "#d97706" }}>Buy-in: £{fmtGBP(buyIn)}</span>}
+                        {sell > 0 && <span className="text-xs" style={{ color: brand.navyMuted }}>Sell: £{fmtGBP(sell)}</span>}
+                        {sell > 0 && buyIn > 0 && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: "#f0fdfa", color: "#0d9488" }}>Profit: £{fmtGBP(profit * p.quantity)} ({sell > 0 ? ((profit / sell) * 100).toFixed(0) : 0}%)</span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

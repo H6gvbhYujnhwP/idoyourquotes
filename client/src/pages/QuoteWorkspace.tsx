@@ -623,6 +623,9 @@ export default function QuoteWorkspace() {
       if (result.hasSummary && result.summary) {
         // Convert to QuoteDraftData format — mark all materials as voice-sourced
         const parsed = result.summary as any;
+        // Preserve any manually-entered plantHire rows — AI analysis never generates these
+        // and re-analysis must not wipe them (Option B: merge by protecting plantHire)
+        const existingPlantHire = voiceSummary?.plantHire || [];
         setVoiceSummary({
           clientName: parsed.clientName || null,
           jobDescription: parsed.jobDescription || "",
@@ -634,6 +637,7 @@ export default function QuoteWorkspace() {
           preliminaries: parsed.preliminaries ?? null,
           labourRate: parsed.labourRate ?? null,
           plantMarkup: parsed.plantMarkup ?? null,
+          plantHire: existingPlantHire,
           notes: parsed.notes ?? null,
         });
 
@@ -692,6 +696,7 @@ export default function QuoteWorkspace() {
           preliminaries: parsed.preliminaries ?? null,
           labourRate: parsed.labourRate ?? null,
           plantMarkup: parsed.plantMarkup ?? null,
+          plantHire: existingPlantHire,
           notes: parsed.notes ?? null,
         };
         updateFields.qdsSummaryJson = JSON.stringify(summaryToSave);
@@ -822,6 +827,7 @@ export default function QuoteWorkspace() {
           preliminaries: parsed.preliminaries ?? null,
           labourRate: parsed.labourRate ?? null,
           plantMarkup: parsed.plantMarkup ?? null,
+          plantHire: parsed.plantHire || [],
           notes: parsed.notes ?? null,
         });
         hasRehydratedRef.current = true;
