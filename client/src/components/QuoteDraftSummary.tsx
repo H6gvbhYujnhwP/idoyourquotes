@@ -916,8 +916,8 @@ export default function QuoteDraftSummary({
           </div>
         )}
 
-        {/* Plant / Hire */}
-        {(hasPlantHire || isEditing) && (
+        {/* Plant / Hire — always visible so users can add items without entering edit mode */}
+        {(true) && (
           <div className="flex items-start gap-3">
             <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5" style={{ backgroundColor: "#fef3c7" }}>
               <Truck className="h-3.5 w-3.5" style={{ color: "#d97706" }} />
@@ -1000,7 +1000,12 @@ export default function QuoteDraftSummary({
                 </div>
               ) : (
                 <div className="space-y-1">
-                  {(data.plantHire || []).map((p, i) => {
+                  {(data.plantHire || []).length === 0 ? (
+                    <button onClick={startEditing} className="text-xs font-medium px-2.5 py-1.5 rounded hover:opacity-80 flex items-center gap-1" style={{ color: "#d97706", backgroundColor: "#fef3c7" }}>
+                      <Plus className="h-3 w-3" /> Add Plant / Hire Item
+                    </button>
+                  ) : (
+                    (data.plantHire || []).map((p, i) => {
                     const buyIn = p.costPrice ?? 0;
                     const sell = p.sellPrice ?? 0;
                     const profit = sell - buyIn;
@@ -1018,7 +1023,8 @@ export default function QuoteDraftSummary({
                         )}
                       </div>
                     );
-                  })}
+                  })
+                  )}
                 </div>
               )}
             </div>
