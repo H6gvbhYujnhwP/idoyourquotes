@@ -623,9 +623,6 @@ export default function QuoteWorkspace() {
       if (result.hasSummary && result.summary) {
         // Convert to QuoteDraftData format — mark all materials as voice-sourced
         const parsed = result.summary as any;
-        // Preserve any manually-entered plantHire rows — AI analysis never generates these
-        // and re-analysis must not wipe them (Option B: merge by protecting plantHire)
-        const existingPlantHire = voiceSummary?.plantHire || [];
         setVoiceSummary({
           clientName: parsed.clientName || null,
           jobDescription: parsed.jobDescription || "",
@@ -637,7 +634,6 @@ export default function QuoteWorkspace() {
           preliminaries: parsed.preliminaries ?? null,
           labourRate: parsed.labourRate ?? null,
           plantMarkup: parsed.plantMarkup ?? null,
-          plantHire: existingPlantHire,
           notes: parsed.notes ?? null,
         });
 
@@ -696,7 +692,6 @@ export default function QuoteWorkspace() {
           preliminaries: parsed.preliminaries ?? null,
           labourRate: parsed.labourRate ?? null,
           plantMarkup: parsed.plantMarkup ?? null,
-          plantHire: existingPlantHire,
           notes: parsed.notes ?? null,
         };
         updateFields.qdsSummaryJson = JSON.stringify(summaryToSave);
@@ -827,7 +822,6 @@ export default function QuoteWorkspace() {
           preliminaries: parsed.preliminaries ?? null,
           labourRate: parsed.labourRate ?? null,
           plantMarkup: parsed.plantMarkup ?? null,
-          plantHire: parsed.plantHire || [],
           notes: parsed.notes ?? null,
         });
         hasRehydratedRef.current = true;
@@ -3012,28 +3006,32 @@ export default function QuoteWorkspace() {
 
               {/* Totals */}
               <div className="border-t pt-4 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>Subtotal</span>
-                  <span>£{parseFloat(quote.subtotal || "0").toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between items-center text-sm">
-                  <div className="flex items-center gap-2">
-                    <span>VAT</span>
-                    <Input
-                      type="number"
-                      className="w-16 h-7 text-xs"
-                      value={taxRate}
-                      onChange={(e) => setTaxRate(e.target.value)}
-                      onBlur={() => handleSaveQuote()}
-                    />
-                    <span>%</span>
-                  </div>
-                  <span>£{parseFloat(quote.taxAmount || "0").toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between font-bold text-lg border-t pt-2">
-                  <span>Total</span>
-                  <span>£{parseFloat(quote.total || "0").toFixed(2)}</span>
-                </div>
+                {lineItems && lineItems.some((i: any) => !i.pricingType || i.pricingType === "standard") && (
+                  <>
+                    <div className="flex justify-between text-sm">
+                      <span>Subtotal</span>
+                      <span>£{parseFloat(quote.subtotal || "0").toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <div className="flex items-center gap-2">
+                        <span>VAT</span>
+                        <Input
+                          type="number"
+                          className="w-16 h-7 text-xs"
+                          value={taxRate}
+                          onChange={(e) => setTaxRate(e.target.value)}
+                          onBlur={() => handleSaveQuote()}
+                        />
+                        <span>%</span>
+                      </div>
+                      <span>£{parseFloat(quote.taxAmount || "0").toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold text-lg border-t pt-2">
+                      <span>Total</span>
+                      <span>£{parseFloat(quote.total || "0").toFixed(2)}</span>
+                    </div>
+                  </>
+                )}
                 {/* Recurring totals — computed live from line items, not included in main total */}
                 {lineItems && (() => {
                   const monthlyAmt = lineItems.filter((i: any) => i.pricingType === "monthly").reduce((s: number, i: any) => s + parseFloat(i.total || "0"), 0);
@@ -3042,7 +3040,7 @@ export default function QuoteWorkspace() {
                   if (monthlyAmt <= 0 && annualAmt <= 0 && optionalAmt <= 0) return null;
                   return (
                     <div className="border-t pt-2 mt-1 space-y-1">
-                      <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "#94a3b8" }}>Not included in total above</p>
+                      <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "#94a3b8" }}>{lineItems.some((i: any) => !i.pricingType || i.pricingType === "standard") ? "Not included in total above" : "Recurring charges"}</p>
                       {monthlyAmt > 0 && (
                         <div className="flex justify-between items-center text-sm font-semibold rounded px-2 py-1" style={{ backgroundColor: "#f0fdfa", color: "#0d9488" }}>
                           <span>Recurring monthly</span>

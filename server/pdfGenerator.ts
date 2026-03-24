@@ -711,6 +711,7 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
       <strong>Valid Until:</strong> ${formatDate(quote.validUntil)}
     </div>` : ""}
 
+    ${standardItems.length > 0 ? `
     <table class="items-table">
       <thead>
         <tr>
@@ -742,7 +743,7 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
           <span class="totals-value">${formatCurrency(quote.total)}</span>
         </div>
       </div>
-    </div>
+    </div>` : ""}
 
     ${monthlyItems.length > 0 ? `
     <div style="margin-top: 24px;">
