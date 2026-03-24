@@ -4120,10 +4120,15 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
           }
 
           // Update tender context with assumptions/exclusions
+          // Guard: if the user has already saved their own assumptions or exclusions,
+          // preserve them — only populate on first generation, never overwrite user edits.
           if (draft.assumptions || draft.exclusions || draft.symbolMappings) {
+            const existingContext = await getTenderContextByQuoteId(input.quoteId);
+            const hasUserAssumptions = existingContext?.assumptions && Array.isArray(existingContext.assumptions) && (existingContext.assumptions as any[]).length > 0;
+            const hasUserExclusions = existingContext?.exclusions && Array.isArray(existingContext.exclusions) && (existingContext.exclusions as any[]).length > 0;
             await upsertTenderContext(input.quoteId, {
-              assumptions: draft.assumptions?.map((text: string) => ({ text, confirmed: false })),
-              exclusions: draft.exclusions?.map((text: string) => ({ text, confirmed: false })),
+              assumptions: hasUserAssumptions ? undefined : draft.assumptions?.map((text: string) => ({ text, confirmed: false })),
+              exclusions: hasUserExclusions ? undefined : draft.exclusions?.map((text: string) => ({ text, confirmed: false })),
               symbolMappings: draft.symbolMappings,
             });
           }

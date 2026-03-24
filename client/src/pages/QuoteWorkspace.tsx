@@ -188,6 +188,8 @@ export default function QuoteWorkspace() {
 
   // Tender context state
   const [tenderNotes, setTenderNotes] = useState("");
+  const [assumptions, setAssumptions] = useState("");   // one item per line
+  const [exclusions, setExclusions] = useState("");     // one item per line
 
   // New line item state
   const [newItemDescription, setNewItemDescription] = useState("");
@@ -768,6 +770,14 @@ export default function QuoteWorkspace() {
     }
     if (fullQuote?.tenderContext) {
       setTenderNotes(fullQuote.tenderContext.notes || "");
+      // Assumptions and exclusions are stored as [{text, confirmed}] arrays — flatten to one item per line
+      const tc = fullQuote.tenderContext as any;
+      if (tc.assumptions && Array.isArray(tc.assumptions)) {
+        setAssumptions(tc.assumptions.map((a: any) => typeof a === "string" ? a : a.text || "").filter(Boolean).join("\n"));
+      }
+      if (tc.exclusions && Array.isArray(tc.exclusions)) {
+        setExclusions(tc.exclusions.map((e: any) => typeof e === "string" ? e : e.text || "").filter(Boolean).join("\n"));
+      }
     }
     if (fullQuote?.internalEstimate) {
       setInternalNotes(fullQuote.internalEstimate.notes || "");
@@ -851,6 +861,16 @@ export default function QuoteWorkspace() {
       triggerVoiceAnalysis();
     }
   }, [fullQuote?.inputs, fullQuote?.quote, voiceSummary]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSaveAssumptionsExclusions = () => {
+    const parseLines = (text: string) =>
+      text.split("\n").map(s => s.trim()).filter(Boolean).map(text => ({ text, confirmed: false }));
+    upsertTenderContext.mutate({
+      quoteId,
+      assumptions: parseLines(assumptions),
+      exclusions: parseLines(exclusions),
+    });
+  };
 
   const handleSaveQuote = async () => {
     setIsSaving(true);
@@ -3121,9 +3141,50 @@ export default function QuoteWorkspace() {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
 
-        {/* COMPREHENSIVE: TIMELINE TAB */}
+          {/* Assumptions & Exclusions */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Assumptions &amp; Exclusions</CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">These appear on the generated PDF. Enter one item per line.</p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Exclusions</label>
+                <Textarea
+                  value={exclusions}
+                  onChange={(e) => setExclusions(e.target.value)}
+                  onBlur={handleSaveAssumptionsExclusions}
+                  placeholder={"Physical hardware upgrades or replacements.\nTravel costs outside standard operational radius."}
+                  rows={4}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Assumptions</label>
+                <Textarea
+                  value={assumptions}
+                  onChange={(e) => setAssumptions(e.target.value)}
+                  onBlur={handleSaveAssumptionsExclusions}
+                  placeholder={"Client has existing infrastructure in place.\nAll areas accessible during normal working hours."}
+                  rows={4}
+                />
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleSaveAssumptionsExclusions}
+                disabled={upsertTenderContext.isPending}
+              >
+                {upsertTenderContext.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <Save className="h-4 w-4 mr-2" />
+                )}
+                Save
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
         {isComprehensive && (
           <TabsContent value="timeline" className="space-y-6">
             <TimelineTab quoteId={quoteId} config={comprehensiveConfig} refetch={refetch} />
