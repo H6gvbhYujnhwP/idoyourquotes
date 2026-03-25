@@ -20,6 +20,7 @@ This is **not a modification of QuoteWorkspace.tsx**. It is a new set of files t
 | `client/src/components/electrical/ElectricalTakeoffPanel.tsx` | Symbol counts, measurements, editable takeoff |
 | `client/src/components/electrical/ElectricalPDF.tsx` | Electrical PDF template (phases, timelines, plant hire, labour) |
 | `server/engines/electricalEngine.ts` | Server-side electrical AI engine (Tier 3) |
+| `server/data/electricalLabourRates.ts` | Spon's UK labour rate lookup table |
 
 **Files that must NOT be modified:**
 - `QuoteWorkspace.tsx` — untouched
@@ -35,7 +36,6 @@ This is **not a modification of QuoteWorkspace.tsx**. It is a new set of files t
 In the quote routing component, detect sector and render the correct workspace:
 
 ```typescript
-// Pseudocode — check quote.sector field
 if (quote.sector === 'electrical') {
   return <ElectricalWorkspace quoteId={quoteId} />;
 }
@@ -46,192 +46,335 @@ The sector field already exists on the quotes table. No schema changes needed fo
 
 ---
 
-## 4. Electrical Workspace Flow
+## 4. UI Layout — Fixed Height, Single Scroll
+
+**Critical:** The current general workspace has three competing scrollbars. The electrical workspace must be built with a fixed-height layout from day one.
+
+### Layout Rules
+- Workspace is a **fixed viewport layout** — outer page does not scroll while in the workspace
+- Left sidebar (drawing list): fixed height, scrolls independently within its own column
+- Main content area: takes remaining width and height, scrolls within itself only
+- No nested scroll contexts competing with each other
+- Only one scrollbar visible at any time
 
 ### Tab Structure
 1. **Inputs** — Upload drawings, optional symbol legend PDF, paste email/text scope
-2. **Takeoff** — Per-drawing symbol counts, measurements, scope confirmation
+2. **Takeoff** — Per-drawing symbol review table, measurements, scope toggles
 3. **QDS** — Quantities + labour auto-calculated from Spon's reference + plant hire
 4. **Quote** — Line items, totals, phases, timelines
 5. **PDF** — Tender submission document
 
-### Input Rules
+---
+
+## 5. Input Rules
+
 - Drawings upload: multiple PDFs, processed one by one
-- Legend/symbol key: **single dedicated upload slot**, labelled "Symbol Legend (optional)" — separate from drawings
-- Legend can also be embedded in a drawing — the AI should detect and use it either way
-- Paste email/text field: drives scope inclusion/exclusion — AI reads this to know what to include and exclude from the takeoff
+- Legend/symbol key: **single dedicated upload slot**, labelled "Upload Symbol Legend (optional)" — visually distinct from drawing upload zone
+- Legend can also be embedded in a drawing — the AI detects and uses it either way
+- **Job-level legend memory**: once a legend is uploaded or defined, it applies to ALL drawings on that job. Never uploaded twice
+- Paste email/text field: drives scope inclusion/exclusion — AI reads this to know what to include/exclude
 - All inputs survive re-analysis — nothing the user has edited is ever destroyed
 
 ---
 
-## 5. Takeoff Panel Behaviour
+## 6. Legend Handling — Three Scenarios
 
-- AI analyses every drawing and extracts **every symbol it can find** — it never silently drops anything
-- Each symbol shown as a row: symbol code | description | count | unit | editable measurement field
-- **Greyed-out toggle per row** — user can grey out / exclude items not in scope (ELV tray, fire alarm tray, symbols not their responsibility)
-- Measurements are editable — user can correct AI-extracted lengths, counts, areas
-- Unknown symbols are **always shown**, never silently dropped — user resolves them (describe it / exclude it)
-- Legend handling: AI reads legend from whatever source it finds — embedded on drawing, separate PDF upload, or user-defined in the takeoff panel
-- Per-drawing grouping — drawings listed separately so Mitch can see quantities per floor/drawing
+The AI must always try to resolve symbols automatically before involving the user.
+
+### Scenario A — Legend embedded on drawing
+AI reads the legend from the drawing page, builds complete symbol map, counts everything. No questions asked.
+
+### Scenario B — Legend uploaded as separate PDF
+AI reads the legend upload slot first, builds symbol map, processes all drawings against it. Applies to all drawings on the job.
+
+### Scenario C — No legend found
+AI asks **once** per job:
+
+> *"I've analysed this drawing but couldn't find a symbol legend. You can upload a legend PDF using the legend slot above, or I can show you the symbols I found and you can describe them below."*
+
+Two options: upload legend (AI re-processes automatically) or define manually (symbol review table with blank descriptions). Never asks again after this.
 
 ---
 
-## 6. QDS Behaviour
+## 7. Takeoff Panel — Symbol Review Table (Not a Question Flow)
+
+**Replace the current per-symbol question drip entirely.**
+
+### Review Table Structure
+
+| Toggle | Symbol Code | AI Description | Count | Unit | Measurement | Status |
+|---|---|---|---|---|---|---|
+| ✓ | A1 | IP65 LED Recessed Downlight | 24 | each | — | Matched |
+| ✓ | B1 | IP65 Wall Mounted LED Bulkhead | 8 | each | — | Matched |
+| ✓ | HOB | 32A DP Switch Serving Hob | 2 | each | — | Matched |
+| ⚠ | FAP | Fire Alarm Panel Isolator | 2 | each | — | Review |
+| ✗ | CD | — | 5 | — | — | Excluded |
+
+### Column Behaviours
+- **Toggle**: green = include, grey = exclude. User clicks to toggle
+- **AI Description**: editable inline — user corrects any wrong match
+- **Count**: editable — user corrects AI count
+- **Measurement**: editable — for linear/area items (cable tray lengths, trunking runs)
+- **Status**: Matched / Review (amber, AI uncertain) / Excluded (user toggled or auto-excluded)
+
+### What the AI Does Automatically
+1. Reads legend first (embedded, uploaded, or job-level memory)
+2. Matches every symbol to legend — pre-fills all descriptions
+3. Flags uncertain matches as Review in amber
+4. Auto-excludes title block annotations, engineer initials, revision markers — never asks the user about these
+5. Only truly unresolvable symbols appear with blank descriptions
+
+### Per-Drawing Grouping
+Left sidebar lists drawings. Selecting one shows its symbol review table. Counts are per-drawing and aggregated in QDS.
+
+---
+
+## 8. QDS Behaviour
 
 ### Core Rules
-- QDS is built from confirmed takeoff data — never re-runs takeoff automatically
-- **Re-analysis NEVER destroys user edits** — this is enforced at every level:
-  - `plantHire` array is preserved on re-analysis (captured before parse, injected back)
-  - `assumptions` and `exclusions` only written on first generation, never overwritten
-  - User-edited quantities, prices, and labour hours are preserved via `takeoffOverrides`
-- QDS is manually editable at all times
+- QDS built from confirmed takeoff — never re-runs takeoff automatically
+- **Re-analysis NEVER destroys user edits:**
+  - `plantHire` array preserved (captured before parse, injected back)
+  - `assumptions` and `exclusions` only written on first generation
+  - User-edited quantities, prices, labour hours preserved via `takeoffOverrides`
+- QDS manually editable at all times
 
 ### Labour Auto-Calculation
-When a symbol/item is in the QDS, the system automatically calculates labour hours using:
-1. Match item type to Spon's reference data (see Section 8)
-2. Multiply by quantity and measurement
-3. Apply user's labour rate (from settings, defaulting to £60/hr)
-4. Show as editable field — user can override any calculated value
+When a symbol/item is confirmed in takeoff:
+1. Match item description to Spon's UK reference data (Section 10)
+2. Multiply hours/unit by quantity, or hours/metre by measurement
+3. Apply productivity multiplier (user selects — see Section 10)
+4. Apply user's labour rate from settings (default £60/hr)
+5. Show as editable field — user overrides any value
 
 ### QDS Sections for Electrical
 - **Line Items** — fittings, accessories, devices (per symbol, per fitting)
-- **Containment** — cable tray/trunking by metre, with fittings (Ts, bends, crossovers)
-- **Cabling** — by metre and type where extracted from DB schedule or measured
-- **First Points** — number of circuits × first point charge (user-entered rate)
-- **Plant / Hire** — daily/weekly rate fields (built, see QuoteDraftSummary.tsx)
-- **Preliminaries** — site accommodation, welfare, travel
-- **Labour Summary** — auto-totalled from all sections
+- **Containment** — cable tray/trunking by metre, with fittings
+- **Cabling** — by metre and type
+- **First Points** — circuits × first point charge (user-entered rate)
+- **Plant / Hire** — daily/weekly with buy-in/sell/profit auto-calc
+- **Preliminaries** — accommodation, welfare, travel
+- **Labour Summary** — auto-totalled
 - **Sundries** — allowance per fitting
 
 ---
 
-## 7. PDF Output for Electrical
+## 9. PDF Output for Electrical
 
-The electrical PDF is a **formal tender submission document**, not the standard quote layout. It must include:
+Formal tender submission document:
 
 - Cover page: project name, reference, date, tender submission
 - Project description and scope
-- **Phases and timeline** — AI extracts from QDS labour hours and applies realistic programme (e.g. first fix, second fix, testing, commissioning). User can edit phase names and durations in QDS before generating
-- Line item breakdown by discipline section (Lighting / Small Power / Containment / Fire Alarm etc — only sections with items)
-- Plant hire breakdown with buy-in / sell / profit per item
+- **Phases and timeline** — derived from total labour hours: first fix → second fix → testing → commissioning. User edits in QDS before generating
+- Line item breakdown by discipline (only sections with items)
+- Plant hire breakdown with buy-in / sell / profit
 - Labour summary
-- Exclusions and assumptions (from tenderContext)
+- Exclusions and assumptions
 - Terms and conditions
 
 ---
 
-## 8. Labour Reference Data (Spon's / Durand)
+## 10. Labour Reference Data — UK Spon's (Authentic)
 
-Stored in `server/data/electricalLabourRates.ts` as a typed lookup table. The electrical engine uses this to auto-populate `installTimeHrs` on QDS items.
+**Source:** Spon's Construction Resource Handbook (Bryan Spain, E&FN Spon / Taylor & Francis), verified against Spon's M&E Services Price Book 2024. Grade: LQ (Qualified Electrician). These are authentic UK figures — they supersede all previous Durand Associates (US) data.
 
-### Key rates to implement:
-
-**Luminaires (hrs/unit)**
-- LED recessed downlight: 0.60
-- LED bulkhead (wall mounted, IP65): 0.45
-- LED surface linear (IP20): 0.70
-- LED surface linear (IP66): 0.70
-- Emergency exit sign/bulkhead: 0.80
-- External floodlight: 0.90
-- PIR presence detector: 0.25
-
-**Accessories (hrs/unit)**
-- Single socket outlet: 0.23
-- Double socket outlet: 0.25
-- FCU (fused connection unit): 0.25
-- 20A DP switch: 0.25
-- 1-gang light switch: 0.16
-- 2-gang light switch: 0.20
-- Dimmer switch: 0.25
-- Rotary isolator: 0.40
-
-**Cable tray — straight runs (hrs/m)**
-- 150mm medium duty: 0.26
-- 300mm medium duty: 0.39
-- 450mm medium duty: 0.46
-- 600mm medium duty: 0.59
-
-**Cable tray fittings (hrs/unit, 300mm)**
-- 90 degree bend: 0.90
-- Equal tee: 1.20
-- Four-way crossover: 1.40
-- Internal riser: 1.00
-
-**Distribution boards**
-- 12-way consumer unit: 2.40
-- 26-way DB (100A): ~3.00
-- MCB/RCBO per device: 0.18
-
-**Testing (hrs/circuit)**
-- Dead test: 0.25
-- Live test: 0.15
-
-**Productivity multipliers** (user-selectable in QDS):
-- New build / open access: 0.85
-- Standard: 1.00
-- Refurb / occupied: 1.25
-- Working at height >3m: 1.20
+Stored in `server/data/electricalLabourRates.ts` as a typed lookup table.
 
 ---
 
-## 9. Key Architectural Guardrails
+### Cable Tray — Straight Runs (hrs/m)
 
-- **Sector agnosticism of shared code** — ElectricalEngine is a Tier 3 engine dispatched by `engineRouter.ts`. Changes to it cannot affect GeneralEngine or DrawingEngine
-- **No duplication of infrastructure** — use existing tRPC routes for quotes, lineItems, tenderContext, catalog, R2 storage. Never create parallel versions
-- **plantHire protection** — already implemented in QuoteWorkspace.tsx output. Must be replicated in ElectricalWorkspace.tsx from day one
-- **QDS edit preservation** — the pattern is: capture existing user state before any AI call, inject it back into the result. Apply this to ALL user-editable QDS fields in the electrical workspace
-- **No measurements hardcoded** — every drawing measured fresh from its own geometry and scale. Scale bar on the drawing is always the reference
-- **AI includes everything** — the AI never silently drops symbols. Unknown symbols are flagged, not removed
+| Width | Hours/m |
+|---|---|
+| 50mm | 0.25 |
+| 75mm | 0.28 |
+| 100mm | 0.30 |
+| 150mm | 0.34 |
+| 225mm | 0.40 |
+| 300mm | 0.46 |
+| 450mm | 0.57 |
+| 600mm | 0.70 |
+
+### Cable Tray Fittings (hrs/unit)
+
+| Width | Flat Bend | Tee | Riser | 4-Way Crossover |
+|---|---|---|---|---|
+| 50mm | 0.25 | 0.25 | 0.38 | 0.31 |
+| 100mm | 0.28 | 0.28 | 0.48 | 0.35 |
+| 150mm | 0.30 | 0.30 | 0.51 | 0.38 |
+| 225mm | 0.32 | 0.32 | 0.60 | 0.40 |
+| 300mm | 0.36 | 0.36 | 0.69 | 0.45 |
+| 450mm | 0.43 | 0.43 | 0.86 | 0.54 |
+| 600mm | 0.50 | 0.50 | 1.05 | 0.63 |
+
+### Galvanised Steel Trunking (hrs/m)
+
+| Size | Single | Twin | Triple |
+|---|---|---|---|
+| 50x50mm | 0.41 | 0.46 | 0.51 |
+| 75x75mm | 0.50 | 0.55 | 0.60 |
+| 100x100mm | 0.60 | 0.65 | 0.70 |
+| 150x150mm | 0.77 | 0.82 | 0.87 |
+
+### Steel Conduit Surface Fixed (hrs/m)
+
+| Size | Surface | Chase/Screed |
+|---|---|---|
+| 20mm | 0.65 | 0.50 |
+| 25mm | 0.75 | 0.60 |
+| 32mm | 1.00 | 0.70 |
+
+### Socket Outlets and Switches (hrs/unit, including back box)
+
+| Item | Hours |
+|---|---|
+| 13A 1-gang switched socket outlet | 0.55 |
+| 13A 2-gang switched socket outlet | 0.50 |
+| 13A DP switch fused connection unit (FCU) | 0.50 |
+| 1-gang light switch | 0.40 |
+| 2-gang light switch | 0.50 |
+| 3-gang light switch | 0.68 |
+| 4-gang light switch | 0.78 |
+| Telephone / data / TV outlet | 0.40 |
+
+### Luminaires (hrs/unit, fixed to background or suspended)
+
+| Type | Hours |
+|---|---|
+| LED/fluorescent batten 1200–1500mm surface | 1.05 |
+| LED/fluorescent batten twin surface | 1.35 |
+| Recessed modular luminaire 600x600mm false ceiling | 1.31 |
+| Recessed LED wall washer / downlight | 0.75 |
+| IP65 waterproof bulkhead/batten 1200mm | 1.64 |
+| Emergency luminaire 8W bulkhead non-maintained | 0.95 |
+| High bay suspended with chains/hooks | 1.26 |
+| Floodlight wall mounted 250W/400W | 1.98 |
+
+### Distribution Boards / Consumer Units (hrs/unit)
+
+| Type | Hours |
+|---|---|
+| 4-way SP&N single phase | 1.35 |
+| 8-way SP&N single phase | 1.89 |
+| 12-way SP&N single phase | 2.30 |
+| 18-way SP&N single phase | 2.70 |
+| 4-way TP&N three phase | 2.97 |
+| 12-way TP&N three phase | 3.65 |
+| 18-way TP&N three phase | 4.32 |
+| MCB/RCBO per device | 0.15–0.25 |
+
+### Twin and Earth Cable Clipped Direct (hrs/m)
+
+| Size | 2-core | 3-core |
+|---|---|---|
+| 1.5mm² | 0.18 | 0.20 |
+| 2.5mm² | 0.19 | 0.22 |
+| 4.0mm² | 0.21 | 0.23 |
+| 6.0mm² | 0.22 | 0.27 |
+| 10.0mm² | 0.26 | 0.30 |
+| 16.0mm² | 0.30 | 0.33 |
+
+### SWA Cable Clipped to Tray (hrs/m)
+
+| Size | 2-core | 3-core | 4-core |
+|---|---|---|---|
+| 1.5mm² | 0.32 | 0.32 | 0.32 |
+| 2.5mm² | 0.32 | 0.32 | 0.34 |
+| 4.0mm² | 0.34 | 0.34 | 0.34 |
+| 6.0mm² | 0.34 | 0.34 | 0.37 |
+| 10.0mm² | 0.37 | 0.38 | 0.43 |
+| 16.0mm² | 0.37 | 0.40 | 0.46 |
+
+### SWA Gland Terminations (hrs/unit, includes brass locknut, earth ring, drilling)
+
+| Size | 2-core | 3-core | 4-core |
+|---|---|---|---|
+| 1.5mm² | 0.66 | 0.75 | 0.83 |
+| 2.5mm² | 0.66 | 0.75 | 0.83 |
+| 4.0mm² | 0.88 | 0.75 | 1.00 |
+| 6.0mm² | 0.99 | 0.92 | 1.00 |
+| 10.0mm² | 1.19 | 1.09 | 1.19 |
+| 16.0mm² | 1.39 | 1.39 | 1.59 |
+
+### Fixings and Supports (hrs/unit)
+
+| Item | Hours |
+|---|---|
+| Unistrut P1000 cut to 1m | 0.60 |
+| Unistrut P1000 fixed to background | 1.07 |
+| Self-drill anchor 10mm | 0.15 |
+| Self-drill anchor 12mm | 0.17 |
+| Composite fixing rate 1 fixing | 0.18 |
+| Composite fixing rate 2 fixings | 0.23 |
+
+### Productivity Multipliers (user-selectable in QDS)
+
+| Condition | Multiplier |
+|---|---|
+| New build / open access | 0.85 |
+| Standard conditions | 1.00 |
+| Refurb / occupied | 1.25 |
+| Working at height above 3m | 1.20 |
 
 ---
 
-## 10. Build Order (Phases)
+## 11. Key Architectural Guardrails
 
-### Phase 1 — Routing split
-Detect `quote.sector === 'electrical'` and render `ElectricalWorkspace`. Skeleton page with tabs. No functionality yet. Deploy and verify routing works.
-
-### Phase 2 — ElectricalWorkspace shell
-Full tab structure, input handling, drawing upload, legend upload slot. Wire to existing tRPC input routes. Paste email/text field with scope instruction behaviour.
-
-### Phase 3 — Takeoff Panel
-Per-drawing symbol extraction with greyed-out toggles, editable measurements, unknown symbol resolution, legend detection (embedded or separate PDF).
-
-### Phase 4 — ElectricalQDS
-QDS with all electrical sections. Labour auto-calculation from Spon's reference. plantHire protection from day one. Re-analysis protection on all user-edited fields.
-
-### Phase 5 — electricalEngine.ts
-Server-side AI engine. Reads confirmed takeoff + QDS to generate line items with Spon's labour. Produces phases and timelines from total labour hours.
-
-### Phase 6 — Electrical PDF template
-Tender submission format. Phases, timelines, plant hire, labour summary, exclusions, assumptions.
+- **Sector agnosticism** — ElectricalEngine dispatched by `engineRouter.ts`. Changes cannot affect other engines
+- **No duplication** — use existing tRPC routes. Never create parallel versions
+- **plantHire protection** — implemented in QuoteWorkspace.tsx. Must be in ElectricalWorkspace.tsx from day one
+- **QDS edit preservation** — capture user state before AI call, inject back. Apply to ALL editable fields
+- **No measurements hardcoded** — every drawing measured fresh from its own scale
+- **AI includes everything** — never silently drops symbols
+- **Legend memory is job-level** — one upload covers all drawings
+- **Single question per job** — if no legend found, ask once only
 
 ---
 
-## 11. Shared Infrastructure Reference
+## 12. Build Order (Phases)
 
-These existing routes/functions should be called directly — never duplicated:
+**Phase 1 — Routing split**
+Detect electrical sector, render ElectricalWorkspace skeleton with fixed-height layout. Deploy and verify routing.
+
+**Phase 2 — Workspace shell**
+Tab structure, drawing upload zone, legend upload slot (visually distinct), paste email/text. Fixed-height layout fully implemented.
+
+**Phase 3 — Takeoff Panel**
+Symbol review table (not question flow). Three legend scenarios. Job-level legend memory. Per-drawing grouping. Greyed-out toggles, editable counts and measurements. Title block annotations auto-excluded.
+
+**Phase 4 — ElectricalQDS**
+All QDS sections. Labour auto-calculation using Spon's UK rates with productivity multiplier. plantHire and full re-analysis edit preservation from day one.
+
+**Phase 5 — electricalEngine.ts**
+Server-side AI engine. Confirmed takeoff → line items with Spon's labour. Phases and timelines from total labour hours.
+
+**Phase 6 — Electrical PDF**
+Tender submission format with phases, timelines, plant hire, labour summary.
+
+---
+
+## 13. Shared Infrastructure Reference
 
 | Need | Use |
 |---|---|
-| Save/load quote fields | `trpc.quotes.updateQuote`, `trpc.quotes.getFull` |
+| Save/load quote | `trpc.quotes.updateQuote`, `trpc.quotes.getFull` |
 | Line items | `trpc.lineItems.*` |
-| Tender context (assumptions/exclusions) | `trpc.tenderContext.upsert` |
+| Assumptions/exclusions | `trpc.tenderContext.upsert` |
 | Catalog | `trpc.catalog.*` |
-| File upload to R2 | existing upload routes |
+| File upload | existing R2 upload routes |
 | Recalculate totals | `recalculateQuoteTotals` in db.ts |
-| PDF generation trigger | add electrical branch in `generatePDF` route |
+| PDF trigger | add electrical branch in `generatePDF` route |
 
 ---
 
-## 12. Patrixbourne Avenue — Reference Tender Pack
+## 14. Patrixbourne Avenue — Reference Tender Pack
 
-Mitch's test job. Six documents uploaded:
-- `A1101-KCL-00-00-D-E-2401.pdf` — Ground floor small power layout
-- `A1101-KCL-00-01-D-E-2411.pdf` — First floor small power layout
-- `A1101-KCL-00-00-D-E-2501.pdf` — Ground floor lighting layout (symbols: A1, B1, C1, D1, G1, H1, J1, PIR)
-- `A1101-KCL-00-01-D-E-2511.pdf` — First floor lighting layout
+Primary validation test. Six documents:
+- `A1101-KCL-00-00-D-E-2401.pdf` — Ground floor small power (legend embedded)
+- `A1101-KCL-00-01-D-E-2411.pdf` — First floor small power
+- `A1101-KCL-00-00-D-E-2501.pdf` — Ground floor lighting (A1, B1, C1, D1, G1, H1, J1, PIR — legend embedded)
+- `A1101-KCL-00-01-D-E-2511.pdf` — First floor lighting
 - `A1101-KCL-XX-XX-L-E-2401.pdf` — Distribution board schedule (26 circuits, cable lengths)
 - `A1101-KCL-XX-XX-L-E-2411.pdf` — Equipment schedules (switchgear, accessories, fire alarm)
 
-This pack should be used as the primary validation test for each phase.
-
+**Phase 3 validation target:** All symbols matched automatically from embedded legends. HOB, FAP, C, K, EPH, WP, TR all resolved without asking. CD (engineer initials) auto-excluded. Zero questions asked.
