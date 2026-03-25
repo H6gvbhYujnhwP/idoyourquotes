@@ -552,18 +552,18 @@ function InputsTab({
           )}
         </div>
 
-        {/* Email for tender / quote */}
+        {/* Scope instructions / AI input */}
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2">
             <Mail className="h-4 w-4 text-primary" />
-            <span className="text-sm font-semibold">Email for Tender / Quote</span>
+            <span className="text-sm font-semibold">Scope &amp; AI Instructions</span>
           </div>
           <Textarea
             value={scopeText}
             onChange={(e) => onScopeChange(e.target.value)}
             placeholder={
-              "Paste the client's email, scope of works, or any notes here.\n\n" +
-              "The AI will use this to understand what to include and exclude from the quote."
+              "Paste the client's email, scope of works, or any instructions here.\n\n" +
+              "The AI reads this to understand what to include and exclude from the quote."
             }
             className="flex-1 min-h-[120px] resize-none text-sm"
           />
