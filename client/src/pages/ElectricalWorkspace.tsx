@@ -133,6 +133,11 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
   const [scopeDirty, setScopeDirty]   = useState(false);
   const [isSavingScope, setIsSavingScope] = useState(false);
 
+  // Polling — true while any input is processing or pending.
+  // Must be declared BEFORE useQuery so the query options can reference it
+  // without hitting a temporal dead zone (const TDZ crash).
+  const [hasProcessingInputs, setHasProcessingInputs] = useState(false);
+
   // ── Data ────────────────────────────────────────────────────────────────────
 
   const { data: fullQuote, isLoading, error, refetch } = trpc.quotes.getFull.useQuery(
@@ -140,13 +145,7 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
     {
       enabled: quoteId > 0,
       retry: 1,
-      refetchInterval: () => {
-        const inputs: QuoteInput[] = fullQuote?.inputs ?? [];
-        const anyProcessing = inputs.some(
-          (i) => i.processingStatus === "processing" || i.processingStatus === "pending"
-        );
-        return anyProcessing ? 3000 : false;
-      },
+      refetchInterval: hasProcessingInputs ? 3000 : false,
     }
   );
 
@@ -154,6 +153,15 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
   const drawings = inputs.filter((i) => i.inputType === "pdf");
   const legend   = inputs.find((i)  => i.inputType === "document") ?? null;
   const scopeRecord = inputs.find((i) => i.inputType === "email") ?? null;
+
+  // Keep polling flag in sync — must use useEffect, NOT a refetchInterval
+  // callback that closes over fullQuote (causes TDZ crash before initialization)
+  useEffect(() => {
+    const anyProcessing = inputs.some(
+      (i) => i.processingStatus === "processing" || i.processingStatus === "pending"
+    );
+    setHasProcessingInputs(anyProcessing);
+  }, [fullQuote]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-select first drawing
   useEffect(() => {
