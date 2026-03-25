@@ -10,7 +10,7 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Pricing from "./pages/Pricing";
 import Dashboard from "./pages/Dashboard";
-import QuoteWorkspace from "./pages/QuoteWorkspace";
+import QuoteRouter from "./pages/QuoteRouter";
 import Catalog from "./pages/Catalog";
 import Settings from "./pages/Settings";
 import AdminPanel from "./pages/AdminPanel";
@@ -36,7 +36,7 @@ function Router() {
       
       <Route path="/quotes/:id">
         <DashboardLayout>
-          <QuoteWorkspace />
+          <QuoteRouter />
         </DashboardLayout>
       </Route>
       
