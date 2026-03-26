@@ -203,6 +203,7 @@ export const quoteLineItems = pgTable("quote_line_items", {
   phaseId: varchar("phase_id", { length: 50 }),
   category: varchar("category", { length: 100 }),
   pricingType: varchar("pricing_type", { length: 20 }).default("standard"),
+  costPrice: decimal("cost_price", { precision: 12, scale: 2 }),
 });
 
 export type QuoteLineItem = typeof quoteLineItems.$inferSelect;
