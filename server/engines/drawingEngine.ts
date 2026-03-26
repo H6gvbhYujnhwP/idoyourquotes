@@ -141,6 +141,21 @@ DEDUPLICATION:
 - Prefer the more specific/detailed version.
 - Later inputs override earlier ones for the same item.
 
+PRICING TYPE RULES — THIS IS CRITICAL:
+Every line item must have the correct pricingType. Get this wrong and the quote totals will be wrong.
+- "standard"  → one-off supply, installation, configuration, or any item charged once. USE THIS for hardware, materials, one-off labour, setup fees.
+- "monthly"   → any recurring charge billed every month: maintenance contracts, monitoring, retainers, SIM/data tariffs, per-device fees, per-user fees, subscriptions, managed services. ALWAYS use "monthly" if the evidence describes an ongoing service with a monthly cost or cadence.
+- "optional"  → add-ons or upgrades the client can choose to include or exclude. Use sparingly.
+- "annual"    → annual contracts or licences billed yearly.
+
+EXAMPLES BY SECTOR:
+- Telecoms: SIM cards with monthly tariffs → pricingType: "monthly". Hardware (routers, switches, handsets) → "standard". Installation labour → "standard". Ongoing support contract → "monthly".
+- Roofing / Construction: materials supply, scaffolding, labour → "standard". Annual maintenance inspection contract → "annual".
+- HVAC / Plumbing: equipment supply and install → "standard". Annual service contract or maintenance plan → "annual" or "monthly".
+- Solar PV / EV: equipment and install → "standard". Monitoring subscription → "monthly".
+- Fire & Security: equipment and install → "standard". Annual maintenance and monitoring contract → "annual" or "monthly".
+- If the evidence describes ongoing maintenance, support SLA, or a recurring fee even without a specific price — CREATE the line item with the correct pricingType and your best estimated UK market rate. Set estimated: true. DO NOT omit recurring items just because no price was given.
+
 Respond ONLY with valid JSON in this exact format:
 {
   "clientName": string | null,
@@ -168,24 +183,31 @@ FIELD GUIDELINES:
 
 If a field is not mentioned or cannot be determined, use null.`;
 
-    // ── Step 5: Call OpenAI ───────────────────────────────────────────────────
+    // ── Step 5: Call Claude Sonnet ────────────────────────────────────────────
     try {
-      const response = await invokeLLM({
+      const response = await invokeClaude({
+        system: systemPrompt,
+        maxTokens: 8192,
         messages: [
-          { role: "system", content: systemPrompt },
           { role: "user", content: allContent.join("\n\n") },
         ],
-        response_format: { type: "json_object" },
-        max_tokens: 1500,
       });
 
-      const content = response.choices[0]?.message?.content;
+      // Guard: if Claude hit the token limit the JSON will be truncated and unparseable
+      if (response.stopReason === "max_tokens") {
+        console.error(`[DrawingEngine] Response truncated at max_tokens — input may be too large`);
+        return this.emptyOutput("Response truncated — quote input too large for single analysis pass");
+      }
+
+      const content = response.content;
       if (!content || typeof content !== "string") {
-        return this.emptyOutput("LLM returned no content");
+        return this.emptyOutput("Claude returned no content");
       }
 
       // ── Step 6: Parse and return EngineOutput ─────────────────────────────
-      const parsed = JSON.parse(content);
+      // Strip markdown fences if Claude wrapped the JSON (defensive)
+      const cleaned = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+      const parsed = JSON.parse(cleaned);
       return {
         clientName: parsed.clientName ?? null,
         clientEmail: parsed.clientEmail ?? null,
