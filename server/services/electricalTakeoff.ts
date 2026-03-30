@@ -770,6 +770,31 @@ export async function performElectricalTakeoff(
     counts[sym.symbolCode] = (counts[sym.symbolCode] || 0) + 1;
   }
 
+  // Step 9b: Merge unknown codes (count >= 2) into counts and detectedSymbols.
+  // Previously these were captured in unknownCodeCounts but never surfaced — silently dropped.
+  // Any code found >= 2 times is almost certainly a real device symbol, not noise.
+  // We add it to counts with the correct total, and add positioned markers for the SVG overlay
+  // using the sample positions already captured in unknownCodePositions (up to 3 per code).
+  // Single-occurrence codes (count === 1) remain filtered as likely noise / title-block fragments.
+  for (const [code, uCount] of Object.entries(unknownCodeCounts)) {
+    if (uCount < 2) continue;
+    // Set the full count directly from unknownCodeCounts (positions array may be capped at 3)
+    counts[code] = uCount;
+    // Add placeholder symbols for SVG overlay — confidence 'low' renders as grey marker
+    const positions = unknownCodePositions[code] || [];
+    for (const pos of positions) {
+      detectedSymbols.push({
+        id: `sym-unk-${++symId}`,
+        symbolCode: code,
+        category: 'unknown',
+        x: pos.x,
+        y: pos.y,
+        confidence: 'low',
+        isStatusMarker: false,
+      });
+    }
+  }
+
   // Step 10: Generate questions
   const questions: TakeoffQuestion[] = [];
 

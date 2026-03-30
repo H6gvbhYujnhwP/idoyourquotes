@@ -563,14 +563,44 @@ After `updateMarkers` saves: `refetchTakeoffs()` fires in parent, local `initial
 
 ---
 
-## 22. Phase 9 — Remaining Items
+## 22. Phase 9 — Validation Session (Patrixbourne Avenue Reference Pack)
 
-The electrical workspace is now feature-complete end-to-end:
+The electrical workspace is feature-complete end-to-end:
 - Inputs ✅ — drawings, legend, scope
 - Takeoff ✅ — symbol review table, drawing viewer, include/exclude toggles
 - QDS ✅ — Spon's rates, buy-in margin, plant hire, prelims, sundries
 - Quote ✅ — line items grouped by section, inline edit, margin display, totals
 - PDF ✅ — tender submission document
+
+### Validation test
+Mitch ran the complete workspace against the Patrixbourne Avenue reference tender pack (6 drawings). Results: takeoff picked up only 3 symbol types per drawing; FAP, HOB, TR, A1, B1, C1 etc. all missing; all present rows showed "Matched" even when uncertain.
+
+### Bugs found and fixed (2026-03-30)
+
+**Bug 1 — Unknown symbols silently dropped (server/services/electricalTakeoff.ts)**
+
+Root cause: `unknownCodeCounts` (codes not in `DEFAULT_SYMBOL_DESCRIPTIONS` or `symbolMap`) was populated correctly but never merged into `counts` or `detectedSymbols`. The `// Don't drop` comment was incorrect — they were dropped. Result: FAP, HOB, TR, CD, A1, B1 and any other non-default codes produced 0 takeoff rows.
+
+Fix: After step 9 builds counts from known symbols, added step 9b that merges `unknownCodeCounts` entries with `count >= 2` into `counts` (using the correct total) and adds positioned grey markers to `detectedSymbols` for the SVG overlay. Single-occurrence codes (count === 1) remain filtered as likely noise.
+
+**Bug 2 — "Review" status never shown (client/src/pages/ElectricalWorkspace.tsx)**
+
+Root cause: `reviewCodes` Set was built from raw question IDs like `"unknown-symbol-FAP"` and `"status-marker-N"`. The test was `reviewCodes.has(code)` where `code` is `"FAP"`. String mismatch → every row showed "Matched" regardless of questions.
+
+Fix: Strip `unknown-symbol-` and `status-marker-` prefixes when building `reviewCodes` and `questionTextByCode` so bare symbol codes match correctly against `counts` keys.
+
+### Files changed
+| File | Change |
+|---|---|
+| `server/services/electricalTakeoff.ts` | Added step 9b: merge unknownCodeCounts (>= 2) into counts and detectedSymbols |
+| `client/src/pages/ElectricalWorkspace.tsx` | Strip question ID prefixes in reviewCodes and questionTextByCode builders |
+
+**Must NOT be modified:** `QuoteWorkspace.tsx`, `routers.ts`, `pdfGenerator.ts`, all other non-electrical files.
+
+### Known open items requiring further validation
+- Existing takeoffs (pre-fix) will show old counts — Mitch must delete drawings and re-upload to get corrected counts
+- A1/B1/C1/G1/H1/J1/PIR on lighting drawings: need to confirm these now surface after re-upload
+- `standardFontDataUrl` warning in pdfjs-dist: causes incomplete font decoding on some pages — may still miss some symbols on drawings with unusual fonts
 
 Remaining open items (separate track):
 - **3 known bugs (general workspace):** legend PDFs triggering takeoff, `generateDraft` not skipping reference-only inputs, unknown symbols dropped

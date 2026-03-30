@@ -351,14 +351,22 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
       const reviewCodes = new Set<string>(
         ((t.questions ?? []) as Array<{ symbolsAffected: number; question: string; id: string }>)
           .flatMap(q => {
-            // questions don't directly store codes — use symbolsAffected > 0 as proxy;
-            // the question id often matches the symbol code
-            return [q.id];
+            // Question IDs use prefixed form: "unknown-symbol-FAP", "status-marker-N"
+            // Strip known prefixes to get the bare symbol code for comparison against counts keys
+            const id = q.id;
+            if (id.startsWith('unknown-symbol-')) return [id.slice('unknown-symbol-'.length)];
+            if (id.startsWith('status-marker-')) return [id.slice('status-marker-'.length)];
+            return [id];
           })
       );
       const questionTextByCode: Record<string, string> = {};
       for (const q of (t.questions ?? []) as Array<{ id: string; question: string }>) {
-        questionTextByCode[q.id] = q.question;
+        // Key by bare symbol code (same prefix-stripping as reviewCodes above)
+        const id = q.id;
+        const key = id.startsWith('unknown-symbol-') ? id.slice('unknown-symbol-'.length)
+                  : id.startsWith('status-marker-')  ? id.slice('status-marker-'.length)
+                  : id;
+        questionTextByCode[key] = q.question;
       }
 
       for (const [code, count] of Object.entries((t.counts ?? {}) as Record<string, number>)) {
