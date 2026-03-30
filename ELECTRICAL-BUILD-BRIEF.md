@@ -685,10 +685,36 @@ No pastels, no near-whites. Every colour reads clearly against a white CAD drawi
 | `server/routers.ts` | Save `embeddedLegendSymbols` to `tenderContext.symbolMappings` after auto-takeoff + after `analyze`; add-only changes |
 | `client/src/pages/ElectricalWorkspace.tsx` | Rainbow `COLOUR_PALETTE_CLIENT` |
 
+### Validation session 5 fixes (2026-03-30)
+
+**Fix 1 — CODE/E variants show "Unknown symbol" (e.g. A1/E, D1/E)**
+
+Root cause: The auto-describe loop correctly derived descriptions (`A1/E → "IP 65 Rated LED Recessed Downlight — Emergency"`) but stored them in `allDescriptions` (local variable) only. Like the embedded legend before it, these were never persisted. `tenderContext.symbolMappings` was never updated, so the frontend saw "Unknown symbol".
+
+Fix: Added `derivedVariantSymbols: Record<string,string>` to `TakeoffResult`. The derived descriptions are now tracked in this map and merged into `embeddedLegendSymbols` on return. The router already saves `embeddedLegendSymbols` to `tenderContext.symbolMappings` — so the merged map covers both legend codes and CODE/E variants in one write. No router changes needed.
+
+**Fix 2 — Legend pair scanner grabbing bracket annotations as descriptions**
+
+Root cause: `g X  INTERMEDIATE LIGHT SWITCH` followed by `(g = DENOTES NO. OF GANGS)` — the pair scanner took the nearest text to the right of `X`, which on some line layouts was the bracket annotation `(g = DENOTES NO. OF GANGS)` rather than `INTERMEDIATE LIGHT SWITCH`.
+
+Fix: Added two exclusion rules to the candidate description filter: (1) skip any text starting with `(` — these are always parenthetical annotations, never device descriptions; (2) skip text starting with a digit — these are measurements or counts, never descriptions. The scanner now correctly picks `INTERMEDIATE LIGHT SWITCH` as the description for `X`.
+
+**Fix 3 — Switch gang-count notations counted as devices (e.g. X counted as device)**
+
+Root cause: On lighting drawings, switch symbols are annotated with gang counts in the form `2`, `2G`, `G`, `3G` etc. These appear as text tokens on the drawing very close to a switch circle. The code `X` denoting "Intermediate Light Switch" was not the issue — the pair scanner fix above handles description. The actual issue was numeric/gang tokens (`2`, `2G`, `G`) near switches being counted.
+
+Fix: Added Step 5c — gang-count notation exclusion. Before the proximity status-marker logic, any word token matching `^([0-9]+G?|G)$` found within 35px of any detected symbol is immediately flagged as `isStatusMarker: true`. Pure coordinate-proximity logic — no hardcoding of switch types or symbol meanings. Works for 1-gang, 2-gang, 3-gang, 4-gang switches from any consultant on any drawing.
+
+**Files changed — session 5**
+| File | Change |
+|---|---|
+| `server/services/electricalTakeoff.ts` | `derivedVariantSymbols` on `TakeoffResult`; tracked in auto-describe loop; merged with `embeddedLegendSymbols` on return; legend pair scanner rejects bracket + numeric annotations; Step 5c gang-count exclusion |
+
 ### Known open items
-- Existing takeoffs (pre-fix) still need re-upload to get corrected results
-- After re-upload: all legend codes should resolve as Matched, distinct colours per code
-- CD and P02 remain Review (not in the drawing legend) — Mitch to confirm if real devices or drawing refs
+- Existing takeoffs still need re-upload to pick up all fixes
+- After re-upload: A1/E and D1/E should resolve as Matched with Emergency descriptions
+- X description should now correctly read "INTERMEDIATE LIGHT SWITCH" not "(g = DENOTES NO. OF GANGS)"
+- CD and P02 remain Review — they are title block initials/revision refs, Mitch should exclude them
 - `standardFontDataUrl` warning in pdfjs-dist may still affect some drawing fonts
 
 Remaining open items (separate track):

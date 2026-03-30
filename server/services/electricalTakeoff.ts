@@ -69,6 +69,7 @@ export interface TakeoffResult {
   totalTextElements: number;
   symbolColours?: Record<string, { colour: string; shape: string; radius: number }>;
   embeddedLegendSymbols?: Record<string, string>;
+  derivedVariantSymbols?: Record<string, string>;
 }
 
 // ---- Symbol Definitions ----
@@ -658,7 +659,10 @@ export async function performElectricalTakeoff(
       if (!/^[A-Z][A-Z0-9]{0,5}$/.test(w.text)) continue;
       if (DRAWING_NOISE_WORDS.has(w.text)) continue;
 
-      // Look for first qualifying description word at same y, to the right, within 40% page width
+      // Look for the best qualifying description word at same y, to the right, within 40% page width.
+      // "Best" = nearest to the code, not a bracket annotation, not itself a code-shaped token.
+      // Bracket text like "(g = DENOTES NO. OF GANGS)" is a gang-count annotation — not a description.
+      // We prefer the nearest non-bracket text; if the nearest is a bracket we keep looking.
       let bestDesc: { text: string; x: number } | null = null;
       for (let j = 0; j < words.length; j++) {
         if (j === i) continue;
@@ -669,6 +673,8 @@ export async function performElectricalTakeoff(
         if (other.text.length < 4) continue;
         if (/^[A-Z][A-Z0-9]{0,5}$/.test(other.text)) continue; // skip codes-as-descriptions
         if (DRAWING_NOISE_WORDS.has(other.text)) continue;
+        if (other.text.startsWith('(')) continue;         // skip bracket annotations e.g. "(g = DENOTES...)"
+        if (/^[0-9]/.test(other.text)) continue;          // skip numeric annotations
         if (!bestDesc || other.x < bestDesc.x) {
           bestDesc = { text: other.text, x: other.x };
         }
@@ -795,6 +801,9 @@ export async function performElectricalTakeoff(
   // When pdfjs extraction or the word-merge pass produces "A1/E", "J/E", "B1/EM" etc.,
   // look up the base code description and pre-populate so these surface as "matched"
   // rather than "unknown / review". Generic — covers any drawing with emergency variants.
+  // Derived descriptions are tracked separately so they can be persisted to tenderContext
+  // (same path as embeddedLegendSymbols) and resolve correctly in the frontend.
+  const derivedVariantSymbols: Record<string, string> = {};
   for (const w of words) {
     const text = w.text.trim();
     if (!text.includes('/')) continue;
@@ -807,8 +816,10 @@ export async function performElectricalTakeoff(
       knownCodes.has(base) &&
       !allDescriptions[text]
     ) {
-      allDescriptions[text] = `${allDescriptions[base]} — Emergency`;
+      const desc = `${allDescriptions[base]} — Emergency`;
+      allDescriptions[text] = desc;
       knownCodes.add(text);
+      derivedVariantSymbols[text] = desc;
     }
   }
 
@@ -845,12 +856,41 @@ export async function performElectricalTakeoff(
     }
   }
 
+  // Step 5c: Gang-count notation exclusion.
+  // On lighting drawings, switch symbols are annotated with a gang count: "2", "2G", "G", "3G", etc.
+  // These appear as text tokens very close to a detected symbol.
+  // We mark them as status markers here — before step 6 proximity logic — using word positions.
+  // Rule: any word token that is purely numeric OR matches "^[0-9]+G$" OR is a single "G",
+  // found within 35px of any already-detected symbol, is a gang-count annotation.
+  // Position-driven, generic — works for any switch type on any drawing.
+  for (const w of words) {
+    const t = w.text.trim();
+    if (!/^([0-9]+G?|G)$/.test(t)) continue;  // only numeric / gang patterns
+    if (!inArea(w.x, w.y)) continue;
+    // Check proximity to any detected symbol
+    for (const sym of detectedSymbols) {
+      const dist = Math.sqrt((w.x - sym.x) ** 2 + (w.y - sym.y) ** 2);
+      if (dist < 35) {
+        // Add as a pseudo-symbol flagged as status marker so it never reaches counts
+        detectedSymbols.push({
+          id: `sym-gang-${++symId}`,
+          symbolCode: t,
+          category: 'unknown',
+          x: w.x, y: w.y,
+          confidence: 'low',
+          isStatusMarker: true,
+        });
+        break;
+      }
+    }
+  }
+
   // Step 6: Proximity-based status marker detection
   // A single-char code found very close (<25px) to another symbol is likely a status marker
   // (e.g. "N" next to "J" = "New J fitting", not a separate N luminaire)
   // This is now generalised — not hardcoded to just "N"
-  const singleCharCodes = detectedSymbols.filter(s => s.symbolCode.length === 1);
-  const multiCharCodes = detectedSymbols.filter(s => s.symbolCode.length > 1);
+  const singleCharCodes = detectedSymbols.filter(s => s.symbolCode.length === 1 && !s.isStatusMarker);
+  const multiCharCodes = detectedSymbols.filter(s => s.symbolCode.length > 1 && !s.isStatusMarker);
   let statusMarkerCount = 0;
   const statusMarkersByCode: Record<string, number> = {};
 
@@ -1039,7 +1079,13 @@ export async function performElectricalTakeoff(
     hasTextLayer: true,
     totalTextElements: words.length,
     symbolColours,
-    embeddedLegendSymbols: Object.keys(embeddedLegendSymbols).length > 0 ? embeddedLegendSymbols : undefined,
+    // Merge embedded legend + derived variants into one object for tenderContext persistence.
+    // The router saves this single map, so both legend codes and CODE/E variants resolve correctly.
+    embeddedLegendSymbols: (() => {
+      const merged = { ...embeddedLegendSymbols, ...derivedVariantSymbols };
+      return Object.keys(merged).length > 0 ? merged : undefined;
+    })(),
+    derivedVariantSymbols: Object.keys(derivedVariantSymbols).length > 0 ? derivedVariantSymbols : undefined,
   };
 }
 
