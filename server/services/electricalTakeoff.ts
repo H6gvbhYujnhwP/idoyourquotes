@@ -179,30 +179,30 @@ export const SYMBOL_DESCRIPTIONS: Record<string, string> = DEFAULT_SYMBOL_DESCRI
 // All other codes get a deterministic colour derived from the code string.
 // Same code always maps to the same colour — no randomness at runtime.
 
-// Rainbow palette — maximally distinct, evenly spaced around the hue wheel.
-// All colours are fully saturated and bright — visible on light and dark backgrounds.
+// Option A — bold primary palette. All mid-brightness, fully saturated.
+// Visible on white drawing backgrounds. No pastels, no near-whites.
 // Must stay in sync with COLOUR_PALETTE_CLIENT in ElectricalWorkspace.tsx.
 const COLOUR_PALETTE = [
   '#FF0000', // red
-  '#FF7700', // orange
-  '#FFEE00', // yellow
-  '#66FF00', // lime
-  '#00CC44', // green
-  '#00FFCC', // mint
-  '#00AAFF', // sky blue
-  '#0044FF', // blue
-  '#7700FF', // violet
-  '#FF00CC', // magenta
-  '#FF0066', // hot pink
-  '#FF6600', // deep orange
-  '#CCFF00', // chartreuse
-  '#00FF88', // spring green
-  '#00DDFF', // cyan
-  '#4400FF', // indigo
-  '#AA00FF', // purple
-  '#FF0099', // deep pink
-  '#FF8800', // amber
-  '#00FF44', // bright green
+  '#FF6600', // orange
+  '#CC9900', // gold
+  '#00AA00', // green
+  '#0066FF', // blue
+  '#9900CC', // violet
+  '#FF0099', // hot pink
+  '#00AAAA', // teal
+  '#FF3300', // crimson
+  '#0099FF', // sky
+  '#CC3300', // brick
+  '#006633', // forest
+  '#6600FF', // purple
+  '#FF6699', // rose
+  '#009966', // emerald
+  '#CC6600', // copper
+  '#3300CC', // indigo
+  '#FF0044', // scarlet
+  '#00CC66', // mint
+  '#FF9900' // amber
 ];
 
 function codeToColour(code: string): string {

@@ -659,9 +659,24 @@ Root cause: `performElectricalTakeoff` correctly read the embedded legend (X, A1
 
 Fix: Added `embeddedLegendSymbols?: Record<string, string>` to `TakeoffResult`. `performElectricalTakeoff` now returns the detected embedded legend. In `routers.ts`, both the auto-takeoff path and the manual `analyze` path now save these to `tenderContext.symbolMappings` (merging with any existing entries from an uploaded legend) immediately after `createElectricalTakeoff`. On next `getFull` the client receives them in `fullQuote.tenderContext.symbolMappings` and the description column resolves correctly.
 
-**Bug G (revised) — Colours not distinct enough**
+**Bug G (final) — Colours not distinct enough / invisible on white**
 
-The previous palette had some similar shades (greens, blues). Replaced with a proper rainbow palette: 20 colours evenly spaced around the hue wheel — red, orange, yellow, lime, green, mint, sky blue, blue, violet, magenta, hot pink, deep orange, chartreuse, spring green, cyan, indigo, purple, deep pink, amber, bright green. Maximum perceptual separation. Both server (`COLOUR_PALETTE`) and client (`COLOUR_PALETTE_CLIENT`) updated in sync.
+Previous rainbow palette contained near-white colours (yellow `#FFEE00`, lime `#66FF00`, cyan `#00FFCC`, mint `#00FFCC`) that are invisible on white drawing backgrounds. Replaced with Option A — 20 bold primary colours, all mid-brightness and fully saturated, chosen specifically for visibility on white:
+
+| # | Hex | Name | | # | Hex | Name |
+|---|---|---|---|---|---|---|
+| 1 | `#FF0000` | Red | | 11 | `#CC3300` | Brick |
+| 2 | `#FF6600` | Orange | | 12 | `#006633` | Forest |
+| 3 | `#CC9900` | Gold | | 13 | `#6600FF` | Purple |
+| 4 | `#00AA00` | Green | | 14 | `#FF6699` | Rose |
+| 5 | `#0066FF` | Blue | | 15 | `#009966` | Emerald |
+| 6 | `#9900CC` | Violet | | 16 | `#CC6600` | Copper |
+| 7 | `#FF0099` | Hot pink | | 17 | `#3300CC` | Indigo |
+| 8 | `#00AAAA` | Teal | | 18 | `#FF0044` | Scarlet |
+| 9 | `#FF3300` | Crimson | | 19 | `#00CC66` | Mint |
+| 10 | `#0099FF` | Sky | | 20 | `#FF9900` | Amber |
+
+No pastels, no near-whites. Every colour reads clearly against a white CAD drawing. Both `COLOUR_PALETTE` (server, `electricalTakeoff.ts`) and `COLOUR_PALETTE_CLIENT` (client, `ElectricalWorkspace.tsx`) updated in sync. Pure frontend change — no re-upload required, colours recompute at render time from stored counts.
 
 **Files changed — session 4**
 | File | Change |
