@@ -597,9 +597,30 @@ Fix: Strip `unknown-symbol-` and `status-marker-` prefixes when building `review
 
 **Must NOT be modified:** `QuoteWorkspace.tsx`, `routers.ts`, `pdfGenerator.ts`, all other non-electrical files.
 
+### Validation session 2 fixes (2026-03-30)
+
+**Bug C — All marker circles grey (server/services/takeoffMarkup.ts + electricalTakeoff.ts)**
+
+Root cause: `SYMBOL_STYLES` only defines colours for ~20 hardcoded default codes (J, JE, N, AD etc.). Every other code — FAP, HOB, A1, B1, C1, PIR etc. — fell through to the `|| { colour: '#888888' }` fallback. Same in the client viewer via the same `SYMBOL_STYLES` table.
+
+Fix: Added `COLOUR_PALETTE` (20 distinct vivid colours) + deterministic `codeToColour(code)` hash function + exported `computeSymbolStyles(codes[])` to `electricalTakeoff.ts`. `takeoffMarkup.ts` now uses `result.symbolColours ?? computeSymbolStyles(allCodes)` for both SVG overlay and markup data — all codes get a distinct colour. Client computes a matching `allSymbolStyles` from actual takeoff counts using the same palette and hash, passed directly to `ElectricalDrawingViewer` instead of the static `symbolStyles` prop from the DB response.
+
+**Bug D — A1 count inflated (e.g. 22 A1 where 3 expected) (server/services/electricalTakeoff.ts)**
+
+Root cause: pdfjs-dist splits `A1/E` (emergency downlight) into two text elements: `A1` and `/E`. The `/E` was correctly filtered (starts with slash) but `A1` passed through as a normal A1 count — so every emergency fitting on a drawing also added a spurious A1 count.
+
+Fix: Added a word-merging pass immediately after pdfjs extraction. Any word immediately followed by a `/`-prefixed word at the same y-position with negligible x-gap is merged into a single compound token: `A1` + `/E` → `A1/E`. Generic — handles any CODE/SUFFIX convention, not just /E. Also added auto-description for CODE/E variants: `A1/E` is pre-populated as `${A1 description} — Emergency` so these surface as Matched rows rather than Review.
+
+**Files changed — session 2**
+| File | Change |
+|---|---|
+| `server/services/electricalTakeoff.ts` | `symbolColours` on `TakeoffResult` interface; `COLOUR_PALETTE` + `codeToColour` + exported `computeSymbolStyles`; word-merge pass for CODE/SUFFIX tokens; auto-describe CODE/E variants; `symbolColours` added to return |
+| `server/services/takeoffMarkup.ts` | Import `computeSymbolStyles`; both `generateSvgOverlay` and `generateMarkupData` use dynamic styles instead of hardcoded `SYMBOL_STYLES` |
+| `client/src/pages/ElectricalWorkspace.tsx` | Compute `allSymbolStyles` from actual takeoff codes using client-side `COLOUR_PALETTE` + hash; pass to `ElectricalDrawingViewer` instead of `viewingTakeoff.symbolStyles` |
+
 ### Known open items requiring further validation
-- Existing takeoffs (pre-fix) will show old counts — Mitch must delete drawings and re-upload to get corrected counts
-- A1/B1/C1/G1/H1/J1/PIR on lighting drawings: need to confirm these now surface after re-upload
+- Existing takeoffs (pre-fix) will show old counts/colours — Mitch must delete drawings and re-upload to get corrected results
+- A1/E etc. will now merge correctly on re-upload — A1 count should drop to real install count only
 - `standardFontDataUrl` warning in pdfjs-dist: causes incomplete font decoding on some pages — may still miss some symbols on drawings with unusual fonts
 
 Remaining open items (separate track):

@@ -5,7 +5,7 @@
  */
 
 import type { TakeoffResult } from './electricalTakeoff';
-import { SYMBOL_STYLES, SYMBOL_DESCRIPTIONS } from './electricalTakeoff';
+import { SYMBOL_STYLES, SYMBOL_DESCRIPTIONS, computeSymbolStyles } from './electricalTakeoff';
 
 /**
  * Generate an SVG overlay that sits on top of the PDF in the browser.
@@ -17,10 +17,14 @@ export function generateSvgOverlay(result: TakeoffResult): string {
   if (!pageWidth || !pageHeight) return '';
   
   const activeSymbols = symbols.filter(s => !s.isStatusMarker);
+  // Use result.symbolColours if present (generated at takeoff time), otherwise compute now.
+  // This ensures any symbol code — known or unknown — gets a distinct colour, not grey.
+  const allCodes = [...new Set(activeSymbols.map(s => s.symbolCode))];
+  const styles = result.symbolColours ?? computeSymbolStyles(allCodes);
   const markers: string[] = [];
   
   for (const sym of activeSymbols) {
-    const style = SYMBOL_STYLES[sym.symbolCode] || { colour: '#888888', shape: 'circle', radius: 20 };
+    const style = styles[sym.symbolCode] ?? computeSymbolStyles([sym.symbolCode])[sym.symbolCode];
     const cx = sym.x;
     const cy = sym.y;
     const r = style.radius / 4; // Scale for PDF coordinate space
@@ -49,7 +53,7 @@ export function generateSvgOverlay(result: TakeoffResult): string {
   const legendHeight = 50 + entries.length * 20 + 25;
   
   const legendItems = entries.map(([code, count], i) => {
-    const style = SYMBOL_STYLES[code] || { colour: '#888888' };
+    const style = styles[code] ?? computeSymbolStyles([code])[code];
     const y = legendY + 40 + i * 20;
     return `<rect x="${legendX + 8}" y="${y}" width="12" height="12" fill="none" stroke="${style.colour}" stroke-width="2" rx="1"/>
       <text x="${legendX + 28}" y="${y + 10}" font-size="10" font-family="Arial,sans-serif" fill="#333">${code}: ${count} — ${SYMBOL_DESCRIPTIONS[code] || ''}</text>`;
@@ -79,21 +83,19 @@ export function generateSvgOverlay(result: TakeoffResult): string {
  */
 export function generateMarkupData(result: TakeoffResult) {
   const activeSymbols = result.symbols.filter(s => !s.isStatusMarker);
+  const allCodes = [...new Set(activeSymbols.map(s => s.symbolCode))];
+  const styles = result.symbolColours ?? computeSymbolStyles(allCodes);
   
   return {
-    markers: activeSymbols.map(sym => ({
-      x: sym.x,
-      y: sym.y,
-      symbolCode: sym.symbolCode,
-      colour: (SYMBOL_STYLES[sym.symbolCode] || { colour: '#888888' }).colour,
-      shape: (SYMBOL_STYLES[sym.symbolCode] || { shape: 'circle' }).shape,
-      radius: (SYMBOL_STYLES[sym.symbolCode] || { radius: 20 }).radius,
-    })),
+    markers: activeSymbols.map(sym => {
+      const s = styles[sym.symbolCode] ?? computeSymbolStyles([sym.symbolCode])[sym.symbolCode];
+      return { x: sym.x, y: sym.y, symbolCode: sym.symbolCode, colour: s.colour, shape: s.shape, radius: s.radius };
+    }),
     legend: Object.entries(result.counts)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([code, count]) => ({
         symbolCode: code,
-        colour: (SYMBOL_STYLES[code] || { colour: '#888888' }).colour,
+        colour: (styles[code] ?? computeSymbolStyles([code])[code]).colour,
         count,
         description: SYMBOL_DESCRIPTIONS[code] || code,
       })),

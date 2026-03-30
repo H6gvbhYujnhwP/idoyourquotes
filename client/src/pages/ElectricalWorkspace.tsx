@@ -184,6 +184,56 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
     (takeoffList?.[0] as any)?.symbolDescriptions ?? {};
   const allDescriptions: Record<string, string> = { ...baseDescriptions, ...legendDescriptions };
 
+  // Dynamic symbol styles: compute a distinct colour for every code found across all takeoffs.
+  // Codes in the static SYMBOL_STYLES table keep their existing colour.
+  // Unknown codes get a deterministic generated colour — never grey.
+  // This is a pure client-side computation matching the server palette in electricalTakeoff.ts.
+  const COLOUR_PALETTE_CLIENT = [
+    '#E63946', '#2A9D8F', '#E9C46A', '#F4A261', '#264653',
+    '#8338EC', '#06D6A0', '#FFB703', '#FB8500', '#5C6BC0',
+    '#D62828', '#457B9D', '#81B29A', '#F2CC8F', '#9B2226',
+    '#0077B6', '#48CAE4', '#BC4749', '#386641', '#A7C957',
+  ];
+  const STATIC_STYLES_CLIENT: Record<string, { colour: string; shape: string; radius: number }> = {
+    'J':     { colour: '#00AA00', shape: 'circle', radius: 28 },
+    'JE':    { colour: '#FF8200', shape: 'circle', radius: 32 },
+    'N':     { colour: '#0050FF', shape: 'circle', radius: 22 },
+    'AD':    { colour: '#0088CC', shape: 'square', radius: 26 },
+    'ADE':   { colour: '#CC6600', shape: 'square', radius: 28 },
+    'EX':    { colour: '#00BBBB', shape: 'circle', radius: 24 },
+    'SO':    { colour: '#DD0000', shape: 'diamond', radius: 26 },
+    'CO':    { colour: '#CC0044', shape: 'diamond', radius: 24 },
+    'HF':    { colour: '#AA0066', shape: 'diamond', radius: 24 },
+    'P1':    { colour: '#9600D2', shape: 'square', radius: 22 },
+    'P2':    { colour: '#9600D2', shape: 'square', radius: 22 },
+    'P3':    { colour: '#9600D2', shape: 'square', radius: 22 },
+    'P4':    { colour: '#9600D2', shape: 'square', radius: 24 },
+    'LCM':   { colour: '#B4B400', shape: 'square', radius: 20 },
+    'EXIT1': { colour: '#00AAAA', shape: 'square', radius: 30 },
+    'FARP':  { colour: '#DD0000', shape: 'square', radius: 28 },
+    'VESDA': { colour: '#DD0000', shape: 'square', radius: 28 },
+  };
+  const allSymbolStyles = (() => {
+    const allCodes = new Set<string>();
+    for (const t of (takeoffList ?? [])) {
+      for (const code of Object.keys((t.counts ?? {}) as Record<string, number>)) {
+        allCodes.add(code);
+      }
+    }
+    const result: Record<string, { colour: string; shape: string; radius: number }> = {};
+    for (const code of allCodes) {
+      if (STATIC_STYLES_CLIENT[code]) {
+        result[code] = STATIC_STYLES_CLIENT[code];
+      } else {
+        let hash = 0;
+        for (let i = 0; i < code.length; i++) hash = (hash * 31 + code.charCodeAt(i)) & 0xFFFFFF;
+        const colour = COLOUR_PALETTE_CLIENT[Math.abs(hash) % COLOUR_PALETTE_CLIENT.length];
+        result[code] = { colour, shape: 'circle', radius: 20 };
+      }
+    }
+    return result;
+  })();
+
   // Detect whether drawings still have no takeoff (auto-takeoff still running)
   useEffect(() => {
     if (!takeoffList || !drawings.length) return;
@@ -561,7 +611,7 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
         symbols={(viewingTakeoff.symbols ?? []) as Array<{id:string;symbolCode:string;category:string;x:number;y:number;confidence:string;isStatusMarker:boolean;nearbySymbol?:string}>}
         pageWidth={parseFloat(String(viewingTakeoff.pageWidth)) || 2384}
         pageHeight={parseFloat(String(viewingTakeoff.pageHeight)) || 1684}
-        symbolStyles={((viewingTakeoff as any).symbolStyles ?? {}) as Record<string,{colour:string;shape:string;radius:number}>}
+        symbolStyles={allSymbolStyles}
         symbolDescriptions={allDescriptions}
         initialExcludedCodes={new Set(localExcluded[viewingTakeoff.id] ?? getExcludedCodes(viewingTakeoff))}
         onExcludedCodesChange={handleViewerExcludedCodesChange}

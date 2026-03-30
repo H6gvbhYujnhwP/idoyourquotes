@@ -67,6 +67,7 @@ export interface TakeoffResult {
   dbCircuits: string[];
   hasTextLayer: boolean;
   totalTextElements: number;
+  symbolColours?: Record<string, { colour: string; shape: string; radius: number }>;
 }
 
 // ---- Symbol Definitions ----
@@ -170,6 +171,39 @@ export const SYMBOL_STYLES: Record<string, { colour: string; shape: string; radi
 // Backwards-compat export — routers.ts spreads this onto takeoff responses.
 // Now delegates to DEFAULT_SYMBOL_DESCRIPTIONS so it stays in sync.
 export const SYMBOL_DESCRIPTIONS: Record<string, string> = DEFAULT_SYMBOL_DESCRIPTIONS;
+
+// ---- Dynamic Symbol Colouring ----
+// Generates distinct marker colours for any symbol code, including unknown ones.
+// Codes in SYMBOL_STYLES get their existing colour (backwards compat).
+// All other codes get a deterministic colour derived from the code string.
+// Same code always maps to the same colour — no randomness at runtime.
+
+const COLOUR_PALETTE = [
+  '#E63946', '#2A9D8F', '#E9C46A', '#F4A261', '#264653',
+  '#8338EC', '#06D6A0', '#FFB703', '#FB8500', '#5C6BC0',
+  '#D62828', '#457B9D', '#81B29A', '#F2CC8F', '#9B2226',
+  '#0077B6', '#48CAE4', '#BC4749', '#386641', '#A7C957',
+];
+
+function codeToColour(code: string): string {
+  let hash = 0;
+  for (let i = 0; i < code.length; i++) hash = (hash * 31 + code.charCodeAt(i)) & 0xFFFFFF;
+  return COLOUR_PALETTE[Math.abs(hash) % COLOUR_PALETTE.length];
+}
+
+/** Returns a complete style map for the given codes.
+ *  Known codes reuse their existing SYMBOL_STYLES entry.
+ *  Unknown codes get a deterministic generated colour with circle/20 defaults.
+ *  Used by takeoffMarkup.ts (server SVG) and ElectricalWorkspace.tsx (client chips). */
+export function computeSymbolStyles(
+  codes: string[]
+): Record<string, { colour: string; shape: string; radius: number }> {
+  const result: Record<string, { colour: string; shape: string; radius: number }> = {};
+  for (const code of codes) {
+    result[code] = SYMBOL_STYLES[code] ?? { colour: codeToColour(code), shape: 'circle', radius: 20 };
+  }
+  return result;
+}
 
 // ---- PDF Text Extraction ----
 
@@ -497,6 +531,36 @@ export async function performElectricalTakeoff(
     pageWidth = extracted.pageWidth;
     pageHeight = extracted.pageHeight;
     console.log(`[Electrical Takeoff] Extracted ${chars.length} chars, ${words.length} words from ${pageWidth}x${pageHeight} page`);
+
+    // Merge adjacent CODE + /SUFFIX word pairs.
+    // pdfjs-dist often splits a single CAD label like "A1/E" into two separate text
+    // elements: "A1" and "/E". Left unmerged, "A1" would be counted as a standard
+    // A1 fitting for every emergency A1/E on the drawing — inflating that count.
+    // Generic fix: any word immediately followed by a "/"-prefixed word at the same
+    // y-position with negligible x-gap is merged into a single compound token.
+    // e.g. "A1" + "/E" → "A1/E",  "J" + "/E" → "J/E",  "B1" + "/EM" → "B1/EM"
+    // DB circuit refs ("DB" + "/AP") are already filtered downstream by the DB check.
+    {
+      const merged: ExtractedWord[] = [];
+      const skip = new Set<number>();
+      for (let i = 0; i < words.length; i++) {
+        if (skip.has(i)) continue;
+        const w = words[i];
+        const next = words[i + 1];
+        if (
+          next &&
+          next.text.startsWith('/') &&
+          Math.abs(next.y - w.y) < 5 &&
+          (next.x - (w.x + w.width)) < w.height * 1.5
+        ) {
+          merged.push({ text: w.text + next.text, x: w.x, y: w.y, width: w.width + next.width, height: w.height });
+          skip.add(i + 1);
+        } else {
+          merged.push(w);
+        }
+      }
+      words = merged;
+    }
   } catch (err: any) {
     console.error(`[Electrical Takeoff] pdfjs extraction failed:`, err.message);
     return {
@@ -662,12 +726,33 @@ export async function performElectricalTakeoff(
   // Example positions for unknown codes (for questions context)
   const unknownCodePositions: Record<string, Array<{x: number; y: number}>> = {};
 
+  // Auto-describe CODE/E (and similar) variants whose base code is already known.
+  // When pdfjs extraction or the word-merge pass produces "A1/E", "J/E", "B1/EM" etc.,
+  // look up the base code description and pre-populate so these surface as "matched"
+  // rather than "unknown / review". Generic — covers any drawing with emergency variants.
+  for (const w of words) {
+    const text = w.text.trim();
+    if (!text.includes('/')) continue;
+    const slashIdx = text.indexOf('/');
+    const base = text.slice(0, slashIdx);
+    const suffix = text.slice(slashIdx + 1);
+    if (
+      /^[A-Z][A-Z0-9]*$/.test(base) &&
+      /^E[A-Z0-9]*$/.test(suffix) &&   // suffix starts with E — emergency convention
+      knownCodes.has(base) &&
+      !allDescriptions[text]
+    ) {
+      allDescriptions[text] = `${allDescriptions[base]} — Emergency`;
+      knownCodes.add(text);
+    }
+  }
+
   for (const w of words) {
     const text = w.text.trim();
 
-    // Must be short, uppercase-ish, alphanumeric — symbol code shape
-    if (text.length < 1 || text.length > 8) continue;
-    if (!/^[A-Z][A-Z0-9]*$/.test(text)) continue;
+    // Must be short, uppercase-ish, alphanumeric — or compound CODE/SUFFIX form (e.g. A1/E)
+    if (text.length < 1 || text.length > 10) continue;
+    if (!/^[A-Z][A-Z0-9]*(?:\/[A-Z][A-Z0-9]*)?(?:\/[A-Z][A-Z0-9]*)?$/.test(text)) continue;
     if (!inArea(w.x, w.y)) continue;
     if (compoundCodes.has(text)) continue;         // already handled above
     if (DRAWING_NOISE_WORDS.has(text)) continue;  // known non-symbol word
@@ -873,6 +958,10 @@ export async function performElectricalTakeoff(
     : '';
   console.log(`[Electrical Takeoff] Complete: ${symbolSummary}${unknownSummary}`);
   
+  // Compute dynamic symbol colours: known codes use SYMBOL_STYLES, unknown codes
+  // get a deterministic generated colour from COLOUR_PALETTE via codeToColour().
+  const symbolColours = computeSymbolStyles(Object.keys(counts));
+
   return {
     drawingRef,
     pageWidth,
@@ -884,6 +973,7 @@ export async function performElectricalTakeoff(
     dbCircuits: dbCircuits.sort(),
     hasTextLayer: true,
     totalTextElements: words.length,
+    symbolColours,
   };
 }
 
