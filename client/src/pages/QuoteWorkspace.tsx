@@ -2884,17 +2884,10 @@ export default function QuoteWorkspace() {
                     </tbody>
                   </table>
 
-                  {/* Total Margin Summary — internal only */}
+                  {/* Total Margin Summary — internal only, broken down by pricingType */}
                   {(() => {
-                    let totalRevenue = 0;
-                    let totalCost = 0;
-                    let matchedItems = 0;
-                    (lineItems || []).forEach((item: LineItem) => {
-                      const rate = parseFloat(item.rate || "0");
-                      const qty = parseFloat(item.quantity || "0");
-                      if (rate <= 0 || qty <= 0) return;
-                      totalRevenue += rate * qty;
-                      // Prefer costPrice stored on the line item, fall back to catalog match
+                    // Helper: resolve costPrice for a line item (stored value first, catalog fallback)
+                    const resolveCostPrice = (item: LineItem): number | null => {
                       let costPrice = item.costPrice ? parseFloat(item.costPrice) : null;
                       if (!costPrice || costPrice <= 0) {
                         const desc = (item.description || "").toLowerCase();
@@ -2904,23 +2897,70 @@ export default function QuoteWorkspace() {
                         });
                         costPrice = catalogMatch?.costPrice ? parseFloat(catalogMatch.costPrice) : null;
                       }
-                      if (costPrice && costPrice > 0) {
-                        totalCost += costPrice * qty;
-                        matchedItems++;
-                      }
+                      return costPrice && costPrice > 0 ? costPrice : null;
+                    };
+
+                    // Accumulate margin per pricingType
+                    const buckets: Record<string, { revenue: number; cost: number; count: number }> = {
+                      standard: { revenue: 0, cost: 0, count: 0 },
+                      monthly:  { revenue: 0, cost: 0, count: 0 },
+                      annual:   { revenue: 0, cost: 0, count: 0 },
+                      optional: { revenue: 0, cost: 0, count: 0 },
+                    };
+
+                    (lineItems || []).forEach((item: LineItem) => {
+                      const rate = parseFloat(item.rate || "0");
+                      const qty = parseFloat(item.quantity || "0");
+                      if (rate <= 0 || qty <= 0) return;
+                      const costPrice = resolveCostPrice(item);
+                      if (!costPrice) return;
+                      const type = (item as any).pricingType || "standard";
+                      const bucket = buckets[type] ?? buckets.standard;
+                      bucket.revenue += rate * qty;
+                      bucket.cost += costPrice * qty;
+                      bucket.count++;
                     });
-                    if (matchedItems === 0) return null;
-                    const totalMargin = totalRevenue - totalCost;
-                    const marginPct = totalRevenue > 0 ? (totalMargin / totalRevenue * 100).toFixed(1) : "0";
+
+                    const totalCount = Object.values(buckets).reduce((s, b) => s + b.count, 0);
+                    if (totalCount === 0) return null;
+
+                    const bucketConfig = [
+                      { key: "standard", label: "One-off margin",          suffix: "",       bg: "#f0fdf4", color: "#15803d" },
+                      { key: "monthly",  label: "Monthly recurring margin", suffix: "/month", bg: "#f0fdfa", color: "#0d9488" },
+                      { key: "annual",   label: "Annual recurring margin",  suffix: "/year",  bg: "#fef9ee", color: "#b45309" },
+                      { key: "optional", label: "Optional items margin",    suffix: "",       bg: "#faf5ff", color: "#7c3aed" },
+                    ];
+
+                    const totalRevenue = Object.values(buckets).reduce((s, b) => s + b.revenue, 0);
+                    const totalCost    = Object.values(buckets).reduce((s, b) => s + b.cost, 0);
+                    const totalMargin  = totalRevenue - totalCost;
+                    const totalPct     = totalRevenue > 0 ? (totalMargin / totalRevenue * 100).toFixed(1) : "0";
+
                     return (
-                      <div className="flex items-center justify-end gap-4 px-3 py-2 bg-green-50 border-t border-green-200 rounded-b-lg">
-                        <span className="text-xs text-muted-foreground">
-                          Margin on {matchedItems} priced item{matchedItems !== 1 ? "s" : ""}
-                        </span>
-                        <span className="text-sm font-bold text-green-700">
-                          Total Margin: £{totalMargin.toFixed(2)} ({marginPct}%)
-                        </span>
-                        <span className="text-[9px] italic text-muted-foreground">Internal only — not on PDF</span>
+                      <div className="border-t border-green-200 rounded-b-lg overflow-hidden">
+                        {bucketConfig.map(({ key, label, suffix, bg, color }) => {
+                          const b = buckets[key];
+                          if (b.count === 0) return null;
+                          const margin = b.revenue - b.cost;
+                          const pct = b.revenue > 0 ? (margin / b.revenue * 100).toFixed(0) : "0";
+                          return (
+                            <div key={key} className="flex items-center justify-between gap-4 px-3 py-1" style={{ backgroundColor: bg }}>
+                              <span className="text-xs" style={{ color }}>{label}</span>
+                              <span className="text-xs font-semibold" style={{ color }}>
+                                £{margin.toFixed(2)}{suffix} ({pct}%)
+                              </span>
+                            </div>
+                          );
+                        })}
+                        <div className="flex items-center justify-end gap-4 px-3 py-2 bg-green-50">
+                          <span className="text-xs text-muted-foreground">
+                            Total margin on {totalCount} priced item{totalCount !== 1 ? "s" : ""}
+                          </span>
+                          <span className="text-sm font-bold text-green-700">
+                            £{totalMargin.toFixed(2)} ({totalPct}%)
+                          </span>
+                          <span className="text-[9px] italic text-muted-foreground">Internal only — not on PDF</span>
+                        </div>
                       </div>
                     );
                   })()}
