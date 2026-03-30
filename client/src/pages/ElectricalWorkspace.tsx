@@ -24,6 +24,7 @@ import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
@@ -31,6 +32,7 @@ import {
   FileText, File, X, CheckCircle, AlertCircle, Clock,
   Mail, BookOpen, RefreshCw, RotateCcw, AlertTriangle,
   ToggleLeft, ToggleRight, Eye, Printer, Info,
+  Sparkles, Trash2, Plus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { QuoteInput } from "@shared/schema";
@@ -523,7 +525,12 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
             );
           })()}
           {(activeTab === "quote") && (
-            <PlaceholderTab tab={activeTab} quoteId={quoteId} />
+            <ElectricalQuoteTab
+              quoteId={quoteId}
+              quote={quote}
+              lineItems={fullQuote.lineItems ?? []}
+              refetch={refetch}
+            />
           )}
           {activeTab === "pdf" && (
             <ElectricalPDFTab
@@ -891,6 +898,324 @@ function TakeoffTab({
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Electrical Quote Tab ─────────────────────────────────────────────────────
+
+interface ElectricalQuoteTabProps {
+  quoteId: number;
+  quote: any;
+  lineItems: any[];
+  refetch: () => void;
+}
+
+// Line item section classifier — mirrors pdfGenerator.ts rules exactly
+function classifyLineItem(item: any): string {
+  const d: string = item.description ?? "";
+  const u: string = item.unit ?? "";
+  if (u === "note")    return "note";
+  if (u === "circuit") return "firstPoints";
+  if (/^Phase [123]\s*[—–\-]/.test(d))  return "labour";
+  if (d.endsWith("— containment"))       return "containment";
+  if (d.endsWith("— cabling"))           return "cabling";
+  if (/ day\(s\)| week\(s\)/.test(d))    return "plantHire";
+  if (d.startsWith("Sundries allowance")) return "sundries";
+  const rate = Number(item.rate) || 0;
+  const qty  = Number(item.quantity) || 0;
+  // Prelims: items that aren't supply but have a cost — catch-all after supply patterns
+  if (d.startsWith("[") || d.endsWith("— supply")) return "supply";
+  if (rate > 0 && qty > 0) return "prelims";
+  return "supply";
+}
+
+const SECTION_ORDER = ["supply", "containment", "cabling", "labour", "note", "firstPoints", "plantHire", "prelims", "sundries"] as const;
+const SECTION_LABELS: Record<string, string> = {
+  supply:      "Electrical Installation",
+  containment: "Containment",
+  cabling:     "Cabling",
+  labour:      "Labour",
+  note:        "Programme",
+  firstPoints: "First Points",
+  plantHire:   "Plant & Hire",
+  prelims:     "Preliminaries",
+  sundries:    "Sundries",
+};
+
+function fmt2(n: number) {
+  return n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function ElectricalQuoteTab({ quoteId, quote, lineItems, refetch }: ElectricalQuoteTabProps) {
+  const [editingItemId,  setEditingItemId]  = useState<number | null>(null);
+  const [editingField,   setEditingField]   = useState<string | null>(null);
+  const [editValue,      setEditValue]      = useState("");
+  const [isGenerating,   setIsGenerating]   = useState(false);
+
+  const generateDraft = trpc.ai.generateDraft.useMutation({
+    onSuccess: () => {
+      toast.success("Draft generated — line items ready.");
+      setIsGenerating(false);
+      refetch();
+    },
+    onError: (e) => {
+      toast.error("Draft generation failed: " + e.message);
+      setIsGenerating(false);
+    },
+  });
+
+  const deleteLineItem = trpc.lineItems.delete.useMutation({
+    onSuccess: () => refetch(),
+    onError:   (e) => toast.error("Failed to delete: " + e.message),
+  });
+
+  const updateLineItem = trpc.lineItems.update.useMutation({
+    onSuccess: () => refetch(),
+    onError:   (e) => toast.error("Failed to update: " + e.message),
+  });
+
+  const handleGenerateDraft = () => {
+    if (lineItems.length > 0) {
+      if (!window.confirm("This will replace all existing line items. Continue?")) return;
+    }
+    setIsGenerating(true);
+    generateDraft.mutate({ quoteId });
+  };
+
+  const startEdit = (id: number, field: string, val: string) => {
+    setEditingItemId(id); setEditingField(field); setEditValue(val ?? "");
+  };
+  const saveEdit = (id: number, field: string) => {
+    updateLineItem.mutate({ id, quoteId, [field]: editValue });
+    setEditingItemId(null); setEditingField(null); setEditValue("");
+  };
+  const cancelEdit = () => { setEditingItemId(null); setEditingField(null); setEditValue(""); };
+  const onKeyDown = (e: React.KeyboardEvent, id: number, field: string) => {
+    if (e.key === "Enter")  { e.preventDefault(); saveEdit(id, field); }
+    if (e.key === "Escape") cancelEdit();
+  };
+
+  // Group items by section
+  const grouped = new Map<string, any[]>();
+  for (const s of SECTION_ORDER) grouped.set(s, []);
+  for (const item of lineItems) {
+    const sec = classifyLineItem(item);
+    (grouped.get(sec) ?? grouped.get("supply")!).push(item);
+  }
+
+  // Totals
+  const sectionTotal = (keys: string[]) =>
+    keys.flatMap(k => grouped.get(k) ?? [])
+        .reduce((s, i) => s + (Number(i.total) || Number(i.quantity) * Number(i.rate) || 0), 0);
+
+  const supplyTotal   = sectionTotal(["supply"]);
+  const containTotal  = sectionTotal(["containment"]);
+  const cablingTotal  = sectionTotal(["cabling"]);
+  const labourTotal   = sectionTotal(["labour"]);
+  const fpTotal       = sectionTotal(["firstPoints"]);
+  const plantTotal    = sectionTotal(["plantHire"]);
+  const prelimTotal   = sectionTotal(["prelims"]);
+  const sundriesTotal = sectionTotal(["sundries"]);
+  const subtotal      = supplyTotal + containTotal + cablingTotal + labourTotal + fpTotal + plantTotal + prelimTotal + sundriesTotal;
+  const taxRate       = Number((quote as any).taxRate) || 0;
+  const vatAmount     = taxRate > 0 ? subtotal * (taxRate / 100) : 0;
+  const grandTotal    = subtotal + vatAmount;
+
+  // ── No items yet ──────────────────────────────────────────────────────────
+  if (lineItems.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-64 gap-4 p-8 text-center">
+        <FileText className="h-10 w-10 text-muted-foreground/30" />
+        <div>
+          <p className="text-sm font-semibold">No draft generated yet</p>
+          <p className="text-xs text-muted-foreground mt-1 max-w-xs">
+            Complete the QDS tab first, then generate a draft here.
+            Line items are built directly from the QDS — no AI reinterpretation.
+          </p>
+        </div>
+        <Button onClick={handleGenerateDraft} disabled={isGenerating} className="gap-2">
+          {isGenerating
+            ? <><Loader2 className="h-4 w-4 animate-spin" />Generating…</>
+            : <><Sparkles className="h-4 w-4" />Generate Draft from QDS</>}
+        </Button>
+      </div>
+    );
+  }
+
+  // ── Editable cell helpers ─────────────────────────────────────────────────
+  const EditableCell = ({ item, field, type = "text", className = "" }: {
+    item: any; field: string; type?: string; className?: string;
+  }) => {
+    const isEditing = editingItemId === item.id && editingField === field;
+    const raw = item[field] ?? "";
+    if (isEditing) {
+      return (
+        <Input
+          type={type} value={editValue}
+          onChange={e => setEditValue(e.target.value)}
+          onBlur={() => saveEdit(item.id, field)}
+          onKeyDown={e => onKeyDown(e, item.id, field)}
+          autoFocus
+          className={cn("h-7 text-xs px-1.5", className)}
+        />
+      );
+    }
+    const display = type === "number"
+      ? (field === "rate" ? `£${parseFloat(raw || "0").toFixed(2)}` : (() => { const n = parseFloat(raw || "0"); return n % 1 === 0 ? n.toFixed(0) : n.toFixed(2); })())
+      : (raw || <span className="text-muted-foreground/40 italic">—</span>);
+    return (
+      <span
+        onClick={() => startEdit(item.id, field, String(raw))}
+        className={cn("cursor-pointer hover:bg-muted/50 px-1.5 py-0.5 rounded block", className)}
+      >{display}</span>
+    );
+  };
+
+  // ── Section renderer ─────────────────────────────────────────────────────
+  const renderSection = (key: string) => {
+    const items = grouped.get(key) ?? [];
+    if (items.length === 0) return null;
+    const label = SECTION_LABELS[key];
+
+    return (
+      <div key={key}>
+        {/* Section header */}
+        <div className="px-3 py-1.5 bg-muted/40 border-y flex items-center gap-2">
+          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{label}</span>
+          <span className="text-xs text-muted-foreground">({items.length})</span>
+          <span className="ml-auto text-xs font-semibold tabular-nums text-muted-foreground">
+            {sectionTotal([key]) > 0 ? `£${fmt2(sectionTotal([key]))}` : ""}
+          </span>
+        </div>
+
+        {items.map((item: any) => {
+          const isNote = item.unit === "note";
+          const qty    = Number(item.quantity) || 0;
+          const rate   = Number(item.rate) || 0;
+          const total  = Number(item.total) || qty * rate;
+
+          // Margin from stored costPrice
+          const costPriceNum = item.costPrice ? parseFloat(item.costPrice) : null;
+          const showMargin = costPriceNum && costPriceNum > 0 && rate > 0 && qty > 0;
+          const marginTotal = showMargin ? (rate - costPriceNum!) * qty : null;
+          const marginPct   = showMargin ? Math.round(((rate - costPriceNum!) / rate) * 100) : null;
+
+          if (isNote) {
+            // Programme note — full-width italic row, no qty/rate
+            return (
+              <div key={item.id} className="px-3 py-2 border-b border-muted/40 flex items-center gap-2">
+                <span className="flex-1 text-xs italic text-muted-foreground">{item.description}</span>
+                <button onClick={() => deleteLineItem.mutate({ id: item.id, quoteId })}
+                  className="opacity-0 hover:opacity-100 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all ml-2">
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
+            );
+          }
+
+          return (
+            <div key={item.id} className="group grid text-xs border-b border-muted/30 hover:bg-muted/10 transition-colors"
+              style={{ gridTemplateColumns: "1fr 60px 55px 80px 90px 90px 24px" }}>
+              {/* Description */}
+              <div className="px-3 py-1.5 min-w-0">
+                <EditableCell item={item} field="description" className="truncate" />
+              </div>
+              {/* Qty */}
+              <div className="px-1.5 py-1.5 text-right">
+                <EditableCell item={item} field="quantity" type="number" className="text-right" />
+              </div>
+              {/* Unit */}
+              <div className="px-1.5 py-1.5 text-muted-foreground">
+                <EditableCell item={item} field="unit" />
+              </div>
+              {/* Rate */}
+              <div className="px-1.5 py-1.5 text-right">
+                <EditableCell item={item} field="rate" type="number" className="text-right" />
+              </div>
+              {/* Total */}
+              <div className="px-3 py-1.5 text-right font-medium tabular-nums">
+                £{fmt2(total)}
+              </div>
+              {/* Margin — internal only */}
+              <div className="px-3 py-1.5 text-right tabular-nums">
+                {showMargin && marginTotal !== null ? (
+                  <span className={marginTotal >= 0 ? "text-green-600" : "text-red-500"}>
+                    £{fmt2(marginTotal)} ({marginPct}%)
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground/30">—</span>
+                )}
+              </div>
+              {/* Delete */}
+              <div className="flex items-center justify-center py-1.5">
+                <button onClick={() => deleteLineItem.mutate({ id: item.id, quoteId })}
+                  className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all">
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // ── Main render ──────────────────────────────────────────────────────────
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+
+      {/* Header toolbar */}
+      <div className="shrink-0 px-4 py-2.5 border-b bg-background flex items-center gap-3 flex-wrap">
+        <Button size="sm" onClick={handleGenerateDraft} disabled={isGenerating}
+          className="gap-1.5 h-7 text-xs bg-primary hover:bg-primary/90">
+          {isGenerating
+            ? <><Loader2 className="h-3 w-3 animate-spin" />Regenerating…</>
+            : <><Sparkles className="h-3 w-3" />Regenerate from QDS</>}
+        </Button>
+        <span className="text-xs text-muted-foreground">{lineItems.length} line items</span>
+        {/* Column headers (right-aligned, mirror the grid below) */}
+        <div className="ml-auto hidden sm:grid text-[10px] font-semibold text-muted-foreground uppercase tracking-wider"
+          style={{ gridTemplateColumns: "1fr 60px 55px 80px 90px 90px 24px", minWidth: "560px" }}>
+          <span className="px-3">Description</span>
+          <span className="px-1.5 text-right">Qty</span>
+          <span className="px-1.5">Unit</span>
+          <span className="px-1.5 text-right">Rate</span>
+          <span className="px-3 text-right">Total</span>
+          <span className="px-3 text-right text-green-600">Margin</span>
+          <span />
+        </div>
+      </div>
+
+      {/* Line items — scrollable */}
+      <div className="flex-1 overflow-y-auto">
+        {SECTION_ORDER.map(sec => renderSection(sec))}
+
+        {/* Totals card */}
+        <div className="m-4 p-4 rounded-lg border bg-muted/20 max-w-sm ml-auto">
+          <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-sm">
+            {supplyTotal   > 0 && <><span className="text-muted-foreground">Supply</span>           <span className="text-right tabular-nums">£{fmt2(supplyTotal)}</span></>}
+            {containTotal  > 0 && <><span className="text-muted-foreground">Containment</span>      <span className="text-right tabular-nums">£{fmt2(containTotal)}</span></>}
+            {cablingTotal  > 0 && <><span className="text-muted-foreground">Cabling</span>          <span className="text-right tabular-nums">£{fmt2(cablingTotal)}</span></>}
+            {labourTotal   > 0 && <><span className="text-muted-foreground">Labour</span>           <span className="text-right tabular-nums">£{fmt2(labourTotal)}</span></>}
+            {fpTotal       > 0 && <><span className="text-muted-foreground">First Points</span>     <span className="text-right tabular-nums">£{fmt2(fpTotal)}</span></>}
+            {plantTotal    > 0 && <><span className="text-muted-foreground">Plant &amp; Hire</span> <span className="text-right tabular-nums">£{fmt2(plantTotal)}</span></>}
+            {prelimTotal   > 0 && <><span className="text-muted-foreground">Preliminaries</span>    <span className="text-right tabular-nums">£{fmt2(prelimTotal)}</span></>}
+            {sundriesTotal > 0 && <><span className="text-muted-foreground">Sundries</span>         <span className="text-right tabular-nums">£{fmt2(sundriesTotal)}</span></>}
+            {taxRate > 0 && <>
+              <span className="text-muted-foreground border-t pt-1 mt-1">Subtotal</span>
+              <span className="text-right tabular-nums border-t pt-1 mt-1">£{fmt2(subtotal)}</span>
+              <span className="text-muted-foreground">VAT ({taxRate}%)</span>
+              <span className="text-right tabular-nums">£{fmt2(vatAmount)}</span>
+            </>}
+            <span className="font-bold border-t pt-1 mt-1">Total tender price</span>
+            <span className="font-bold text-right tabular-nums border-t pt-1 mt-1 text-primary">
+              £{fmt2(grandTotal)}
+            </span>
+          </div>
+        </div>
+      </div>
+
     </div>
   );
 }

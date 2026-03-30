@@ -526,13 +526,54 @@ After `updateMarkers` saves: `refetchTakeoffs()` fires in parent, local `initial
 
 ---
 
-## 20. Phase 8 — Next Build (TBD)
+## 21. Phase 8 — Completed Work (Quote Tab)
 
-The electrical workspace is now fully end-to-end: upload → takeoff → QDS with buy-in margin → generate draft → PDF tender submission with print trigger.
+### Modified files
 
-Remaining open items:
-- **Quote tab** — still a placeholder. Needs wiring to show the generated line items (could reuse existing `QuoteWorkspace` line item display, or build a lightweight electrical-specific view)
-- **3 known bugs (general workspace, Phase 3 of roadmap):** legend PDFs triggering takeoff, `generateDraft` not skipping reference-only inputs, unknown symbols dropped
+| File | Change |
+|---|---|
+| `client/src/pages/ElectricalWorkspace.tsx` | Added `Input` import from `@/components/ui/input`. Added `Sparkles`, `Trash2`, `Plus` to lucide imports. Replaced `PlaceholderTab` for `activeTab === "quote"` with `<ElectricalQuoteTab>`. Added `ElectricalQuoteTab` component. |
+
+### ElectricalQuoteTab — key behaviours
+
+**Empty state:** "Generate Draft from QDS" button calls `trpc.ai.generateDraft` — which for electrical reads `qdsSummaryJson._type === "electrical"` and runs `generateElectricalLineItems`. No AI reinterpretation of confirmed QDS rows.
+
+**Confirm on regenerate:** if line items already exist, `window.confirm` before replacing — same guard as `QuoteWorkspace`.
+
+**Line item grouping:** Items classified into 9 sections using the same rules as `pdfGenerator.ts`: Supply, Containment, Cabling, Labour, Programme (note rows), First Points, Plant & Hire, Preliminaries, Sundries. Sections with no items are hidden.
+
+**Programme note rows** (`unit === "note"`): rendered as full-width italic rows — no qty/rate/total columns.
+
+**Inline editing:** click any cell (description, qty, unit, rate) to edit inline. Enter or blur to save via `trpc.lineItems.update`. Escape to cancel. Same pattern as `QuoteWorkspace`.
+
+**Margin column** (internal only, never in PDF): reads `item.costPrice` stored on the line item (written by `generateElectricalLineItems` from QDS buy-in). Shows `£X.XX (Y%)` in green/red. No catalog fallback needed — electrical always stores `costPrice` directly.
+
+**Totals card:** Supply, Containment, Cabling, Labour, First Points, Plant & Hire, Prelims, Sundries (only non-zero lines shown), then Subtotal + VAT + Total tender price.
+
+**Delete:** per-row trash icon on hover, calls `trpc.lineItems.delete`.
+
+**Toolbar:** "Regenerate from QDS" button + line item count. Column header labels aligned to the grid.
+
+### Files NOT modified
+- `server/routers.ts` — untouched
+- `server/pdfGenerator.ts` — untouched
+- `server/engines/electricalEngine.ts` — untouched
+- `QuoteWorkspace.tsx` — untouched
+- All other files — untouched
+
+---
+
+## 22. Phase 9 — Remaining Items
+
+The electrical workspace is now feature-complete end-to-end:
+- Inputs ✅ — drawings, legend, scope
+- Takeoff ✅ — symbol review table, drawing viewer, include/exclude toggles
+- QDS ✅ — Spon's rates, buy-in margin, plant hire, prelims, sundries
+- Quote ✅ — line items grouped by section, inline edit, margin display, totals
+- PDF ✅ — tender submission document
+
+Remaining open items (separate track):
+- **3 known bugs (general workspace):** legend PDFs triggering takeoff, `generateDraft` not skipping reference-only inputs, unknown symbols dropped
 - **Sector engine modularisation** — Phases 1–5 of the roadmap docx
 
 ### Overview
