@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { QuoteInput } from "@shared/schema";
+import ElectricalQDS, { type IncludedTakeoffRow } from "@/components/electrical/ElectricalQDS";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_PDF_MB   = 20;
@@ -479,7 +480,27 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
               localExcluded={localExcluded}
             />
           )}
-          {(activeTab === "qds" || activeTab === "quote" || activeTab === "pdf") && (
+          {activeTab === "qds" && (() => {
+            const includedRows: IncludedTakeoffRow[] = takeoffRows
+              .filter(r => r.status !== "excluded")
+              .map(r => ({
+                key:         r.key,
+                takeoffId:   r.takeoffId,
+                inputId:     r.inputId,
+                drawingName: r.drawingName,
+                code:        r.code,
+                description: r.description,
+                count:       r.count,
+              }));
+            return (
+              <ElectricalQDS
+                quoteId={quoteId}
+                includedRows={includedRows}
+                savedQdsJson={(quote as any).qdsSummaryJson ?? null}
+              />
+            );
+          })()}
+          {(activeTab === "quote" || activeTab === "pdf") && (
             <PlaceholderTab tab={activeTab} quoteId={quoteId} />
           )}
         </div>
