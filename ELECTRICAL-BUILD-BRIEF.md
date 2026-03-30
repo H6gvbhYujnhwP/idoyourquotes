@@ -493,14 +493,47 @@ After `updateMarkers` saves: `refetchTakeoffs()` fires in parent, local `initial
 
 ---
 
-## 19. Phase 7 — Next Build (TBD)
+## 19. Phase 7 — Completed Work
 
-Phase 6 completes the core electrical workspace end-to-end: upload → takeoff → QDS with buy-in margin → generate draft → PDF tender submission.
+### Modified files
 
-Candidate next items (to be scoped):
-- ElectricalWorkspace PDF tab wiring (trigger `generatePDF` from the PDF tab, render preview)
-- Phase 3 bug fixes: legend PDFs triggering takeoff, `generateDraft` not skipping reference-only inputs, unknown symbols dropped
-- Sector engine modularisation (Phase 1–5 of the roadmap docx)
+| File | Change |
+|---|---|
+| `client/src/pages/ElectricalWorkspace.tsx` | Added `ElectricalPDFTab` component. Added `Printer` and `Info` to icon imports. Replaced `PlaceholderTab` for `activeTab === "pdf"` with `<ElectricalPDFTab quoteId={quoteId} quote={quote} lineItems={fullQuote.lineItems} drawings={drawings} />`. Quote tab still uses `PlaceholderTab`. |
+
+### ElectricalPDFTab — key behaviours
+
+- Pre-generation summary card: project name, client, reference, drawing count, line item count, total hours, programme duration, subtotal, VAT (if applicable), total tender price — all derived from already-loaded `fullQuote.lineItems` and `quote` fields, zero extra queries
+- Guard: if `lineItems.length === 0`, button is disabled and an amber warning card explains that a draft quote must be generated first (QDS → Quote tab)
+- "Generate Tender PDF" button calls `trpc.quotes.generatePDF.useMutation()` — same route, same server function as all other sectors; the electrical branch in `generateQuoteHTML` handles the routing
+- On success: `window.open("", "_blank")` → `document.write(html)` → `print()` after 250ms delay — identical pattern to `QuoteWorkspace.tsx`
+- On popup blocked: `toast.error("Please allow popups...")`
+- On server error: `toast.error` + console log
+
+### Files NOT modified
+- `server/routers.ts` — untouched
+- `server/pdfGenerator.ts` — untouched (Phase 6 already complete)
+- `server/engines/electricalEngine.ts` — untouched
+- `server/engines/engineRouter.ts` — untouched
+- `QuoteWorkspace.tsx` — untouched
+- All non-electrical components — untouched
+
+### Isolation verification
+- `QuoteWorkspace.tsx` untouched ✅
+- `routers.ts` untouched ✅
+- No new tRPC routes — uses existing `quotes.generatePDF` ✅
+- `npx tsc --noEmit --skipLibCheck` = zero new errors ✅
+
+---
+
+## 20. Phase 8 — Next Build (TBD)
+
+The electrical workspace is now fully end-to-end: upload → takeoff → QDS with buy-in margin → generate draft → PDF tender submission with print trigger.
+
+Remaining open items:
+- **Quote tab** — still a placeholder. Needs wiring to show the generated line items (could reuse existing `QuoteWorkspace` line item display, or build a lightweight electrical-specific view)
+- **3 known bugs (general workspace, Phase 3 of roadmap):** legend PDFs triggering takeoff, `generateDraft` not skipping reference-only inputs, unknown symbols dropped
+- **Sector engine modularisation** — Phases 1–5 of the roadmap docx
 
 ### Overview
 

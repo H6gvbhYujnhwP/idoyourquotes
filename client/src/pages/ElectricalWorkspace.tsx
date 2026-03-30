@@ -30,7 +30,7 @@ import {
   Loader2, ArrowLeft, Zap, Upload, Grid, Calculator,
   FileText, File, X, CheckCircle, AlertCircle, Clock,
   Mail, BookOpen, RefreshCw, RotateCcw, AlertTriangle,
-  ToggleLeft, ToggleRight, Eye,
+  ToggleLeft, ToggleRight, Eye, Printer, Info,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { QuoteInput } from "@shared/schema";
@@ -522,8 +522,16 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
               />
             );
           })()}
-          {(activeTab === "quote" || activeTab === "pdf") && (
+          {(activeTab === "quote") && (
             <PlaceholderTab tab={activeTab} quoteId={quoteId} />
+          )}
+          {activeTab === "pdf" && (
+            <ElectricalPDFTab
+              quoteId={quoteId}
+              quote={quote}
+              lineItems={fullQuote.lineItems ?? []}
+              drawings={drawings}
+            />
           )}
         </div>
       </div>
@@ -883,6 +891,182 @@ function TakeoffTab({
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Electrical PDF Tab ───────────────────────────────────────────────────────
+
+interface ElectricalPDFTabProps {
+  quoteId: number;
+  quote: any;
+  lineItems: any[];
+  drawings: QuoteInput[];
+}
+
+function ElectricalPDFTab({ quoteId, quote, lineItems, drawings }: ElectricalPDFTabProps) {
+  const [isGenerating, setIsGenerating] = useState(false);
+  const generatePDFMutation = trpc.quotes.generatePDF.useMutation();
+
+  const navy = "#1a2b4a";
+
+  // Calculate summary figures from line items (sell prices only)
+  const activeItems = lineItems.filter(i =>
+    i.pricingType !== "optional" && (i.unit ?? "") !== "note"
+  );
+  const grandTotal = activeItems.reduce((sum: number, i: any) => {
+    return sum + (Number(i.total) || Number(i.quantity) * Number(i.rate) || 0);
+  }, 0);
+
+  const hasLineItems = lineItems.length > 0;
+  const taxRate = Number((quote as any).taxRate) || 0;
+  const vatAmount = taxRate > 0 ? grandTotal * (taxRate / 100) : 0;
+  const totalWithVat = grandTotal + vatAmount;
+
+  const phaseItems = lineItems.filter(i =>
+    /^Phase [123]\s*[—–\-]/.test(i.description ?? "")
+  );
+  const totalHours = phaseItems.reduce((s: number, i: any) => s + (Number(i.quantity) || 0), 0);
+  const teamSize = 2;
+  const totalWeeks = totalHours > 0 ? Math.max(1, Math.ceil(totalHours / (teamSize * 40))) : 0;
+
+  const handleGeneratePDF = async () => {
+    setIsGenerating(true);
+    try {
+      const result = await generatePDFMutation.mutateAsync({ id: quoteId });
+      if (!result?.html) throw new Error("No HTML content received from server");
+
+      const printWindow = window.open("", "_blank");
+      if (printWindow) {
+        printWindow.document.write(result.html);
+        printWindow.document.close();
+        printWindow.onload = () => {
+          setTimeout(() => { printWindow.print(); }, 250);
+        };
+      } else {
+        toast.error("Please allow popups to generate PDF");
+      }
+    } catch (err) {
+      console.error("PDF generation error:", err);
+      toast.error("Failed to generate PDF — check console for details");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <div className="p-6 max-w-2xl flex flex-col gap-5">
+
+      {/* Header */}
+      <div>
+        <div className="flex items-center gap-2 mb-1">
+          <File className="h-5 w-5 text-primary" />
+          <h2 className="text-base font-semibold">Tender Submission PDF</h2>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Generates a formal tender document — cover page, programme, schedule of works,
+          pricing summary, assumptions, exclusions, and terms.
+          Opens in a new window for printing or saving as PDF.
+        </p>
+      </div>
+
+      {/* Pre-generation summary card */}
+      <div className="rounded-lg border bg-muted/20 p-4 flex flex-col gap-3">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+          Document preview
+        </p>
+
+        <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
+          <span className="text-muted-foreground">Project</span>
+          <span className="font-medium truncate">{(quote as any).title || "Untitled"}</span>
+
+          {(quote as any).clientName && <>
+            <span className="text-muted-foreground">Client</span>
+            <span className="truncate">{(quote as any).clientName}</span>
+          </>}
+
+          <span className="text-muted-foreground">Reference</span>
+          <span className="font-mono text-xs">
+            {(quote as any).quoteReference || `Q-${quoteId}`}
+          </span>
+
+          <span className="text-muted-foreground">Drawings</span>
+          <span>{drawings.length} drawing{drawings.length !== 1 ? "s" : ""}</span>
+
+          {hasLineItems ? (
+            <>
+              <span className="text-muted-foreground">Line items</span>
+              <span>{lineItems.length} items</span>
+
+              {totalHours > 0 && <>
+                <span className="text-muted-foreground">Programme</span>
+                <span>
+                  {totalHours.toFixed(1)} hrs &nbsp;·&nbsp; ~{totalWeeks}w
+                  <span className="text-muted-foreground ml-1 text-xs">@ {teamSize} operatives</span>
+                </span>
+              </>}
+
+              <span className="text-muted-foreground border-t pt-2">
+                {taxRate > 0 ? "Subtotal" : "Total tender price"}
+              </span>
+              <span className="font-semibold tabular-nums border-t pt-2">
+                £{grandTotal.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+
+              {taxRate > 0 && <>
+                <span className="text-muted-foreground">VAT ({taxRate}%)</span>
+                <span className="tabular-nums">
+                  £{vatAmount.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span className="font-bold">Total tender price</span>
+                <span className="font-bold tabular-nums text-primary">
+                  £{totalWithVat.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </>}
+            </>
+          ) : (
+            <>
+              <span className="text-muted-foreground">Line items</span>
+              <span className="text-amber-600 font-medium">None — draft not generated</span>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* No line items warning */}
+      {!hasLineItems && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          <Info className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
+          <div>
+            <p className="font-medium">Draft quote not generated yet</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              Complete the QDS tab, then use the Quote tab to generate a draft before producing the PDF.
+              The PDF will have no line items until a draft exists.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Generate button */}
+      <div className="flex items-center gap-3">
+        <Button
+          onClick={handleGeneratePDF}
+          disabled={isGenerating || !hasLineItems}
+          className="gap-2"
+          style={hasLineItems ? { backgroundColor: navy } : undefined}
+        >
+          {isGenerating
+            ? <><Loader2 className="h-4 w-4 animate-spin" />Generating…</>
+            : <><Printer className="h-4 w-4" />Generate Tender PDF</>}
+        </Button>
+
+        {hasLineItems && (
+          <p className="text-xs text-muted-foreground">
+            Opens in a new window — use your browser's Print / Save as PDF.
+          </p>
+        )}
+      </div>
+
     </div>
   );
 }
