@@ -30,11 +30,12 @@ import {
   Loader2, ArrowLeft, Zap, Upload, Grid, Calculator,
   FileText, File, X, CheckCircle, AlertCircle, Clock,
   Mail, BookOpen, RefreshCw, RotateCcw, AlertTriangle,
-  ToggleLeft, ToggleRight,
+  ToggleLeft, ToggleRight, Eye,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { QuoteInput } from "@shared/schema";
 import ElectricalQDS, { type IncludedTakeoffRow } from "@/components/electrical/ElectricalQDS";
+import ElectricalDrawingViewer from "@/components/electrical/ElectricalDrawingViewer";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_PDF_MB   = 20;
@@ -111,6 +112,7 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab]             = useState<Tab>("inputs");
   const [activeDrawingId, setActiveDrawingId] = useState<number | null>(null);
+  const [viewingTakeoffId, setViewingTakeoffId] = useState<number | null>(null);
 
   // Upload states
   const [isUploadingDrawing, setIsUploadingDrawing] = useState(false);
@@ -315,6 +317,24 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
     <div className="flex items-center justify-center h-64 text-destructive">Quote not found.</div>
   );
 
+  // ── Viewer callbacks ─────────────────────────────────────────────────────────
+  const viewingTakeoff = viewingTakeoffId != null
+    ? (takeoffList ?? []).find(t => t.id === viewingTakeoffId) ?? null
+    : null;
+
+  const handleViewerExcludedCodesChange = (codes: string[]) => {
+    if (!viewingTakeoff) return;
+    // Optimistic local update
+    setLocalExcluded(prev => ({ ...prev, [viewingTakeoff.id]: codes }));
+    updateExcludedCodes.mutate({ takeoffId: viewingTakeoff.id, excludedCodes: codes });
+  };
+
+  const handleViewerMarkersUpdated = () => {
+    refetchTakeoffs();
+    // Reset local excluded for this takeoff so it re-initialises from fresh server data
+    initializedTakeoffs.current.delete(viewingTakeoffId!);
+  };
+
   const quote = fullQuote.quote;
   const title = quote.title || "Untitled Quote";
   const reference = (quote as any).reference || "";
@@ -380,6 +400,7 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
+    <>
     <div className="h-full flex flex-col overflow-hidden">
 
       {/* Header */}
@@ -478,6 +499,7 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
               onReanalyse={(inputId) => analyzeDrawing.mutate({ inputId, quoteId, force: true })}
               isReanalysing={analyzeDrawing.isPending}
               localExcluded={localExcluded}
+              onViewDrawing={(takeoffId) => setViewingTakeoffId(takeoffId)}
             />
           )}
           {activeTab === "qds" && (() => {
@@ -506,6 +528,25 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
         </div>
       </div>
     </div>
+
+    {/* ── Drawing Viewer Modal ──────────────────────────────────────────────── */}
+    {viewingTakeoff && viewingTakeoffId != null && (
+      <ElectricalDrawingViewer
+        takeoffId={viewingTakeoff.id}
+        inputId={Number(viewingTakeoff.inputId)}
+        drawingRef={shortFilename((drawings.find(d => d.id === Number(viewingTakeoff.inputId)))?.filename)}
+        symbols={(viewingTakeoff.symbols ?? []) as Array<{id:string;symbolCode:string;category:string;x:number;y:number;confidence:string;isStatusMarker:boolean;nearbySymbol?:string}>}
+        pageWidth={parseFloat(String(viewingTakeoff.pageWidth)) || 2384}
+        pageHeight={parseFloat(String(viewingTakeoff.pageHeight)) || 1684}
+        symbolStyles={((viewingTakeoff as any).symbolStyles ?? {}) as Record<string,{colour:string;shape:string;radius:number}>}
+        symbolDescriptions={allDescriptions}
+        initialExcludedCodes={new Set(localExcluded[viewingTakeoff.id] ?? getExcludedCodes(viewingTakeoff))}
+        onExcludedCodesChange={handleViewerExcludedCodesChange}
+        onMarkersUpdated={handleViewerMarkersUpdated}
+        onClose={() => setViewingTakeoffId(null)}
+      />
+    )}
+    </>
   );
 }
 
@@ -655,12 +696,13 @@ interface TakeoffTabProps {
   onToggle: (takeoffId: number, code: string, currentlyExcluded: boolean) => void;
   onReanalyse: (inputId: number) => void;
   isReanalysing: boolean;
+  onViewDrawing: (takeoffId: number) => void;
 }
 
 function TakeoffTab({
   drawings, takeoffList, takeoffRows,
   stillProcessingNames, pendingDrawingNames,
-  onToggle, onReanalyse, isReanalysing, localExcluded,
+  onToggle, onReanalyse, isReanalysing, localExcluded, onViewDrawing,
 }: TakeoffTabProps) {
 
   const noDrawings       = drawings.length === 0;
@@ -784,17 +826,31 @@ function TakeoffTab({
                         )}
                       </td>
 
-                      {/* Re-analyse per drawing (only show on first row of drawing) */}
+                      {/* View drawing + Re-analyse (only show on first row of each drawing) */}
                       <td className="px-2 py-1.5">
-                        {isNewDrawing && (
-                          <button
-                            onClick={() => onReanalyse(row.inputId)}
-                            disabled={isReanalysing}
-                            title="Re-analyse this drawing"
-                            className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40">
-                            <RotateCcw className="h-3.5 w-3.5" />
-                          </button>
-                        )}
+                        {isNewDrawing && (() => {
+                          const t = takeoffList.find(t => Number(t.inputId) === row.inputId);
+                          const hasSvg = !!(t?.svgOverlay);
+                          return (
+                            <div className="flex items-center gap-1.5">
+                              {hasSvg && (
+                                <button
+                                  onClick={() => onViewDrawing(t!.id)}
+                                  title="View marked drawing"
+                                  className="text-xs font-medium text-primary hover:text-primary/80 transition-colors flex items-center gap-0.5 whitespace-nowrap">
+                                  <Eye className="h-3 w-3" />View
+                                </button>
+                              )}
+                              <button
+                                onClick={() => onReanalyse(row.inputId)}
+                                disabled={isReanalysing}
+                                title="Re-analyse this drawing"
+                                className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40">
+                                <RotateCcw className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          );
+                        })()}
                       </td>
                     </tr>
                   </>

@@ -342,8 +342,8 @@ Tab structure, drawing upload zone, legend upload slot (visually distinct), past
 **Phase 3 — Takeoff Panel**
 Symbol review table (not question flow). Three legend scenarios. Job-level legend memory. Per-drawing grouping. Greyed-out toggles, editable counts and measurements. Title block annotations auto-excluded.
 
-**Phase 4 — ElectricalQDS**
-All QDS sections. Labour auto-calculation using Spon's UK rates with productivity multiplier. plantHire and full re-analysis edit preservation from day one.
+**Phase 4 — ElectricalQDS + Drawing Viewer** ✅ COMPLETE
+All QDS sections built. Labour auto-calculation using Spon's UK rates with productivity multiplier. plantHire and full re-analysis edit preservation. View Marked Drawing restored with full marker editing.
 
 **Phase 5 — electricalEngine.ts**
 Server-side AI engine. Confirmed takeoff → line items with Spon's labour. Phases and timelines from total labour hours.
@@ -378,3 +378,67 @@ Primary validation test. Six documents:
 - `A1101-KCL-XX-XX-L-E-2411.pdf` — Equipment schedules (switchgear, accessories, fire alarm)
 
 **Phase 3 validation target:** All symbols matched automatically from embedded legends. HOB, FAP, C, K, EPH, WP, TR all resolved without asking. CD (engineer initials) auto-excluded. Zero questions asked.
+
+---
+
+## 15. Phase 4 — Completed Work
+
+### New files
+
+| File | Purpose |
+|---|---|
+| `server/data/electricalLabourRates.ts` | Spon's M&E 2024 UK labour rate lookup. `matchSponsRate(description)` → `{ hoursPerUnit, unit }` or `null`. `PRODUCTIVITY_MULTIPLIERS` constant. Authoritative server copy — Phase 5 electricalEngine will import from here. |
+| `client/src/components/electrical/ElectricalQDS.tsx` | Full QDS component. 8 sections: Line Items, Containment, Cabling, First Points, Plant/Hire, Preliminaries, Labour Summary, Sundries. Spon's rates auto-applied. Labour rate + productivity multiplier in header. Auto-save debounced 1500ms to `qdsSummaryJson`. |
+| `client/src/components/electrical/ElectricalDrawingViewer.tsx` | Full-screen marked drawing viewer. PDF rendered via PDF.js. Interactive SVG marker overlay. Three feedback paths all persist to DB (see below). |
+
+### Modified files
+
+| File | Change |
+|---|---|
+| `client/src/pages/ElectricalWorkspace.tsx` | QDS tab wired to `ElectricalQDS`. "View" button added per drawing in Takeoff tab. `viewingTakeoffId` state. Viewer modal rendered as sibling via React fragment. `handleViewerExcludedCodesChange` and `handleViewerMarkersUpdated` callbacks. |
+
+### ElectricalQDS — key behaviours
+
+**Stable row key:** `i{inputId}:{code}` — `inputId` never changes even when takeoff record is deleted and recreated on re-analyse. Makes deduplication and edit-preservation reliable.
+
+**Merge on "Update from Takeoff":** Each editable field (`description`, `qty`, `supplyPrice`, `hoursPerUnit`) has a corresponding `*Edited` boolean flag. On rebuild, only unedited fields take fresh takeoff values. Edited fields always survive.
+
+**What survives a QDS rebuild:** `plantHire`, `preliminaries`, `firstPoints`, `sundries`, `labourRate`, `productivityMultiplier` — these live in the root of `ElectricalQDSData` and are never touched by the row merge.
+
+**`qdsSummaryJson` discriminator:** `_type: "electrical"` field distinguishes electrical QDS from general `QuoteDraftData`. Both use the same DB column.
+
+**Section classification:** Description keyword scan routes each row — `cable tray|trunking|conduit|unistrut` → Containment; `cable|swa|t&e|twin.*earth` → Cabling; everything else → Line Items.
+
+**Spon's rates:** Inlined in `ElectricalQDS.tsx` as a client-side mirror of `server/data/electricalLabourRates.ts`. If no rate matches, amber triangle shown — user fills in manually. Both files must be kept in sync when rates are updated.
+
+### ElectricalDrawingViewer — three feedback paths
+
+| Action | How | Persists to DB via |
+|---|---|---|
+| Chip toggle (grey out symbol type) | Click chip in header bar | `electricalTakeoff.updateExcludedCodes` — immediate, no Save needed |
+| Remove individual marker | Click marker on drawing (turns red X) → Save | `electricalTakeoff.updateMarkers` → counts + svgOverlay regenerated |
+| Add new marker | Edit Mode → select symbol code chip → click drawing → Save | `electricalTakeoff.updateMarkers` → counts + svgOverlay regenerated |
+
+After `updateMarkers` saves: `refetchTakeoffs()` fires in parent, local `initializedTakeoffs` ref clears for that takeoffId so excluded codes re-initialise from fresh server data.
+
+**"View" button visibility:** Only shown when `takeoff.svgOverlay` exists. Drawings analysed before the svgOverlay feature existed will need a re-analyse first.
+
+---
+
+## 16. Phase 5 — Next Build (electricalEngine.ts)
+
+**File:** `server/engines/electricalEngine.ts`
+
+**Dispatch:** Add electrical branch in `server/engines/engineRouter.ts` — detect `tradePreset === "electrical"` and call `electricalEngine` instead of `generalEngine` or `drawingEngine`.
+
+**Input:** Confirmed QDS data from `qdsSummaryJson` (already has labour hours, supply prices, plant hire). Should NOT re-run takeoff. Reads `ElectricalQDSData` (discriminated by `_type: "electrical"`).
+
+**Output:** Line items written via `createLineItem`. Phases and timelines derived from total labour hours:
+- First fix: ~40% of total hours
+- Second fix: ~40% of total hours  
+- Testing & commissioning: ~20% of total hours
+- Timeline in weeks: total hours ÷ (team size × 40hrs/week)
+
+**Labour rates:** Import `matchSponsRate` and `PRODUCTIVITY_MULTIPLIERS` from `server/data/electricalLabourRates.ts`.
+
+**Guardrail:** `engineRouter.ts` changes must not affect `generalEngine` or `drawingEngine` dispatch paths. Electrical branch must be gated strictly on `tradePreset === "electrical"`.
