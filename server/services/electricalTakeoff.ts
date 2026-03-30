@@ -178,11 +178,13 @@ export const SYMBOL_DESCRIPTIONS: Record<string, string> = DEFAULT_SYMBOL_DESCRI
 // All other codes get a deterministic colour derived from the code string.
 // Same code always maps to the same colour — no randomness at runtime.
 
+// All colours are bright/vivid — visible on both light and dark backgrounds.
+// Must stay in sync with COLOUR_PALETTE_CLIENT in ElectricalWorkspace.tsx.
 const COLOUR_PALETTE = [
-  '#E63946', '#2A9D8F', '#E9C46A', '#F4A261', '#264653',
-  '#8338EC', '#06D6A0', '#FFB703', '#FB8500', '#5C6BC0',
-  '#D62828', '#457B9D', '#81B29A', '#F2CC8F', '#9B2226',
-  '#0077B6', '#48CAE4', '#BC4749', '#386641', '#A7C957',
+  '#FF6B6B', '#4ECDC4', '#FFE66D', '#A29BFE', '#FD79A8',
+  '#FDCB6E', '#6C5CE7', '#00CEC9', '#E17055', '#74B9FF',
+  '#55EFC4', '#FF7675', '#FA8231', '#26DE81', '#FC5C65',
+  '#45AAF2', '#FED330', '#F7B731', '#20BF6B', '#FF9FF3',
 ];
 
 function codeToColour(code: string): string {
@@ -621,31 +623,73 @@ export async function performElectricalTakeoff(
   const embeddedLegendSymbols: Record<string, string> = {};
   let legendExcludeRegion: { xMin: number; xMax: number; yMin: number; yMax: number } | null = null;
 
-  // Scan for dense "CODE DESCRIPTION" or "CODE - DESCRIPTION" patterns in bottom-right quadrant
-  const legendCandidateWords = words.filter(w =>
-    w.x > pageWidth * 0.6 && w.y > pageHeight * 0.6
-  );
-  // A legend block will have short uppercase codes (1-6 chars) followed by longer description words
-  // Count qualifying pairs in this region
-  let legendPairCount = 0;
-  for (let i = 0; i < legendCandidateWords.length - 1; i++) {
-    const w = legendCandidateWords[i];
-    if (/^[A-Z0-9]{1,6}$/.test(w.text) && !DRAWING_NOISE_WORDS.has(w.text)) {
-      const next = legendCandidateWords[i + 1];
-      if (next && next.text.length > 3 && Math.abs(next.y - w.y) < 20) {
-        legendPairCount++;
-        embeddedLegendSymbols[w.text] = next.text;
+  // Scan ENTIRE drawing for embedded legend blocks — position-agnostic.
+  // Previous approach only scanned bottom-right quadrant and missed left-panel, top-right,
+  // and other legend layouts common in UK consultant drawings.
+  //
+  // Strategy: find all CODE→DESCRIPTION pairs anywhere on the page where:
+  //   - CODE = 1–6 uppercase alphanumeric token
+  //   - DESCRIPTION = any text at the same y (±15px), to the right, ≥4 chars, not itself a code
+  // Then cluster pairs by x-band. The densest cluster (≥3 pairs) is the legend block.
+  // Exclude that bounding box from installation counting.
+  {
+    const legendPairs: Array<{ code: string; desc: string; codeX: number; descX: number; y: number }> = [];
+
+    for (let i = 0; i < words.length; i++) {
+      const w = words[i];
+      if (!/^[A-Z][A-Z0-9]{0,5}$/.test(w.text)) continue;
+      if (DRAWING_NOISE_WORDS.has(w.text)) continue;
+
+      // Look for first qualifying description word at same y, to the right, within 40% page width
+      let bestDesc: { text: string; x: number } | null = null;
+      for (let j = 0; j < words.length; j++) {
+        if (j === i) continue;
+        const other = words[j];
+        if (Math.abs(other.y - w.y) > 15) continue;      // same line
+        if (other.x <= w.x + 2) continue;                // must be to the right
+        if (other.x > w.x + pageWidth * 0.35) continue;  // not absurdly far right
+        if (other.text.length < 4) continue;
+        if (/^[A-Z][A-Z0-9]{0,5}$/.test(other.text)) continue; // skip codes-as-descriptions
+        if (DRAWING_NOISE_WORDS.has(other.text)) continue;
+        if (!bestDesc || other.x < bestDesc.x) {
+          bestDesc = { text: other.text, x: other.x };
+        }
+      }
+      if (bestDesc) {
+        legendPairs.push({ code: w.text, desc: bestDesc.text, codeX: w.x, descX: bestDesc.x, y: w.y });
       }
     }
-  }
-  if (legendPairCount >= 4) {
-    // Enough pairs to be confident this is a legend block — exclude the region from counting
-    const lxMin = Math.min(...legendCandidateWords.map(w => w.x));
-    const lyMin = Math.min(...legendCandidateWords.map(w => w.y));
-    legendExcludeRegion = { xMin: lxMin - 5, xMax: pageWidth, yMin: lyMin - 5, yMax: pageHeight };
-    // Merge embedded legend into allDescriptions
-    Object.assign(allDescriptions, embeddedLegendSymbols);
-    console.log(`[Electrical Takeoff] Embedded legend detected (${legendPairCount} pairs), excluding region from counts. Added ${Object.keys(embeddedLegendSymbols).length} symbols.`);
+
+    if (legendPairs.length >= 3) {
+      // Group pairs by code x-position in 80px bands — legend codes share a column
+      const bands: Record<number, typeof legendPairs> = {};
+      for (const p of legendPairs) {
+        const band = Math.round(p.codeX / 80) * 80;
+        if (!bands[band]) bands[band] = [];
+        bands[band].push(p);
+      }
+      const bestBandEntry = Object.entries(bands).sort((a, b) => b[1].length - a[1].length)[0];
+      const bestBandPairs = bestBandEntry ? bestBandEntry[1] : [];
+
+      if (bestBandPairs.length >= 3) {
+        for (const p of bestBandPairs) {
+          embeddedLegendSymbols[p.code] = p.desc;
+        }
+        const lxMin = Math.min(...bestBandPairs.map(p => p.codeX));
+        // xMax covers the full description text — use rightmost descX + estimated desc text width
+        const lxMax = Math.max(...bestBandPairs.map(p => p.descX)) + pageWidth * 0.25;
+        const lyMin = Math.min(...bestBandPairs.map(p => p.y));
+        const lyMax = Math.max(...bestBandPairs.map(p => p.y));
+        legendExcludeRegion = {
+          xMin: lxMin - 20,
+          xMax: Math.min(lxMax, pageWidth),
+          yMin: lyMin - 20,
+          yMax: lyMax + 20,
+        };
+        Object.assign(allDescriptions, embeddedLegendSymbols);
+        console.log(`[Electrical Takeoff] Embedded legend (${bestBandPairs.length} pairs, x≈${Math.round(lxMin)}-${Math.round(lxMax)}, y≈${Math.round(lyMin)}-${Math.round(lyMax)}). Added: ${Object.keys(embeddedLegendSymbols).join(', ')}`);
+      }
+    }
   }
 
   const drawingArea = {
@@ -658,9 +702,12 @@ export async function performElectricalTakeoff(
   const inArea = (x: number, y: number) => {
     if (x < drawingArea.xMin || x > drawingArea.xMax) return false;
     if (y < drawingArea.yMin || y > drawingArea.yMax) return false;
-    // Exclude embedded legend region if detected
+    // Exclude embedded legend region — check ALL FOUR bounds.
+    // Previously only xMin+yMin were checked; with a left-panel legend (xMin≈30)
+    // the old code would have excluded the entire drawing. All four bounds required.
     if (legendExcludeRegion &&
-        x >= legendExcludeRegion.xMin && y >= legendExcludeRegion.yMin) return false;
+        x >= legendExcludeRegion.xMin && x <= legendExcludeRegion.xMax &&
+        y >= legendExcludeRegion.yMin && y <= legendExcludeRegion.yMax) return false;
     return true;
   };
 

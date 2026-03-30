@@ -19,7 +19,7 @@
  *   Content: flex-1 overflow-hidden → sidebar + right panel each scroll independently
  */
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -188,32 +188,35 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
   // Codes in the static SYMBOL_STYLES table keep their existing colour.
   // Unknown codes get a deterministic generated colour — never grey.
   // This is a pure client-side computation matching the server palette in electricalTakeoff.ts.
+  // Must stay in sync with COLOUR_PALETTE in electricalTakeoff.ts (server).
+  // All colours are bright/vivid — visible on both light and dark backgrounds.
   const COLOUR_PALETTE_CLIENT = [
-    '#E63946', '#2A9D8F', '#E9C46A', '#F4A261', '#264653',
-    '#8338EC', '#06D6A0', '#FFB703', '#FB8500', '#5C6BC0',
-    '#D62828', '#457B9D', '#81B29A', '#F2CC8F', '#9B2226',
-    '#0077B6', '#48CAE4', '#BC4749', '#386641', '#A7C957',
+    '#FF6B6B', '#4ECDC4', '#FFE66D', '#A29BFE', '#FD79A8',
+    '#FDCB6E', '#6C5CE7', '#00CEC9', '#E17055', '#74B9FF',
+    '#55EFC4', '#FF7675', '#FA8231', '#26DE81', '#FC5C65',
+    '#45AAF2', '#FED330', '#F7B731', '#20BF6B', '#FF9FF3',
   ];
   const STATIC_STYLES_CLIENT: Record<string, { colour: string; shape: string; radius: number }> = {
-    'J':     { colour: '#00AA00', shape: 'circle', radius: 28 },
+    'J':     { colour: '#00DD00', shape: 'circle', radius: 28 },
     'JE':    { colour: '#FF8200', shape: 'circle', radius: 32 },
-    'N':     { colour: '#0050FF', shape: 'circle', radius: 22 },
-    'AD':    { colour: '#0088CC', shape: 'square', radius: 26 },
-    'ADE':   { colour: '#CC6600', shape: 'square', radius: 28 },
-    'EX':    { colour: '#00BBBB', shape: 'circle', radius: 24 },
-    'SO':    { colour: '#DD0000', shape: 'diamond', radius: 26 },
-    'CO':    { colour: '#CC0044', shape: 'diamond', radius: 24 },
-    'HF':    { colour: '#AA0066', shape: 'diamond', radius: 24 },
-    'P1':    { colour: '#9600D2', shape: 'square', radius: 22 },
-    'P2':    { colour: '#9600D2', shape: 'square', radius: 22 },
-    'P3':    { colour: '#9600D2', shape: 'square', radius: 22 },
-    'P4':    { colour: '#9600D2', shape: 'square', radius: 24 },
-    'LCM':   { colour: '#B4B400', shape: 'square', radius: 20 },
-    'EXIT1': { colour: '#00AAAA', shape: 'square', radius: 30 },
-    'FARP':  { colour: '#DD0000', shape: 'square', radius: 28 },
-    'VESDA': { colour: '#DD0000', shape: 'square', radius: 28 },
+    'N':     { colour: '#4488FF', shape: 'circle', radius: 22 },
+    'AD':    { colour: '#00AAFF', shape: 'square', radius: 26 },
+    'ADE':   { colour: '#FF8800', shape: 'square', radius: 28 },
+    'EX':    { colour: '#00DDDD', shape: 'circle', radius: 24 },
+    'SO':    { colour: '#FF4444', shape: 'diamond', radius: 26 },
+    'CO':    { colour: '#FF2266', shape: 'diamond', radius: 24 },
+    'HF':    { colour: '#FF44AA', shape: 'diamond', radius: 24 },
+    'P1':    { colour: '#CC44FF', shape: 'square', radius: 22 },
+    'P2':    { colour: '#CC44FF', shape: 'square', radius: 22 },
+    'P3':    { colour: '#CC44FF', shape: 'square', radius: 22 },
+    'P4':    { colour: '#CC44FF', shape: 'square', radius: 24 },
+    'LCM':   { colour: '#FFDD00', shape: 'square', radius: 20 },
+    'EXIT1': { colour: '#00FFCC', shape: 'square', radius: 30 },
+    'FARP':  { colour: '#FF4444', shape: 'square', radius: 28 },
+    'VESDA': { colour: '#FF4444', shape: 'square', radius: 28 },
   };
-  const allSymbolStyles = (() => {
+  // useMemo so styles only recompute when takeoffList changes, not on every render.
+  const allSymbolStyles = useMemo(() => {
     const allCodes = new Set<string>();
     for (const t of (takeoffList ?? [])) {
       for (const code of Object.keys((t.counts ?? {}) as Record<string, number>)) {
@@ -232,7 +235,8 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
       }
     }
     return result;
-  })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [takeoffList]);
 
   // Detect whether drawings still have no takeoff (auto-takeoff still running)
   useEffect(() => {

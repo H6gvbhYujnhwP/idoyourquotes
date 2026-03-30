@@ -618,10 +618,43 @@ Fix: Added a word-merging pass immediately after pdfjs extraction. Any word imme
 | `server/services/takeoffMarkup.ts` | Import `computeSymbolStyles`; both `generateSvgOverlay` and `generateMarkupData` use dynamic styles instead of hardcoded `SYMBOL_STYLES` |
 | `client/src/pages/ElectricalWorkspace.tsx` | Compute `allSymbolStyles` from actual takeoff codes using client-side `COLOUR_PALETTE` + hash; pass to `ElectricalDrawingViewer` instead of `viewingTakeoff.symbolStyles` |
 
+### Validation session 3 fixes (2026-03-30)
+
+**Bug C (revised) — Colours still grey after session 2 fix**
+
+Root cause: The original `COLOUR_PALETTE` contained dark colours (`#264653` navy, `#9B2226` dark red, `#0077B6` dark blue) that are near-invisible against the dark viewer background. "A1" hashed to index 4 = `#264653` — effectively black on a dark background. All other codes also fell on dark palette entries for this drawing.
+
+Fix: Replaced `COLOUR_PALETTE` (server) and `COLOUR_PALETTE_CLIENT` (client) with 20 bright/vivid colours all visible on dark backgrounds (`#FF6B6B`, `#4ECDC4`, `#FFE66D` etc.). Also updated `STATIC_STYLES_CLIENT` known-code colours to brighter equivalents. Converted `allSymbolStyles` from IIFE to `useMemo(deps: [takeoffList])` to ensure it only recomputes when data changes. Added `useMemo` to React import.
+
+**Bug E — Legend not detected for left-panel legends**
+
+Root cause: Legend detection only scanned `x > pageWidth * 0.6 && y > pageHeight * 0.6` (bottom-right quadrant). The Patrixbourne lighting drawings have their legend in a left side panel (x ≈ 0–280). Result: all codes except J and SB showed "Unknown symbol" because the legend was never read.
+
+**Critical sub-bug — `inArea` excluded entire drawing if legend was left-side**
+
+Root cause: `inArea` only checked `x >= legendExcludeRegion.xMin && y >= legendExcludeRegion.yMin` (two bounds). A left-panel legend with xMin≈30 would have caused every point with x≥30 to be excluded — the entire main drawing. This bug was dormant because legends were never found outside the bottom-right; fixing legend detection would have broken counting entirely without this fix.
+
+Fix: `inArea` now checks all four bounds (`xMin ≤ x ≤ xMax` AND `yMin ≤ y ≤ yMax`).
+
+**Legend detection rewrite:**
+The `legendCandidateWords` approach (bottom-right filter) was replaced with a full-page scan:
+1. For every short uppercase CODE word, look for a DESCRIPTION word at the same y (±15px), to the right, within 35% of page width, ≥4 chars, not itself a code
+2. Collect all CODE→DESCRIPTION pairs found anywhere
+3. Group pairs by code x-position in 80px bands — legend codes share a vertical column
+4. The band with the most pairs (≥3) is the legend block
+5. Exclude that bounding box (xMin–xMax, yMin–yMax) from installation counting
+6. Merge found descriptions into `allDescriptions` so all codes surface as Matched not Unknown
+
+**Files changed — session 3**
+| File | Change |
+|---|---|
+| `server/services/electricalTakeoff.ts` | Replace `COLOUR_PALETTE` with bright colours; full legend detection rewrite (position-agnostic); fix `inArea` to check all 4 bounds |
+| `client/src/pages/ElectricalWorkspace.tsx` | Replace `COLOUR_PALETTE_CLIENT` with bright colours; brighter `STATIC_STYLES_CLIENT` entries; `useMemo` import; IIFE → `useMemo` |
+
 ### Known open items requiring further validation
-- Existing takeoffs (pre-fix) will show old counts/colours — Mitch must delete drawings and re-upload to get corrected results
-- A1/E etc. will now merge correctly on re-upload — A1 count should drop to real install count only
-- `standardFontDataUrl` warning in pdfjs-dist: causes incomplete font decoding on some pages — may still miss some symbols on drawings with unusual fonts
+- Existing takeoffs (pre-fix) will show old counts/colours — Mitch must delete drawings and re-upload
+- After re-upload: A1/E should be separate row, counts should be real installs only, all codes should have distinct vivid colours, legend codes should resolve as Matched with description
+- `standardFontDataUrl` warning in pdfjs-dist may still affect some drawing fonts
 
 Remaining open items (separate track):
 - **3 known bugs (general workspace):** legend PDFs triggering takeoff, `generateDraft` not skipping reference-only inputs, unknown symbols dropped
