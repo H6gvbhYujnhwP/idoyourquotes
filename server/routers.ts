@@ -1680,6 +1680,20 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
                       processingStatus: "completed",
                     });
 
+                    // Save embedded legend symbols to tenderContext.symbolMappings so the frontend
+                    // can resolve descriptions for all detected codes, not just hardcoded defaults.
+                    // Merges with any existing symbolMappings (e.g. from a separately uploaded legend).
+                    if (takeoffResult.embeddedLegendSymbols && Object.keys(takeoffResult.embeddedLegendSymbols).length > 0) {
+                      const existingCtx = await getTenderContextByQuoteId(input.quoteId);
+                      const existing = (existingCtx?.symbolMappings as Record<string, {meaning: string; confirmed: boolean}> | null) ?? {};
+                      const merged: Record<string, {meaning: string; confirmed: boolean}> = { ...existing };
+                      for (const [k, v] of Object.entries(takeoffResult.embeddedLegendSymbols)) {
+                        if (!merged[k]) merged[k] = { meaning: v, confirmed: false };
+                      }
+                      await upsertTenderContext(input.quoteId, { symbolMappings: merged });
+                      console.log(`[Auto-takeoff] Saved ${Object.keys(takeoffResult.embeddedLegendSymbols).length} embedded legend symbols to tenderContext`);
+                    }
+
                     console.log(`[Auto-takeoff] Electrical takeoff complete: ${Object.keys(takeoffResult.counts).length} symbol types`);
 
                     // Auto-detect containment drawing and run containment takeoff
@@ -2340,6 +2354,18 @@ Rules:
           processedContent: formatTakeoffForQuoteContext(result, symbolMap),
           processingStatus: "completed",
         });
+
+        // Save embedded legend symbols to tenderContext.symbolMappings (same as auto-takeoff path)
+        if (result.embeddedLegendSymbols && Object.keys(result.embeddedLegendSymbols).length > 0) {
+          const existingCtx2 = await getTenderContextByQuoteId(input.quoteId);
+          const existing2 = (existingCtx2?.symbolMappings as Record<string, {meaning: string; confirmed: boolean}> | null) ?? {};
+          const merged2: Record<string, {meaning: string; confirmed: boolean}> = { ...existing2 };
+          for (const [k, v] of Object.entries(result.embeddedLegendSymbols)) {
+            if (!merged2[k]) merged2[k] = { meaning: v, confirmed: false };
+          }
+          await upsertTenderContext(input.quoteId, { symbolMappings: merged2 });
+          console.log(`[Electrical Takeoff] Saved ${Object.keys(result.embeddedLegendSymbols).length} embedded legend symbols to tenderContext`);
+        }
 
         // Auto-detect containment drawing and run containment takeoff too
         // Extract actual PDF text for detection (symbol codes alone don't contain tray keywords)

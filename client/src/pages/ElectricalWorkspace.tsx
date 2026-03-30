@@ -188,13 +188,29 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
   // Codes in the static SYMBOL_STYLES table keep their existing colour.
   // Unknown codes get a deterministic generated colour — never grey.
   // This is a pure client-side computation matching the server palette in electricalTakeoff.ts.
+  // Rainbow palette — maximally distinct, evenly spaced around the hue wheel.
   // Must stay in sync with COLOUR_PALETTE in electricalTakeoff.ts (server).
-  // All colours are bright/vivid — visible on both light and dark backgrounds.
   const COLOUR_PALETTE_CLIENT = [
-    '#FF6B6B', '#4ECDC4', '#FFE66D', '#A29BFE', '#FD79A8',
-    '#FDCB6E', '#6C5CE7', '#00CEC9', '#E17055', '#74B9FF',
-    '#55EFC4', '#FF7675', '#FA8231', '#26DE81', '#FC5C65',
-    '#45AAF2', '#FED330', '#F7B731', '#20BF6B', '#FF9FF3',
+    '#FF0000', // red
+    '#FF7700', // orange
+    '#FFEE00', // yellow
+    '#66FF00', // lime
+    '#00CC44', // green
+    '#00FFCC', // mint
+    '#00AAFF', // sky blue
+    '#0044FF', // blue
+    '#7700FF', // violet
+    '#FF00CC', // magenta
+    '#FF0066', // hot pink
+    '#FF6600', // deep orange
+    '#CCFF00', // chartreuse
+    '#00FF88', // spring green
+    '#00DDFF', // cyan
+    '#4400FF', // indigo
+    '#AA00FF', // purple
+    '#FF0099', // deep pink
+    '#FF8800', // amber
+    '#00FF44', // bright green
   ];
   const STATIC_STYLES_CLIENT: Record<string, { colour: string; shape: string; radius: number }> = {
     'J':     { colour: '#00DD00', shape: 'circle', radius: 28 },

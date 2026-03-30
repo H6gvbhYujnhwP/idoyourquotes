@@ -68,6 +68,7 @@ export interface TakeoffResult {
   hasTextLayer: boolean;
   totalTextElements: number;
   symbolColours?: Record<string, { colour: string; shape: string; radius: number }>;
+  embeddedLegendSymbols?: Record<string, string>;
 }
 
 // ---- Symbol Definitions ----
@@ -178,13 +179,30 @@ export const SYMBOL_DESCRIPTIONS: Record<string, string> = DEFAULT_SYMBOL_DESCRI
 // All other codes get a deterministic colour derived from the code string.
 // Same code always maps to the same colour — no randomness at runtime.
 
-// All colours are bright/vivid — visible on both light and dark backgrounds.
+// Rainbow palette — maximally distinct, evenly spaced around the hue wheel.
+// All colours are fully saturated and bright — visible on light and dark backgrounds.
 // Must stay in sync with COLOUR_PALETTE_CLIENT in ElectricalWorkspace.tsx.
 const COLOUR_PALETTE = [
-  '#FF6B6B', '#4ECDC4', '#FFE66D', '#A29BFE', '#FD79A8',
-  '#FDCB6E', '#6C5CE7', '#00CEC9', '#E17055', '#74B9FF',
-  '#55EFC4', '#FF7675', '#FA8231', '#26DE81', '#FC5C65',
-  '#45AAF2', '#FED330', '#F7B731', '#20BF6B', '#FF9FF3',
+  '#FF0000', // red
+  '#FF7700', // orange
+  '#FFEE00', // yellow
+  '#66FF00', // lime
+  '#00CC44', // green
+  '#00FFCC', // mint
+  '#00AAFF', // sky blue
+  '#0044FF', // blue
+  '#7700FF', // violet
+  '#FF00CC', // magenta
+  '#FF0066', // hot pink
+  '#FF6600', // deep orange
+  '#CCFF00', // chartreuse
+  '#00FF88', // spring green
+  '#00DDFF', // cyan
+  '#4400FF', // indigo
+  '#AA00FF', // purple
+  '#FF0099', // deep pink
+  '#FF8800', // amber
+  '#00FF44', // bright green
 ];
 
 function codeToColour(code: string): string {
@@ -1021,6 +1039,7 @@ export async function performElectricalTakeoff(
     hasTextLayer: true,
     totalTextElements: words.length,
     symbolColours,
+    embeddedLegendSymbols: Object.keys(embeddedLegendSymbols).length > 0 ? embeddedLegendSymbols : undefined,
   };
 }
 

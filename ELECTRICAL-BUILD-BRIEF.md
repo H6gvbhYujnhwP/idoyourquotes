@@ -651,9 +651,29 @@ The `legendCandidateWords` approach (bottom-right filter) was replaced with a fu
 | `server/services/electricalTakeoff.ts` | Replace `COLOUR_PALETTE` with bright colours; full legend detection rewrite (position-agnostic); fix `inArea` to check all 4 bounds |
 | `client/src/pages/ElectricalWorkspace.tsx` | Replace `COLOUR_PALETTE_CLIENT` with bright colours; brighter `STATIC_STYLES_CLIENT` entries; `useMemo` import; IIFE → `useMemo` |
 
-### Known open items requiring further validation
-- Existing takeoffs (pre-fix) will show old counts/colours — Mitch must delete drawings and re-upload
-- After re-upload: A1/E should be separate row, counts should be real installs only, all codes should have distinct vivid colours, legend codes should resolve as Matched with description
+### Validation session 4 fixes (2026-03-30)
+
+**Bug F — "Unknown symbol" on legend-detected codes**
+
+Root cause: `performElectricalTakeoff` correctly read the embedded legend (X, A1, B1, C1, D1, PC, PIR, H1, G1, J1) and stored descriptions locally in `allDescriptions` — but never persisted them. The client resolves descriptions from `tenderContext.symbolMappings` (already in `fullQuote`) merged into `legendDescriptions` → `allDescriptions`. Since symbolMappings was never populated by the embedded legend path, all codes that weren't in `DEFAULT_SYMBOL_DESCRIPTIONS` showed "Unknown symbol".
+
+Fix: Added `embeddedLegendSymbols?: Record<string, string>` to `TakeoffResult`. `performElectricalTakeoff` now returns the detected embedded legend. In `routers.ts`, both the auto-takeoff path and the manual `analyze` path now save these to `tenderContext.symbolMappings` (merging with any existing entries from an uploaded legend) immediately after `createElectricalTakeoff`. On next `getFull` the client receives them in `fullQuote.tenderContext.symbolMappings` and the description column resolves correctly.
+
+**Bug G (revised) — Colours not distinct enough**
+
+The previous palette had some similar shades (greens, blues). Replaced with a proper rainbow palette: 20 colours evenly spaced around the hue wheel — red, orange, yellow, lime, green, mint, sky blue, blue, violet, magenta, hot pink, deep orange, chartreuse, spring green, cyan, indigo, purple, deep pink, amber, bright green. Maximum perceptual separation. Both server (`COLOUR_PALETTE`) and client (`COLOUR_PALETTE_CLIENT`) updated in sync.
+
+**Files changed — session 4**
+| File | Change |
+|---|---|
+| `server/services/electricalTakeoff.ts` | Add `embeddedLegendSymbols` to `TakeoffResult`; return from `performElectricalTakeoff`; rainbow palette |
+| `server/routers.ts` | Save `embeddedLegendSymbols` to `tenderContext.symbolMappings` after auto-takeoff + after `analyze`; add-only changes |
+| `client/src/pages/ElectricalWorkspace.tsx` | Rainbow `COLOUR_PALETTE_CLIENT` |
+
+### Known open items
+- Existing takeoffs (pre-fix) still need re-upload to get corrected results
+- After re-upload: all legend codes should resolve as Matched, distinct colours per code
+- CD and P02 remain Review (not in the drawing legend) — Mitch to confirm if real devices or drawing refs
 - `standardFontDataUrl` warning in pdfjs-dist may still affect some drawing fonts
 
 Remaining open items (separate track):
