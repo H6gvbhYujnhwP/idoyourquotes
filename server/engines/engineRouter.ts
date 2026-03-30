@@ -17,11 +17,8 @@
  *     construction_steel, metalwork_bespoke, groundworks, solar_ev,
  *     telecoms_cabling, fire_security, lifts_access, mechanical_fabrication
  *
- *   Tier 3 — ElectricalEngine (specialist engine — BUILD NEXT, Phase 4):
+ *   Tier 3 — ElectricalEngine (specialist engine — Phase 5 COMPLETE):
  *     electrical
- *     NOTE: Until ElectricalEngine is built, electrical routes to GeneralEngine
- *     via the DRAWING_SECTORS set. This is intentional — the electrical sector
- *     will improve significantly when ElectricalEngine is wired in Phase 4.
  *
  * GUARDRAIL G11: No engine may import from another engine file.
  * This router is the ONLY file that imports from multiple engine files.
@@ -29,15 +26,14 @@
 
 import { GeneralEngine } from "./generalEngine";
 import { DrawingEngine } from "./drawingEngine";
+import { ElectricalEngine } from "./electricalEngine";
 import type { SectorEngine } from "./types";
 
 // ─── Drawing-intelligence sectors (Tier 2) ────────────────────────────────────
 // These sectors may receive structured takeoff counts or drawing analysis in
 // their processedContent. DrawingEngine is aware of this and handles it.
 //
-// Note: 'electrical' is intentionally included here as a temporary measure
-// until ElectricalEngine is built in Phase 4. Once ElectricalEngine exists,
-// it will be removed from this set and routed explicitly below.
+// Note: 'electrical' is NOT in this set — it routes to ElectricalEngine (Tier 3).
 const DRAWING_SECTORS = new Set([
   "general_construction",
   "bathrooms_kitchens",
@@ -56,8 +52,6 @@ const DRAWING_SECTORS = new Set([
   "fire_security",
   "lifts_access",
   "mechanical_fabrication",
-  // Temporary: electrical routes to DrawingEngine until Phase 4 ElectricalEngine
-  "electrical",
 ]);
 
 // ─── Selector ─────────────────────────────────────────────────────────────────
@@ -79,8 +73,11 @@ export function selectEngine(tradePreset?: string | null): SectorEngine {
     return new GeneralEngine(null);
   }
 
-  // Phase 4 placeholder — when ElectricalEngine is built:
-  // if (tradePreset === "electrical") return new ElectricalEngine();
+  // Phase 5 — ElectricalEngine (Tier 3)
+  // Gated strictly on tradePreset === "electrical". No other sector reaches this branch.
+  if (tradePreset === "electrical") {
+    return new ElectricalEngine();
+  }
 
   if (DRAWING_SECTORS.has(tradePreset)) {
     return new DrawingEngine(tradePreset);

@@ -345,8 +345,8 @@ Symbol review table (not question flow). Three legend scenarios. Job-level legen
 **Phase 4 — ElectricalQDS + Drawing Viewer** ✅ COMPLETE
 All QDS sections built. Labour auto-calculation using Spon's UK rates with productivity multiplier. plantHire and full re-analysis edit preservation. View Marked Drawing restored with full marker editing.
 
-**Phase 5 — electricalEngine.ts**
-Server-side AI engine. Confirmed takeoff → line items with Spon's labour. Phases and timelines from total labour hours.
+**Phase 5 — electricalEngine.ts** ✅ COMPLETE
+Server-side AI engine. Two exports: (1) `ElectricalEngine` class — `parseDictationSummary` routes here for `tradePreset === "electrical"`. Reads `ELECTRICAL TAKEOFF` blocks from `processedContent`, aggregates counts across drawings, applies Spon's M&E 2024 rates, returns `EngineOutput`. (2) `generateElectricalLineItems(qds, startSortIdx)` — called by `generateDraft` when `qdsSummaryJson._type === "electrical"`. Converts QDS rows to supply items, splits total labour into Phase 1/2/3 (40/40/20%), adds programme note, firstPoints, plantHire, preliminaries, sundries allowance.
 
 **Phase 6 — Electrical PDF**
 Tender submission format with phases, timelines, plant hire, labour summary.
@@ -387,7 +387,7 @@ Primary validation test. Six documents:
 
 | File | Purpose |
 |---|---|
-| `server/data/electricalLabourRates.ts` | Spon's M&E 2024 UK labour rate lookup. `matchSponsRate(description)` → `{ hoursPerUnit, unit }` or `null`. `PRODUCTIVITY_MULTIPLIERS` constant. Authoritative server copy — Phase 5 electricalEngine will import from here. |
+| `server/data/electricalLabourRates.ts` | Spon's M&E 2024 UK labour rate lookup. `matchSponsRate(description)` → `{ hoursPerUnit, unit }` or `null`. `PRODUCTIVITY_MULTIPLIERS` constant. Authoritative server copy — imported by `electricalEngine.ts` (Phase 5). |
 | `client/src/components/electrical/ElectricalQDS.tsx` | Full QDS component. 8 sections: Line Items, Containment, Cabling, First Points, Plant/Hire, Preliminaries, Labour Summary, Sundries. Spon's rates auto-applied. Labour rate + productivity multiplier in header. Auto-save debounced 1500ms to `qdsSummaryJson`. |
 | `client/src/components/electrical/ElectricalDrawingViewer.tsx` | Full-screen marked drawing viewer. PDF rendered via PDF.js. Interactive SVG marker overlay. Three feedback paths all persist to DB (see below). |
 
@@ -425,20 +425,78 @@ After `updateMarkers` saves: `refetchTakeoffs()` fires in parent, local `initial
 
 ---
 
-## 16. Phase 5 — Next Build (electricalEngine.ts)
+## 16. Phase 5 — Completed Work
 
-**File:** `server/engines/electricalEngine.ts`
+### New files
 
-**Dispatch:** Add electrical branch in `server/engines/engineRouter.ts` — detect `tradePreset === "electrical"` and call `electricalEngine` instead of `generalEngine` or `drawingEngine`.
+| File | Purpose |
+|---|---|
+| `server/engines/electricalEngine.ts` | Tier 3 sector engine. Two exports: `ElectricalEngine` class (SectorEngine) for `parseDictationSummary`, and `generateElectricalLineItems(qds, startSortIdx)` for `generateDraft`. |
 
-**Input:** Confirmed QDS data from `qdsSummaryJson` (already has labour hours, supply prices, plant hire). Should NOT re-run takeoff. Reads `ElectricalQDSData` (discriminated by `_type: "electrical"`).
+### Modified files
 
-**Output:** Line items written via `createLineItem`. Phases and timelines derived from total labour hours:
-- First fix: ~40% of total hours
-- Second fix: ~40% of total hours  
-- Testing & commissioning: ~20% of total hours
-- Timeline in weeks: total hours ÷ (team size × 40hrs/week)
+| File | Change |
+|---|---|
+| `server/engines/engineRouter.ts` | Added `ElectricalEngine` import. Removed `"electrical"` from `DRAWING_SECTORS`. Added `tradePreset === "electrical"` branch returning `new ElectricalEngine()` before the DrawingEngine check. Updated comments. |
+| `server/routers.ts` | Added `generateElectricalLineItems` import. Added `_type === "electrical"` branch at the top of the `qdsSummaryRaw` parse block in `generateDraft` — calls `generateElectricalLineItems(qds, 0)` and skips the general materials/labour/plantHire paths. |
 
-**Labour rates:** Import `matchSponsRate` and `PRODUCTIVITY_MULTIPLIERS` from `server/data/electricalLabourRates.ts`.
+### ElectricalEngine — key behaviours
 
-**Guardrail:** `engineRouter.ts` changes must not affect `generalEngine` or `drawingEngine` dispatch paths. Electrical branch must be gated strictly on `tradePreset === "electrical"`.
+**parseDictationSummary path (`ElectricalEngine.analyse`):**
+- Filters reference-only inputs (legend PDFs) as belt-and-braces
+- Parses `ELECTRICAL TAKEOFF — Drawing: ...` blocks from `processedContent`
+- Aggregates counts across drawings (same code+description = one row)
+- Calls `matchSponsRate(description)` from `electricalLabourRates.ts` for each item
+- Returns `materials[]` (one per symbol type, `unitPrice: 0`, `estimated: true`) and one aggregate `labour[]` entry with total hours
+- `riskNotes` lists items with no Spon's match so the user knows which QDS rows need manual hours
+- Errors are caught and returned as degraded `EngineOutput` — never throws
+
+**generateDraft path (`generateElectricalLineItems`):**
+- Supply items: one line item per QDS row — `[CODE] description — supply`, quantity, supplyPrice
+- Phase labour: `Phase 1 — First Fix Labour` (40%), `Phase 2 — Second Fix Labour` (40%), `Phase 3 — Testing & Commissioning` (20%) — each as `qty hrs @ labourRate`
+- Productivity multiplier applied to total hours before phase split
+- Programme note: `Programme: Xw total @ 2 operatives (Phase 1: Xw, Phase 2: Xw, T&C: Xw)` — zero-cost `unit: "note"` line
+- First Points, Plant/Hire (with markup and costPrice), Preliminaries, Sundries allowance (% of supply total)
+- startSortIdx param so future callers can offset sort order if needed
+
+### Isolation verification
+- `ElectricalEngine` imports only `./types` and `../data/electricalLabourRates` — no cross-engine imports
+- `engineRouter.ts` electrical branch gated on strict `=== "electrical"` — no other sector reaches it
+- `generateDraft` electrical branch gated on `qds._type === "electrical"` — only fires for electrical QDS
+- All 25 other sectors: routing unchanged, `generateDraft` unchanged
+- `QuoteWorkspace.tsx`, `pdfGenerator.ts`, `ElectricalQDS.tsx`, `ElectricalWorkspace.tsx` — untouched
+
+---
+
+## 17. Phase 6 — Next Build (Electrical PDF)
+
+**File:** `server/pdfGenerator.ts` (add-only — new function, never modify `generateSimpleQuoteHTML`)
+
+**New function:** `generateElectricalQuoteHTML(quoteData)` — formal tender submission document.
+
+**Template sections:**
+1. Cover page: project name, reference, date, "Tender Submission" badge, company logo
+2. Project description and scope (from `quote.description`)
+3. Phase programme table — Phase 1 / Phase 2 / T&C with week ranges derived from total hours ÷ (2 operatives × 40 hrs/week)
+4. Itemised schedule of works — supply items grouped by section (Line Items, Containment, Cabling), each with qty, unit, rate, total
+5. Labour summary table — phase hours, rate per hour, phase cost totals
+6. Plant & hire schedule (only rendered when plant hire line items exist)
+7. Preliminaries (only rendered when prelim line items exist)
+8. Pricing summary: supply total, labour total, plant total, prelims, sundries, subtotal, VAT, **Total Tender Price**
+9. Assumptions & exclusions (from `quote.assumptions` / `quote.exclusions`)
+10. Terms & conditions (from `quote.terms`)
+11. Footer: company name, address, registration number, contact email/phone
+
+**Route:** In `quotes.generatePDF` handler in `routers.ts`, detect `(quote as any).tradePreset === "electrical"` and call `generateElectricalQuoteHTML(fullQuoteData)` instead of `generateSimpleQuoteHTML`. This is an add-only branch — the existing call is untouched.
+
+**Source data:** `getFullQuoteData` already returns everything needed — `quote`, `lineItems`, org branding. No schema changes needed.
+
+**How to identify line item types from the flat `lineItems` array:**
+- Supply rows: `item.unit !== "hrs"` AND `item.unit !== "note"` AND `item.unit !== "circuit"` AND `item.rate > 0`
+- Labour rows: `item.description` starts with `"Phase "` OR `item.unit === "hrs"`
+- Programme note: `item.unit === "note"` (qty = 0, rate = 0 — display only, no total)
+- First Points: `item.unit === "circuit"`
+- Plant/Hire: `item.description` contains `"day(s)"` OR `"week(s)"` (set by `generateElectricalLineItems`)
+- Prelims/Sundries: everything else with `item.rate > 0`
+
+**Shared infrastructure:** Same HTML string + PDFKit pipeline as `generateSimpleQuoteHTML`. Same R2 upload, same `quote.pdfUrl` write-back, same client-side new-tab open. Reuse brand colours from `org.brandPrimary` / `org.brandSecondary` if set, else `#1a2b4a` / `#0d9488`.

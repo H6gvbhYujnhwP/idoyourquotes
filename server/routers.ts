@@ -63,6 +63,7 @@ import { transcribeAudio, transcribeAudioFromBuffer } from "./_core/voiceTranscr
 import { TRADE_PRESETS, TradePresetKey } from "./tradePresets";
 import { selectEngine } from "./engines/engineRouter";
 import type { EngineInput } from "./engines/types";
+import { generateElectricalLineItems } from "./engines/electricalEngine";
 import type { ComprehensiveConfig, InsertQuote } from "../drizzle/schema";
 
 /**
@@ -3616,6 +3617,18 @@ Respond ONLY with valid JSON — no preamble, no markdown:
             const qds = JSON.parse(qdsSummaryRaw);
             let sortIdx = 0;
 
+            // ── Electrical QDS branch ─────────────────────────────────────
+            // When qdsSummaryJson was written by ElectricalQDS.tsx it carries
+            // _type: "electrical". Route to the dedicated converter which handles
+            // rows (supply items), phase-based labour, firstPoints, plantHire,
+            // preliminaries, and sundries allowance.
+            // This branch is gated on _type — never fires for any other sector.
+            if (qds._type === "electrical") {
+              qdsLineItems = generateElectricalLineItems(qds, 0);
+              console.log(`[generateDraft] Electrical QDS direct line items: ${qdsLineItems.length} items`);
+              // Skip the general materials/labour/plantHire paths below
+            } else {
+
             // Materials → line items (each material is one line item)
             if (qds.materials && Array.isArray(qds.materials)) {
               for (const m of qds.materials) {
@@ -3680,6 +3693,7 @@ Respond ONLY with valid JSON — no preamble, no markdown:
             }
 
             console.log(`[generateDraft] QDS direct line items: ${qdsLineItems.length} items from qdsSummaryJson`);
+            } // end else (non-electrical general QDS path)
           } catch (e) {
             console.warn("[generateDraft] Failed to parse qdsSummaryJson — will rely on AI only:", e);
             qdsLineItems = [];
