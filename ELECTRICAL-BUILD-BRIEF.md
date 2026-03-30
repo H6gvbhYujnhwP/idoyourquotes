@@ -470,33 +470,186 @@ After `updateMarkers` saves: `refetchTakeoffs()` fires in parent, local `initial
 
 ## 17. Phase 6 — Next Build (Electrical PDF)
 
-**File:** `server/pdfGenerator.ts` (add-only — new function, never modify `generateSimpleQuoteHTML`)
+### Overview
 
-**New function:** `generateElectricalQuoteHTML(quoteData)` — formal tender submission document.
+Three things to build, in this order:
 
-**Template sections:**
-1. Cover page: project name, reference, date, "Tender Submission" badge, company logo
-2. Project description and scope (from `quote.description`)
-3. Phase programme table — Phase 1 / Phase 2 / T&C with week ranges derived from total hours ÷ (2 operatives × 40 hrs/week)
-4. Itemised schedule of works — supply items grouped by section (Line Items, Containment, Cabling), each with qty, unit, rate, total
-5. Labour summary table — phase hours, rate per hour, phase cost totals
-6. Plant & hire schedule (only rendered when plant hire line items exist)
-7. Preliminaries (only rendered when prelim line items exist)
-8. Pricing summary: supply total, labour total, plant total, prelims, sundries, subtotal, VAT, **Total Tender Price**
-9. Assumptions & exclusions (from `quote.assumptions` / `quote.exclusions`)
-10. Terms & conditions (from `quote.terms`)
-11. Footer: company name, address, registration number, contact email/phone
+1. **Add `costPrice` to `ElectricalQDSRow`** — buy-in column in QDS table, preserved across rebuilds, flows through to generated line items so `QuoteWorkspace.tsx` shows margin exactly as all other sectors do
+2. **Pass `costPrice` through `generateElectricalLineItems`** — so `QuoteWorkspace.tsx` reads it from the line item record and shows per-row and total margin (zero extra work on the quote display side — already works this way for all sectors)
+3. **`generateElectricalQuoteHTML`** — new PDF function; renders sell prices only, never cost/margin
 
-**Route:** In `quotes.generatePDF` handler in `routers.ts`, detect `(quote as any).tradePreset === "electrical"` and call `generateElectricalQuoteHTML(fullQuoteData)` instead of `generateSimpleQuoteHTML`. This is an add-only branch — the existing call is untouched.
+---
 
-**Source data:** `getFullQuoteData` already returns everything needed — `quote`, `lineItems`, org branding. No schema changes needed.
+### How the rest of the app does margin (match this exactly)
 
-**How to identify line item types from the flat `lineItems` array:**
-- Supply rows: `item.unit !== "hrs"` AND `item.unit !== "note"` AND `item.unit !== "circuit"` AND `item.rate > 0`
-- Labour rows: `item.description` starts with `"Phase "` OR `item.unit === "hrs"`
-- Programme note: `item.unit === "note"` (qty = 0, rate = 0 — display only, no total)
-- First Points: `item.unit === "circuit"`
-- Plant/Hire: `item.description` contains `"day(s)"` OR `"week(s)"` (set by `generateElectricalLineItems`)
-- Prelims/Sundries: everything else with `item.rate > 0`
+**Pattern in `QuoteWorkspace.tsx`:**
+- Each line item record has a `costPrice` column (in `drizzle/schema.ts` — added 26 Mar 2026)
+- Per-row margin cell reads `item.costPrice`; calculates `(rate − costPrice) × qty`; shown as `£X.XX (Y%)`
+- `resolveCostPrice()` helper: reads `item.costPrice` first, falls back to catalog match only if null
+- Margin summary bar: one colour-coded row per `pricingType` — `standard` = green, `monthly` = teal, `annual` = amber, `optional` = purple; shows `£revenue − £cost = £margin (Y%)`
+- **No changes needed to `QuoteWorkspace.tsx`** — it already reads `item.costPrice` correctly. Just pass `costPrice` through from the QDS row and it works.
 
-**Shared infrastructure:** Same HTML string + PDFKit pipeline as `generateSimpleQuoteHTML`. Same R2 upload, same `quote.pdfUrl` write-back, same client-side new-tab open. Reuse brand colours from `org.brandPrimary` / `org.brandSecondary` if set, else `#1a2b4a` / `#0d9488`.
+---
+
+### Concern A — Exact file changes
+
+**`client/src/components/electrical/ElectricalQDS.tsx`:**
+
+1. Add to `ElectricalQDSRow` interface (after `supplyEdited`):
+```typescript
+costPrice: number;    // £ per unit buy-in
+costEdited: boolean;
+```
+
+2. Add defaults in `buildRow()` (alongside `supplyPrice: 0, supplyEdited: false`):
+```typescript
+costPrice: prev?.costEdited ? prev.costPrice : 0,
+costEdited: false,
+```
+Also add `?? 0` fallback when reading from saved JSON: `costPrice: row.costPrice ?? 0` — so existing saved QDS data without `costPrice` deserialises without error.
+
+3. Add "Buy-in £" column to the row table — between supply price and hours columns. Input style identical to `supplyPrice` input. `onChange` sets `{ costPrice: numInput(e.target.value), costEdited: true }`.
+
+4. Update `totals` useMemo — add inside the `for (const r of rows)` loop:
+```typescript
+let supplyBuyInTotal = 0;
+// inside loop:
+supplyBuyInTotal += r.costPrice * r.qty;
+```
+After the loop, derive:
+```typescript
+const supplyProfit = supplyTotal - supplyBuyInTotal;
+const plantProfit  = plantSell - plantBuyIn;  // plantBuyIn/plantSell already calculated
+const totalProfit  = supplyProfit + plantProfit;
+```
+Return `supplyBuyInTotal`, `supplyProfit`, `plantProfit`, `totalProfit` from the useMemo.
+
+5. Add profit display to the grand total card — internal only, never in PDF:
+- "Supply buy-in: £X.XX" (grey label)
+- "Supply profit: £X.XX (Y%)" — green if positive, red if negative
+- "Plant profit: £X.XX" — only rendered if `plantHire.length > 0`
+- **"Total profit: £X.XX (Y%)"** — bold, green/red
+
+---
+
+**`server/engines/electricalEngine.ts` — `generateElectricalLineItems`:**
+
+For supply rows, add `costPrice` field:
+```typescript
+costPrice: (row.costPrice ?? 0) > 0 ? String(Math.round((row.costPrice ?? 0) * 100) / 100) : null,
+```
+Plant hire already passes `costPrice` correctly from Phase 5 — no change needed.
+
+---
+
+### Concern B — PDF must never show cost/profit
+
+`generateElectricalQuoteHTML` outputs sell prices and totals only:
+- No margin column, no buy-in column, no profit row, no cost price anywhere in the HTML
+- `costPrice` field on line items is used by `QuoteWorkspace.tsx` for the margin display — the PDF function ignores it entirely
+
+---
+
+### Phase 6 — PDF function spec
+
+**New function:** `generateElectricalQuoteHTML(quoteData: FullQuoteData): Promise<string>`
+Add to `server/pdfGenerator.ts` — add-only, never modify `generateSimpleQuoteHTML`.
+
+`FullQuoteData` is already the type returned by `getFullQuoteData` and used by `generateSimpleQuoteHTML` — same shape, same import, no new DB queries needed.
+
+**Route change in `server/routers.ts`** — add before the existing `generateSimpleQuoteHTML` call inside `quotes.generatePDF`:
+```typescript
+if ((quote as any).tradePreset === "electrical") {
+  html = await generateElectricalQuoteHTML(fullQuoteData);
+} else {
+  html = await generateSimpleQuoteHTML(fullQuoteData);  // unchanged
+}
+```
+
+**Template sections (sell prices only):**
+
+1. **Cover page** — company logo, project name, "TENDER SUBMISSION", date, quote reference. Navy (`#1a2b4a`) header band, teal (`#0d9488`) accent.
+
+2. **Project scope** — `quote.description` paragraph.
+
+3. **Programme table** — derived from phase labour line items:
+   | Phase | Scope | Hours | Weeks |
+   |---|---|---|---|
+   | Phase 1 — First Fix | Containment, back boxes, cabling | Xhrs | Xw |
+   | Phase 2 — Second Fix | Fittings, accessories, devices | Xhrs | Xw |
+   | Phase 3 — T&C | EIC, EICR, client handover | Xhrs | Xw |
+   Footer note: `@ 2 operatives, 40 hrs/week`
+
+4. **Schedule of Works** — line items grouped under section headings:
+   - Electrical Installation (supply rows, not containment/cabling)
+   - Containment (description ends with `— containment`)
+   - Cabling (description ends with `— cabling`)
+   - Labour (description starts with `Phase 1`, `Phase 2`, `Phase 3`)
+   - Plant & Hire (description contains `day(s)` or `week(s)`)
+   - Preliminaries (everything else with rate > 0)
+
+   Each row: Description | Qty | Unit | Rate (£) | Total (£)
+   Programme note rows (`unit === "note"`): full-width italic, no amounts columns.
+
+5. **Pricing Summary:**
+   ```
+   Supply Total          £X,XXX.XX
+   Labour Total          £X,XXX.00
+   First Points          £X,XXX.00   (omit if £0)
+   Plant & Hire          £X,XXX.00   (omit if £0)
+   Preliminaries         £X,XXX.00   (omit if £0)
+   Sundries              £X,XXX.00   (omit if £0)
+   ─────────────────────────────────
+   Subtotal              £X,XXX.00
+   VAT (20%)             £X,XXX.00   (omit if quote.taxRate === 0)
+   ─────────────────────────────────
+   TOTAL TENDER PRICE    £X,XXX.00
+   ```
+
+6. **Assumptions & Exclusions** — bullet lists from `quote.assumptions` / `quote.exclusions`.
+
+7. **Terms & Conditions** — `quote.terms` full text.
+
+8. **Footer** — company name, address, contact email/phone.
+
+---
+
+### How to identify line item types from the `lineItems` array
+
+All set by `generateElectricalLineItems` (Phase 5):
+
+| Type | Identify by |
+|---|---|
+| Supply — line items | not containment/cabling, not phase labour, not note, not circuit, not sundries, not prelim pattern |
+| Supply — containment | description ends with `— containment` |
+| Supply — cabling | description ends with `— cabling` |
+| Phase labour | description starts with `"Phase 1"`, `"Phase 2"`, or `"Phase 3"` |
+| Programme note | `unit === "note"` |
+| First Points | `unit === "circuit"` |
+| Plant/Hire | description contains `" day(s)"` OR `" week(s)"` |
+| Sundries | description starts with `"Sundries allowance"` |
+| Preliminaries | everything else with `rate > 0` |
+
+---
+
+### Files to change — Phase 6
+
+| File | Change |
+|---|---|
+| `client/src/components/electrical/ElectricalQDS.tsx` | Add `costPrice` + `costEdited` to `ElectricalQDSRow`; add buy-in input column; add profit lines to grand total card |
+| `server/engines/electricalEngine.ts` | Pass `costPrice` on supply rows in `generateElectricalLineItems` |
+| `server/pdfGenerator.ts` | Add `generateElectricalQuoteHTML` — new function, sell prices only |
+| `server/routers.ts` | Add electrical branch in `quotes.generatePDF` — add only |
+
+**Must NOT be modified:** `QuoteWorkspace.tsx`, `generateSimpleQuoteHTML`, `generalEngine.ts`, `drawingEngine.ts`, `engineRouter.ts`, any non-electrical component.
+
+---
+
+### Isolation checklist for Phase 6
+
+Before delivery, verify:
+- [ ] `generateSimpleQuoteHTML` body byte-for-byte unchanged
+- [ ] `generatePDF` route: non-electrical quotes still hit existing path unchanged
+- [ ] No `costPrice`, margin, or profit appears anywhere in the HTML/PDF output
+- [ ] `ElectricalQDS.tsx` change is additive — `costPrice` defaults to `0`; existing saved QDS without `costPrice` reads as `0` via `?? 0` fallback; no data loss
+- [ ] `npx tsc --noEmit --skipLibCheck` = zero new errors
