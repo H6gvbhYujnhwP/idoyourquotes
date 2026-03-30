@@ -281,6 +281,7 @@ export function generateElectricalLineItems(
       quantity: qty,
       unit: String(row.unit || "each"),
       rate: Number(row.supplyPrice) || 0,
+      costPrice: (row.costPrice ?? 0) > 0 ? String(Math.round((row.costPrice ?? 0) * 100) / 100) : null,
       pricingType: "standard",
       sortOrder: sortIdx++,
     });

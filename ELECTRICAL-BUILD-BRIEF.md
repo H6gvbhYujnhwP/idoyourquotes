@@ -348,7 +348,7 @@ All QDS sections built. Labour auto-calculation using Spon's UK rates with produ
 **Phase 5 — electricalEngine.ts** ✅ COMPLETE
 Server-side AI engine. Two exports: (1) `ElectricalEngine` class — `parseDictationSummary` routes here for `tradePreset === "electrical"`. Reads `ELECTRICAL TAKEOFF` blocks from `processedContent`, aggregates counts across drawings, applies Spon's M&E 2024 rates, returns `EngineOutput`. (2) `generateElectricalLineItems(qds, startSortIdx)` — called by `generateDraft` when `qdsSummaryJson._type === "electrical"`. Converts QDS rows to supply items, splits total labour into Phase 1/2/3 (40/40/20%), adds programme note, firstPoints, plantHire, preliminaries, sundries allowance.
 
-**Phase 6 — Electrical PDF**
+**Phase 6 — Electrical PDF** ✅ COMPLETE
 Tender submission format with phases, timelines, plant hire, labour summary.
 
 ---
@@ -468,7 +468,39 @@ After `updateMarkers` saves: `refetchTakeoffs()` fires in parent, local `initial
 
 ---
 
-## 17. Phase 6 — Next Build (Electrical PDF)
+## 18. Phase 6 — Completed Work
+
+### Modified files
+
+| File | Change |
+|---|---|
+| `client/src/components/electrical/ElectricalQDS.tsx` | Added `costPrice: number` and `costEdited: boolean` to `ElectricalQDSRow` interface. `buildOrMergeQDS` carries `costPrice` forward (`prev?.costEdited ? prev.costPrice : (prev?.costPrice ?? 0)`) — existing saved QDS without `costPrice` reads safely as `0` via `?? 0`. Added "Buy-in £" column to `ItemTableHeader` (now 12 columns, colSpan updated). Added buy-in input cell in `ItemRow` between Supply £/unit and Supply £ total. `totals` useMemo now accumulates `supplyBuyInTotal` and derives `supplyProfit`, `plantProfit`, `totalProfit`. Grand total card shows internal-only profit rows: supply buy-in, supply profit (green/red + %), plant profit, total profit (bold, green/red + %). All profit rows are QDS-only — never appear in PDF. |
+| `server/engines/electricalEngine.ts` | `generateElectricalLineItems`: supply rows now include `costPrice: (row.costPrice ?? 0) > 0 ? String(Math.round((row.costPrice ?? 0) * 100) / 100) : null`. Plant hire already passed `costPrice` correctly — no change. |
+| `server/pdfGenerator.ts` | Added electrical branch in `generateQuoteHTML`: `if ((quote as any).tradePreset === "electrical") { html = generateElectricalQuoteHTML(resolvedData); }` — before the existing `isComprehensive` branch. Added `generateElectricalQuoteHTML(data: PDFQuoteData): string` as a new private function at end of file. Template: cover page (navy/teal, logo, project name, TENDER SUBMISSION, client, ref, date), project description, programme table (Phase 1/2/3 with hours and weeks, @ 2 operatives footer), schedule of works (6 sections: Electrical Installation, Containment, Cabling, Labour, Plant & Hire, Preliminaries, Sundries — only non-empty sections rendered), pricing summary (supply/labour/first points/plant/prelims/sundries/subtotal/VAT/total), assumptions & exclusions two-column, terms & conditions, footer. Sell prices only — no cost/margin/profit anywhere in HTML output. |
+
+### Files NOT modified
+- `server/routers.ts` — untouched (electrical PDF branch is inside `generateQuoteHTML`, not in the route)
+- `server/engines/engineRouter.ts` — untouched
+- `QuoteWorkspace.tsx` — untouched (already reads `item.costPrice` correctly for margin display)
+- `generateSimpleQuoteHTML` — body byte-for-byte unchanged
+
+### Isolation verification
+- `generateSimpleQuoteHTML` body identical to pre-Phase-6 version ✅
+- Non-electrical quotes still route through `isComprehensive` / `generateSimpleQuoteHTML` unchanged ✅
+- No cost/buy-in/profit data in `generateElectricalQuoteHTML` HTML output ✅
+- `costPrice` defaults to `0` in all new QDS rows; existing saved QDS without field reads safely via `?? 0` ✅
+- `npx tsc --noEmit --skipLibCheck` = zero new errors (only pre-existing TS2688 @types stubs) ✅
+
+---
+
+## 19. Phase 7 — Next Build (TBD)
+
+Phase 6 completes the core electrical workspace end-to-end: upload → takeoff → QDS with buy-in margin → generate draft → PDF tender submission.
+
+Candidate next items (to be scoped):
+- ElectricalWorkspace PDF tab wiring (trigger `generatePDF` from the PDF tab, render preview)
+- Phase 3 bug fixes: legend PDFs triggering takeoff, `generateDraft` not skipping reference-only inputs, unknown symbols dropped
+- Sector engine modularisation (Phase 1–5 of the roadmap docx)
 
 ### Overview
 

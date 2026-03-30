@@ -607,7 +607,9 @@ export async function generateQuoteHTML(data: PDFQuoteData): Promise<string> {
   const resolvedData = await resolvePdfLogoUrl(data);
 
   let html: string;
-  if (isComprehensive) {
+  if ((quote as any).tradePreset === "electrical") {
+    html = generateElectricalQuoteHTML(resolvedData);
+  } else if (isComprehensive) {
     html = generateComprehensiveProposalHTML(resolvedData);
   } else {
     html = generateSimpleQuoteHTML(resolvedData);
@@ -1491,4 +1493,353 @@ function renderLineItemsTable(items: QuoteLineItem[], colors: BrandColors): stri
         </tr>`).join("")}
       </tbody>
     </table>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ELECTRICAL PDF — Phase 6
+//
+// Tender submission document for the electrical sector.
+// Sell prices only — no cost/buy-in/margin/profit data in this output.
+// Called by generateQuoteHTML when quote.tradePreset === "electrical".
+// Must not affect any of the 25 other sectors.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function generateElectricalQuoteHTML(data: PDFQuoteData): string {
+  const { quote, lineItems, user, organization, tenderContext } = data;
+
+  const navy   = "#1a2b4a";
+  const teal   = "#0d9488";
+  const bodyText   = "#2d3748";
+  const mutedText  = "#4a5568";
+  const borderLight = "#e2e8f0";
+
+  const companyName = organization?.name || user.companyName || user.name || "Your Company";
+  const companyAddress = organization?.address || user.companyAddress || "";
+  const companyEmail   = organization?.email   || user.email          || "";
+  const companyPhone   = organization?.phone   || user.phone          || "";
+
+  const logoUrl = organization?.companyLogo || user.companyLogo || null;
+  const logoHTML = logoUrl
+    ? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(companyName)}" style="max-height:90px; max-width:240px; object-fit:contain;" />`
+    : `<div style="font-size:22pt; font-weight:800; color:${navy};">${escapeHtml(companyName)}</div>`;
+
+  const quoteDate   = formatDate((quote as any).updatedAt || (quote as any).createdAt);
+  const quoteRef    = (quote as any).quoteReference || `Q-${quote.id}`;
+  const projectName = (quote as any).title || "Electrical Works";
+  const clientName  = (quote as any).clientName || "";
+  const description = (quote as any).description || "";
+  const taxRate     = Number((quote as any).taxRate) || 0;
+  const termsText   = (quote as any).terms || "";
+
+  // ── Identify line item types ───────────────────────────────────────────────
+  // Classification rules from Section 17 of ELECTRICAL-BUILD-BRIEF.md
+  const isPhaseLabour  = (d: string) => /^Phase [123]\s*[—–\-]/.test(d);
+  const isProgrammeNote = (u: string) => u === "note";
+  const isContainment  = (d: string) => d.endsWith("— containment");
+  const isCabling      = (d: string) => d.endsWith("— cabling");
+  const isFirstPoints  = (u: string) => u === "circuit";
+  const isPlantHire    = (d: string) => / day\(s\)| week\(s\)/.test(d);
+  const isSundries     = (d: string) => d.startsWith("Sundries allowance");
+
+  const isSupplyInstall = (item: QuoteLineItem) =>
+    !isProgrammeNote(item.unit || "") &&
+    !isPhaseLabour(item.description || "") &&
+    !isContainment(item.description || "") &&
+    !isCabling(item.description || "") &&
+    !isFirstPoints(item.unit || "") &&
+    !isPlantHire(item.description || "") &&
+    !isSundries(item.description || "");
+
+  const supplyItems    = lineItems.filter(i => isSupplyInstall(i));
+  const containItems   = lineItems.filter(i => isContainment(i.description || ""));
+  const cablingItems   = lineItems.filter(i => isCabling(i.description || ""));
+  const phaseItems     = lineItems.filter(i => isPhaseLabour(i.description || ""));
+  const noteItems      = lineItems.filter(i => isProgrammeNote(i.unit || ""));
+  const firstPtItems   = lineItems.filter(i => isFirstPoints(i.unit || ""));
+  const plantItems     = lineItems.filter(i => isPlantHire(i.description || ""));
+  const sundriesItems  = lineItems.filter(i => isSundries(i.description || ""));
+  const prelimItems    = lineItems.filter(i =>
+    !isSupplyInstall(i) &&
+    !isContainment(i.description || "") &&
+    !isCabling(i.description || "") &&
+    !isPhaseLabour(i.description || "") &&
+    !isProgrammeNote(i.unit || "") &&
+    !isFirstPoints(i.unit || "") &&
+    !isPlantHire(i.description || "") &&
+    !isSundries(i.description || "") &&
+    (Number(i.rate) || 0) > 0
+  );
+
+  // ── Totals ─────────────────────────────────────────────────────────────────
+  const sum = (items: QuoteLineItem[]) =>
+    items.reduce((s, i) => s + (Number(i.total) || Number(i.quantity) * Number(i.rate) || 0), 0);
+
+  const supplyTotal   = sum([...supplyItems, ...containItems, ...cablingItems]);
+  const labourTotal   = sum(phaseItems);
+  const firstPtTotal  = sum(firstPtItems);
+  const plantTotal    = sum(plantItems);
+  const prelimTotal   = sum(prelimItems);
+  const sundriesTotal = sum(sundriesItems);
+  const subtotal = supplyTotal + labourTotal + firstPtTotal + plantTotal + prelimTotal + sundriesTotal;
+  const vatAmount = taxRate > 0 ? subtotal * (taxRate / 100) : 0;
+  const grandTotal = subtotal + vatAmount;
+
+  // ── Programme table from note line item ───────────────────────────────────
+  // Programme note format: "Programme: Xw total @ 2 operatives (Phase 1: Xw, Phase 2: Xw, T&C: Xw)"
+  let programmeTableHTML = "";
+  if (phaseItems.length > 0) {
+    let ph1Hrs = 0, ph2Hrs = 0, ph3Hrs = 0;
+    let ph1Wks = 1, ph2Wks = 1, ph3Wks = 1;
+
+    for (const p of phaseItems) {
+      const hrs = Number(p.quantity) || 0;
+      const d = (p.description || "").toLowerCase();
+      if (d.startsWith("phase 1")) { ph1Hrs = hrs; }
+      else if (d.startsWith("phase 2")) { ph2Hrs = hrs; }
+      else if (d.startsWith("phase 3")) { ph3Hrs = hrs; }
+    }
+
+    // Parse weeks from the programme note if present
+    const progNote = noteItems[0]?.description || "";
+    const wkMatch = progNote.match(/Phase 1:\s*(\d+)w.*?Phase 2:\s*(\d+)w.*?T&C:\s*(\d+)w/i);
+    if (wkMatch) {
+      ph1Wks = parseInt(wkMatch[1]) || 1;
+      ph2Wks = parseInt(wkMatch[2]) || 1;
+      ph3Wks = parseInt(wkMatch[3]) || 1;
+    } else {
+      // Derive from hours if no note
+      const team = 2, wkHrs = 40;
+      ph1Wks = Math.max(1, Math.ceil(ph1Hrs / (team * wkHrs)));
+      ph2Wks = Math.max(1, Math.ceil(ph2Hrs / (team * wkHrs)));
+      ph3Wks = Math.max(1, Math.ceil(ph3Hrs / (team * wkHrs)));
+    }
+    const totalWks = ph1Wks + ph2Wks + ph3Wks;
+
+    programmeTableHTML = `
+      <h2 style="font-size:14pt; font-weight:700; color:${navy}; margin:24pt 0 8pt; border-bottom:1.5pt solid ${teal}; padding-bottom:4pt;">Programme</h2>
+      <table style="width:100%; border-collapse:collapse; font-size:10pt; margin-bottom:18pt;">
+        <thead>
+          <tr style="background:${navy}; color:#fff;">
+            <th style="padding:7px 12px; text-align:left; font-weight:600;">Phase</th>
+            <th style="padding:7px 12px; text-align:left; font-weight:600;">Scope</th>
+            <th style="padding:7px 12px; text-align:right; font-weight:600; width:80px;">Hours</th>
+            <th style="padding:7px 12px; text-align:right; font-weight:600; width:70px;">Weeks</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${ph1Hrs > 0 ? `<tr style="border-bottom:0.5pt solid ${borderLight};">
+            <td style="padding:7px 12px; font-weight:600; color:${teal};">Phase 1 — First Fix</td>
+            <td style="padding:7px 12px; color:${mutedText};">Containment, back boxes, cabling</td>
+            <td style="padding:7px 12px; text-align:right; tabular-nums;">${ph1Hrs.toFixed(1)} hrs</td>
+            <td style="padding:7px 12px; text-align:right; tabular-nums;">${ph1Wks}w</td>
+          </tr>` : ""}
+          ${ph2Hrs > 0 ? `<tr style="border-bottom:0.5pt solid ${borderLight};">
+            <td style="padding:7px 12px; font-weight:600; color:${teal};">Phase 2 — Second Fix</td>
+            <td style="padding:7px 12px; color:${mutedText};">Fittings, accessories, devices</td>
+            <td style="padding:7px 12px; text-align:right; tabular-nums;">${ph2Hrs.toFixed(1)} hrs</td>
+            <td style="padding:7px 12px; text-align:right; tabular-nums;">${ph2Wks}w</td>
+          </tr>` : ""}
+          ${ph3Hrs > 0 ? `<tr style="border-bottom:0.5pt solid ${borderLight};">
+            <td style="padding:7px 12px; font-weight:600; color:${teal};">Phase 3 — Testing & Commissioning</td>
+            <td style="padding:7px 12px; color:${mutedText};">EIC, EICR, client handover</td>
+            <td style="padding:7px 12px; text-align:right; tabular-nums;">${ph3Hrs.toFixed(1)} hrs</td>
+            <td style="padding:7px 12px; text-align:right; tabular-nums;">${ph3Wks}w</td>
+          </tr>` : ""}
+          <tr style="background:#f8fafc; font-weight:700; border-top:1.5pt solid ${navy};">
+            <td style="padding:7px 12px;" colspan="2">Total programme</td>
+            <td style="padding:7px 12px; text-align:right; tabular-nums;">${(ph1Hrs + ph2Hrs + ph3Hrs).toFixed(1)} hrs</td>
+            <td style="padding:7px 12px; text-align:right; tabular-nums;">${totalWks}w</td>
+          </tr>
+        </tbody>
+      </table>
+      <p style="font-size:9pt; color:${mutedText}; margin-bottom:16pt; font-style:italic;">@ 2 operatives, 40 hrs/week</p>`;
+  }
+
+  // ── Schedule of works section renderer ────────────────────────────────────
+  const renderScheduleSection = (title: string, items: QuoteLineItem[]): string => {
+    if (items.length === 0) return "";
+    const rows = items.map(item => {
+      const isNote = isProgrammeNote(item.unit || "");
+      if (isNote) {
+        return `<tr><td colspan="5" style="padding:6px 12px; font-style:italic; color:${mutedText}; font-size:9.5pt;">${escapeHtml(item.description || "")}</td></tr>`;
+      }
+      const qty = Number(item.quantity) || 0;
+      const rate = Number(item.rate) || 0;
+      const total = Number(item.total) || qty * rate;
+      return `<tr style="border-bottom:0.5pt solid ${borderLight};">
+        <td style="padding:6px 12px; font-size:10pt;">${formatLineItemDescription(item.description || "")}</td>
+        <td style="padding:6px 12px; text-align:center; font-size:10pt; white-space:nowrap;">${qty % 1 === 0 ? qty.toFixed(0) : qty.toFixed(2)}</td>
+        <td style="padding:6px 12px; text-align:center; font-size:10pt; white-space:nowrap;">${escapeHtml(item.unit || "each")}</td>
+        <td style="padding:6px 12px; text-align:right; font-size:10pt; white-space:nowrap;">${formatCurrency(rate)}</td>
+        <td style="padding:6px 12px; text-align:right; font-weight:700; font-size:10pt; color:${navy}; white-space:nowrap;">${formatCurrency(total)}</td>
+      </tr>`;
+    }).join("");
+
+    return `
+      <h3 style="font-size:11pt; font-weight:700; color:${teal}; margin:14pt 0 5pt; padding-left:4px; border-left:3pt solid ${teal};">${escapeHtml(title)}</h3>
+      <table style="width:100%; border-collapse:collapse; font-size:10pt; margin-bottom:12pt;">
+        <thead>
+          <tr style="background:#f1f5f9; color:${navy}; font-size:9pt;">
+            <th style="padding:6px 12px; text-align:left; font-weight:600;">Description</th>
+            <th style="padding:6px 12px; text-align:center; font-weight:600; width:55px;">Qty</th>
+            <th style="padding:6px 12px; text-align:center; font-weight:600; width:55px;">Unit</th>
+            <th style="padding:6px 12px; text-align:right; font-weight:600; width:90px;">Rate (£)</th>
+            <th style="padding:6px 12px; text-align:right; font-weight:600; width:100px;">Total (£)</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  };
+
+  // ── Pricing summary ────────────────────────────────────────────────────────
+  const summaryRow = (label: string, amount: number, bold = false, topBorder = false) => {
+    const borderStyle = topBorder ? `border-top:1.5pt solid ${navy};` : "";
+    const fontWeight = bold ? "font-weight:700;" : "";
+    const color = bold ? `color:${navy};` : `color:${bodyText};`;
+    return `<tr>
+      <td style="padding:5px 12px; ${fontWeight} ${color} ${borderStyle}">${escapeHtml(label)}</td>
+      <td style="padding:5px 12px; text-align:right; ${fontWeight} ${color} ${borderStyle} white-space:nowrap;">${formatCurrency(amount)}</td>
+    </tr>`;
+  };
+
+  const pricingSummaryHTML = `
+    <h2 style="font-size:14pt; font-weight:700; color:${navy}; margin:24pt 0 8pt; border-bottom:1.5pt solid ${teal}; padding-bottom:4pt;">Pricing Summary</h2>
+    <table style="width:100%; max-width:380px; border-collapse:collapse; font-size:10.5pt; margin-left:auto; margin-bottom:18pt;">
+      <tbody>
+        ${supplyTotal > 0   ? summaryRow("Supply Total",   supplyTotal)   : ""}
+        ${labourTotal > 0   ? summaryRow("Labour Total",   labourTotal)   : ""}
+        ${firstPtTotal > 0  ? summaryRow("First Points",   firstPtTotal)  : ""}
+        ${plantTotal > 0    ? summaryRow("Plant & Hire",   plantTotal)    : ""}
+        ${prelimTotal > 0   ? summaryRow("Preliminaries",  prelimTotal)   : ""}
+        ${sundriesTotal > 0 ? summaryRow("Sundries",       sundriesTotal) : ""}
+        ${summaryRow("Subtotal", subtotal, false, true)}
+        ${taxRate > 0 ? summaryRow(`VAT (${taxRate}%)`, vatAmount) : ""}
+        ${summaryRow("TOTAL TENDER PRICE", grandTotal, true, true)}
+      </tbody>
+    </table>`;
+
+  // ── Assumptions & Exclusions ───────────────────────────────────────────────
+  const assumptions: any[] = tenderContext?.assumptions ?? [];
+  const exclusions:  any[] = tenderContext?.exclusions  ?? [];
+
+  const renderList = (items: any[]): string => {
+    if (!items || items.length === 0) return "<p style=\"color:#6b7280; font-size:10pt; font-style:italic;\">None specified.</p>";
+    return `<ul style="margin:0; padding-left:18px; font-size:10pt; color:${bodyText}; line-height:1.7;">
+      ${items.map(i => `<li>${escapeHtml(typeof i === "string" ? i : (i.text || i.content || String(i)))}</li>`).join("")}
+    </ul>`;
+  };
+
+  const assumptionsHTML = assumptions.length > 0 || exclusions.length > 0 ? `
+    <h2 style="font-size:14pt; font-weight:700; color:${navy}; margin:24pt 0 8pt; border-bottom:1.5pt solid ${teal}; padding-bottom:4pt;">Assumptions &amp; Exclusions</h2>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-bottom:18pt;">
+      <div>
+        <h3 style="font-size:11pt; font-weight:700; color:${teal}; margin-bottom:8px;">Assumptions</h3>
+        ${renderList(assumptions)}
+      </div>
+      <div>
+        <h3 style="font-size:11pt; font-weight:700; color:${teal}; margin-bottom:8px;">Exclusions</h3>
+        ${renderList(exclusions)}
+      </div>
+    </div>` : "";
+
+  // ── Terms & Conditions ─────────────────────────────────────────────────────
+  const termsHTML = termsText ? `
+    <h2 style="font-size:14pt; font-weight:700; color:${navy}; margin:24pt 0 8pt; border-bottom:1.5pt solid ${teal}; padding-bottom:4pt;">Terms &amp; Conditions</h2>
+    <div style="font-size:9.5pt; color:${mutedText}; line-height:1.7; margin-bottom:18pt; white-space:pre-wrap;">${escapeHtml(termsText)}</div>` : "";
+
+  // ── Footer ─────────────────────────────────────────────────────────────────
+  const footerHTML = `
+    <div style="border-top:1.5pt solid ${borderLight}; margin-top:32pt; padding-top:14pt; text-align:center; color:${mutedText}; font-size:9pt;">
+      <strong style="color:${navy};">${escapeHtml(companyName)}</strong>
+      ${companyAddress ? ` &nbsp;|&nbsp; ${escapeHtml(companyAddress)}` : ""}
+      ${companyEmail   ? ` &nbsp;|&nbsp; ${escapeHtml(companyEmail)}`   : ""}
+      ${companyPhone   ? ` &nbsp;|&nbsp; ${escapeHtml(companyPhone)}`   : ""}
+    </div>`;
+
+  // ── Assemble document ──────────────────────────────────────────────────────
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>${escapeHtml(projectName)} — Tender Submission</title>
+<style>
+  @page {
+    margin: 18mm 20mm;
+    @bottom-center {
+      content: counter(page) " of " counter(pages);
+      font-size: 9pt;
+      color: #9ca3af;
+    }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.65;
+    color: ${bodyText};
+    background: #fff;
+  }
+  .container { max-width: 800px; margin: 0 auto; padding: 30px 40px; }
+  .page-break { page-break-after: always; }
+  h2 { page-break-after: avoid; }
+  h3 { page-break-after: avoid; }
+  table { page-break-inside: auto; }
+  tr { page-break-inside: avoid; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- ── COVER PAGE ──────────────────────────────────────────────────────── -->
+  <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:85vh; text-align:center; padding:60px 40px;">
+    <div style="margin-bottom:40px;">${logoHTML}</div>
+    <div style="width:120px; height:3px; background:${teal}; margin:0 auto 32px;"></div>
+    <div style="font-size:28pt; font-weight:800; color:${navy}; margin-bottom:12px; line-height:1.2;">${escapeHtml(projectName)}</div>
+    <div style="font-size:15pt; font-weight:700; color:${teal}; margin-bottom:36px; letter-spacing:0.04em;">TENDER SUBMISSION</div>
+    <div style="font-size:11pt; color:${mutedText}; line-height:2.1;">
+      ${clientName  ? `<div><strong style="color:${bodyText};">Prepared for:</strong> ${escapeHtml(clientName)}</div>` : ""}
+      <div><strong style="color:${bodyText};">Reference:</strong> ${escapeHtml(quoteRef)}</div>
+      <div><strong style="color:${bodyText};">Date:</strong> ${escapeHtml(quoteDate)}</div>
+    </div>
+    <div style="font-size:13pt; font-weight:700; color:${navy}; margin-top:40px;">${escapeHtml(companyName)}</div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- ── PROJECT SCOPE ───────────────────────────────────────────────────── -->
+  ${description ? `
+  <h2 style="font-size:14pt; font-weight:700; color:${navy}; margin:0 0 8pt; border-bottom:1.5pt solid ${teal}; padding-bottom:4pt;">Project Description</h2>
+  <p style="font-size:10.5pt; color:${bodyText}; line-height:1.75; margin-bottom:20pt;">${escapeHtml(description)}</p>` : ""}
+
+  <!-- ── PROGRAMME ───────────────────────────────────────────────────────── -->
+  ${programmeTableHTML}
+
+  <!-- ── SCHEDULE OF WORKS ───────────────────────────────────────────────── -->
+  <h2 style="font-size:14pt; font-weight:700; color:${navy}; margin:24pt 0 8pt; border-bottom:1.5pt solid ${teal}; padding-bottom:4pt;">Schedule of Works</h2>
+
+  ${renderScheduleSection("Electrical Installation", supplyItems)}
+  ${renderScheduleSection("Containment", containItems)}
+  ${renderScheduleSection("Cabling", cablingItems)}
+  ${renderScheduleSection("Labour", [...phaseItems, ...noteItems])}
+  ${firstPtItems.length > 0 ? renderScheduleSection("First Points", firstPtItems) : ""}
+  ${plantItems.length   > 0 ? renderScheduleSection("Plant &amp; Hire", plantItems) : ""}
+  ${prelimItems.length  > 0 ? renderScheduleSection("Preliminaries", prelimItems)  : ""}
+  ${sundriesItems.length > 0 ? renderScheduleSection("Sundries", sundriesItems)     : ""}
+
+  <!-- ── PRICING SUMMARY ─────────────────────────────────────────────────── -->
+  ${pricingSummaryHTML}
+
+  <!-- ── ASSUMPTIONS & EXCLUSIONS ────────────────────────────────────────── -->
+  ${assumptionsHTML}
+
+  <!-- ── TERMS & CONDITIONS ──────────────────────────────────────────────── -->
+  ${termsHTML}
+
+  <!-- ── FOOTER ──────────────────────────────────────────────────────────── -->
+  ${footerHTML}
+
+</div>
+</body>
+</html>`;
 }

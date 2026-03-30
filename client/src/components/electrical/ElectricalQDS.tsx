@@ -55,6 +55,8 @@ interface ElectricalQDSRow {
   supplyPrice: number;    // £ per unit
   hoursPerUnit: number;   // Spon's default or user override
   noSponsRate: boolean;   // true = Spon's couldn't match
+  costPrice: number;    // £ per unit buy-in
+  costEdited: boolean;
   // Edit-preservation flags — determines what survives a QDS rebuild
   supplyEdited: boolean;
   hoursEdited: boolean;
@@ -256,11 +258,14 @@ function buildOrMergeQDS(
       unit:        spons?.unit ?? "each",
       // Preserve supply price if user has entered one
       supplyPrice: prev?.supplyEdited ? prev.supplyPrice  : 0,
+      // Preserve buy-in cost if user has entered one
+      costPrice: prev?.costEdited ? prev.costPrice : (prev?.costPrice ?? 0),
       // Preserve hours override; else use Spon's (or 0 if no match)
       hoursPerUnit: prev?.hoursEdited ? prev.hoursPerUnit : (spons?.hoursPerUnit ?? 0),
       noSponsRate: !spons,
       // Carry forward edit flags
       supplyEdited: prev?.supplyEdited ?? false,
+      costEdited:   prev?.costEdited   ?? false,
       hoursEdited:  prev?.hoursEdited  ?? false,
       qtyEdited:    prev?.qtyEdited    ?? false,
       descEdited:   prev?.descEdited   ?? false,
@@ -371,6 +376,7 @@ function ItemTableHeader() {
         <th className="text-right px-3 py-1.5 w-20">Qty</th>
         <th className="text-left px-3 py-1.5 w-12">Unit</th>
         <th className="text-right px-3 py-1.5 w-24">Supply £/unit</th>
+        <th className="text-right px-3 py-1.5 w-24">Buy-in £</th>
         <th className="text-right px-3 py-1.5 w-24">Supply £ total</th>
         <th className="text-right px-3 py-1.5 w-20">Hrs/unit</th>
         <th className="text-right px-3 py-1.5 w-20">Total hrs</th>
@@ -392,6 +398,7 @@ interface ItemRowProps {
 
 function ItemRow({ row, labourRate, productivityMultiplier, onChange, onDelete }: ItemRowProps) {
   const supplyTotal = row.supplyPrice * row.qty;
+  const costTotal   = (row.costPrice ?? 0) * row.qty;
   const totalHrs    = row.qty * row.hoursPerUnit * productivityMultiplier;
   const labourTotal = totalHrs * labourRate;
   const rowTotal    = supplyTotal + labourTotal;
@@ -430,6 +437,18 @@ function ItemRow({ row, labourRate, productivityMultiplier, onChange, onDelete }
           value={row.supplyPrice === 0 && !row.supplyEdited ? "" : row.supplyPrice}
           placeholder="0.00"
           onChange={e => onChange(row.key, { supplyPrice: numInput(e.target.value), supplyEdited: true })}
+          type="number" min="0" step="0.01"
+        />
+      </td>
+
+      {/* Buy-in £/unit */}
+      <td className="px-3 py-1 text-right">
+        <input
+          className="w-20 text-right bg-transparent border-b border-transparent hover:border-muted focus:border-primary outline-none py-0.5 tabular-nums text-muted-foreground"
+          value={(row.costPrice ?? 0) === 0 && !row.costEdited ? "" : (row.costPrice ?? 0)}
+          placeholder="0.00"
+          title={costTotal > 0 ? `Buy-in total: £${fmt(costTotal)}` : "Enter buy-in cost per unit"}
+          onChange={e => onChange(row.key, { costPrice: numInput(e.target.value), costEdited: true })}
           type="number" min="0" step="0.01"
         />
       </td>
@@ -586,11 +605,13 @@ export default function ElectricalQDS({ quoteId, includedRows, savedQdsJson }: E
     const { labourRate, productivityMultiplier, rows, firstPoints, plantHire, preliminaries, sundries } = qdsData;
 
     let supplyTotal = 0;
+    let supplyBuyInTotal = 0;
     let labourTotal = 0;
     let totalHours  = 0;
 
     for (const r of rows) {
-      supplyTotal += r.supplyPrice * r.qty;
+      supplyTotal     += r.supplyPrice * r.qty;
+      supplyBuyInTotal += (r.costPrice ?? 0) * r.qty;
       const hrs = r.qty * r.hoursPerUnit * productivityMultiplier;
       totalHours  += hrs;
       labourTotal += hrs * labourRate;
@@ -610,10 +631,14 @@ export default function ElectricalQDS({ quoteId, includedRows, savedQdsJson }: E
 
     const grandTotal = supplyTotal + labourTotal + firstPointsTotal + plantSell + prelimTotal + sundriesTotal;
 
+    const supplyProfit = supplyTotal - supplyBuyInTotal;
+    const plantProfit  = plantSell - plantBuyIn;
+    const totalProfit  = supplyProfit + plantProfit;
+
     return {
-      supplyTotal, labourTotal, totalHours, firstPointsTotal,
-      plantBuyIn, plantSell,
-      prelimTotal, sundriesTotal, grandTotal,
+      supplyTotal, supplyBuyInTotal, supplyProfit, labourTotal, totalHours, firstPointsTotal,
+      plantBuyIn, plantSell, plantProfit,
+      prelimTotal, sundriesTotal, grandTotal, totalProfit,
     };
   }, [qdsData]);
 
@@ -747,7 +772,7 @@ export default function ElectricalQDS({ quoteId, includedRows, savedQdsJson }: E
               <ItemTableHeader />
               <tbody>
                 {lineItemRows.length === 0 ? (
-                  <tr><td colSpan={11} className="px-4 py-4 text-xs text-muted-foreground italic text-center">
+                  <tr><td colSpan={12} className="px-4 py-4 text-xs text-muted-foreground italic text-center">
                     No line items — include symbols on the Takeoff tab.
                   </td></tr>
                 ) : lineItemRows.map(row => (
@@ -772,7 +797,7 @@ export default function ElectricalQDS({ quoteId, includedRows, savedQdsJson }: E
               <ItemTableHeader />
               <tbody>
                 {containRows.length === 0 ? (
-                  <tr><td colSpan={11} className="px-4 py-4 text-xs text-muted-foreground italic text-center">
+                  <tr><td colSpan={12} className="px-4 py-4 text-xs text-muted-foreground italic text-center">
                     No containment items detected in takeoff.
                   </td></tr>
                 ) : containRows.map(row => (
@@ -797,7 +822,7 @@ export default function ElectricalQDS({ quoteId, includedRows, savedQdsJson }: E
               <ItemTableHeader />
               <tbody>
                 {cablingRows.length === 0 ? (
-                  <tr><td colSpan={11} className="px-4 py-4 text-xs text-muted-foreground italic text-center">
+                  <tr><td colSpan={12} className="px-4 py-4 text-xs text-muted-foreground italic text-center">
                     No cabling items detected in takeoff.
                   </td></tr>
                 ) : cablingRows.map(row => (
@@ -1139,6 +1164,34 @@ export default function ElectricalQDS({ quoteId, includedRows, savedQdsJson }: E
               <span className="font-bold text-right tabular-nums border-t pt-1 mt-1">
                 £{fmt(totals.grandTotal)}
               </span>
+
+              {/* ── Internal margin (never appears in PDF) ─── */}
+              {totals.supplyBuyInTotal > 0 && <>
+                <span className="text-muted-foreground/60 text-xs mt-3">Supply buy-in</span>
+                <span className="text-right tabular-nums text-xs mt-3 text-muted-foreground/60">£{fmt(totals.supplyBuyInTotal)}</span>
+                <span className="text-muted-foreground/60 text-xs">Supply profit</span>
+                <span className={cn("text-right tabular-nums text-xs", totals.supplyProfit >= 0 ? "text-green-600" : "text-red-500")}>
+                  £{fmt(totals.supplyProfit)}
+                  {totals.supplyTotal > 0 && (
+                    <span className="ml-1 text-[10px]">({Math.round((totals.supplyProfit / totals.supplyTotal) * 100)}%)</span>
+                  )}
+                </span>
+              </>}
+              {totals.plantSell > 0 && totals.plantProfit !== 0 && <>
+                <span className="text-muted-foreground/60 text-xs">Plant profit</span>
+                <span className={cn("text-right tabular-nums text-xs", totals.plantProfit >= 0 ? "text-green-600" : "text-red-500")}>
+                  £{fmt(totals.plantProfit)}
+                </span>
+              </>}
+              {(totals.supplyBuyInTotal > 0 || totals.plantSell > 0) && <>
+                <span className="font-semibold text-xs border-t pt-1 mt-1">Total profit</span>
+                <span className={cn("font-bold text-right tabular-nums text-xs border-t pt-1 mt-1", totals.totalProfit >= 0 ? "text-green-600" : "text-red-500")}>
+                  £{fmt(totals.totalProfit)}
+                  {totals.grandTotal > 0 && (
+                    <span className="ml-1 font-normal text-[10px]">({Math.round((totals.totalProfit / totals.grandTotal) * 100)}%)</span>
+                  )}
+                </span>
+              </>}
             </div>
           </div>
         )}
