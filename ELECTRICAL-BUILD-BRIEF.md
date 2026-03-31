@@ -851,6 +851,9 @@ Read with: `mimeType.match(/;docType=([^;]*)/)?.[1]`
 **Bug fix 2 (post-deploy, 2026-03-31):**
 `extractWithPdfParse` in `electricalTakeoff.ts` was broken by a `pdf-parse` ESM/CJS interop issue. `require('pdf-parse')` on Render returns `{ default: fn }` instead of `fn` directly; calling it threw `pdfParse is not a function`. The inner `try/catch` silently swallowed this and returned `{ text: '', pages: 1 }`. The classifier received an empty string + pageCount=1, scored everything zero, and defaulted to `floor_plan` — causing equipment/DB schedule PDFs to run takeoff instead of being classified as reference. Fix: normalise the require result: `typeof mod === 'function' ? mod : (mod.default ?? mod)`. After fix, all 8 pages of text are extracted; equipment_schedule scores ~17 — well above the threshold. Only file changed: `electricalTakeoff.ts`.
 
+**Bug fix 3 (post-deploy, 2026-03-31):**
+`extractWithPdfParse` was using `pdf-parse` which has persistent CJS/ESM interop issues on Render (the interop normalisation in Bug fix 2 resolved the "not a function" error, but `pdf-parse` still failed for other reasons silently swallowed by the catch block). Root cause identified: `extractWithPdfJs` (which works) only reads **page 1** — so classification was always receiving 35 chars from the cover page regardless of the fix. Correct fix: rewrote `extractWithPdfParse` to use pdfjs-dist (the same proven dynamic import path already used by `extractWithPdfJs`) looping over ALL pages and concatenating text. Eliminates `pdf-parse` dependency for classification entirely. With all 8 pages extracted, the equipment_schedule classifier receives "ELECTRICAL EQUIPMENT SCHEDULES", REF, LOCATIONS, MANUFACTURER, Hager, MK, Apollo etc. — score ~17, well above threshold. Only file changed: `electricalTakeoff.ts`.
+
 ---
 
 ### Overview

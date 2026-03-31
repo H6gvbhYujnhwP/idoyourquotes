@@ -426,16 +426,44 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Coloured
 }
 
 /**
- * Fallback extraction using pdf-parse (simpler, no coordinates but gets text).
- * Used to detect if the PDF has a text layer at all.
+ * Extract raw text from ALL pages of a PDF for classification purposes.
+ *
+ * Uses pdfjs-dist (same proven import path as extractWithPdfJs) — avoids
+ * pdf-parse which has CJS/ESM interop issues on Render. Loops over every page
+ * and concatenates text so the classifier sees the full document, not just
+ * the cover page.
  */
 export async function extractWithPdfParse(pdfBuffer: Buffer): Promise<{ text: string; pages: number }> {
-  const mod = require('pdf-parse');
-  const pdfParse: (buf: Buffer) => Promise<{ text: string; numpages: number }> =
-    typeof mod === 'function' ? mod : (mod.default ?? mod);
   try {
-    const parsed = await pdfParse(pdfBuffer);
-    return { text: parsed.text || '', pages: parsed.numpages || 1 };
+    // Reuse the same dynamic import pattern that extractWithPdfJs uses — proven to work on Render.
+    let pdfjsLib: any;
+    try {
+      pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    } catch {
+      pdfjsLib = await import('pdfjs-dist');
+    }
+    const getDocument = pdfjsLib.getDocument || pdfjsLib.default?.getDocument;
+    if (!getDocument) return { text: '', pages: 1 };
+
+    const data = new Uint8Array(pdfBuffer);
+    const doc = await getDocument({ data }).promise;
+    const numPages = doc.numPages;
+
+    const pageTexts: string[] = [];
+    for (let p = 1; p <= numPages; p++) {
+      try {
+        const page = await doc.getPage(p);
+        const tc = await page.getTextContent();
+        const words = tc.items
+          .filter((item: any) => 'str' in item && item.str.trim())
+          .map((item: any) => item.str.trim());
+        if (words.length > 0) pageTexts.push(words.join(' '));
+      } catch {
+        // Non-fatal — skip unreadable pages
+      }
+    }
+
+    return { text: pageTexts.join('\n'), pages: numPages };
   } catch {
     return { text: '', pages: 1 };
   }
