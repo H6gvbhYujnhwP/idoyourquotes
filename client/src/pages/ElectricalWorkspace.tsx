@@ -309,7 +309,7 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
     onError:   (e) => toast.error("Upload failed: " + e.message),
   });
 
-  const setReferenceOnly = trpc.electricalTakeoff.setReferenceOnly.useMutation({
+  const setReferenceOnly = trpc.inputs.setReferenceOnly.useMutation({
     onSuccess: () => { refetch(); refetchTakeoffs(); },
     onError:   (e) => toast.error("Legend processing failed: " + e.message),
   });

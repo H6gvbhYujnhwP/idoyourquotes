@@ -845,6 +845,9 @@ Read with: `mimeType.match(/;docType=([^;]*)/)?.[1]`
 - `ElectricalDrawingViewer.tsx`: not modified ✅
 - `npx tsc --noEmit --skipLibCheck` = zero new errors (only pre-existing TS2688 @types stubs) ✅
 
+**Bug fix (post-deploy, 2026-03-31):**
+`setReferenceOnly` mutation in `ElectricalWorkspace.tsx` (line 312) was calling `trpc.electricalTakeoff.setReferenceOnly` — wrong namespace. The procedure lives in the `inputs` router, not `electricalTakeoff`. Fixed to `trpc.inputs.setReferenceOnly`. Affected the legend manual upload path only — auto-classification of equipment/DB schedules on upload was unaffected. Only file changed: `ElectricalWorkspace.tsx`.
+
 ---
 
 ### Overview
