@@ -717,6 +717,96 @@ Fix: Added Step 5c — gang-count notation exclusion. Before the proximity statu
 - CD and P02 remain Review — they are title block initials/revision refs, Mitch should exclude them
 - `standardFontDataUrl` warning in pdfjs-dist may still affect some drawing fonts
 
+---
+
+## 23. Roadmap — Document Type Classification (Planned)
+
+### Problem
+
+When Mitch uploads an equipment schedule (like `A1101-KCL-XX-XX-L-E-2411.pdf` — Electrical Equipment Schedules, 8 pages), the takeoff engine runs on it and returns spurious results (`A: 2`, `XX: 2` from the project reference string). The PDF viewer also only shows page 1. Both issues stem from the system treating every uploaded PDF identically — as a floor plan drawing.
+
+Real electrical tender packs contain multiple document types, each requiring different handling:
+
+| Type | Examples | Correct behaviour |
+|---|---|---|
+| **Floor plan drawing** | Lighting layout, small power layout | Run electrical takeoff, render page 1 as drawing |
+| **Legend / key sheet** | Symbol key as separate PDF | Mark reference-only, parse as symbolMap |
+| **Equipment schedule** | Luminaire schedule, equipment schedule, accessories schedule | Mark reference-only, make content available as AI context |
+| **DB / circuit schedule** | Distribution board schedule with circuit list | Mark reference-only, extract circuit data |
+| **Riser / schematic** | Single line diagram, riser diagram | Mark reference-only, no takeoff |
+| **Specification document** | NBS spec, employer's requirements | Mark reference-only, AI context only |
+
+### Desired behaviour
+
+Upload is magical — the system classifies the document immediately and configures itself appropriately. Mitch never has to manually toggle "reference only" or wonder why a schedule is producing Review rows.
+
+### Detection signals (all generic, no hardcoding)
+
+**Equipment / luminaire schedule:**
+- Multiple pages (≥3)
+- Contains structured table headers: REF, LOCATIONS, DESCRIPTION, MANUFACTURER, RATING, MODEL (any 3+ of these)
+- Low symbol-code density — few short uppercase tokens in counting area
+- Contains product names / manufacturer names (Hager, MK, Apollo, Legrand etc.)
+
+**DB / circuit schedule:**
+- Table headers: CIRCUIT, DESCRIPTION, RATING, MCB, RCBO, RCD, LOAD
+- Contains amperage values (6A, 16A, 32A, 63A, 100A)
+- Contains circuit identifiers (DB/LP/01, L1, L2 etc.)
+
+**Legend / key sheet:**
+- High CODE→DESCRIPTION pair density relative to page area
+- Single page or very few pages
+- No floor plan geometry
+
+**Riser / schematic:**
+- Contains keywords: RISER, SINGLE LINE, SCHEMATIC, SLD
+- No floor plan room labels
+
+**Floor plan drawing (default):**
+- Contains room names (BEDROOM, KITCHEN, OFFICE, WC, CORRIDOR etc.)
+- Contains scale information (SCALE 1:50, SCALE 1:100)
+- Low page count (usually 1)
+- Standard A0/A1/A3 page dimensions
+
+### Implementation plan
+
+**Phase 1 — Classification function**
+New function `classifyElectricalPDF(text: string, pageCount: number, pageWidth: number, pageHeight: number): PDFDocumentType` in `electricalTakeoff.ts` (or a new `documentClassifier.ts`). Returns one of: `'floor_plan' | 'equipment_schedule' | 'db_schedule' | 'legend' | 'riser_schematic' | 'specification'`. Pure text analysis — no AI API call. Fast, deterministic, runs at upload time.
+
+**Phase 2 — Auto-routing in the upload handler**
+After text extraction in the auto-analyze block in `routers.ts`, call classifier. Based on result:
+- `floor_plan` → run electrical takeoff (existing behaviour)
+- `legend` → auto-set reference-only + run parseLegend (existing flow, but now automatic)
+- `equipment_schedule` / `db_schedule` / `riser_schematic` / `specification` → auto-set reference-only, store processed content for AI context, show descriptive badge in Inputs tab ("Equipment Schedule", "DB Schedule" etc.), skip takeoff entirely
+- Confidence score returned — if below threshold, fall back to current behaviour and show a "Couldn't classify — please confirm type" prompt
+
+**Phase 3 — Multi-page viewer**
+PDF viewer currently renders page 1 only. For reference-only documents, render all pages with a page navigation control. For floor plan drawings, page 1 only remains correct (takeoff is per-page).
+
+**Phase 4 — Inputs tab badges**
+Each uploaded document shows its detected type as a coloured badge next to the filename:
+- 🟢 Floor Plan — takeoff running
+- 🔵 Equipment Schedule — reference only
+- 🔵 DB Schedule — reference only
+- 🟡 Legend — symbol key loaded
+- 🔵 Specification — reference only
+- 🟠 Unclassified — manual review needed
+
+User can override the classification if the AI got it wrong.
+
+### Why this matters
+
+Every interaction should be magical. The electrician uploads their tender pack — 6 PDFs in one go — and the system correctly identifies which are floor plans, which are schedules, which are legends. Takeoff runs on the right documents. Schedules are available as AI context for QDS generation. No spurious Review rows from project reference strings. No manual toggling. No babysitting.
+
+This is a high-value feature that directly affects Mitch's first impression of the product on every new job upload.
+
+### Files to change (when built)
+- `server/services/electricalTakeoff.ts` — add `classifyElectricalPDF` export
+- `server/routers.ts` — add classification call in auto-analyze block; add-only
+- `client/src/pages/ElectricalWorkspace.tsx` — Inputs tab badges
+- `client/src/components/electrical/ElectricalDrawingViewer.tsx` — multi-page support for reference docs
+- `ELECTRICAL-BUILD-BRIEF.md` — update when implemented
+
 Remaining open items (separate track):
 - **3 known bugs (general workspace):** legend PDFs triggering takeoff, `generateDraft` not skipping reference-only inputs, unknown symbols dropped
 - **Sector engine modularisation** — Phases 1–5 of the roadmap docx
