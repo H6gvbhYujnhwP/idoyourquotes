@@ -429,7 +429,7 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Coloured
  * Fallback extraction using pdf-parse (simpler, no coordinates but gets text).
  * Used to detect if the PDF has a text layer at all.
  */
-async function extractWithPdfParse(pdfBuffer: Buffer): Promise<{ text: string; pages: number }> {
+export async function extractWithPdfParse(pdfBuffer: Buffer): Promise<{ text: string; pages: number }> {
   const pdfParse = require('pdf-parse');
   try {
     const parsed = await pdfParse(pdfBuffer);
@@ -1243,4 +1243,203 @@ export function formatTakeoffForQuoteContext(
   lines.push('', 'USE THESE EXACT QUANTITIES. DO NOT ESTIMATE OR CHANGE THEM.');
 
   return lines.join('\n');
+}
+
+// ---- Document Type Classification ----------------------------------------
+//
+// Pure text analysis — no AI API call. Fast and deterministic.
+// Runs at upload time in the auto-takeoff block in routers.ts.
+// Scores each possible document type against signals in the extracted text,
+// picks the highest-scoring type, returns confidence (0–1).
+// Below the confidence threshold the result defaults to floor_plan so
+// the existing takeoff path always runs as a safe fallback.
+//
+// Electrical sector only. Does not affect any other sector or data flow.
+
+export type PDFDocumentType =
+  | 'floor_plan'
+  | 'equipment_schedule'
+  | 'db_schedule'
+  | 'legend'
+  | 'riser_schematic'
+  | 'specification';
+
+export interface ClassificationResult {
+  type: PDFDocumentType;
+  confidence: number;   // 0–1, where 1 = very certain
+  signals: string[];    // human-readable evidence (for logging / debugging)
+}
+
+export function classifyElectricalPDF(
+  text: string,
+  pageCount: number,
+  _pageWidth?: number,
+  _pageHeight?: number,
+): ClassificationResult {
+  const upper = text.toUpperCase();
+  const signals: string[] = [];
+
+  const scores: Record<PDFDocumentType, number> = {
+    floor_plan:         0,
+    equipment_schedule: 0,
+    db_schedule:        0,
+    legend:             0,
+    riser_schematic:    0,
+    specification:      0,
+  };
+
+  // ── Equipment / Luminaire Schedule ────────────────────────────────────────
+  // Strong page-count signal: schedules almost always span multiple pages
+  if (pageCount >= 3) {
+    const bonus = Math.min(pageCount - 2, 4);
+    scores.equipment_schedule += bonus;
+    signals.push(`pageCount=${pageCount}`);
+  }
+  {
+    const scheduleHeaders = [
+      'REF', 'MANUFACTURER', 'MODEL', 'WATTAGE', 'RATING',
+      'MOUNTING', 'FINISH', 'LOCATIONS', 'LAMP', 'CATALOGUE', 'CAT NO',
+      'PRODUCT CODE', 'LUMINAIRE', 'ACCESSORIES',
+    ];
+    const found = scheduleHeaders.filter(h => upper.includes(h));
+    if (found.length >= 2) {
+      scores.equipment_schedule += found.length;
+      signals.push(`schedule headers: ${found.join(', ')}`);
+    }
+  }
+  if (/LUMINAIRE.{0,12}SCHEDULE|EQUIPMENT.{0,12}SCHEDULE|ACCESSORIES.{0,12}SCHEDULE|SCHEDULE.{0,12}(LUMINAIRE|EQUIPMENT|ACCESSORIES)/i.test(text)) {
+    scores.equipment_schedule += 4;
+    signals.push('luminaire/equipment schedule keyword');
+  } else if (upper.includes('SCHEDULE')) {
+    scores.equipment_schedule += 1;
+  }
+  {
+    // Manufacturer / brand names commonly found in equipment schedules
+    const brands = [
+      'HAGER', 'LEGRAND', 'SCHNEIDER', 'MK ELECTRIC', 'TENBY', 'WYLEX',
+      'CRABTREE', 'BTICINO', 'CLIPSAL', 'NEXUS', 'PHILIPS', 'ZUMTOBEL',
+      'AURORA', 'ANSELL', 'THORN', 'OSRAM', 'WIPRO', 'CROMPTON', 'KNIGHTSBRIDGE',
+      'MEGAMAN', 'COLLINGWOOD', 'KOSNIC', 'BELL LIGHTING',
+    ];
+    const brandCount = brands.filter(b => upper.includes(b)).length;
+    if (brandCount >= 2) {
+      scores.equipment_schedule += Math.min(brandCount * 1.5, 5);
+      signals.push(`manufacturer brands found: ${brandCount}`);
+    }
+  }
+
+  // ── DB / Circuit Schedule ─────────────────────────────────────────────────
+  if (/DISTRIBUTION BOARD|DB SCHEDULE|CIRCUIT SCHEDULE|CONSUMER UNIT|FINAL CIRCUIT/i.test(text)) {
+    scores.db_schedule += 5;
+    signals.push('DB/circuit keyword');
+  }
+  {
+    const dbHeaders = [
+      'CIRCUIT', 'MCB', 'RCBO', 'RCD', 'BREAKER',
+      'PHASE', 'LOAD', 'CU NO', 'PROTECTIVE DEVICE',
+    ];
+    const found = dbHeaders.filter(h => upper.includes(h));
+    if (found.length >= 2) {
+      scores.db_schedule += found.length;
+      signals.push(`DB headers: ${found.join(', ')}`);
+    }
+  }
+  {
+    // Multiple distinct amperage ratings → circuit schedule
+    const amperageMatches = text.match(/\b\d+A\b/g) ?? [];
+    const distinctAmps = new Set(amperageMatches).size;
+    if (distinctAmps >= 3) {
+      scores.db_schedule += 3;
+      signals.push(`${distinctAmps} distinct amperage values`);
+    }
+  }
+
+  // ── Legend / Key Sheet ────────────────────────────────────────────────────
+  if (/SYMBOL.{0,8}(KEY|LEGEND)|DRAWING.{0,8}KEY|(KEY|LEGEND).{0,12}(SYMBOLS?|ABBREVIATIONS)/i.test(text)) {
+    scores.legend += 5;
+    signals.push('legend/symbol key keyword');
+  } else if (/\bLEGEND\b|\bKEY\b/i.test(text)) {
+    scores.legend += 2;
+  }
+  // Single-page legends are very common; multi-page legends rare
+  if (pageCount === 1) {
+    scores.legend += 1;
+  }
+
+  // ── Riser / Single Line Diagram ───────────────────────────────────────────
+  if (/SINGLE.{0,6}LINE.{0,12}DIAGRAM|SLD\b|RISER.{0,6}DIAGRAM/i.test(text)) {
+    scores.riser_schematic += 6;
+    signals.push('SLD/riser diagram keyword');
+  } else if (/\bRISER\b|\bSCHEMATIC\b/i.test(text)) {
+    scores.riser_schematic += 3;
+    signals.push('riser/schematic keyword');
+  }
+
+  // ── Specification ─────────────────────────────────────────────────────────
+  if (pageCount >= 5) {
+    scores.specification += 2;
+  }
+  if (/WORKMANSHIP|EMPLOYER.{0,4}S REQUIREMENTS|SPECIFICATION.{0,12}SECTION|NBS SPECIFICATION|SCOPE OF WORKS.{0,20}ELECTRICAL|STANDARD.{0,12}SPECIFICATION|PRELIMINARIES.{0,20}SPECIFICATION/i.test(text)) {
+    scores.specification += 5;
+    signals.push('specification keyword');
+  }
+  // Clause numbering (e.g. 1.1.1, 2.3.4) strongly suggests a spec document
+  const clauseMatches = text.match(/\b\d+\.\d+\.\d+\b/g) ?? [];
+  if (clauseMatches.length >= 3) {
+    scores.specification += 2;
+    signals.push('clause numbering pattern');
+  }
+
+  // ── Floor Plan (positive evidence) ───────────────────────────────────────
+  {
+    const roomNames = [
+      'BEDROOM', 'BATHROOM', 'KITCHEN', 'OFFICE', 'WC', 'TOILET',
+      'CORRIDOR', 'HALLWAY', 'LOBBY', 'RECEPTION', 'STORE', 'UTILITY',
+      'LIVING', 'DINING', 'LOUNGE', 'LANDING', 'ENSUITE', 'HALL',
+      'GARAGE', 'PLANT ROOM', 'STAIRCASE', 'STAIR', 'ROOF', 'TERRACE',
+    ];
+    const foundRooms = roomNames.filter(r => upper.includes(r));
+    if (foundRooms.length >= 1) {
+      scores.floor_plan += Math.min(foundRooms.length * 1.5, 6);
+      signals.push(`room names: ${foundRooms.slice(0, 4).join(', ')}`);
+    }
+  }
+  if (/SCALE\s*1\s*[:\/]|1\s*:\s*(20|25|50|100|200|500)\b/.test(text)) {
+    scores.floor_plan += 3;
+    signals.push('scale annotation');
+  }
+  if (pageCount === 1) {
+    scores.floor_plan += 1;
+  }
+
+  // ── Pick the winner ───────────────────────────────────────────────────────
+  let winner: PDFDocumentType = 'floor_plan';
+  let maxScore = scores.floor_plan;
+
+  for (const [docType, score] of Object.entries(scores) as [PDFDocumentType, number][]) {
+    if (score > maxScore) {
+      maxScore = score;
+      winner = docType;
+    }
+  }
+
+  // If no type scored strongly enough, fall back to floor_plan (safe default —
+  // takeoff will run and Mitch can correct if needed).
+  const CONFIDENCE_THRESHOLD = 3;
+  if (maxScore < CONFIDENCE_THRESHOLD) {
+    return {
+      type: 'floor_plan',
+      confidence: 0.2,
+      signals: ['no strong classification signals — defaulting to floor plan'],
+    };
+  }
+
+  const confidence = Math.min(maxScore / 10, 1.0);
+
+  console.log(
+    `[Document Classifier] type=${winner} score=${maxScore.toFixed(1)} ` +
+    `confidence=${(confidence * 100).toFixed(0)}% signals=[${signals.join(' | ')}]`
+  );
+
+  return { type: winner, confidence, signals };
 }

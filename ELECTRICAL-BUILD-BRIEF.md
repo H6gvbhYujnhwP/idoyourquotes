@@ -794,22 +794,58 @@ Each uploaded document shows its detected type as a coloured badge next to the f
 
 User can override the classification if the AI got it wrong.
 
-### Why this matters
+### Phase 23 implementation — completed (2026-03-31)
 
-Every interaction should be magical. The electrician uploads their tender pack — 6 PDFs in one go — and the system correctly identifies which are floor plans, which are schedules, which are legends. Takeoff runs on the right documents. Schedules are available as AI context for QDS generation. No spurious Review rows from project reference strings. No manual toggling. No babysitting.
+**Phase 1 — `classifyElectricalPDF` in `electricalTakeoff.ts`** ✅
+- Exported `extractWithPdfParse` (was private)
+- Added `PDFDocumentType` union type: `'floor_plan' | 'equipment_schedule' | 'db_schedule' | 'legend' | 'riser_schematic' | 'specification'`
+- Added `ClassificationResult` interface: `{ type, confidence: number, signals: string[] }`
+- Added `classifyElectricalPDF(text, pageCount, pageWidth?, pageHeight?)` — pure scoring function. Each type accumulates evidence from text signals; highest score wins; below threshold (score < 3) defaults to `floor_plan`. No AI call. Deterministic.
 
-This is a high-value feature that directly affects Mitch's first impression of the product on every new job upload.
+**Phase 2 — auto-routing in `routers.ts`** ✅  
+- Added imports: `classifyElectricalPDF`, `extractWithPdfParse`
+- Inside auto-takeoff block (after `pdfBuf` fetched): calls `extractWithPdfParse` → `classifyElectricalPDF`
+- Non-floor-plan result: calls `updateInputMimeType` with `;reference=true;docType=<type>` — skips `performElectricalTakeoff` entirely
+- Floor-plan result: existing takeoff path unchanged
+- All changes add-only. No existing procedures modified.
 
-### Files to change (when built)
-- `server/services/electricalTakeoff.ts` — add `classifyElectricalPDF` export
-- `server/routers.ts` — add classification call in auto-analyze block; add-only
-- `client/src/pages/ElectricalWorkspace.tsx` — Inputs tab badges
-- `client/src/components/electrical/ElectricalDrawingViewer.tsx` — multi-page support for reference docs
-- `ELECTRICAL-BUILD-BRIEF.md` — update when implemented
+**Phase 3 — `ElectricalReferenceViewer.tsx`** ✅  
+- New file: `client/src/components/electrical/ElectricalReferenceViewer.tsx`
+- Multi-page PDF viewer: pan/zoom (same UX as `ElectricalDrawingViewer`), page navigation (prev/next buttons + keyboard ← →), page X/Y counter
+- Exports `getDocTypeBadgeProps(docType)` — shared helper for badge labels and Tailwind classes
+- No marker editing, no symbol chips. Reference-only footer note.
 
-Remaining open items (separate track):
-- **3 known bugs (general workspace):** legend PDFs triggering takeoff, `generateDraft` not skipping reference-only inputs, unknown symbols dropped
-- **Sector engine modularisation** — Phases 1–5 of the roadmap docx
+**Phase 4 — `ElectricalWorkspace.tsx` badges** ✅  
+- Updated `legend` filter: now matches `;docType=legend` OR `;reference=true` without docType (backwards compat)
+- Added `referenceInputs` computed array: PDFs with `;reference=true;docType=` that are not legend
+- Added `viewingReferenceId` state
+- Sidebar: new "References" section below drawings list — shows filename + docType badge + clickable to open viewer
+- `InputsTab` props extended: `referenceInputs`, `onDeleteReference`, `onViewReference`
+- `InputsTab` render: new "Reference Documents" card at bottom — blue border, lists each doc with badge + View + delete
+- Added `ElectricalReferenceViewer` modal (alongside existing drawing viewer modal)
+- Imported `ElectricalReferenceViewer` and `getDocTypeBadgeProps`
+
+**mimeType encoding convention** (Phase 23):
+`application/pdf;reference=true;docType=<PDFDocumentType>`  
+Read with: `mimeType.match(/;docType=([^;]*)/)?.[1]`
+
+**Files changed — Section 23**
+| File | Change |
+|---|---|
+| `server/services/electricalTakeoff.ts` | Export `extractWithPdfParse`; add `PDFDocumentType`, `ClassificationResult`, `classifyElectricalPDF` |
+| `server/routers.ts` | Import `classifyElectricalPDF` + `extractWithPdfParse`; add classification + auto-routing inside auto-takeoff block (add-only) |
+| `client/src/components/electrical/ElectricalReferenceViewer.tsx` | **New file** — multi-page reference viewer + `getDocTypeBadgeProps` helper |
+| `client/src/pages/ElectricalWorkspace.tsx` | Updated legend/referenceInputs filters; viewingReferenceId state; sidebar References section; InputsTab props + Reference Documents card; reference viewer modal |
+
+**Must NOT be modified:** `QuoteWorkspace.tsx`, `generateSimpleQuoteHTML`, `ElectricalDrawingViewer.tsx`, `pdfGenerator.ts`, `engineRouter.ts`, any non-electrical file.
+
+**Isolation verified:**
+- `generateSimpleQuoteHTML` body unchanged ✅
+- Non-electrical sectors: no paths touched ✅
+- `ElectricalDrawingViewer.tsx`: not modified ✅
+- `npx tsc --noEmit --skipLibCheck` = zero new errors (only pre-existing TS2688 @types stubs) ✅
+
+---
 
 ### Overview
 

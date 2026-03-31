@@ -38,6 +38,7 @@ import { cn } from "@/lib/utils";
 import type { QuoteInput } from "@shared/schema";
 import ElectricalQDS, { type IncludedTakeoffRow } from "@/components/electrical/ElectricalQDS";
 import ElectricalDrawingViewer from "@/components/electrical/ElectricalDrawingViewer";
+import ElectricalReferenceViewer, { getDocTypeBadgeProps } from "@/components/electrical/ElectricalReferenceViewer";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_PDF_MB   = 20;
@@ -114,7 +115,8 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab]             = useState<Tab>("inputs");
   const [activeDrawingId, setActiveDrawingId] = useState<number | null>(null);
-  const [viewingTakeoffId, setViewingTakeoffId] = useState<number | null>(null);
+  const [viewingTakeoffId,   setViewingTakeoffId]   = useState<number | null>(null);
+  const [viewingReferenceId, setViewingReferenceId] = useState<number | null>(null);
 
   // Upload states
   const [isUploadingDrawing, setIsUploadingDrawing] = useState(false);
@@ -139,9 +141,28 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
   );
 
   const inputs: QuoteInput[] = fullQuote?.inputs ?? [];
-  // Phase 2 fix: legend is now inputType=pdf with ;reference=true mimeType
+  // Phase 2 fix: legend is now inputType=pdf with ;reference=true mimeType.
+  // Phase 23: reference-only docs now also carry ;docType=<type>.
+  //   drawings       = floor-plan PDFs (no ;reference=true)
+  //   legend         = reference PDF where docType=legend, OR ;reference=true without docType
+  //                    (backwards compat for docs uploaded before classification existed)
+  //   referenceInputs = all other reference PDFs (equipment_schedule, db_schedule,
+  //                    riser_schematic, specification) — shown in sidebar + Inputs tab
   const drawings = inputs.filter(i => i.inputType === "pdf" && !i.mimeType?.includes(";reference=true"));
-  const legend   = inputs.find(i  => i.inputType === "pdf" &&  i.mimeType?.includes(";reference=true")) ?? null;
+  const legend   = inputs.find(i  => {
+    if (i.inputType !== "pdf" || !i.mimeType?.includes(";reference=true")) return false;
+    const dtMatch = i.mimeType.match(/;docType=([^;]*)/);
+    const dt = dtMatch?.[1] ?? null;
+    // If docType is absent (old upload) or is 'legend', treat as legend slot
+    return !dt || dt === 'legend';
+  }) ?? null;
+  const referenceInputs = inputs.filter(i => {
+    if (i.inputType !== "pdf" || !i.mimeType?.includes(";reference=true")) return false;
+    const dtMatch = i.mimeType.match(/;docType=([^;]*)/);
+    const dt = dtMatch?.[1] ?? null;
+    // Include only docs with an explicit non-legend docType
+    return dt && dt !== 'legend';
+  });
   const scopeRecord = inputs.find(i => i.inputType === "email") ?? null;
 
   // Keep polling flag in sync
@@ -549,6 +570,43 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
                 ))}
               </ul>
             )}
+
+            {/* Reference documents section — schedules, specs, risers auto-classified */}
+            {referenceInputs.length > 0 && (
+              <>
+                <div className="px-3 py-1.5 mt-1 border-t border-b bg-muted/30 flex items-center justify-between">
+                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">References</span>
+                  <span className="text-[10px] text-muted-foreground">{referenceInputs.length}</span>
+                </div>
+                <ul className="py-1">
+                  {referenceInputs.map(r => {
+                    const dtMatch = r.mimeType?.match(/;docType=([^;]*)/);
+                    const dt = dtMatch?.[1] ?? 'unclassified';
+                    const badge = getDocTypeBadgeProps(dt);
+                    return (
+                      <li key={r.id}>
+                        <button
+                          onClick={() => setViewingReferenceId(r.id)}
+                          className="w-full text-left px-3 py-2 flex flex-col gap-1 hover:bg-muted/60 transition-colors">
+                          <div className="flex items-start justify-between gap-1">
+                            <span className="text-xs font-medium truncate leading-tight flex-1 min-w-0">
+                              {shortFilename(r.filename)}
+                            </span>
+                            <button onClick={e => { e.stopPropagation(); deleteInput.mutate({ id: r.id, quoteId }); }}
+                              className="shrink-0 text-muted-foreground hover:text-destructive transition-colors mt-0.5" title="Remove">
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                          <Badge className={`text-[10px] px-1.5 py-0 h-4 font-normal self-start ${badge.className}`}>
+                            {badge.label}
+                          </Badge>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            )}
           </div>
         </div>
 
@@ -557,6 +615,7 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
           {activeTab === "inputs" && (
             <InputsTab
               quoteId={quoteId} drawings={drawings} legend={legend}
+              referenceInputs={referenceInputs}
               scopeText={scopeText} scopeDirty={scopeDirty} isSavingScope={isSavingScope}
               isUploadingDrawing={isUploadingDrawing} isUploadingLegend={isUploadingLegend}
               isDraggingOver={isDraggingOver}
@@ -567,6 +626,8 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
               onLegendFile={handleLegendUpload}
               onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
               onDeleteLegend={() => legend && deleteInput.mutate({ id: legend.id, quoteId })}
+              onDeleteReference={(id) => deleteInput.mutate({ id, quoteId })}
+              onViewReference={(id) => setViewingReferenceId(id)}
             />
           )}
           {activeTab === "takeoff" && (
@@ -640,6 +701,22 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
         onClose={() => setViewingTakeoffId(null)}
       />
     )}
+
+    {/* ── Reference Document Viewer Modal ──────────────────────────────────── */}
+    {viewingReferenceId != null && (() => {
+      const refInput = referenceInputs.find(r => r.id === viewingReferenceId);
+      if (!refInput) return null;
+      const dtMatch = refInput.mimeType?.match(/;docType=([^;]*)/);
+      const dt = dtMatch?.[1] ?? 'unclassified';
+      return (
+        <ElectricalReferenceViewer
+          inputId={refInput.id}
+          filename={shortFilename(refInput.filename)}
+          docType={dt}
+          onClose={() => setViewingReferenceId(null)}
+        />
+      );
+    })()}
     </>
   );
 }
@@ -647,6 +724,7 @@ export default function ElectricalWorkspace({ quoteId }: ElectricalWorkspaceProp
 // ─── Inputs Tab ───────────────────────────────────────────────────────────────
 interface InputsTabProps {
   quoteId: number; drawings: QuoteInput[]; legend: QuoteInput | null;
+  referenceInputs: QuoteInput[];
   scopeText: string; scopeDirty: boolean; isSavingScope: boolean;
   isUploadingDrawing: boolean; isUploadingLegend: boolean; isDraggingOver: boolean;
   drawingInputRef: React.RefObject<HTMLInputElement>; legendInputRef: React.RefObject<HTMLInputElement>;
@@ -654,14 +732,17 @@ interface InputsTabProps {
   onDrawingFiles: (f: FileList | File[]) => void; onLegendFile: (f: File) => void;
   onDragOver: (e: React.DragEvent) => void; onDragLeave: () => void; onDrop: (e: React.DragEvent) => void;
   onDeleteLegend: () => void;
+  onDeleteReference: (id: number) => void;
+  onViewReference: (id: number) => void;
 }
 
 function InputsTab({
-  drawings, legend, scopeText, scopeDirty, isSavingScope,
+  drawings, legend, referenceInputs, scopeText, scopeDirty, isSavingScope,
   isUploadingDrawing, isUploadingLegend, isDraggingOver,
   drawingInputRef, legendInputRef,
   onScopeChange, onSaveScope, onDrawingFiles, onLegendFile,
   onDragOver, onDragLeave, onDrop, onDeleteLegend,
+  onDeleteReference, onViewReference,
 }: InputsTabProps) {
   return (
     <div className="p-5 flex flex-col gap-5 max-w-4xl">
@@ -775,6 +856,53 @@ function InputsTab({
         <input ref={legendInputRef} type="file" accept="application/pdf" className="hidden"
           onChange={e => { if (e.target.files?.[0]) { onLegendFile(e.target.files[0]); e.target.value = ""; } }} />
       </div>
+
+      {/* Reference Documents — auto-classified on upload (schedules, specs, risers) */}
+      {referenceInputs.length > 0 && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50/30 p-4 flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <FileText className="h-4 w-4 text-blue-600" />
+            <span className="text-sm font-semibold">Reference Documents</span>
+            <Badge className="text-[10px] px-1.5 py-0 h-4 bg-blue-100 text-blue-700 border-blue-200 ml-auto">
+              Available as AI context
+            </Badge>
+          </div>
+          <p className="text-xs text-muted-foreground -mt-1">
+            These documents were automatically classified as reference material.
+            No takeoff runs on them — they are available to the AI when generating your quote.
+          </p>
+          <ul className="flex flex-col gap-1.5">
+            {referenceInputs.map(r => {
+              const dtMatch = r.mimeType?.match(/;docType=([^;]*)/);
+              const dt = dtMatch?.[1] ?? 'unclassified';
+              const badge = getDocTypeBadgeProps(dt);
+              return (
+                <li key={r.id}
+                  className="flex items-center justify-between bg-background rounded-md px-3 py-2 border border-blue-100">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <File className="h-4 w-4 text-blue-500 shrink-0" />
+                    <span className="text-sm truncate">{shortFilename(r.filename)}</span>
+                    <Badge className={`text-[10px] px-1.5 py-0 h-4 font-normal shrink-0 ${badge.className}`}>
+                      {badge.label}
+                    </Badge>
+                    <StatusBadge status={r.processingStatus} />
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button onClick={() => onViewReference(r.id)}
+                      className="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-1 transition-colors">
+                      View
+                    </button>
+                    <button onClick={() => onDeleteReference(r.id)}
+                      className="text-muted-foreground hover:text-destructive transition-colors">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

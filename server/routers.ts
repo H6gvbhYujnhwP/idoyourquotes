@@ -14,7 +14,7 @@ import { isOpenAIConfigured } from "./_core/openai";
 import { extractUrls, scrapeUrls, formatScrapedContentForAI } from "./_core/webScraper";
 import { extractBrandColors } from "./services/colorExtractor";
 import { parseWordDocument, isWordDocument } from "./services/wordParser";
-import { performElectricalTakeoff, applyUserAnswers, formatTakeoffForQuoteContext, SYMBOL_STYLES, SYMBOL_DESCRIPTIONS, extractWithPdfJs, extractPdfLineColours } from "./services/electricalTakeoff";
+import { performElectricalTakeoff, applyUserAnswers, formatTakeoffForQuoteContext, SYMBOL_STYLES, SYMBOL_DESCRIPTIONS, extractWithPdfJs, extractPdfLineColours, classifyElectricalPDF, extractWithPdfParse } from "./services/electricalTakeoff";
 import { performContainmentTakeoff, calculateCableSummary, generateContainmentSvgOverlay, isContainmentDrawing, formatContainmentForQuoteContext, TRAY_SIZE_COLOURS, WHOLESALER_LENGTH_METRES } from "./services/containmentTakeoff";
 import { generateSvgOverlay } from "./services/takeoffMarkup";
 import { createElectricalTakeoff, getElectricalTakeoffsByQuoteId, getElectricalTakeoffById, getElectricalTakeoffByInputId, updateElectricalTakeoff, deleteElectricalTakeoffByInputId } from "./db";
@@ -1644,6 +1644,40 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
                     console.log(`[Auto-takeoff] Running electrical takeoff for input ${inputRecord.id}`);
                     const pdfBuf = await getFileBuffer(key);
 
+                    // ── Phase 23: Classify PDF before running takeoff ──────────────────
+                    // Determines whether this PDF is a floor plan (run takeoff) or a
+                    // reference document (equipment schedule, DB schedule, riser, spec,
+                    // legend) that should be marked reference-only and skipped.
+                    // Pure text analysis — no AI call. Fast and deterministic.
+                    // Falls back to floor_plan if confidence is low (safe default).
+                    let classifiedDocType = 'floor_plan';
+                    try {
+                      const { text: classText, pages: classPages } = await extractWithPdfParse(pdfBuf);
+                      const classification = classifyElectricalPDF(classText, classPages);
+                      classifiedDocType = classification.type;
+                      console.log(`[Auto-classify] ${input.filename ?? 'Unknown'}: ${classification.type} (confidence ${(classification.confidence * 100).toFixed(0)}%)`);
+
+                      if (classification.type !== 'floor_plan') {
+                        // Auto-set reference-only with docType encoding in mimeType.
+                        // Encoding: application/pdf;reference=true;docType=<type>
+                        // The frontend reads ;docType= to show the correct badge and
+                        // separate reference docs from floor plans in all filtered arrays.
+                        const baseMime = (inputRecord.mimeType || 'application/pdf')
+                          .replace(/;reference=true/g, '')
+                          .replace(/;docType=[^;]*/g, '')
+                          .trim();
+                        await updateInputMimeType(inputRecord.id, `${baseMime};reference=true;docType=${classification.type}`);
+                        // processedContent was already written above from the OpenAI extraction
+                        // path — it contains the raw text of the document, which is the right
+                        // AI context for schedules/specs. Do not overwrite it here.
+                        console.log(`[Auto-classify] ${input.filename ?? 'Unknown'}: set reference-only (${classification.type}), skipping takeoff`);
+                      }
+                    } catch (classErr: any) {
+                      // Non-fatal — if classification fails, proceed with takeoff as floor plan
+                      console.warn(`[Auto-classify] Classification failed (non-fatal):`, classErr.message);
+                    }
+
+                    if (classifiedDocType === 'floor_plan') {
                     // Fetch any legend symbolMap already saved for this quote
                     const autoTenderCtx = await getTenderContextByQuoteId(input.quoteId);
                     const autoSymbolMap: Record<string, string> = {};
@@ -1747,6 +1781,7 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
                     } catch (containmentErr: any) {
                       console.warn(`[Auto-takeoff] Containment auto-detection failed (non-fatal):`, containmentErr.message);
                     }
+                    } // end if (classifiedDocType === 'floor_plan')
                   } else {
                     console.log(`[Auto-takeoff] Takeoff already exists for input ${inputRecord.id}, skipping`);
                   }
