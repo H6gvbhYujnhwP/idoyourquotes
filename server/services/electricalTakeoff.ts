@@ -1359,7 +1359,7 @@ export function classifyElectricalPDF(
   }
 
   // ── DB / Circuit Schedule ─────────────────────────────────────────────────
-  if (/DISTRIBUTION BOARD|DB SCHEDULE|CIRCUIT SCHEDULE|CONSUMER UNIT|FINAL CIRCUIT/i.test(text)) {
+  if (/DISTRIBUTION BOARD|DB SCHEDULE|CIRCUIT SCHEDULE|FINAL CIRCUIT/i.test(text)) {
     scores.db_schedule += 5;
     signals.push('DB/circuit keyword');
   }
@@ -1430,13 +1430,18 @@ export function classifyElectricalPDF(
     ];
     const foundRooms = roomNames.filter(r => upper.includes(r));
     if (foundRooms.length >= 1) {
-      scores.floor_plan += Math.min(foundRooms.length * 1.5, 6);
+      scores.floor_plan += Math.min(foundRooms.length * 1.5, 12);
       signals.push(`room names: ${foundRooms.slice(0, 4).join(', ')}`);
     }
   }
   if (/SCALE\s*1\s*[:\/]|1\s*:\s*(20|25|50|100|200|500)\b/.test(text)) {
     scores.floor_plan += 3;
     signals.push('scale annotation');
+  }
+  // Floor plans always carry a SYMBOL LEGEND / SYMBOL KEY section; schedules never do.
+  if (/SYMBOL\s*LEGEND|SYMBOL\s*KEY/i.test(text)) {
+    scores.floor_plan += 4;
+    signals.push('symbol legend section');
   }
   if (pageCount === 1) {
     scores.floor_plan += 1;
