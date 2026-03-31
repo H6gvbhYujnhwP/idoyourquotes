@@ -430,7 +430,9 @@ export async function extractPdfLineColours(pdfBuffer: Buffer): Promise<Coloured
  * Used to detect if the PDF has a text layer at all.
  */
 export async function extractWithPdfParse(pdfBuffer: Buffer): Promise<{ text: string; pages: number }> {
-  const pdfParse = require('pdf-parse');
+  const mod = require('pdf-parse');
+  const pdfParse: (buf: Buffer) => Promise<{ text: string; numpages: number }> =
+    typeof mod === 'function' ? mod : (mod.default ?? mod);
   try {
     const parsed = await pdfParse(pdfBuffer);
     return { text: parsed.text || '', pages: parsed.numpages || 1 };

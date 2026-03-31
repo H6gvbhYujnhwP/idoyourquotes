@@ -848,6 +848,9 @@ Read with: `mimeType.match(/;docType=([^;]*)/)?.[1]`
 **Bug fix (post-deploy, 2026-03-31):**
 `setReferenceOnly` mutation in `ElectricalWorkspace.tsx` (line 312) was calling `trpc.electricalTakeoff.setReferenceOnly` — wrong namespace. The procedure lives in the `inputs` router, not `electricalTakeoff`. Fixed to `trpc.inputs.setReferenceOnly`. Affected the legend manual upload path only — auto-classification of equipment/DB schedules on upload was unaffected. Only file changed: `ElectricalWorkspace.tsx`.
 
+**Bug fix 2 (post-deploy, 2026-03-31):**
+`extractWithPdfParse` in `electricalTakeoff.ts` was broken by a `pdf-parse` ESM/CJS interop issue. `require('pdf-parse')` on Render returns `{ default: fn }` instead of `fn` directly; calling it threw `pdfParse is not a function`. The inner `try/catch` silently swallowed this and returned `{ text: '', pages: 1 }`. The classifier received an empty string + pageCount=1, scored everything zero, and defaulted to `floor_plan` — causing equipment/DB schedule PDFs to run takeoff instead of being classified as reference. Fix: normalise the require result: `typeof mod === 'function' ? mod : (mod.default ?? mod)`. After fix, all 8 pages of text are extracted; equipment_schedule scores ~17 — well above the threshold. Only file changed: `electricalTakeoff.ts`.
+
 ---
 
 ### Overview
