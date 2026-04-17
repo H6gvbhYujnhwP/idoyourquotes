@@ -75,6 +75,67 @@ export class GeneralEngine implements SectorEngine {
     const catalogContext = input.catalogContext;
 
     // ── Step 4: Build system prompt (exact copy of current parseDictationSummary prompt) ─
+    //
+    // IT-gated addendum: runs ONLY when this.tradePreset === "it_services".
+    // For every other sector (cleaning, pest control, scaffolding, painting,
+    // building maintenance, custom, and the null catch-all) this evaluates to
+    // an empty string and the interpolated prompt is byte-identical to the
+    // pre-existing prompt — zero behaviour change for non-IT sectors.
+    //
+    // Purpose: the base prompt is framed around "what work is being requested",
+    // which causes the model to return empty materials when given invoice /
+    // contract / statement evidence (a core MSP workflow). This addendum tells
+    // the model to treat invoice evidence as valid scope definition and map
+    // every line item into materials[].
+    const itInvoiceAddendum = this.tradePreset === "it_services" ? `IT SECTOR — INVOICE / CONTRACT / STATEMENT EVIDENCE (CRITICAL FOR MSP WORKFLOWS):
+
+The evidence for an IT/MSP quote frequently includes invoices, contracts, service agreements, or statements from a previous provider. This is expected and legitimate. Common MSP scenarios:
+- A prospect has shared their current provider's invoice so you can quote to match or improve it
+- Renewal cycle: last invoice becomes the basis for the next contract quote
+- Takeover/transition: you are inheriting scope from the incumbent provider's billing
+- Cost-reduction review: you are pricing an alternative to the client's current arrangement
+
+When the evidence is an invoice, contract, statement, or service agreement, DO NOT return empty materials with a note saying "this is not a request for quotation". The document IS the scope definition. Extract every line item into the materials[] array. Set isTradeRelevant: true — an invoice from another IT provider is always trade-relevant for an MSP.
+
+INVOICE LINE ITEM MAPPING:
+- Each numbered/listed row on the invoice → ONE material in the output.
+- "item": the service or product name. Strip administrative prefixes like "Contract:" or "Service:" — e.g. "Contract: M365 (Mar25) - Business Standard" becomes item: "M365 Business Standard".
+- "description": preserve the full technical detail INCLUDING bracket tags that encode contract terms (e.g. "[NCE/1-Year/Monthly]", "[36-month]", "[Core]", "[Gold]", "/Baseline /Backup /Spam"). These tags matter to the client. Use the "||" separator if you expand on the service scope.
+- "quantity": exactly as shown on the invoice (14 for "Qty 14 - M365 Business Standard Named Users"; 6.00 for "6.00 hours of Project Engineer").
+- "unit": match the invoice's billing unit. "User" for per-user licensing, "Month" for retainers billed monthly, "Agent" or "Device" for per-agent/per-device services, "Hour" for time-billed engineer labour, "each" for one-off items.
+
+PRICING TYPE FROM CADENCE MARKERS (match these patterns):
+- "[NCE/1-Year/Monthly]", "[Monthly]", "per month", a service date range that spans one calendar month → pricingType: "monthly"
+- "[1-Year/Annual]", "[Annual]", "per annum" → pricingType: "annual"
+- "[36-month]", "[24-month]" (multi-year contract terms billed monthly) → pricingType: "monthly". The commitment term belongs in the description, not the cadence.
+- Dated hourly labour lines ("23 Jan 2026 — Project Engineer, 6.00") → pricingType: "standard", unit: "Hour", quantity: the hour count. Each dated labour row is a SEPARATE material even if the role name repeats — different engagements on different dates.
+- Prorated line items ("Prorated [07/01/2026 - 22/01/2026]") on the same service as a full-month line: DROP the prorated line entirely. It is historical billing catch-up, not forward-looking scope. Keep only the full-month line.
+
+REDACTED OR MISSING PRICES (very common on shared invoices):
+When the invoice shows prices as blacked-out boxes, "POA", or blank, you MUST still populate unitPrice with a realistic UK MSP resale estimate and set "estimated": true. Use these typical UK MSP resale ranges (ex VAT):
+- Microsoft 365 Business Basic: £7–£8 per user per month
+- Microsoft 365 Business Standard: £13–£16 per user per month
+- Microsoft 365 Business Premium: £22–£28 per user per month
+- Microsoft 365 Apps for Business: £9–£11 per user per month
+- Managed IT support — Named User: £18–£35 per user per month (basic to premium SLA)
+- Managed Server (monthly support): £100–£200 per server per month
+- Sophos Managed Firewall XGS series: £80–£250 per month (XGS 87/107/116 lower; XGS 118/126/136 mid; XGS 2100+ upper)
+- BCDR (backup and disaster recovery) — per protected agent: £30–£60 per agent per month (Gold/Premium tiers top of range)
+- Project Engineer: £75–£110 per hour
+- Service Desk / Helpdesk Engineer: £55–£85 per hour
+- Senior IT Consultant: £95–£150 per hour
+- Generic per-device monitoring / RMM: £3–£8 per device per month
+
+Pick one specific number near the middle of the range — never return null for unitPrice. The user reviews every estimated price before the quote goes to the client.
+
+ADDITIVE BEHAVIOUR — MIXED EVIDENCE:
+If the evidence is a MIX of an invoice/contract AND a separate request for new or additional work (e.g. invoice attached plus an email saying "we also want to add 10 more users and a backup service"), extract BOTH — every invoice line item AND the additional requested work. All flow into materials[].
+
+DO NOT INVENT SCOPE:
+Extract only what the evidence actually shows. If an invoice has 14 M365 licences, the quote has 14 — not 15, not "14 or so". If prices are redacted, flag with estimated:true — do not fabricate exact unit prices. If the client is asking about adding services, only quote what they asked for.
+
+` : "";
+
     const systemPrompt = `You are a senior estimator for a "${tradeLabel}" business. Your job is to analyse ALL provided evidence (voice notes, emails, documents, text) and produce a structured Quote Draft Summary.
 
 THINK LIKE AN EXPERIENCED PROFESSIONAL in the "${tradeLabel}" sector. Consider:
@@ -160,7 +221,7 @@ FOR IT SERVICES / MSP QUOTES SPECIFICALLY:
 - A support contract for ~16 managed devices (router, switches, APs, fibre converters) typically runs £150–£350/month in the UK depending on SLA level. Use this range if no price is stated.
 - DO NOT omit monthly items just because no price was given. Estimate and flag.
 
-Respond ONLY with valid JSON in this exact format:
+${itInvoiceAddendum}Respond ONLY with valid JSON in this exact format:
 {
   "clientName": string | null,
   "clientEmail": string | null,
