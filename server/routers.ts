@@ -3203,19 +3203,69 @@ Rules:
         return { success: true };
       }),
 
+    // ── getSectorTemplate ─────────────────────────────────────────────────
+    // Returns the starter catalog template for the user's sector along with
+    // which item names already exist in their catalog. Used by the Catalog
+    // page to render the selection dialog — user picks which items to add.
+    //
+    // Returns { sector, items[], alreadyInCatalog[] }. If no seed exists for
+    // the sector, items[] is empty (handled gracefully by the UI).
+    getSectorTemplate: protectedProcedure
+      .query(async ({ ctx }) => {
+        const sector = ctx.user.defaultTradeSector;
+        if (!sector) {
+          return { sector: null, items: [], alreadyInCatalog: [] };
+        }
+
+        const seed = getCatalogSeedForSector(sector);
+        if (!seed || seed.length === 0) {
+          return { sector, items: [], alreadyInCatalog: [] };
+        }
+
+        // Find which seed item names are already in the user's catalog so
+        // the UI can disable those checkboxes. Case-insensitive match.
+        const org = await getUserPrimaryOrg(ctx.user.id);
+        let alreadyInCatalog: string[] = [];
+        if (org) {
+          const existing = await getCatalogItemsByOrgId(org.id);
+          const existingLower = new Set(existing.map((i) => i.name.toLowerCase()));
+          alreadyInCatalog = seed
+            .filter((item) => existingLower.has(item.name.toLowerCase()))
+            .map((item) => item.name);
+        }
+
+        // Return a plain-data view of the seed — no functions, no symbols.
+        const items = seed.map((item) => ({
+          name: item.name,
+          description: item.description,
+          category: item.category,
+          unit: item.unit,
+          pricingType: item.pricingType,
+          defaultRate: item.defaultRate,
+          costPrice: item.costPrice,
+        }));
+
+        return { sector, items, alreadyInCatalog };
+      }),
+
     // ── seedFromSectorTemplate ─────────────────────────────────────────────
     // Seed a starter catalog for the user's sector. Fires when an existing
-    // user clicks "Load Starter Catalog" in the Catalog page. Safe to call
+    // user confirms the selection dialog on the Catalog page. Safe to call
     // multiple times — items whose names already exist in the catalog are
     // skipped (idempotent by name).
     //
-    // For brand-new users, seeding also fires automatically during
-    // registration (see db.ts createUser). This procedure is for existing
-    // users who pre-date seed templates, users who deleted their catalog
-    // and want the starter kit back, or users who have legacy items from
-    // another context and want the IT starter kit added alongside them.
+    // Accepts optional selectedNames array — if provided, only seeds items
+    // whose names are in the array. If omitted, seeds all items from the
+    // sector's template (used by auto-seed on new registration via db.ts).
     seedFromSectorTemplate: protectedProcedure
-      .mutation(async ({ ctx }) => {
+      .input(
+        z
+          .object({
+            selectedNames: z.array(z.string()).optional(),
+          })
+          .optional()
+      )
+      .mutation(async ({ ctx, input }) => {
         const org = await getUserPrimaryOrg(ctx.user.id);
         if (!org) {
           throw new Error("No organization found for user");
@@ -3228,12 +3278,6 @@ Rules:
           );
         }
 
-        // Dedupe by name: load existing catalog once, filter seed to names
-        // not already present. Safe to call repeatedly — double-clicks and
-        // accidental re-runs never produce duplicate rows.
-        const existing = await getCatalogItemsByOrgId(org.id);
-        const existingNames = new Set(existing.map((i) => i.name.toLowerCase()));
-
         const seed = getCatalogSeedForSector(sector);
         if (!seed || seed.length === 0) {
           throw new Error(
@@ -3241,16 +3285,28 @@ Rules:
           );
         }
 
-        // Filter out items already in the catalog by exact (case-insensitive) name.
-        const toSeed = seed.filter((item: { name: string }) => !existingNames.has(item.name.toLowerCase()));
-        const skipped = seed.length - toSeed.length;
+        // Filter by user selection (if provided). Case-insensitive match.
+        const selectedLower = input?.selectedNames
+          ? new Set(input.selectedNames.map((n) => n.toLowerCase()))
+          : null;
+        const userSelected = selectedLower
+          ? seed.filter((item: { name: string }) => selectedLower.has(item.name.toLowerCase()))
+          : seed;
+
+        // Dedupe by name against existing catalog. Safe to call repeatedly —
+        // double-clicks and accidental re-runs never produce duplicate rows.
+        const existing = await getCatalogItemsByOrgId(org.id);
+        const existingNames = new Set(existing.map((i) => i.name.toLowerCase()));
+        const toSeed = userSelected.filter(
+          (item: { name: string }) => !existingNames.has(item.name.toLowerCase())
+        );
+        const skipped = userSelected.length - toSeed.length;
 
         if (toSeed.length === 0) {
           return { seeded: 0, skipped, sector };
         }
 
-        // Build rows and insert via the shared helper — same path as the
-        // auto-seed in createUser(). Returns the actual number inserted.
+        // Insert via the shared helper path — same as auto-seed in createUser.
         let seeded = 0;
         for (const item of toSeed) {
           await createCatalogItem({

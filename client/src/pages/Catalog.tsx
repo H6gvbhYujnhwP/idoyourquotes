@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -165,29 +166,93 @@ export default function Catalog() {
 
   const seedCatalog = trpc.catalog.seedFromSectorTemplate.useMutation({
     onSuccess: (result) => {
+      setIsSeedDialogOpen(false);
       if (result.seeded === 0 && result.skipped > 0) {
-        toast.info(`All ${result.skipped} starter items were already in your catalog — nothing to add.`);
+        toast.info(`Those ${result.skipped} item${result.skipped === 1 ? ' was' : 's were'} already in your catalog — nothing added.`);
       } else if (result.skipped > 0) {
-        toast.success(`Loaded ${result.seeded} starter items. ${result.skipped} were already in your catalog and were skipped.`);
+        toast.success(`Added ${result.seeded} item${result.seeded === 1 ? '' : 's'}. ${result.skipped} skipped (already in your catalog).`);
       } else {
-        toast.success(`Loaded ${result.seeded} starter items. Edit prices to match your own.`);
+        toast.success(`Added ${result.seeded} item${result.seeded === 1 ? '' : 's'} to your catalog. Edit prices to match your own.`);
       }
       refetch();
     },
     onError: (error: any) => toast.error("Failed to load starter catalog: " + error.message),
   });
 
-  const handleSeedClick = () => {
-    const itemCount = items?.length ?? 0;
-    if (itemCount > 0) {
-      // Has existing items — confirm before adding
-      if (!window.confirm(
-        `This will add up to 22 IT Services starter items to your catalog.\n\nItems with matching names will be skipped, so this is safe to run.\n\nContinue?`
-      )) {
-        return;
-      }
+  // ── Starter Catalog Selection Dialog ─────────────────────────────────────
+  // When the user clicks "Load Starter Catalog" the server's template is
+  // fetched (lazily — only when the dialog opens) and rendered as a
+  // grouped, checkbox-driven picker. All items are selected by default
+  // except those already in the user's catalog, which are greyed out.
+  const [isSeedDialogOpen, setIsSeedDialogOpen] = useState(false);
+  const [selectedSeedNames, setSelectedSeedNames] = useState<Set<string>>(new Set());
+  const seedInitializedRef = useRef(false);
+
+  const { data: seedTemplate, isLoading: isLoadingTemplate } = trpc.catalog.getSectorTemplate.useQuery(
+    undefined,
+    { enabled: isSeedDialogOpen }
+  );
+
+  // Initialise the default selection once per dialog open. Reset when closed
+  // so the next open re-initialises from fresh template + catalog state.
+  useEffect(() => {
+    if (!isSeedDialogOpen) {
+      seedInitializedRef.current = false;
+      return;
     }
-    seedCatalog.mutate();
+    if (seedTemplate && !seedInitializedRef.current) {
+      const inCatalogLower = new Set(
+        seedTemplate.alreadyInCatalog.map((n: string) => n.toLowerCase())
+      );
+      setSelectedSeedNames(
+        new Set(
+          seedTemplate.items
+            .filter((item: { name: string }) => !inCatalogLower.has(item.name.toLowerCase()))
+            .map((item: { name: string }) => item.name)
+        )
+      );
+      seedInitializedRef.current = true;
+    }
+  }, [seedTemplate, isSeedDialogOpen]);
+
+  const toggleSeedItem = (name: string) => {
+    setSelectedSeedNames((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+
+  const toggleSeedCategory = (category: string) => {
+    if (!seedTemplate) return;
+    const inCatalogLower = new Set(
+      seedTemplate.alreadyInCatalog.map((n: string) => n.toLowerCase())
+    );
+    const selectableCatItems = seedTemplate.items.filter(
+      (i: { name: string; category: string }) =>
+        i.category === category && !inCatalogLower.has(i.name.toLowerCase())
+    );
+    const allSelected = selectableCatItems.every((i: { name: string }) =>
+      selectedSeedNames.has(i.name)
+    );
+    setSelectedSeedNames((prev) => {
+      const next = new Set(prev);
+      if (allSelected) {
+        selectableCatItems.forEach((i: { name: string }) => next.delete(i.name));
+      } else {
+        selectableCatItems.forEach((i: { name: string }) => next.add(i.name));
+      }
+      return next;
+    });
+  };
+
+  const handleSeedClick = () => {
+    setIsSeedDialogOpen(true);
+  };
+
+  const handleConfirmSeed = () => {
+    seedCatalog.mutate({ selectedNames: Array.from(selectedSeedNames) });
   };
 
   const createItem = trpc.catalog.create.useMutation({
@@ -459,6 +524,143 @@ export default function Catalog() {
           ))}
         </div>
       )}
+
+      {/* ── Load Starter Catalog — Selection Dialog ───────────────────────
+          Grouped checkbox picker. All available items selected by default;
+          items already in the user's catalog are disabled and greyed out.
+          Category toggles + live selected count + confirm/cancel footer. */}
+      <Dialog open={isSeedDialogOpen} onOpenChange={setIsSeedDialogOpen}>
+        <DialogContent className="max-w-3xl flex flex-col" style={{ maxHeight: "85vh" }}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-teal-600" />
+              Load Starter Catalog
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground pt-1">
+              Select which starter items to add to your catalog. All available items are selected by default. Items already in your catalog are greyed out.
+            </p>
+          </DialogHeader>
+
+          {isLoadingTemplate ? (
+            <div className="py-8 text-center text-muted-foreground">Loading starter catalog...</div>
+          ) : !seedTemplate || seedTemplate.items.length === 0 ? (
+            <div className="py-8 text-center text-muted-foreground">
+              No starter catalog available for your sector yet.
+            </div>
+          ) : (
+            <>
+              <div className="flex-1 overflow-y-auto py-4 space-y-5 pr-2" style={{ minHeight: 0 }}>
+                {Array.from(new Set(seedTemplate.items.map((i: { category: string }) => i.category))).map((cat) => {
+                  const categoryItems = seedTemplate.items.filter(
+                    (i: { category: string }) => i.category === cat
+                  );
+                  const inCatalogLower = new Set(
+                    seedTemplate.alreadyInCatalog.map((n: string) => n.toLowerCase())
+                  );
+                  const selectable = categoryItems.filter(
+                    (i: { name: string }) => !inCatalogLower.has(i.name.toLowerCase())
+                  );
+                  const selectedInCategory = selectable.filter((i: { name: string }) =>
+                    selectedSeedNames.has(i.name)
+                  ).length;
+                  const allSelected = selectable.length > 0 && selectedInCategory === selectable.length;
+
+                  return (
+                    <div key={String(cat)}>
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-semibold text-sm text-slate-900">
+                          {String(cat)}{" "}
+                          <span className="text-xs text-muted-foreground font-normal">
+                            ({selectedInCategory}/{selectable.length} selected)
+                          </span>
+                        </h3>
+                        {selectable.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => toggleSeedCategory(String(cat))}
+                            className="text-xs text-teal-700 hover:text-teal-900 hover:underline"
+                          >
+                            {allSelected ? "Deselect all" : "Select all"}
+                          </button>
+                        )}
+                      </div>
+                      <div className="border border-slate-200 rounded-md overflow-hidden">
+                        {categoryItems.map((item: { name: string; description: string; unit: string; defaultRate: string }) => {
+                          const isInCatalog = inCatalogLower.has(item.name.toLowerCase());
+                          const isSelected = selectedSeedNames.has(item.name);
+                          const firstDescSegment = item.description.split("||")[0].trim();
+                          return (
+                            <label
+                              key={item.name}
+                              className={`flex items-center gap-3 p-3 border-b border-slate-100 last:border-0 ${
+                                isInCatalog
+                                  ? "bg-slate-50 cursor-not-allowed opacity-60"
+                                  : "bg-white cursor-pointer hover:bg-teal-50/50"
+                              }`}
+                            >
+                              <Checkbox
+                                checked={!isInCatalog && isSelected}
+                                disabled={isInCatalog}
+                                onCheckedChange={() => !isInCatalog && toggleSeedItem(item.name)}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="font-medium text-sm text-slate-900 truncate">
+                                  {item.name}
+                                </div>
+                                <div className="text-xs text-muted-foreground truncate">
+                                  {firstDescSegment}
+                                </div>
+                              </div>
+                              <div className="text-right shrink-0 ml-2">
+                                {isInCatalog ? (
+                                  <span className="text-xs text-slate-500 italic">Already added</span>
+                                ) : (
+                                  <>
+                                    <div className="text-sm font-medium text-slate-900">
+                                      £{item.defaultRate}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">
+                                      per {item.unit.toLowerCase()}
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex justify-between items-center gap-2 pt-3 border-t border-slate-200">
+                <div className="text-sm text-muted-foreground">
+                  {selectedSeedNames.size} item{selectedSeedNames.size === 1 ? "" : "s"} selected
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsSeedDialogOpen(false)}
+                    disabled={seedCatalog.isPending}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleConfirmSeed}
+                    disabled={selectedSeedNames.size === 0 || seedCatalog.isPending}
+                    className="bg-teal-600 hover:bg-teal-700 text-white"
+                  >
+                    {seedCatalog.isPending
+                      ? "Adding..."
+                      : `Add ${selectedSeedNames.size} Selected`}
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
