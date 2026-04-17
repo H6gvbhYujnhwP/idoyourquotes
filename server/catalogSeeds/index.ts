@@ -15,18 +15,24 @@
  */
 
 import { IT_SERVICES_CATALOG_SEED, type CatalogSeedItem } from "./itServicesSeed";
+import { WEBSITE_MARKETING_CATALOG_SEED } from "./websiteMarketingSeed";
+import { COMMERCIAL_CLEANING_CATALOG_SEED } from "./commercialCleaningSeed";
+import { PEST_CONTROL_CATALOG_SEED } from "./pestControlSeed";
 
 /**
  * Registry of available catalog seeds keyed by tradePreset / defaultTradeSector.
- * Add future sector seeds here (e.g. "commercial_cleaning", "building_maintenance").
+ * Add future sector seeds here.
  */
 const SEED_REGISTRY: Record<string, readonly CatalogSeedItem[]> = {
   it_services: IT_SERVICES_CATALOG_SEED,
+  website_marketing: WEBSITE_MARKETING_CATALOG_SEED,
+  commercial_cleaning: COMMERCIAL_CLEANING_CATALOG_SEED,
+  pest_control: PEST_CONTROL_CATALOG_SEED,
 };
 
 /**
  * Returns the catalog seed array for a given sector, or null if no seed exists.
- * Null is the normal case — most sectors don't have seeds yet.
+ * Null is the normal case for sectors without seeds yet.
  */
 export function getCatalogSeedForSector(sector: string | null | undefined): readonly CatalogSeedItem[] | null {
   if (!sector) return null;
