@@ -131,6 +131,39 @@ Pick one specific number near the middle of the range — never return null for 
 ADDITIVE BEHAVIOUR — MIXED EVIDENCE:
 If the evidence is a MIX of an invoice/contract AND a separate request for new or additional work (e.g. invoice attached plus an email saying "we also want to add 10 more users and a backup service"), extract BOTH — every invoice line item AND the additional requested work. All flow into materials[].
 
+SMART CATEGORY SUBSTITUTION (THIS IS HOW AN MSP WINS COMPETITIVE QUOTES):
+An MSP's catalog represents the vendor THEY have chosen in each commodity category. When invoice/contract evidence mentions a product from a DIFFERENT vendor in the SAME commodity category, the MSP will quote their own equivalent — that is the whole point of a competitive takeover quote. You must substitute in favour of the user's catalog item, at the user's catalog price, and note the substitution in the description.
+
+CATEGORIES WHERE SUBSTITUTION IS CORRECT (brand-agnostic commodities):
+- Password managers: LastPass, 1Password, Keeper, Bitwarden, Dashlane, NordPass, RoboForm — all interchangeable commodities.
+- Endpoint security / anti-virus: ESET, Sophos Intercept X, Sophos Endpoint, Bitdefender, CrowdStrike Falcon, SentinelOne, Webroot, Malwarebytes, Trend Micro Apex One, Microsoft Defender for Business, Kaspersky, Norton Small Business — all interchangeable commodities. (NOT to be confused with firewalls — see below.)
+- Email threat protection / secure email gateway: Mimecast, Proofpoint Essentials, Barracuda Email Protection, Avanan, IRONSCALES, Microsoft Defender for Office 365 — all interchangeable commodities.
+- Microsoft 365 backup (cloud-to-cloud): Datto SaaS Protect, Barracuda Cloud-to-Cloud Backup, Veeam Backup for M365, SkyKick Cloud Backup, Spanning, AvePoint Cloud Backup, Redstor — all interchangeable commodities.
+- Server/workstation backup and BCDR: Datto SIRIS, Datto ALTO, Veeam Backup & Replication, Acronis Cyber Protect, Axcient x360Recover, NAKIVO, StorageCraft ShadowProtect — all interchangeable commodities.
+- Email signature management: Exclaimer, CodeTwo, Rocketseed, Opensense, Templafy — all interchangeable commodities.
+- Remote monitoring and management (RMM): Datto RMM, NinjaOne, Atera, ConnectWise Automate, Kaseya VSA, N-able N-sight, N-able RMM, Pulseway — all interchangeable commodities.
+- IT documentation: IT Glue, Hudu, ITBoost, Confluence (in MSP context) — all interchangeable commodities.
+- DNS filtering / web filtering: Webroot DNS, Cisco Umbrella, DNSFilter, SafeDNS — all interchangeable commodities.
+
+CATEGORIES WHERE SUBSTITUTION IS WRONG (client-specific choices — quote exactly as evidenced):
+- Microsoft 365 vs Google Workspace vs Zoho — productivity suites are a client ecosystem decision. Never swap.
+- Specific firewall brands: Sophos XGS/XG vs Fortinet FortiGate vs WatchGuard vs Cisco Meraki MX vs SonicWall vs Ubiquiti UniFi — different management, licensing, and integration. Quote the exact brand/model the evidence specifies.
+- Specific hardware SKUs — if the evidence names a model (e.g. "Sophos XGS 118"), quote that model. The client may already own it or have integration requirements.
+- Telephony systems: 3CX vs Microsoft Teams Phone vs Zoom Phone vs RingCentral vs Gamma Horizon — different integration and porting implications. Quote the same system.
+- Named-user support contracts from the EXISTING provider (e.g. "Reach IT Support [Core] Named User" on an Urban Network invoice) — these are the OLD provider's contract. Map these to the user's catalog support tier if one exists (e.g. "Silver IT Support — Unlimited Remote"), noting the substitution. This IS a valid substitution — the named-user support category is commodity.
+
+HOW TO SUBSTITUTE:
+1. Read the evidence item. Identify its commodity category (password manager? AV? M365 backup?).
+2. Scan the user's catalog (provided above) for an item in the same category.
+3. If a catalog match exists in a SUBSTITUTABLE category:
+   - Use the catalog item's exact "name" as the materials "item" field.
+   - Use the catalog item's defaultRate as unitPrice. Set estimated: false.
+   - Copy quantity from the evidence.
+   - Start the "description" with "Replaces existing [evidenced product name]" followed by "||" then the catalog description. For example: "Replaces existing LastPass subscription || Enterprise password manager per user || Secure encrypted vault..."
+4. If a catalog match exists in a NON-SUBSTITUTABLE category (e.g. client has a specific firewall), use the evidenced product name verbatim — do NOT substitute your catalog's firewall item.
+5. If no catalog match exists in the evidenced category, fall back to the UK MSP rates above with estimated: true.
+6. Silent substitution is a bug. Every substituted item MUST have "Replaces existing [original product]" visible in the description so the user can review and revert in the QDS if needed.
+
 DO NOT INVENT SCOPE:
 Extract only what the evidence actually shows. If an invoice has 14 M365 licences, the quote has 14 — not 15, not "14 or so". If prices are redacted, flag with estimated:true — do not fabricate exact unit prices. If the client is asking about adding services, only quote what they asked for.
 

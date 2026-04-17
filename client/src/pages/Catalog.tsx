@@ -10,7 +10,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
-import { Plus, Package, Search, Trash2 } from "lucide-react";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { Plus, Package, Search, Trash2, Sparkles } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 
@@ -153,6 +154,22 @@ export default function Catalog() {
   const [installTimeHrs, setInstallTimeHrs] = useState("");
 
   const { data: items, isLoading, refetch } = trpc.catalog.list.useQuery();
+  const { user } = useAuth();
+
+  // Sectors with a starter catalog seed. Keep in sync with the server-side
+  // registry in server/catalogSeeds/index.ts. Hardcoded client-side rather
+  // than imported because client cannot import server code.
+  const SEEDABLE_SECTORS = ["it_services"];
+  const userSector = (user as any)?.defaultTradeSector as string | null | undefined;
+  const canSeedStarterCatalog = !!userSector && SEEDABLE_SECTORS.includes(userSector);
+
+  const seedCatalog = trpc.catalog.seedFromSectorTemplate.useMutation({
+    onSuccess: (result) => {
+      toast.success(`Loaded ${result.seeded} starter items. Edit prices to match your own.`);
+      refetch();
+    },
+    onError: (error: any) => toast.error("Failed to load starter catalog: " + error.message),
+  });
 
   const createItem = trpc.catalog.create.useMutation({
     onSuccess: () => {
@@ -305,6 +322,26 @@ export default function Catalog() {
             <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <h3 className="text-lg font-medium mb-2">No catalog items yet</h3>
             <p className="text-muted-foreground mb-4">Add products and services to quickly add them to your quotes.</p>
+            {canSeedStarterCatalog && !searchQuery && (
+              <div className="mb-6 max-w-md mx-auto p-4 rounded-lg border border-teal-200 bg-teal-50">
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <Sparkles className="h-5 w-5 text-teal-600" />
+                  <span className="font-medium text-teal-900">Kick-start with an IT Services template</span>
+                </div>
+                <p className="text-sm text-teal-800 mb-3">
+                  Load a starter catalog of 22 common MSP products — Microsoft 365 licensing, security &amp; backup, support contracts, engineer rates. All prices are fully editable.
+                </p>
+                <Button
+                  variant="outline"
+                  onClick={() => seedCatalog.mutate()}
+                  disabled={seedCatalog.isPending}
+                  className="border-teal-300 text-teal-900 hover:bg-teal-100"
+                >
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  {seedCatalog.isPending ? "Loading starter catalog..." : "Load Starter Catalog"}
+                </Button>
+              </div>
+            )}
             <Button onClick={() => setIsAddDialogOpen(true)}>
               <Plus className="mr-2 h-4 w-4" /> Add First Item
             </Button>

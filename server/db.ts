@@ -2,6 +2,7 @@ import { eq, desc, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import bcrypt from "bcryptjs";
+import { getCatalogSeedForSector } from "./catalogSeeds";
 import { 
   InsertUser, 
   users, 
@@ -254,6 +255,18 @@ export async function createUser(email: string, password: string, name?: string,
       companyName: companyName || undefined,
     });
     await addOrgMember(org.id, user.id, "owner");
+
+    // Seed starter catalog if a template exists for this sector.
+    // Fail-safe: wrapped so seeding failures never block registration. The
+    // user can seed manually later from the Catalog page empty state.
+    if (defaultTradeSector) {
+      try {
+        await seedCatalogFromSectorTemplate(org.id, user.id, defaultTradeSector);
+      } catch (err) {
+        console.error(`[createUser] Catalog seeding failed for user ${user.id}, sector ${defaultTradeSector}:`, err);
+        // Intentionally not rethrown — registration must succeed even if seeding fails.
+      }
+    }
   }
 
   return user;
@@ -780,6 +793,54 @@ export async function createCatalogItem(data: InsertCatalogItem): Promise<Catalo
 
   const [result] = await db.insert(catalogItems).values(data).returning();
   return result;
+}
+
+/**
+ * Seeds a starter catalog for the given org from the sector's template.
+ *
+ * Used by:
+ *   - createUser() — fires automatically on new registration when defaultTradeSector
+ *     has a seed template.
+ *   - catalog.seedFromSectorTemplate tRPC procedure — fires manually when existing
+ *     users click "Load starter catalog" in the Catalog page empty state.
+ *
+ * Returns the number of items seeded. Returns { seeded: 0 } cleanly if no seed
+ * template exists for the sector — no-ops for sectors without a template.
+ *
+ * Multi-tenancy: every seeded row is written with the correct orgId + userId.
+ * The user can edit, disable, or delete any seeded item freely after seeding.
+ */
+export async function seedCatalogFromSectorTemplate(
+  orgId: number,
+  userId: number,
+  sector: string
+): Promise<{ seeded: number; sector: string }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const seed = getCatalogSeedForSector(sector);
+  if (!seed || seed.length === 0) {
+    return { seeded: 0, sector };
+  }
+
+  // Build the insert rows — shape matches InsertCatalogItem.
+  // orgId and userId come from the caller; pricingType/unit/defaultRate/costPrice
+  // come from the seed template; isActive defaults to 1 (active).
+  const rows: InsertCatalogItem[] = seed.map((item) => ({
+    orgId,
+    userId,
+    name: item.name,
+    description: item.description,
+    category: item.category,
+    unit: item.unit,
+    defaultRate: item.defaultRate,
+    costPrice: item.costPrice,
+    pricingType: item.pricingType,
+    isActive: 1,
+  }));
+
+  await db.insert(catalogItems).values(rows);
+  return { seeded: rows.length, sector };
 }
 
 export async function updateCatalogItem(itemId: number, userId: number, data: Partial<InsertCatalogItem>): Promise<CatalogItem | undefined> {

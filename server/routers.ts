@@ -51,6 +51,7 @@ import {
   createCatalogItem,
   updateCatalogItem,
   deleteCatalogItem,
+  seedCatalogFromSectorTemplate,
   recalculateQuoteTotals,
   updateUserProfile,
   changePassword,
@@ -3199,6 +3200,48 @@ Rules:
       .mutation(async ({ ctx, input }) => {
         await deleteCatalogItem(input.id, ctx.user.id);
         return { success: true };
+      }),
+
+    // ── seedFromSectorTemplate ─────────────────────────────────────────────
+    // Manually seed a starter catalog for the user's sector. Fires when an
+    // existing user clicks "Load starter catalog" in the Catalog page empty
+    // state. Only seeds if their catalog is currently empty — prevents
+    // accidental duplication if the button is clicked twice.
+    //
+    // For brand-new users, seeding fires automatically during registration
+    // (see db.ts createUser). This procedure is only for existing users whose
+    // account was created before seed templates existed, or whose catalog
+    // they deleted and want to restore the starter kit.
+    seedFromSectorTemplate: protectedProcedure
+      .mutation(async ({ ctx }) => {
+        const org = await getUserPrimaryOrg(ctx.user.id);
+        if (!org) {
+          throw new Error("No organization found for user");
+        }
+
+        // Guard against duplicate seeding — only allow when catalog is empty.
+        const existing = await getCatalogItemsByOrgId(org.id);
+        if (existing.length > 0) {
+          throw new Error(
+            `Catalog already has ${existing.length} item(s). Delete all items first if you want to reload the starter catalog.`
+          );
+        }
+
+        const sector = ctx.user.defaultTradeSector;
+        if (!sector) {
+          throw new Error(
+            "No default trade sector set. Set one in Settings first, then reload the starter catalog."
+          );
+        }
+
+        const result = await seedCatalogFromSectorTemplate(org.id, ctx.user.id, sector);
+        if (result.seeded === 0) {
+          throw new Error(
+            `No starter catalog template exists yet for sector "${sector}". This feature is currently available for: IT Services.`
+          );
+        }
+
+        return result;
       }),
   }),
 
