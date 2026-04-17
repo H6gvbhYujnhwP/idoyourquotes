@@ -165,11 +165,30 @@ export default function Catalog() {
 
   const seedCatalog = trpc.catalog.seedFromSectorTemplate.useMutation({
     onSuccess: (result) => {
-      toast.success(`Loaded ${result.seeded} starter items. Edit prices to match your own.`);
+      if (result.seeded === 0 && result.skipped > 0) {
+        toast.info(`All ${result.skipped} starter items were already in your catalog — nothing to add.`);
+      } else if (result.skipped > 0) {
+        toast.success(`Loaded ${result.seeded} starter items. ${result.skipped} were already in your catalog and were skipped.`);
+      } else {
+        toast.success(`Loaded ${result.seeded} starter items. Edit prices to match your own.`);
+      }
       refetch();
     },
     onError: (error: any) => toast.error("Failed to load starter catalog: " + error.message),
   });
+
+  const handleSeedClick = () => {
+    const itemCount = items?.length ?? 0;
+    if (itemCount > 0) {
+      // Has existing items — confirm before adding
+      if (!window.confirm(
+        `This will add up to 22 IT Services starter items to your catalog.\n\nItems with matching names will be skipped, so this is safe to run.\n\nContinue?`
+      )) {
+        return;
+      }
+    }
+    seedCatalog.mutate();
+  };
 
   const createItem = trpc.catalog.create.useMutation({
     onSuccess: () => {
@@ -256,13 +275,25 @@ export default function Catalog() {
             Manage your reusable products and services. Click any field to edit inline.
           </p>
         </div>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={() => resetForm()}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Item
+        <div className="flex items-center gap-2">
+          {canSeedStarterCatalog && (
+            <Button
+              variant="outline"
+              onClick={handleSeedClick}
+              disabled={seedCatalog.isPending}
+              className="border-teal-300 text-teal-900 hover:bg-teal-50"
+            >
+              <Sparkles className="mr-2 h-4 w-4" />
+              {seedCatalog.isPending ? "Loading..." : "Load Starter Catalog"}
             </Button>
-          </DialogTrigger>
+          )}
+          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={() => resetForm()}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Item
+              </Button>
+            </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Add Catalog Item</DialogTitle>
@@ -307,6 +338,7 @@ export default function Catalog() {
             </div>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <div className="relative max-w-sm">
@@ -333,7 +365,7 @@ export default function Catalog() {
                 </p>
                 <Button
                   variant="outline"
-                  onClick={() => seedCatalog.mutate()}
+                  onClick={handleSeedClick}
                   disabled={seedCatalog.isPending}
                   className="border-teal-300 text-teal-900 hover:bg-teal-100"
                 >

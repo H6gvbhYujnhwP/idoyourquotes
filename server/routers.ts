@@ -21,6 +21,7 @@ import { createElectricalTakeoff, getElectricalTakeoffsByQuoteId, getElectricalT
 import { createContainmentTakeoff, getContainmentTakeoffsByQuoteId, getContainmentTakeoffById, getContainmentTakeoffByInputId, updateContainmentTakeoff, deleteContainmentTakeoffByInputId, updateInputMimeType } from "./db";
 import { parseSpreadsheet, isSpreadsheet, formatSpreadsheetForAI } from "./services/excelParser";
 import { generateQuoteHTML } from "./pdfGenerator";
+import { getCatalogSeedForSector } from "./catalogSeeds";
 import {
   getQuotesByUserId,
   getQuotesByOrgId,
@@ -3203,28 +3204,21 @@ Rules:
       }),
 
     // ── seedFromSectorTemplate ─────────────────────────────────────────────
-    // Manually seed a starter catalog for the user's sector. Fires when an
-    // existing user clicks "Load starter catalog" in the Catalog page empty
-    // state. Only seeds if their catalog is currently empty — prevents
-    // accidental duplication if the button is clicked twice.
+    // Seed a starter catalog for the user's sector. Fires when an existing
+    // user clicks "Load Starter Catalog" in the Catalog page. Safe to call
+    // multiple times — items whose names already exist in the catalog are
+    // skipped (idempotent by name).
     //
-    // For brand-new users, seeding fires automatically during registration
-    // (see db.ts createUser). This procedure is only for existing users whose
-    // account was created before seed templates existed, or whose catalog
-    // they deleted and want to restore the starter kit.
+    // For brand-new users, seeding also fires automatically during
+    // registration (see db.ts createUser). This procedure is for existing
+    // users who pre-date seed templates, users who deleted their catalog
+    // and want the starter kit back, or users who have legacy items from
+    // another context and want the IT starter kit added alongside them.
     seedFromSectorTemplate: protectedProcedure
       .mutation(async ({ ctx }) => {
         const org = await getUserPrimaryOrg(ctx.user.id);
         if (!org) {
           throw new Error("No organization found for user");
-        }
-
-        // Guard against duplicate seeding — only allow when catalog is empty.
-        const existing = await getCatalogItemsByOrgId(org.id);
-        if (existing.length > 0) {
-          throw new Error(
-            `Catalog already has ${existing.length} item(s). Delete all items first if you want to reload the starter catalog.`
-          );
         }
 
         const sector = ctx.user.defaultTradeSector;
@@ -3234,14 +3228,47 @@ Rules:
           );
         }
 
-        const result = await seedCatalogFromSectorTemplate(org.id, ctx.user.id, sector);
-        if (result.seeded === 0) {
+        // Dedupe by name: load existing catalog once, filter seed to names
+        // not already present. Safe to call repeatedly — double-clicks and
+        // accidental re-runs never produce duplicate rows.
+        const existing = await getCatalogItemsByOrgId(org.id);
+        const existingNames = new Set(existing.map((i) => i.name.toLowerCase()));
+
+        const seed = getCatalogSeedForSector(sector);
+        if (!seed || seed.length === 0) {
           throw new Error(
             `No starter catalog template exists yet for sector "${sector}". This feature is currently available for: IT Services.`
           );
         }
 
-        return result;
+        // Filter out items already in the catalog by exact (case-insensitive) name.
+        const toSeed = seed.filter((item: { name: string }) => !existingNames.has(item.name.toLowerCase()));
+        const skipped = seed.length - toSeed.length;
+
+        if (toSeed.length === 0) {
+          return { seeded: 0, skipped, sector };
+        }
+
+        // Build rows and insert via the shared helper — same path as the
+        // auto-seed in createUser(). Returns the actual number inserted.
+        let seeded = 0;
+        for (const item of toSeed) {
+          await createCatalogItem({
+            orgId: org.id,
+            userId: ctx.user.id,
+            name: item.name,
+            description: item.description,
+            category: item.category,
+            unit: item.unit,
+            defaultRate: item.defaultRate,
+            costPrice: item.costPrice,
+            pricingType: item.pricingType,
+            isActive: 1,
+          });
+          seeded++;
+        }
+
+        return { seeded, skipped, sector };
       }),
   }),
 
