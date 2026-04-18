@@ -169,6 +169,330 @@ Extract only what the evidence actually shows. If an invoice has 14 M365 licence
 
 ` : "";
 
+    // ── Website & Digital Marketing addendum (gated on "website_marketing") ────
+    //
+    // Mirrors the itInvoiceAddendum pattern for digital agencies. Activates only
+    // when this.tradePreset === "website_marketing". For every other sector
+    // this evaluates to an empty string and the interpolated prompt is
+    // byte-identical to the pre-existing prompt — zero behaviour change.
+    //
+    // Purpose: agency takeover workflow (prospect shares an incumbent-agency
+    // retainer statement, SOW, or hosting contract; Wez needs the AI to treat
+    // it as scope, not reject it as "not a request for quotation"). Canonical
+    // item names and price anchors are drawn from websiteMarketingSeed.ts.
+    const websiteMarketingAddendum = this.tradePreset === "website_marketing" ? `WEBSITE & DIGITAL MARKETING SECTOR — INVOICE / CONTRACT / RETAINER EVIDENCE (CRITICAL FOR AGENCY TAKEOVER QUOTES):
+
+The evidence for a digital agency quote frequently includes invoices, retainer statements, scope-of-work documents, or hosting contracts from a previous agency or freelancer. This is expected and legitimate. Common agency scenarios:
+- Prospect shares their current agency's retainer invoice so you can quote to match or improve it
+- Renewal cycle: last month's invoice becomes the basis for the next 12-month retainer quote
+- Takeover/migration: client is moving website hosting, SEO retainer, or paid media management to you
+- Cost-reduction review: prospect is pricing an alternative to their current agency's arrangement
+
+When the evidence is an invoice, retainer statement, SOW, or hosting contract, DO NOT return empty materials with a note saying "this is not a request for quotation". The document IS the scope definition. Extract every line item into the materials[] array. Set isTradeRelevant: true — an invoice from another digital agency is always trade-relevant.
+
+INVOICE LINE ITEM MAPPING:
+- Each numbered/listed row on the invoice → ONE material in the output.
+- "item": the service name. Strip administrative prefixes like "Retainer:" or "Monthly Fee:" — e.g. "Retainer: SEO — National — Feb 26" becomes item: "National SEO Retainer". Match to the user's catalog naming where possible ("Business Website — 10–15 Pages", "Managed WordPress Hosting", "Website Care Plan — Pro", "Local SEO Retainer", "Google Ads Management", "Social Media Management — 2 Channels", "Logo Design", "Full Brand Identity Package").
+- "description": preserve the technical detail including commitment terms ("[6-month minimum]", "[12-month commitment]"), included scope ("up to £5,000 monthly ad spend", "12 posts/month across 2 channels", "1,000+ word articles ×2/month"), and platform specifics ("Shopify", "WordPress + WooCommerce", "Webflow"). Use "||" separator when expanding scope.
+- "quantity": exactly as shown on the invoice (1 for a single retainer; 2 for "2 × SEO articles"; 12 for "12 social posts"; hour count for dated dev time).
+- "unit": match the invoice's billing unit. "Month" for retainers, "Year" for annual hosting or domain renewals, "Project" for one-off builds or audits, "Article" for content pieces, "Hour" for ad-hoc dev/design, "Pack" for content packs, "Page" for copywriting charged per page, "Deliverable" for marketing collateral.
+
+PRICING TYPE FROM CADENCE MARKERS:
+- "Monthly retainer", "per month", "/mo", "hosting — monthly", "care plan — monthly", "management fee — monthly", "Social media — monthly", any recurring retainer → pricingType: "monthly". Commitment terms (3/6/12-month minimum) belong in the description, NOT the cadence.
+- "Annual domain renewal", "SSL certificate — 1 year", "annual licence", "yearly hosting prepay" → pricingType: "annual".
+- "Website build", "landing page", "design project", "one-off audit", "brand identity package", "ad-hoc dev hours this month", "logo design", "content pack — one-off" → pricingType: "standard".
+- Dated hourly dev/design lines on an invoice (e.g. "12 Feb 2026 — Web Developer, 3.5 hrs") → pricingType: "standard", unit: "Hour", each dated row a SEPARATE material even if the role repeats.
+- CRITICAL — "Ad spend reimbursement", "Media spend — passed through", or any line that represents client ad spend paid to Google/Meta/LinkedIn: DROP these entirely. Ad spend is paid DIRECTLY to the platform by the client and is NOT billed by the agency. Only the management fee is billed. If a single line combines management fee + ad spend ("Google Ads £3,695 — includes £3,200 spend + £495 management"), extract ONLY the management fee portion (£495 in this example) as a materials line and note "Ad spend billed separately direct to Google" in the description.
+
+REDACTED OR MISSING PRICES (common on shared retainer statements):
+Populate unitPrice with a realistic UK mid-market agency estimate and set "estimated": true. UK mid-market anchors (ex VAT):
+- Brochure website (5 pages): £1,500–£3,000 project
+- Business website (10–15 pages): £3,000–£6,000 project
+- Shopify / WooCommerce store (up to 50 products): £4,000–£8,000 project
+- Landing page (single conversion-optimised): £500–£1,000 project
+- Website refresh (existing site redesign): £900–£1,800 project
+- Managed WordPress hosting: £25–£45/month
+- Website care plan — basic: £50–£90/month
+- Website care plan — pro: £100–£175/month
+- Domain registration: £12–£20/year
+- SEO audit (one-off technical + content): £350–£750 project
+- Local SEO retainer: £400–£750/month
+- National SEO retainer: £800–£2,000/month (complexity-driven)
+- SEO content article (1,000 words): £150–£300/article
+- Google Ads management fee: £350–£650/month (at up to £5,000 monthly ad spend); tiered upward above
+- Meta Ads (Facebook + Instagram) management fee: £300–£550/month (at up to £3,000 monthly ad spend); tiered upward above
+- LinkedIn Ads management fee: £450–£800/month
+- Social media management — 2 channels (12 posts/channel): £300–£500/month
+- Social media management — 4 channels: £650–£1,000/month
+- Social content pack (12 branded posts): £225–£375 one-off
+- Logo design: £400–£900 project
+- Full brand identity package: £1,500–£3,000 project
+- Marketing collateral design: £150–£250 per deliverable
+- Copywriting (per page or asset): £120–£250
+- Web developer — hourly: £65–£100
+- Designer — hourly: £55–£80
+- Digital marketer / strategist — hourly: £65–£100
+
+Pick one specific number near the middle of each range — never return null for unitPrice. The user reviews every estimated price before the quote goes to the client.
+
+ADDITIVE BEHAVIOUR — MIXED EVIDENCE:
+If the evidence is a MIX of an incumbent retainer invoice AND a separate request for new work (e.g. retainer invoice attached plus an email "we also want a Black Friday landing page this month and 3 extra social posts"), extract BOTH — every retainer line AND the additional requested work. All flow into materials[].
+
+SMART CATEGORY SUBSTITUTION (HOW AN AGENCY WINS A COMPETITIVE TAKEOVER):
+When incumbent-agency evidence names a vendor or platform in a commodity category where the user's catalog represents the user's chosen equivalent, substitute in favour of the user's catalog item at the user's catalog price. For channel-locked categories (paid ads on a specific platform), match the same channel — never swap channels.
+
+CATEGORIES WHERE SUBSTITUTION IS CORRECT (brand-agnostic commodities):
+- Website hosting providers: WP Engine, Kinsta, SiteGround, Cloudways, 20i, Krystal, GoDaddy hosting, Bluehost, Flywheel, Pressable, Hostinger, Namecheap hosting, Liquid Web, DreamHost — all substitutable commodity hosting. Agency resells its preferred stack.
+- Domain registrars: GoDaddy, Namecheap, 123-reg, Google Domains, Gandi, Hover, Cloudflare Registrar — commodity.
+- Website care / maintenance plan providers: any competitor-agency "WordPress care plan", "maintenance plan", "support plan" — substitute for the user's equivalent care tier (Basic vs Pro).
+- Email marketing / automation platforms where the agency bills a MANAGEMENT FEE: Mailchimp, Klaviyo, HubSpot Marketing, Constant Contact, ActiveCampaign, Drip, Brevo (formerly Sendinblue), Campaign Monitor, MailerLite — the MANAGEMENT FEE is commodity; the platform subscription is paid by the client direct to the vendor.
+- CRM admin retainers: HubSpot CRM admin, Salesforce admin, Pipedrive admin, Zoho CRM admin — agency's admin time is commodity.
+- SEO tooling platforms (Ahrefs, SEMrush, Moz, SE Ranking) where the agency bills a retainer that INCLUDES tool access: substitute — the user's SEO retainer covers equivalent tooling.
+
+CATEGORIES WHERE SUBSTITUTION IS WRONG (channel-locked or strategic client choices — quote as evidenced):
+- Google Ads management fee: CHANNEL-LOCKED. If the incumbent runs Google Ads, quote a Google Ads management fee — NOT a Meta Ads or LinkedIn Ads fee. The channel reflects where the client's audience converts and is a strategic decision, not a commodity choice.
+- Meta Ads (Facebook + Instagram) management fee: CHANNEL-LOCKED to Meta.
+- LinkedIn Ads management fee: CHANNEL-LOCKED to LinkedIn (B2B-specific).
+- TikTok / Pinterest / X (Twitter) / Amazon Ads management fees: each CHANNEL-LOCKED to that platform.
+- The AD SPEND itself is NEVER substitutable — it is paid directly by the client to the platform. Agencies bill ONLY the management fee, never the spend. Invoice line combining both should be split; only the management fee goes into materials[].
+- CMS platform choice: WordPress vs Shopify vs Webflow vs Squarespace vs Wix vs Magento — the CMS is a strategic client decision with migration costs, team skill implications, and ecosystem lock-in. If the incumbent built on Shopify, do NOT substitute a WooCommerce build unless the client explicitly requests migration.
+- Specific branded design systems, component libraries, or franchise-wide templates — client-mandated, never substitute.
+- Named integrations the client has already committed to (e.g. "integration with Xero", "sync to HubSpot Enterprise", "embed Calendly") — scope the same integration, don't swap for a different platform.
+- Productivity suites (Microsoft 365 vs Google Workspace) — client ecosystem decision, not the agency's call.
+
+HOW TO SUBSTITUTE:
+1. Read the evidence item. Identify its commodity category (hosting? care plan? email platform management? SEO retainer?).
+2. Scan the user's catalog for an item in the same category.
+3. If a catalog match exists in a SUBSTITUTABLE category:
+   - Use the catalog item's exact "name" as the materials "item" field.
+   - Use the catalog item's defaultRate as unitPrice. Set estimated: false.
+   - Copy quantity from the evidence.
+   - Start the "description" with "Replaces existing [evidenced provider/product]" followed by "||" then the catalog description.
+4. If the category is CHANNEL-LOCKED (Google Ads, Meta Ads, LinkedIn Ads, specific CMS), match the same channel/platform at the user's catalog rate for that channel. Do NOT swap channels.
+5. If no catalog match exists in the evidenced category, fall back to UK mid-market anchors above with estimated: true.
+6. Silent substitution is a bug. Every substituted item MUST have "Replaces existing [original provider]" visible in the description so the user can review and revert in the QDS if needed.
+
+DO NOT INVENT SCOPE:
+Preserve exact counts. If the retainer covers 12 social posts/month across 2 channels, quote 12 across 2 — not 15, not "around a dozen", not 4 channels. If the SEO retainer commits to 2 articles/month, quote 2. If the ad management tier is pegged to £5,000/month ad spend, preserve that spend bracket in the description (the management fee tier depends on it). Don't inflate or round.
+
+` : "";
+
+    // ── Commercial Cleaning addendum (gated on "commercial_cleaning") ─────────
+    //
+    // Mirrors the itInvoiceAddendum pattern for commercial cleaning firms.
+    // Activates only when this.tradePreset === "commercial_cleaning". For
+    // every other sector this evaluates to an empty string and the interpolated
+    // prompt is byte-identical to the pre-existing prompt.
+    //
+    // Purpose: contract takeover workflow (B2B prospect shares an incumbent-
+    // provider monthly invoice or FM tender scope; AI must treat it as scope,
+    // not reject it). Canonical item names and price anchors are drawn from
+    // commercialCleaningSeed.ts.
+    const commercialCleaningAddendum = this.tradePreset === "commercial_cleaning" ? `COMMERCIAL CLEANING SECTOR — INVOICE / CONTRACT / STATEMENT EVIDENCE (CRITICAL FOR CONTRACT TAKEOVER QUOTES):
+
+The evidence for a commercial cleaning quote frequently includes invoices, service contracts, or monthly statements from an incumbent cleaning provider (UK majors include Rentokil Initial, Servest, Mitie, OCS, ISS Facilities, ABM UK, Bidvest Noonan, Atalian Servest, Churchill Contract Services, or regional and independent firms). This is expected and legitimate. Common scenarios:
+- B2B prospect shares the incumbent's monthly invoice so you can quote to match or undercut
+- FM (facilities management) annual review driving a retender
+- Landlord / tenant handover where the cleaning contract transfers or retenders
+- Cost-reduction review — prospect is pricing an alternative to the current arrangement
+- Sector change: new food premises opening, or a site moving from standard office to healthcare/CQC
+
+When the evidence is an invoice, contract, or statement, DO NOT return empty materials with a note saying "this is not a request for quotation". The document IS the scope definition. Extract every line item into the materials[] array. Set isTradeRelevant: true — an invoice from another commercial cleaning provider is always trade-relevant.
+
+INVOICE LINE ITEM MAPPING:
+- Each numbered/listed row on the invoice → ONE material in the output.
+- "item": the service name. Strip administrative prefixes like "Cleaning Services:" or "Monthly Contract:" — e.g. "Monthly Contract: Office Cleaning — Mon–Fri evenings, 3hr/night" becomes item: "Daily Office Cleaning — Medium Site (2,000–10,000 sq ft)" (mapped to the nearest catalog tier by footprint/hours). Match to user catalog naming where possible ("Daily Office Cleaning — Small / Medium / Large Site", "Retail Cleaning — Daily", "Healthcare / GP Surgery Cleaning — Daily", "Communal Area Cleaning", "Washroom Services Contract", "Deep Clean — Office").
+- "description": preserve specifics — visit frequency ("Mon–Fri evenings, 3hrs/night", "7-day retail, early-morning"), footprint ("4,500 sq ft"), scope ("office + kitchen + 2 washrooms"), compliance ("CQC-audited", "BICSc Level 2 trained", "BRC-compliant documentation"), staff arrangement ("dedicated cleaner, DBS-checked", "2-person evening team"), billing cadence ("Billed quarterly in arrears"). Use "||" between elements.
+- "quantity": match the invoice's billing unit. For monthly retainers, quantity is typically 1. For consumables with a headcount, quantity may be the user headcount. For sanitary bins, quantity is the number of units. For per-sq-ft services, quantity is the area.
+- "unit": match the invoice's billing unit. "Month" for retainers, "Washroom" for washroom services per washroom, "Unit" for per-unit hygiene services (sanitary bins, air freshener units), "Sq ft" or "Sq m" for area-based pricing (deep cleans, carpet, hard floor), "Visit" for per-visit periodic cleans, "Property" for end-of-tenancy, "Chair" for upholstery cleaning, "Hour" for hourly labour, "Callout" for biohazard/emergency.
+
+PRICING TYPE FROM CADENCE MARKERS:
+- "Monthly contract", "per month", "nightly Mon–Fri", "daily cleaning", "weekly cleaning", "Mon–Fri evening cleans", any recurring retainer → pricingType: "monthly".
+- CRITICAL: recurring contracts on a quarterly billing cycle (very common in FM — "Billed quarterly in arrears") STILL use pricingType: "monthly". The figure in unitPrice is the MONTHLY AVERAGE. The quarterly billing cadence lives in the description (e.g. "Monthly figure shown is average — billed quarterly in arrears"). Do not use pricingType: "annual" for a quarterly-billed monthly-service contract.
+- "One-off deep clean", "carpet clean — single visit", "window clean — single visit", "end-of-tenancy", "post-construction / builders' clean", "emergency callout", "biohazard response", "one-off office clean" → pricingType: "standard".
+- "Per sq ft" or "per sq m" pricing on a deep/periodic clean → pricingType: "standard" (area-based one-off charge).
+- "Annual contract" billed as a single annual fee (rare in commercial cleaning, sometimes seen on window-cleaning-only contracts) → pricingType: "annual" ONLY if the invoice shows one annual line with no monthly breakdown.
+- Dated hourly cleaner/supervisor lines ("14 Feb 2026 — Cleaner OOH, 4.5 hrs") → pricingType: "standard", unit: "Hour", each dated row a SEPARATE material.
+
+REDACTED OR MISSING PRICES (very common on incumbent-provider invoices — national contractors often mask rates):
+Populate unitPrice with a realistic UK mid-market estimate and set "estimated": true. UK mid-market anchors (ex VAT):
+- Daily office cleaning — small site (under 2,000 sq ft, Mon–Fri evenings): £400–£600/month
+- Daily office cleaning — medium site (2,000–10,000 sq ft): £1,000–£1,800/month (mid-range ~£1,250 for ~5,000 sq ft)
+- Daily office cleaning — large site (10,000+ sq ft): £1,800–£3,500/month (scales heavily with footprint)
+- Retail cleaning — daily (6- or 7-day schedule): £700–£1,100/month
+- Healthcare / GP surgery cleaning — daily, CQC-compliant: £1,400–£2,200/month
+- Communal area cleaning (residential block or commercial, weekly): £250–£550/month
+- Deep clean — office, per sq ft: £0.30–£0.50
+- Carpet cleaning (hot water extraction), per sq ft: £0.50–£0.85
+- Hard floor strip, clean & polish, per sq m: £3.50–£6.00
+- Window cleaning — internal, per visit (standard office): £100–£175
+- Post-construction / builders' clean, per sq ft: £0.35–£0.55
+- End-of-tenancy / void property clean (3-bed residential equivalent): £250–£350
+- Upholstery cleaning — per office chair: £12–£18
+- Pressure / jet washing, per sq m: £1.75–£2.75
+- Graffiti removal, per sq m: £22–£35
+- Biohazard / trauma cleanup (starting callout rate, scales with incident): £350–£650
+- Washroom services contract, per washroom/month: £15–£25
+- Consumables monthly supply (~30-user office): £75–£125/month
+- Feminine hygiene unit servicing: £5.50–£8.00/unit/month
+- Air freshener service: £4.00–£6.50/unit/month
+- One-off office clean (non-contract visit, ~3 hrs): £130–£200/visit
+- Emergency out-of-hours callout: £55–£80/hour (min 2-hour charge)
+- Cleaner — daytime: £18–£26/hour
+- Cleaner — out-of-hours (evening / early-morning): £22–£28/hour
+- Cleaner — weekend / bank holiday: £28–£36/hour
+- Supervisor / team leader: £28–£36/hour
+
+Pick one specific number near the middle of each range — never return null for unitPrice. The user reviews every estimated price before the quote goes to the client.
+
+ADDITIVE BEHAVIOUR — MIXED EVIDENCE:
+If the evidence is a MIX of an incumbent contract AND a separate request for additional work (e.g. monthly invoice attached plus an email "we're also moving to new premises next month — can you quote a post-construction clean?" or "we've had a flood in the server room — emergency callout needed"), extract BOTH — every incumbent contract line AND the additional requested work.
+
+SMART CATEGORY SUBSTITUTION:
+A cleaning firm's catalog represents the supplier THEY have chosen for commodity services and consumables. When incumbent-provider evidence names a vendor in a commodity category, substitute in favour of the user's catalog item at the user's catalog price and note the substitution.
+
+CATEGORIES WHERE SUBSTITUTION IS CORRECT (brand-agnostic commodities):
+- Washroom services / sanitary waste providers: Initial Washroom Hygiene, Phs Group, Citron Hygiene, Cannon Hygiene, Anglian Washrooms, Grundon Sanitary, WasteCare — all substitutable commodity washroom services.
+- Consumables suppliers (toilet paper, hand towels, hand soap, bin liners, general janitorial): Bunzl, Pattersons, Nisbets Hygiene, Janiking, CleanStream, Northwood Hygiene — commodity.
+- Air freshener services: Initial, Phs, Citron Hygiene, Airscent, Prestige Hygiene — commodity.
+- Feminine hygiene unit servicing: commodity across all national and regional providers.
+- Cleaning chemicals sold as a monthly consumables top-up: Diversey, Ecolab, Jangro, Evans Vanodine, Selden, Prochem (for carpet care), 2Work — commodity when sold as consumables supply.
+- Window cleaning (internal, standard reach height): commodity service across providers.
+- Pressure washing, carpet cleaning, upholstery cleaning as standalone services: the service itself is commodity — user's catalog rate applies.
+
+CATEGORIES WHERE SUBSTITUTION IS WRONG (client-specific or compliance-driven — quote as evidenced):
+- Visit frequency: if the incumbent contract runs 5-nights-per-week, do NOT silently change to 3 nights because the user's default tier is 3-nights. Quote the same frequency or flag in notes that a reduced-frequency alternative is available for discussion.
+- Compliance tier: if the incumbent contract is CQC-compliant (healthcare), BRC / SALSA / CIEH-compliant (food), or Ofsted-relevant (schools with DBS-checked staff), the user MUST match the compliance tier. Do NOT substitute a standard office contract for a healthcare or food-sector contract — doing so puts the client in breach at their next audit.
+- Dedicated-staff arrangements (named dedicated cleaner, day porter, shared porter, on-site supervisor): contractual commitments that matter to the client. Match the arrangement.
+- Site-specific PPE, hygiene protocols, or colour-coded equipment (infection-control kits, food-contact colour-coding, specialist PPE for biohazard): compliance-driven. Match the tier.
+- Waste disposal routes (licensed waste carriers for clinical waste, sanitary waste, biohazard, category 1 healthcare waste): regulated — quote matching licensed routes, not commodity alternatives.
+- Branded chemicals the client has standardised on (e.g. "site uses Ecolab exclusively for food-safe protocols", "Diversey chemicals as per group contract"): quote the same brand.
+
+HOW TO SUBSTITUTE:
+1. Read the evidence item. Identify its commodity category AND its compliance tier AND its visit frequency.
+2. Scan the user's catalog for an item that matches ALL THREE.
+3. If a catalog match exists in a SUBSTITUTABLE category AND matches compliance AND frequency:
+   - Use the catalog item's exact "name" as the materials "item" field.
+   - Use the catalog item's defaultRate as unitPrice. Set estimated: false.
+   - Copy quantity from the evidence (number of washrooms, headcount, sq ft, sanitary units).
+   - Start the "description" with "Replaces existing [evidenced provider]" followed by "||" then the catalog description.
+4. If the category is NON-SUBSTITUTABLE (compliance-driven, frequency-specific), match the incumbent's tier at the user's catalog price for that tier — or flag with estimated: true if the user has no matching tier yet.
+5. If no catalog match exists, fall back to UK mid-market anchors above with estimated: true.
+6. Silent substitution is a bug. Every substituted item MUST have "Replaces existing [original provider]" visible in the description so the user can review and revert in the QDS.
+
+DO NOT INVENT SCOPE:
+Preserve exact visit counts, exact headcount, exact washroom count, exact sanitary unit count, exact square footage. If the incumbent invoice shows "20 visits/month", quote 20. If consumables are for 30 users, quote 30 users. If there are 4 washrooms under contract, quote 4 washrooms — not "approximately 4", not 5 to round up. Do not inflate and do not round.
+
+` : "";
+
+    // ── Pest Control addendum (gated on "pest_control") ──────────────────────
+    //
+    // Mirrors the itInvoiceAddendum pattern for pest control firms. Activates
+    // only when this.tradePreset === "pest_control". For every other sector
+    // this evaluates to an empty string and the interpolated prompt is
+    // byte-identical to the pre-existing prompt.
+    //
+    // Purpose: incumbent takeover workflow (commercial prospect shares an
+    // incumbent-provider contract invoice or audit-compliance statement;
+    // AI must treat it as scope, not reject it). Canonical item names and
+    // price anchors are drawn from pestControlSeed.ts.
+    const pestControlAddendum = this.tradePreset === "pest_control" ? `PEST CONTROL SECTOR — INVOICE / CONTRACT / STATEMENT EVIDENCE (CRITICAL FOR INCUMBENT TAKEOVER QUOTES):
+
+The evidence for a pest control quote frequently includes invoices, service contracts, or audit-compliant statements from an incumbent pest control provider (UK majors include Rentokil, Ecolab Pest Elimination, Cleankill, SafeGuard Pest Control, PestUK, Pelsis, Orkin UK, Insight Pest Solutions, or regional BPCA-member independents). This is expected and legitimate. Common scenarios:
+- Commercial prospect shares the incumbent's contract invoice so you can quote to match or undercut
+- BRC, SALSA, CIEH, CQC, or Ofsted audit driving a retender
+- Food premises opening, expanding, or changing sector (retail → food-to-go, café → restaurant)
+- Cost-reduction review — prospect is pricing an alternative to the current arrangement
+- Residential / domestic one-off treatment after an infestation event
+
+When the evidence is an invoice, contract, or audit-compliant statement, DO NOT return empty materials with a note saying "this is not a request for quotation". The document IS the scope definition. Extract every line item into the materials[] array. Set isTradeRelevant: true — an invoice from another pest control provider is always trade-relevant.
+
+INVOICE LINE ITEM MAPPING:
+- Each numbered/listed row on the invoice → ONE material in the output.
+- "item": the service name. Strip administrative prefixes like "Service:" or "Contract:" — e.g. "Contract: Food Premises Servicing — 8 visits/yr" becomes item: "Food Premises Pest Control Contract — Restaurant / Café". Match to user catalog naming where possible ("Office / Retail Pest Control Contract", "Food Premises Pest Control Contract — Restaurant / Café", "Food Manufacturing / Warehouse Contract", "Healthcare / Pharmacy Pest Control Contract", "Schools / Nurseries Pest Control Contract", "Wasp / Hornet Nest Removal", "Rat Treatment — Residential", "Electronic Rodent Monitoring — Monthly").
+- "description": preserve specifics — visit frequency ("8 visits/year", "quarterly in arrears", "monthly", "termly"), site type ("restaurant kitchen", "food manufacturing, risk rating A"), compliance ("BRC-compliant documentation", "CQC-audited", "DBS-checked staff", "BPCA member"), pest scope ("rodents + crawling insects + flying insects + EFKs"), number of monitoring stations, number of EFKs serviced, any chemical restrictions ("no SGARs in food areas", "IPM approach"). Use "||" between elements.
+- "quantity": match the invoice's billing unit. For monthly contracts, typically 1. For electronic rodent monitoring (per-unit pricing), quantity is the number of units. For bird proofing, quantity is sq m. For mileage, quantity is miles.
+- "unit": match the invoice's billing unit. "Month" for retainers, "Unit" for per-station or per-EFK monthly services, "Treatment" for one-off domestic/commercial treatments, "Property" for whole-property treatments (bed bugs, fleas), "Hour" for hourly technician work, "Survey" for site surveys, "Sq m" for bird proofing area, "Mile" for travel charges.
+
+PRICING TYPE FROM CADENCE MARKERS:
+- "Monthly servicing", "monthly retainer", "per month" → pricingType: "monthly".
+- CRITICAL: "Quarterly servicing" / "4 visits per year" / "Quarterly in arrears" → pricingType: "monthly". The retainer is on a monthly cadence from the client's perspective (cost of doing business); the MONTHLY AVERAGE populates unitPrice, and the quarterly billing / visit cadence lives in the description (e.g. "Monthly figure shown is average — billed quarterly in arrears, 4 scheduled visits per year"). Do NOT use pricingType: "annual" for quarterly-billed quarterly-visited contracts.
+- "Bi-monthly" / "8 visits per year" (typical food-sector cadence, BRC-compliant) → pricingType: "monthly".
+- "Termly servicing" (schools, 3 or 4 visits per year aligned to school terms) → pricingType: "monthly".
+- "Annual contract with [N] visits" → pricingType: "monthly" if the invoice structure bills periodically (monthly or quarterly); pricingType: "annual" ONLY if the invoice shows a single annual fee with no periodic breakdown.
+- "Electronic monitoring — per unit per month" → pricingType: "monthly", unit: "Unit", quantity: the number of units.
+- "One-off treatment", "wasp nest removal", "bed bug treatment", "cockroach programme", "emergency callout", "initial site survey", "rodent proofing works", "EFK supply & install" → pricingType: "standard".
+- Dated hourly technician lines ("22 Feb 2026 — BPCA Technician, 2 hrs") → pricingType: "standard", unit: "Hour", each dated row a SEPARATE material.
+
+REDACTED OR MISSING PRICES (very common on contract statements — nationals often redact rates):
+Populate unitPrice with a realistic UK mid-market estimate and set "estimated": true. UK mid-market anchors (ex VAT):
+- Office / retail pest control contract (quarterly, 4 visits/yr): £35–£60/month average
+- Food premises contract — restaurant / café (8 visits/yr, BRC-compliant): £75–£130/month average
+- Food manufacturing / warehouse contract (monthly or fortnightly visits): £200–£400/month (scales heavily with site size and risk rating)
+- Healthcare / pharmacy contract (quarterly, CQC-compliant): £70–£110/month
+- Schools / nurseries contract (termly, child-safe IPM, DBS-checked): £50–£85/month
+- Wasp / hornet nest removal: £65–£110/treatment
+- Rat treatment — residential (programme with follow-ups, 90-day guarantee): £150–£240
+- Mouse treatment — residential: £110–£170
+- Bed bug chemical treatment (1-bedroom property, 2 visits): £275–£395
+- Cockroach treatment — residential: £175–£275
+- Flea treatment — residential (whole property): £125–£180
+- Ant treatment — residential: £75–£125
+- Commercial rodent clear-out (one-off programme, medium premises): £400–£600
+- Commercial crawling / flying insect treatment: £325–£475
+- Rodent proofing survey (written report with photos): £120–£180
+- Rodent proofing works (hourly — sealing, mesh, door sweeps, drain caps): £55–£85/hour
+- Bird proofing — netting or spikes, per sq m: £35–£60 (access / platform hire quoted separately)
+- Electronic rodent monitoring (per unit per month): £10–£18/unit
+- Electric fly killer (EFK) supply & install (standard 30W unit): £200–£320/unit
+- Pest control technician (BPCA-qualified), hourly: £65–£90
+- Senior / BPCA Advanced Technician, hourly: £85–£120
+- Emergency / out-of-hours callout: £110–£160/hour (min 2-hour charge)
+- Initial site survey (paid rate, often waived on contract sign within 30 days): £100–£175
+- Mileage / travel charge (beyond standard service radius): £0.55–£0.80/mile
+
+Pick one specific number near the middle of each range — never return null for unitPrice. The user reviews every estimated price before the quote goes to the client.
+
+ADDITIVE BEHAVIOUR — MIXED EVIDENCE:
+If the evidence is a MIX of an incumbent contract AND a separate request for new or additional work (e.g. quarterly contract invoice attached plus an email "we've also had a wasp nest discovered at the back of the building — can you deal with that too?" or "we're opening a second site in Manchester next month — please quote for that as well"), extract BOTH — the full existing contract line AND the additional requested work.
+
+SMART CATEGORY SUBSTITUTION:
+A pest control firm's catalog represents the equipment AND approach THEY have chosen in each commodity category. When incumbent-provider evidence names a specific monitoring system, bait product, or EFK brand, substitute in favour of the user's catalog item at the user's catalog price and note the substitution. For compliance-tier items, match the tier exactly — never substitute a lower compliance tier for a higher one.
+
+CATEGORIES WHERE SUBSTITUTION IS CORRECT (brand-agnostic commodities):
+- Electronic rodent monitoring systems: Anticimex SMART, Rentokil PestConnect, Bayer Digital Pest Management, Bell Labs iQ, Xcluder Connect, Pelsis Agrisense — all substitutable commodity remote-monitoring platforms. The user quotes their preferred system at their catalog rate.
+- Tamper-resistant bait stations: Bell Labs (Protecta, Aegis), Rodent Control UK, Bait Box UK, PestWest, PelGar — commodity hardware when included under a contract.
+- Electric fly killer (EFK) brands: Rentokil Luminos, Insect-O-Cutor, EnviroBug, P+L Systems (Genus), PestWest Chameleon, Brandenburg — commodity when the scope is "EFK supply + servicing".
+- Monitoring station servicing (inspection, rebait, activity log keeping) as a unit-of-service: commodity across providers.
+- Generic rodenticide, insecticide, or IPM bait materials where the active ingredient is equivalent and NOT sector-restricted (see below).
+- Bird proofing hardware (nets, spike systems, wire): commodity brands across Jones Bird Control, Defender, Bird Free, Avishock — substitutable.
+
+CATEGORIES WHERE SUBSTITUTION IS WRONG (compliance-, frequency-, or chemistry-driven — quote as evidenced):
+- Sector compliance tier: if the incumbent contract is BRC, SALSA, or CIEH-audited (food sector), CQC-compliant (healthcare), or Ofsted-aligned (education), the user MUST match the compliance tier at the same documentation depth. Do NOT substitute a standard "Office / Retail" contract for a food-manufacturing contract. Doing so puts the client in breach at their next audit.
+- Visit frequency: if the incumbent schedule is 8 visits/year (bi-monthly, food-sector standard) and the user's default tier is 4 visits/year (quarterly, office standard), quote 8 visits at an uplifted rate — OR flag to the client. Do not silently halve the visit count to fit a lower catalog tier.
+- BPCA (British Pest Control Association) membership: if the incumbent is a BPCA member and the user is not, FLAG this in notes — some client contracts (notably food-sector audits and multi-site FM contracts) require a BPCA-member provider. Not a price decision, but a qualification decision.
+- Chemical actives restricted by the client site: some food producers prohibit 2nd-generation anticoagulant rodenticides (SGARs: difenacoum, bromadiolone, brodifacoum) in or adjacent to food areas; some pharmaceutical / healthcare sites restrict all chemical use. If the incumbent's documentation restricts actives, the user's quote MUST respect the same restrictions and note it in the description.
+- Integrated Pest Management (IPM) / monitoring-first approach: if the incumbent contract explicitly commits to IPM (minimal chemical, monitoring-led, non-toxic where possible), match the approach — don't substitute a bait-first programme.
+- Child-safe and DBS-checked staff for schools, nurseries, and certain healthcare sites: match the staff vetting requirement. Note: "DBS-checked" vetting is NOT optional for education — it is a legal / safeguarding requirement.
+- Specific bird species exclusion works: pigeon, gull (herring / lesser black-backed), starling, house sparrow, and feral-dove proofing have different legal protections and net-gauge specifications. Quote the same species scope — some species are legally protected and require a licence for interference.
+
+HOW TO SUBSTITUTE:
+1. Read the evidence item. Identify its commodity category AND its compliance tier AND its visit frequency AND any chemical restrictions.
+2. Scan the user's catalog for an item that matches ALL of these attributes.
+3. If a catalog match exists in a SUBSTITUTABLE category AND matches the compliance/frequency/chemistry constraints:
+   - Use the catalog item's exact "name" as the materials "item" field.
+   - Use the catalog item's defaultRate as unitPrice. Set estimated: false.
+   - Copy quantity from the evidence (number of monitoring units, number of EFKs, number of bait stations, sq m of bird proofing).
+   - Start the "description" with "Replaces existing [evidenced provider/product]" followed by "||" then the catalog description.
+4. If the category is NON-SUBSTITUTABLE (compliance, frequency, BPCA qualification, chemical restriction, IPM commitment, species-specific works), match the incumbent's tier at the user's catalog price for that tier — or flag with estimated: true if the user has no matching tier yet.
+5. If no catalog match exists, fall back to UK mid-market anchors above with estimated: true.
+6. Silent substitution is a bug. Every substituted item MUST have "Replaces existing [original provider]" visible in the description so the user can review and revert in the QDS.
+
+DO NOT INVENT SCOPE:
+Preserve exact visit counts, exact monitoring station counts, exact EFK counts, exact bait station counts, exact proofing quantities. If the incumbent invoice shows "12 monitoring stations serviced quarterly", quote 12 stations quarterly — not 10 to round down, not 15 to be thorough. If bird proofing scope is 45 sq m of netting, quote 45 sq m. If the contract runs 8 visits/year, quote 8 — never 4 to fit a cheaper tier, never 12 to inflate. Audit trails depend on accurate counts.
+
+` : "";
+
     const systemPrompt = `You are a senior estimator for a "${tradeLabel}" business. Your job is to analyse ALL provided evidence (voice notes, emails, documents, text) and produce a structured Quote Draft Summary.
 
 THINK LIKE AN EXPERIENCED PROFESSIONAL in the "${tradeLabel}" sector. Consider:
@@ -254,7 +578,7 @@ FOR IT SERVICES / MSP QUOTES SPECIFICALLY:
 - A support contract for ~16 managed devices (router, switches, APs, fibre converters) typically runs £150–£350/month in the UK depending on SLA level. Use this range if no price is stated.
 - DO NOT omit monthly items just because no price was given. Estimate and flag.
 
-${itInvoiceAddendum}Respond ONLY with valid JSON in this exact format:
+${itInvoiceAddendum}${websiteMarketingAddendum}${commercialCleaningAddendum}${pestControlAddendum}Respond ONLY with valid JSON in this exact format:
 {
   "clientName": string | null,
   "clientEmail": string | null,
