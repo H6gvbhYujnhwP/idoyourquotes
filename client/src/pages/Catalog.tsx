@@ -160,7 +160,12 @@ export default function Catalog() {
   // Sectors with a starter catalog seed. Keep in sync with the server-side
   // registry in server/catalogSeeds/index.ts. Hardcoded client-side rather
   // than imported because client cannot import server code.
-  const SEEDABLE_SECTORS = ["it_services"];
+  const SEEDABLE_SECTORS = [
+    "it_services",
+    "website_marketing",
+    "commercial_cleaning",
+    "pest_control",
+  ];
   const userSector = (user as any)?.defaultTradeSector as string | null | undefined;
   const canSeedStarterCatalog = !!userSector && SEEDABLE_SECTORS.includes(userSector);
 
@@ -636,7 +641,31 @@ export default function Catalog() {
 
               <div className="flex justify-between items-center gap-2 pt-3 border-t border-slate-200">
                 <div className="text-sm text-muted-foreground">
-                  {selectedSeedNames.size} item{selectedSeedNames.size === 1 ? "" : "s"} selected
+                  <div>
+                    {selectedSeedNames.size} item{selectedSeedNames.size === 1 ? "" : "s"} selected
+                  </div>
+                  {(() => {
+                    // Capacity hint: only show when the org has a finite cap.
+                    // -1 means unlimited (Pro/Team/Business) — nothing to say.
+                    const cap = seedTemplate?.maxCatalogItems;
+                    const remaining = seedTemplate?.remaining;
+                    if (cap == null || cap === -1 || remaining == null) return null;
+                    const selected = selectedSeedNames.size;
+                    const overBy = selected - remaining;
+                    if (overBy > 0) {
+                      return (
+                        <div className="text-amber-700 mt-0.5">
+                          Would exceed your {cap}-item plan cap — deselect {overBy} item{overBy === 1 ? "" : "s"} to proceed.
+                        </div>
+                      );
+                    }
+                    const afterAdd = remaining - selected;
+                    return (
+                      <div className="mt-0.5">
+                        {afterAdd} of {cap} catalogue slot{afterAdd === 1 ? "" : "s"} free after this addition.
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="flex gap-2">
                   <Button
@@ -648,7 +677,13 @@ export default function Catalog() {
                   </Button>
                   <Button
                     onClick={handleConfirmSeed}
-                    disabled={selectedSeedNames.size === 0 || seedCatalog.isPending}
+                    disabled={
+                      selectedSeedNames.size === 0 ||
+                      seedCatalog.isPending ||
+                      (seedTemplate?.maxCatalogItems !== -1 &&
+                        seedTemplate?.remaining != null &&
+                        selectedSeedNames.size > seedTemplate.remaining)
+                    }
                     className="bg-teal-600 hover:bg-teal-700 text-white"
                   >
                     {seedCatalog.isPending

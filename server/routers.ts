@@ -3208,30 +3208,67 @@ Rules:
     // which item names already exist in their catalog. Used by the Catalog
     // page to render the selection dialog — user picks which items to add.
     //
-    // Returns { sector, items[], alreadyInCatalog[] }. If no seed exists for
-    // the sector, items[] is empty (handled gracefully by the UI).
+    // Also returns catalog-capacity metadata (maxCatalogItems, currentCount,
+    // remaining) so the UI can surface remaining headroom and disable the
+    // confirm button when a selection would exceed the plan cap. The server
+    // also enforces this cap in seedFromSectorTemplate as defense-in-depth.
+    //
+    // Returns { sector, items[], alreadyInCatalog[], maxCatalogItems,
+    // currentCount, remaining }. If no seed exists for the sector, items[]
+    // is empty (handled gracefully by the UI).
+    //
+    // Capacity semantics:
+    //   - maxCatalogItems: -1 means unlimited (Pro/Team/Business). Otherwise
+    //     the numeric cap (100 default for Trial/Solo post-18-Apr-2026).
+    //   - remaining: -1 mirrors unlimited. Otherwise max(0, cap - currentCount).
+    //   - null org.maxCatalogItems defaults to 100 — same fallback as
+    //     stripe.ts canAddCatalogItem.
     getSectorTemplate: protectedProcedure
       .query(async ({ ctx }) => {
         const sector = ctx.user.defaultTradeSector;
         if (!sector) {
-          return { sector: null, items: [], alreadyInCatalog: [] };
+          return {
+            sector: null,
+            items: [],
+            alreadyInCatalog: [],
+            maxCatalogItems: 100,
+            currentCount: 0,
+            remaining: 100,
+          };
         }
 
         const seed = getCatalogSeedForSector(sector);
-        if (!seed || seed.length === 0) {
-          return { sector, items: [], alreadyInCatalog: [] };
-        }
-
-        // Find which seed item names are already in the user's catalog so
-        // the UI can disable those checkboxes. Case-insensitive match.
         const org = await getUserPrimaryOrg(ctx.user.id);
+
+        // Compute capacity regardless of whether a seed exists — the UI
+        // might still show the cap in a future empty-seed state.
+        const maxCatalogItems = (org as any)?.maxCatalogItems ?? 100;
+        let currentCount = 0;
         let alreadyInCatalog: string[] = [];
+
         if (org) {
           const existing = await getCatalogItemsByOrgId(org.id);
-          const existingLower = new Set(existing.map((i) => i.name.toLowerCase()));
-          alreadyInCatalog = seed
-            .filter((item) => existingLower.has(item.name.toLowerCase()))
-            .map((item) => item.name);
+          currentCount = existing.length;
+          if (seed && seed.length > 0) {
+            const existingLower = new Set(existing.map((i) => i.name.toLowerCase()));
+            alreadyInCatalog = seed
+              .filter((item) => existingLower.has(item.name.toLowerCase()))
+              .map((item) => item.name);
+          }
+        }
+
+        const remaining =
+          maxCatalogItems === -1 ? -1 : Math.max(0, maxCatalogItems - currentCount);
+
+        if (!seed || seed.length === 0) {
+          return {
+            sector,
+            items: [],
+            alreadyInCatalog: [],
+            maxCatalogItems,
+            currentCount,
+            remaining,
+          };
         }
 
         // Return a plain-data view of the seed — no functions, no symbols.
@@ -3245,7 +3282,14 @@ Rules:
           costPrice: item.costPrice,
         }));
 
-        return { sector, items, alreadyInCatalog };
+        return {
+          sector,
+          items,
+          alreadyInCatalog,
+          maxCatalogItems,
+          currentCount,
+          remaining,
+        };
       }),
 
     // ── seedFromSectorTemplate ─────────────────────────────────────────────
@@ -3281,7 +3325,7 @@ Rules:
         const seed = getCatalogSeedForSector(sector);
         if (!seed || seed.length === 0) {
           throw new Error(
-            `No starter catalog template exists yet for sector "${sector}". This feature is currently available for: IT Services.`
+            `No starter catalog template exists yet for sector "${sector}". This feature is currently available for: IT Services, Website & Digital Marketing, Commercial Cleaning, Pest Control.`
           );
         }
 
@@ -3304,6 +3348,18 @@ Rules:
 
         if (toSeed.length === 0) {
           return { seeded: 0, skipped, sector };
+        }
+
+        // Pre-flight cap check — defense-in-depth behind the client-side
+        // disable. Skipped entirely when the org has unlimited catalog
+        // (maxCatalogItems === -1, i.e. Pro/Team/Business). Null defaults
+        // to 100 for consistency with canAddCatalogItem in stripe.ts.
+        const cap = (org as any).maxCatalogItems ?? 100;
+        if (cap !== -1 && existing.length + toSeed.length > cap) {
+          const overBy = existing.length + toSeed.length - cap;
+          throw new Error(
+            `Adding ${toSeed.length} item${toSeed.length === 1 ? "" : "s"} would exceed your ${cap}-item catalogue cap. Deselect ${overBy} item${overBy === 1 ? "" : "s"} or upgrade your plan for unlimited catalogue.`
+          );
         }
 
         // Insert via the shared helper path — same as auto-seed in createUser.
