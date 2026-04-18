@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, AlertCircle, CheckCircle2, Crown, CreditCard, Shield, Clock } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { TRADE_SECTOR_OPTIONS } from "@/lib/tradeSectors";
+import { VISIBLE_TRADE_SECTOR_OPTIONS } from "@/lib/tradeSectors";
 
 export default function Register() {
   const [name, setName] = useState("");
@@ -169,7 +169,7 @@ export default function Register() {
                       <SelectValue placeholder="Select your primary business sector..." />
                     </SelectTrigger>
                     <SelectContent className="max-h-[300px]">
-                      {TRADE_SECTOR_OPTIONS.map((sector) => (
+                      {VISIBLE_TRADE_SECTOR_OPTIONS.map((sector) => (
                         <SelectItem key={sector.value} value={sector.value}>
                           {sector.label}
                         </SelectItem>
