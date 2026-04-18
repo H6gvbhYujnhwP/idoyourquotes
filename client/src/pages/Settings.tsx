@@ -17,7 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { TRADE_SECTOR_OPTIONS } from "@/lib/tradeSectors";
+import { getVisibleTradeSectorOptions } from "@/lib/tradeSectors";
 import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -416,7 +416,7 @@ export default function Settings() {
               <SelectValue placeholder="Select your business sector..." />
             </SelectTrigger>
             <SelectContent className="max-h-[300px]">
-              {TRADE_SECTOR_OPTIONS.map((sector) => (
+              {getVisibleTradeSectorOptions(defaultTradeSector).map((sector) => (
                 <SelectItem key={sector.value} value={sector.value}>
                   {sector.label}
                 </SelectItem>
