@@ -387,7 +387,7 @@ export default function Pricing() {
               "AI symbol/device counting",
               "Interactive overlay verification",
               "Quote draft generation",
-              "Basic product catalogue (up to 50 items)",
+              "Basic product catalogue (up to 100 items)",
               "Standard PDF export",
               "Email-ready proposal generation",
               "Standard email support",

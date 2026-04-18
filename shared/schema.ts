@@ -51,7 +51,7 @@ export const organizations = pgTable("organizations", {
   quoteCountResetAt: timestamp("quote_count_reset_at"),
   maxUsers: integer("max_users").default(1),
   maxQuotesPerMonth: integer("max_quotes_per_month").default(10),
-  maxCatalogItems: integer("max_catalog_items").default(50),
+  maxCatalogItems: integer("max_catalog_items").default(100),
   // Trade-specific company defaults — used by AI when generating quotes
   defaultWorkingHoursStart: varchar("default_working_hours_start", { length: 10 }).default("08:00"),
   defaultWorkingHoursEnd: varchar("default_working_hours_end", { length: 10 }).default("16:30"),

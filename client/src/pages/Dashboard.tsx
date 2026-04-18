@@ -550,7 +550,7 @@ export default function Dashboard() {
             <div className="space-y-2">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Available plans</p>
               {[
-                { name: "Solo", desc: "10 quotes/month · 1 user · 50 catalog items", price: "£59", color: "#0d9488", borderColor: "#99f6e4" },
+                { name: "Solo", desc: "10 quotes/month · 1 user · 100 catalog items", price: "£59", color: "#0d9488", borderColor: "#99f6e4" },
                 { name: "Pro", desc: "15 quotes/month · 2 users · Unlimited catalog", price: "£99", color: "#3b82f6", borderColor: "#bfdbfe", badge: "Popular" },
                 { name: "Team", desc: "50 quotes/month · 5 users · Everything in Pro", price: "£159", color: "#059669", borderColor: "#bbf7d0" },
                 { name: "Business", desc: "Unlimited quotes · 10 users · Everything in Team", price: "£249", color: "#d97706", borderColor: "#fde68a" },
