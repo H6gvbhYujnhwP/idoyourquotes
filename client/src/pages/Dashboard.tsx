@@ -16,6 +16,8 @@ import {
   Crown,
   ArrowRight,
   AlertTriangle,
+  Sparkles,
+  X,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { Input } from "@/components/ui/input";
@@ -126,6 +128,70 @@ export default function Dashboard() {
   // Subscription usage
   const { data: subStatus } = trpc.subscription.status.useQuery();
 
+  // Catalog items — used to decide whether to show the seed-catalog nudge.
+  // Same query powers the Catalog page; TanStack shares the cache so this
+  // is essentially free when the user navigates between the two.
+  const { data: catalogItems } = trpc.catalog.list.useQuery();
+
+  // ── Seed-catalog nudge ──────────────────────────────────────────────────
+  // Shown to users on GTM sectors with empty catalogs who haven't dismissed.
+  // One dismiss state governs BOTH the top banner and the empty-state card
+  // so clicking X on either makes both disappear. Dismiss is persisted in
+  // localStorage under a per-user key. Sync with server/catalogSeeds/index.ts
+  // — client can't import server code, so the list is duplicated by design
+  // (same rationale as SEEDABLE_SECTORS in Catalog.tsx).
+  const SEEDABLE_SECTORS = [
+    "it_services",
+    "website_marketing",
+    "commercial_cleaning",
+    "pest_control",
+  ];
+  const [nudgeDismissed, setNudgeDismissed] = useState(false);
+
+  useEffect(() => {
+    const uid = (user as any)?.id;
+    if (!uid) return;
+    try {
+      const stored = localStorage.getItem(
+        `idyq-seedcatalog-nudge-dismissed:${uid}`
+      );
+      setNudgeDismissed(stored === "true");
+    } catch {
+      // localStorage unavailable (private mode, storage quota, etc.) —
+      // treat as not dismissed for this session.
+    }
+  }, [(user as any)?.id]);
+
+  const handleDismissNudge = () => {
+    const uid = (user as any)?.id;
+    if (uid) {
+      try {
+        localStorage.setItem(
+          `idyq-seedcatalog-nudge-dismissed:${uid}`,
+          "true"
+        );
+      } catch {
+        // non-fatal — in-memory dismiss still takes effect for this session
+      }
+    }
+    setNudgeDismissed(true);
+  };
+
+  const handleSeedNudgeClick = () => {
+    setLocation("/catalog?seed=1");
+  };
+
+  const userSector = (user as any)?.defaultTradeSector as
+    | string
+    | null
+    | undefined;
+  const showSeedNudge =
+    !!userSector &&
+    SEEDABLE_SECTORS.includes(userSector) &&
+    catalogItems?.length === 0 &&
+    !nudgeDismissed;
+
+
   const deleteQuote = trpc.quotes.delete.useMutation({
     onSuccess: (data) => {
       toast.success(`Quote deleted${data.deletedFilesCount > 0 ? ` (${data.deletedFilesCount} files removed)` : ""}`);
@@ -227,6 +293,48 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Seed-catalog nudge banner — dismissible, shared state with the
+          empty-state card below. Shows only when user is on a GTM sector,
+          their catalog is empty, and they haven't dismissed. */}
+      {showSeedNudge && (
+        <Card className="border-teal-200 bg-teal-50">
+          <CardContent className="py-4 px-5 flex items-start gap-3">
+            <div className="shrink-0 mt-0.5">
+              <Sparkles className="h-5 w-5 text-teal-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="font-medium text-teal-900 mb-0.5">
+                Kick-start your catalogue
+              </div>
+              <p className="text-sm text-teal-800">
+                Load a starter catalogue of UK market-anchored products and
+                services for your sector. All prices are fully editable, and
+                catalogue items flow straight into new quotes.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                onClick={handleSeedNudgeClick}
+                size="sm"
+                className="bg-teal-600 hover:bg-teal-700 text-white"
+              >
+                <Sparkles className="mr-2 h-4 w-4" />
+                Load Starter Catalogue
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-teal-700 hover:bg-teal-100"
+                onClick={handleDismissNudge}
+                aria-label="Dismiss"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="cursor-pointer hover:border-primary/50 transition-colors" onClick={() => setStatusFilter("all")}>
@@ -304,6 +412,30 @@ export default function Dashboard() {
                 <Plus className="mr-2 h-4 w-4" />
                 Create Quote
               </Button>
+              {showSeedNudge && (
+                <div className="mt-6 max-w-md mx-auto p-4 rounded-lg border border-teal-200 bg-teal-50 text-left">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Sparkles className="h-5 w-5 text-teal-600" />
+                    <span className="font-medium text-teal-900">
+                      Before your first quote
+                    </span>
+                  </div>
+                  <p className="text-sm text-teal-800 mb-3">
+                    Load your sector's starter catalogue so pricing flows
+                    straight into every quote. UK market-anchored items,
+                    fully editable.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSeedNudgeClick}
+                    className="border-teal-300 text-teal-900 hover:bg-teal-100"
+                  >
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    Load Starter Catalogue
+                  </Button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="divide-y">

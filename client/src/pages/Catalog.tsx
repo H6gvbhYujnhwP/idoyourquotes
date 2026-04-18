@@ -192,11 +192,39 @@ export default function Catalog() {
   const [isSeedDialogOpen, setIsSeedDialogOpen] = useState(false);
   const [selectedSeedNames, setSelectedSeedNames] = useState<Set<string>>(new Set());
   const seedInitializedRef = useRef(false);
+  // One-shot guard: auto-open the dialog when the Dashboard nudge navigates
+  // here with ?seed=1. Declared next to seedInitializedRef so the two
+  // dialog-lifecycle refs stay together.
+  const didAutoOpenSeedRef = useRef(false);
 
   const { data: seedTemplate, isLoading: isLoadingTemplate } = trpc.catalog.getSectorTemplate.useQuery(
     undefined,
     { enabled: isSeedDialogOpen }
   );
+
+  // Auto-open the seed dialog when the Dashboard nudge (or any other link)
+  // navigates here with ?seed=1. Runs on user / canSeedStarterCatalog change
+  // so we can wait for auth to hydrate before deciding whether to open.
+  // One-shot per mount — strips the param so reload or copy-paste of the URL
+  // doesn't re-trigger the dialog and feel spooky.
+  useEffect(() => {
+    if (didAutoOpenSeedRef.current) return;
+    if (typeof window === "undefined") return;
+    const wantsSeed =
+      new URLSearchParams(window.location.search).get("seed") === "1";
+    if (!wantsSeed) {
+      didAutoOpenSeedRef.current = true;
+      return;
+    }
+    // seed=1 present — wait for auth to populate before deciding.
+    if (!user) return;
+    didAutoOpenSeedRef.current = true;
+    // Strip the param either way so reload doesn't re-open.
+    window.history.replaceState(null, "", "/catalog");
+    if (canSeedStarterCatalog) {
+      setIsSeedDialogOpen(true);
+    }
+  }, [user, canSeedStarterCatalog]);
 
   // Initialise the default selection once per dialog open. Reset when closed
   // so the next open re-initialises from fresh template + catalog state.
