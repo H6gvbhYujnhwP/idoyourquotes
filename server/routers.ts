@@ -22,6 +22,7 @@ import { createContainmentTakeoff, getContainmentTakeoffsByQuoteId, getContainme
 import { parseSpreadsheet, isSpreadsheet, formatSpreadsheetForAI } from "./services/excelParser";
 import { generateQuoteHTML } from "./pdfGenerator";
 import { getCatalogSeedForSector } from "./catalogSeeds";
+import { getDemoQuoteForSector } from "./demoQuotes";
 import {
   getQuotesByUserId,
   getQuotesByOrgId,
@@ -53,6 +54,7 @@ import {
   updateCatalogItem,
   deleteCatalogItem,
   seedCatalogFromSectorTemplate,
+  seedDemoQuoteForSector,
   recalculateQuoteTotals,
   updateUserProfile,
   changePassword,
@@ -1278,6 +1280,47 @@ IMPORTANT: Address the email greeting using the first name only (e.g. "Hi ${gree
             textBody: `Hi ${contactNameForEmail},\n\nPlease find attached our quotation for ${projectTitle}.\n\nTotal: ${total}\n\nPlease let me know if you have any questions.\n\nKind regards,\n${user.name || "[Your Name]"}\n${user.companyName || ""}`,
           };
         }
+      }),
+
+    // ── seedDemoForSector ──────────────────────────────────────────────────
+    // Seed an "(Example)" demo quote for the user's sector. Fires from the
+    // Dashboard nudge card "Load Example Quote" button. Mirrors the
+    // catalog.seedFromSectorTemplate pattern — organisation lookup, sector
+    // validation, delegate to the db.ts helper.
+    //
+    // Idempotent: if an "(Example)" quote already exists for this org with
+    // matching tradePreset, seedDemoQuoteForSector returns that quoteId
+    // without creating a duplicate. The client redirects to the returned
+    // quoteId either way, so repeated clicks are safe and predictable.
+    //
+    // Quota: does NOT go through quotes.create, so does NOT increment
+    // monthlyQuoteCount. This is deliberate — demo quotes are an
+    // onboarding aid, not billable work, and must not count against the
+    // user's monthly quote allowance (same rationale as the catalog
+    // auto-seed path bypassing catalog-cap checks on registration).
+    seedDemoForSector: protectedProcedure
+      .mutation(async ({ ctx }) => {
+        const org = await getUserPrimaryOrg(ctx.user.id);
+        if (!org) {
+          throw new Error("No organization found for user");
+        }
+
+        const sector = ctx.user.defaultTradeSector;
+        if (!sector) {
+          throw new Error(
+            "No default trade sector set. Set one in Settings first, then load the example quote."
+          );
+        }
+
+        const factory = getDemoQuoteForSector(sector);
+        if (!factory) {
+          throw new Error(
+            `No example quote template exists yet for sector "${sector}". This feature is currently available for: IT Services, Website & Digital Marketing, Commercial Cleaning, Pest Control.`
+          );
+        }
+
+        const result = await seedDemoQuoteForSector(org.id, ctx.user.id, sector);
+        return result;
       }),
   }),
 

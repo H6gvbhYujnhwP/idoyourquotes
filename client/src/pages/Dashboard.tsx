@@ -181,6 +181,35 @@ export default function Dashboard() {
     setLocation("/catalog?seed=1");
   };
 
+  // Example-quote nudge — shares the same gate as the catalog-seed nudge
+  // (sector is in SEEDABLE_SECTORS, catalog empty, not dismissed). Mutation
+  // is server-side idempotent — clicking twice on a sector that already has
+  // a demo returns the existing quoteId, so redirect-on-success is safe
+  // either way. refetch() keeps the Dashboard quote list up to date so
+  // the newly seeded "(Example)" quote appears at the top immediately.
+  const seedDemoForSector = trpc.quotes.seedDemoForSector.useMutation({
+    onSuccess: (data) => {
+      if (data?.quoteId) {
+        refetch();
+        if (data.seeded) {
+          toast.success("Example quote added to your list");
+        }
+        setLocation(`/quote/${data.quoteId}`);
+      } else {
+        toast.error(
+          "Couldn't load an example quote for this sector — set a sector in Settings and try again.",
+        );
+      }
+    },
+    onError: (error) => {
+      toast.error("Failed to load example quote: " + error.message);
+    },
+  });
+
+  const handleLoadExampleQuote = () => {
+    seedDemoForSector.mutate();
+  };
+
   const userSector = (user as any)?.defaultTradeSector as
     | string
     | null
@@ -322,6 +351,16 @@ export default function Dashboard() {
                 Load Starter Catalogue
               </Button>
               <Button
+                onClick={handleLoadExampleQuote}
+                size="sm"
+                variant="outline"
+                disabled={seedDemoForSector.isPending}
+                className="border-teal-300 text-teal-900 hover:bg-teal-100"
+              >
+                <FileText className="mr-2 h-4 w-4" />
+                {seedDemoForSector.isPending ? "Loading…" : "Load Example Quote"}
+              </Button>
+              <Button
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 text-teal-700 hover:bg-teal-100"
@@ -425,15 +464,27 @@ export default function Dashboard() {
                     straight into every quote. UK market-anchored items,
                     fully editable.
                   </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleSeedNudgeClick}
-                    className="border-teal-300 text-teal-900 hover:bg-teal-100"
-                  >
-                    <Sparkles className="mr-2 h-4 w-4" />
-                    Load Starter Catalogue
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSeedNudgeClick}
+                      className="border-teal-300 text-teal-900 hover:bg-teal-100"
+                    >
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Load Starter Catalogue
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleLoadExampleQuote}
+                      disabled={seedDemoForSector.isPending}
+                      className="border-teal-300 text-teal-900 hover:bg-teal-100"
+                    >
+                      <FileText className="mr-2 h-4 w-4" />
+                      {seedDemoForSector.isPending ? "Loading…" : "Load Example Quote"}
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>

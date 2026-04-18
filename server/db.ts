@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import bcrypt from "bcryptjs";
 import { getCatalogSeedForSector } from "./catalogSeeds";
+import { getDemoQuoteForSector } from "./demoQuotes";
 import { 
   InsertUser, 
   users, 
@@ -265,6 +266,19 @@ export async function createUser(email: string, password: string, name?: string,
       } catch (err) {
         console.error(`[createUser] Catalog seeding failed for user ${user.id}, sector ${defaultTradeSector}:`, err);
         // Intentionally not rethrown — registration must succeed even if seeding fails.
+      }
+
+      // Seed demo example quote if a factory exists for this sector.
+      // Runs AFTER catalog seeding so the demo's canonical line-item names
+      // can match against the freshly-seeded catalog via catalog-match
+      // fuzzy lookup in QuoteWorkspace. Fail-safe: wrapped so a demo
+      // failure never blocks registration. Existing users can trigger
+      // this manually later via the Dashboard nudge card button.
+      try {
+        await seedDemoQuoteForSector(org.id, user.id, defaultTradeSector);
+      } catch (err) {
+        console.error(`[createUser] Demo quote seeding failed for user ${user.id}, sector ${defaultTradeSector}:`, err);
+        // Intentionally not rethrown — same rationale as catalog seeding.
       }
     }
   }
@@ -841,6 +855,114 @@ export async function seedCatalogFromSectorTemplate(
 
   await db.insert(catalogItems).values(rows);
   return { seeded: rows.length, sector };
+}
+
+/**
+ * Seeds an "(Example)" demo quote for the given org from the sector's
+ * demo factory. Purpose: new users land on a Dashboard with a finished
+ * example quote they can explore instead of an empty list.
+ *
+ * Used by:
+ *   - createUser() — fires automatically on new registration when
+ *     defaultTradeSector has a demo factory.
+ *   - quotes.seedDemoForSector tRPC procedure — fires manually when
+ *     existing users click "Load Example Quote" in the Dashboard nudge
+ *     card.
+ *
+ * Idempotent: if an "(Example)" quote already exists for this org with
+ * matching tradePreset, the existing quoteId is returned and no second
+ * demo is created. Prevents double-seeds on repeat button clicks.
+ *
+ * Returns:
+ *   { seeded: true,  sector, quoteId } when a fresh demo was created
+ *   { seeded: false, sector, quoteId } when an existing demo was found
+ *   { seeded: false, sector }          when no demo factory exists for
+ *                                      this sector (caller handles)
+ *
+ * Quota: this function calls createQuote() directly, bypassing the
+ * quotes.create tRPC procedure and its monthlyQuoteCount increment.
+ * Demo quotes are an onboarding aid — they must not count against the
+ * user's monthly quote allowance (mirrors the catalog auto-seed path
+ * which also bypasses catalog-cap checks on registration).
+ *
+ * Multi-tenancy: every row is written with the correct orgId + userId.
+ * The user can edit or delete the demo freely after seeding.
+ */
+export async function seedDemoQuoteForSector(
+  orgId: number,
+  userId: number,
+  sector: string
+): Promise<{ seeded: boolean; sector: string; quoteId?: number }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const factory = getDemoQuoteForSector(sector);
+  if (!factory) {
+    return { seeded: false, sector };
+  }
+
+  // Idempotency guard: skip if this org already has an "(Example)" quote
+  // for this sector. Case-insensitive title match + exact tradePreset
+  // match — narrow enough to avoid false positives on user-authored
+  // quotes that happen to contain the word "example".
+  const existingQuotes = await getQuotesByOrgId(orgId);
+  const existingDemo = existingQuotes.find(
+    (q: Quote) =>
+      q.tradePreset === sector &&
+      typeof q.title === "string" &&
+      q.title.toLowerCase().includes("(example)")
+  );
+  if (existingDemo) {
+    return { seeded: false, sector, quoteId: existingDemo.id };
+  }
+
+  // Build the demo bundle from the sector factory. Factories are pure
+  // functions — no DB access, no side effects.
+  const demo = factory();
+
+  // Step 1: Create the quote shell. createQuote only spreads a specific
+  // subset of InsertQuote fields — qdsSummaryJson is NOT among them,
+  // which is why we handle it separately in Step 2 below.
+  const quote = await createQuote({
+    userId,
+    orgId,
+    ...demo.quoteFields,
+  });
+
+  // Step 2: Persist the QDS snapshot. updateQuote accepts qdsSummaryJson
+  // via Partial<InsertQuote> and filters by (quoteId, userId) for
+  // ownership — consistent with every other updateQuote call site.
+  await updateQuote(quote.id, userId, {
+    qdsSummaryJson: demo.qdsSummaryJson,
+  });
+
+  // Step 3: Insert line items. sortOrder is injected from the array
+  // index so rows render in factory-authored order. Every other field
+  // comes straight from the factory — totals are pre-computed so
+  // recalculateQuoteTotals in Step 4 can sum them without row recompute.
+  for (let i = 0; i < demo.lineItems.length; i++) {
+    const li = demo.lineItems[i];
+    await createLineItem({
+      quoteId: quote.id,
+      sortOrder: i,
+      description: li.description,
+      quantity: li.quantity,
+      unit: li.unit,
+      rate: li.rate,
+      total: li.total,
+      pricingType: li.pricingType,
+      category: li.category,
+      costPrice: li.costPrice,
+    });
+  }
+
+  // Step 4: Recompute subtotal / tax / total / monthlyTotal / annualTotal
+  // from the now-inserted line items. Standard pricingType feeds total
+  // and tax; monthly/annual pricingTypes feed their respective recurring
+  // totals for the Dashboard / email surfaces.
+  await recalculateQuoteTotals(quote.id, userId);
+
+  return { seeded: true, sector, quoteId: quote.id };
 }
 
 export async function updateCatalogItem(itemId: number, userId: number, data: Partial<InsertCatalogItem>): Promise<CatalogItem | undefined> {
