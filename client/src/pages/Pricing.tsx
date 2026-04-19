@@ -182,6 +182,7 @@ export default function Pricing() {
   const [loadingTier, setLoadingTier] = useState<string | null>(null);
   const [confirmTier, setConfirmTier] = useState<'solo' | 'pro' | 'team' | null>(null);
   const [downgradeTier, setDowngradeTier] = useState<'solo' | 'pro' | 'team' | null>(null);
+  const [newSubTier, setNewSubTier] = useState<'solo' | 'pro' | 'team' | null>(null);
 
   const subStatus = trpc.subscription.status.useQuery(undefined, {
     enabled: !!user,
@@ -281,9 +282,8 @@ export default function Pricing() {
       return;
     }
 
-    // New subscription (no active sub) — go to Stripe Checkout
-    setLoadingTier(tier);
-    createCheckout.mutate({ tier });
+    // New subscription (no active sub) — show confirmation modal before redirecting to Stripe
+    setNewSubTier(tier);
   };
 
   const handleConfirmUpgrade = () => {
@@ -298,6 +298,12 @@ export default function Pricing() {
     if (!downgradeTier) return;
     setLoadingTier(downgradeTier);
     downgradeSubscription.mutate({ newTier: downgradeTier });
+  };
+
+  const handleConfirmNewSub = () => {
+    if (!newSubTier) return;
+    setLoadingTier(newSubTier);
+    createCheckout.mutate({ tier: newSubTier });
   };
 
   return (
@@ -738,6 +744,87 @@ export default function Pricing() {
               ) : (
                 <>
                   Confirm Upgrade — £{confirmTier ? (TIER_PRICES[confirmTier] * 1.20).toFixed(2) : ''} inc VAT
+                  <ArrowRight className="h-4 w-4 ml-1" />
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* New Subscription Confirmation Modal */}
+      <Dialog open={!!newSubTier} onOpenChange={(open) => { if (!open && !loadingTier) setNewSubTier(null); }}>
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="flex items-center justify-center w-10 h-10 rounded-full" style={{ backgroundColor: '#f0fdfa' }}>
+                <Crown className="h-5 w-5" style={{ color: '#0d9488' }} />
+              </div>
+              <DialogTitle className="text-lg" style={{ color: '#1a2b4a' }}>
+                Subscribe to {newSubTier ? newSubTier.charAt(0).toUpperCase() + newSubTier.slice(1) : ''}
+              </DialogTitle>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-3 py-1">
+
+            <p className="text-sm" style={{ color: '#1a2b4a' }}>
+              You're about to start your {newSubTier ? newSubTier.charAt(0).toUpperCase() + newSubTier.slice(1) : ''} subscription. Here's what you'll pay today and every month.
+            </p>
+
+            {/* Billing breakdown — ex-VAT, VAT, total (duplicated from upgrade modal pattern) */}
+            {newSubTier && (() => {
+              const exVat = TIER_PRICES[newSubTier];
+              const vat = Math.round(exVat * 0.20 * 100) / 100;
+              const incVat = Math.round((exVat + vat) * 100) / 100;
+              return (
+                <div className="rounded-lg border p-3 space-y-1.5 text-sm">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Billing summary</p>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">{newSubTier.charAt(0).toUpperCase() + newSubTier.slice(1)} plan (ex VAT)</span>
+                    <span>£{exVat.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">VAT (20%)</span>
+                    <span>£{vat.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between pt-1.5 border-t font-bold" style={{ color: '#1a2b4a' }}>
+                    <span>Total charged today</span>
+                    <span style={{ color: '#0d9488' }}>£{incVat.toFixed(2)}</span>
+                  </div>
+                </div>
+              );
+            })()}
+
+            <p className="text-xs text-muted-foreground">
+              You'll be redirected to Stripe to enter your card details. Cancel anytime from Settings → Billing.
+            </p>
+
+          </div>
+
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setNewSubTier(null)}
+              disabled={!!loadingTier}
+              className="w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmNewSub}
+              disabled={!!loadingTier}
+              className="w-full sm:w-auto font-bold"
+              style={{ backgroundColor: '#0d9488' }}
+            >
+              {loadingTier ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Redirecting…
+                </>
+              ) : (
+                <>
+                  Continue to payment — £{newSubTier ? (TIER_PRICES[newSubTier] * 1.20).toFixed(2) : ''}
                   <ArrowRight className="h-4 w-4 ml-1" />
                 </>
               )}
