@@ -964,7 +964,7 @@ export const subscriptionRouter = router({
       // 9. Invalidate session — clear the cookie
       const { COOKIE_NAME } = await import("@shared/const");
       const { getSessionCookieOptions } = await import("../_core/cookies");
-      const cookieOptions = getSessionCookieOptions();
+      const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       console.log(`[DeleteAccount] Session invalidated for user ${ctx.user.id}`);
 
