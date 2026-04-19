@@ -25,6 +25,7 @@ import {
   getUpgradeProration,
   isUpgrade as isTierUpgrade,
   getTierRank,
+  listPaidInvoices,
   type SubscriptionTier,
 } from "./stripe";
 import { getUserPrimaryOrg, getOrgMembersByOrgId, getUserByEmail, addOrgMember, getDb, updateOrganization, deleteAllOrgData } from "../db";
@@ -435,6 +436,24 @@ export const subscriptionRouter = router({
     console.log(`[Subscription] User ${ctx.user.id} resumed subscription for org ${org.id}`);
 
     return { success: true };
+  }),
+
+  // List paid invoices for the current org (newest first, max 100).
+  // Owner/admin only — same gate as every other billing procedure.
+  listInvoices: protectedProcedure.query(async ({ ctx }) => {
+    const org = await getUserPrimaryOrg(ctx.user.id);
+    if (!org) return [];
+
+    const members = await getOrgMembersByOrgId(org.id);
+    const membership = members.find(m => Number(m.userId) === ctx.user.id);
+    if (!membership || (membership.role !== 'owner' && membership.role !== 'admin')) {
+      return [];
+    }
+
+    const stripeCustomerId = (org as any).stripeCustomerId as string | null;
+    if (!stripeCustomerId) return [];
+
+    return await listPaidInvoices({ stripeCustomerId });
   }),
 
   // Check if user can perform a specific action — also triggers email warnings

@@ -391,6 +391,51 @@ export async function resumeSubscription(stripeSubscriptionId: string): Promise<
   });
 }
 
+// ============ INVOICES ============
+
+export interface PaidInvoiceSummary {
+  id: string;
+  number: string | null;
+  created: number;
+  amountExVatPence: number;
+  vatPence: number;
+  totalPence: number;
+  invoicePdfUrl: string;
+}
+
+/**
+ * List paid invoices for a customer, newest first.
+ * Returns up to 100 invoices with VAT breakdown pulled from the top-level
+ * `total_excluding_tax` and `tax` fields (single-rate UK VAT, 20%).
+ */
+export async function listPaidInvoices(params: {
+  stripeCustomerId: string;
+}): Promise<PaidInvoiceSummary[]> {
+  const result = await stripe.invoices.list({
+    customer: params.stripeCustomerId,
+    status: 'paid',
+    limit: 100,
+  });
+
+  const summaries: PaidInvoiceSummary[] = [];
+  for (const inv of result.data) {
+    if (!inv.id || !inv.invoice_pdf) continue;
+    const totalPence = inv.total;
+    const vatPence = inv.tax ?? 0;
+    const amountExVatPence = inv.total_excluding_tax ?? (totalPence - vatPence);
+    summaries.push({
+      id: inv.id,
+      number: inv.number ?? null,
+      created: inv.created,
+      amountExVatPence,
+      vatPence,
+      totalPence,
+      invoicePdfUrl: inv.invoice_pdf,
+    });
+  }
+  return summaries;
+}
+
 // ============ WEBHOOK HANDLER ============
 
 /**

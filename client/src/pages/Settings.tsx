@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase, Shield, Clock, PoundSterling, CreditCard, Users, Crown, AlertTriangle, Trash2, Mail, UserPlus, Check, ArrowRight, XCircle, RotateCcw } from "lucide-react";
+import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase, Shield, Clock, PoundSterling, CreditCard, Users, Crown, AlertTriangle, Trash2, Mail, UserPlus, Check, ArrowRight, XCircle, RotateCcw, Download } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog,
@@ -738,6 +738,10 @@ export default function Settings() {
 function BillingTab() {
   const [, setLocation] = useLocation();
   const { data: sub, isLoading, refetch: refetchSub } = trpc.subscription.status.useQuery();
+  const { data: invoices, isLoading: invoicesLoading } = trpc.subscription.listInvoices.useQuery(
+    undefined,
+    { enabled: !!sub?.hasStripeCustomer },
+  );
   const [showCancelDialog, setShowCancelDialog] = useState(false);
 
   const createPortal = trpc.subscription.createPortal.useMutation({
