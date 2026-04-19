@@ -809,7 +809,6 @@ function BillingTab() {
     solo: '#0d9488',
     pro: '#3b82f6',
     team: '#059669',
-    business: '#d97706',
   };
 
   return (
@@ -847,7 +846,7 @@ function BillingTab() {
           </div>
 
           {/* Limit warning alert */}
-          {sub.maxQuotesPerMonth !== -1 && sub.currentQuoteCount >= sub.maxQuotesPerMonth && (
+          {(sub.maxQuotesPerMonth as number) !== -1 && sub.currentQuoteCount >= sub.maxQuotesPerMonth && (
             <div className="flex items-start gap-3 p-4 rounded-xl bg-red-50 border-2 border-red-200">
               <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
               <div className="flex-1">
@@ -871,7 +870,7 @@ function BillingTab() {
           )}
 
           {/* Approaching limit warning (80%+) */}
-          {sub.maxQuotesPerMonth !== -1 && sub.currentQuoteCount >= Math.floor(sub.maxQuotesPerMonth * 0.8) && sub.currentQuoteCount < sub.maxQuotesPerMonth && (
+          {(sub.maxQuotesPerMonth as number) !== -1 && sub.currentQuoteCount >= Math.floor(sub.maxQuotesPerMonth * 0.8) && sub.currentQuoteCount < sub.maxQuotesPerMonth && (
             <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200">
               <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
               <div className="flex-1">
@@ -917,7 +916,7 @@ function BillingTab() {
           )}
 
           {/* Usage */}
-          {sub.maxQuotesPerMonth !== -1 && (
+          {(sub.maxQuotesPerMonth as number) !== -1 && (
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Quotes this month</span>
@@ -1437,7 +1436,7 @@ function TeamTab() {
                   {sub.tier === 'trial' ? 'Trial' : 'Solo'} plan — single user only
                 </p>
                 <p className="text-xs text-amber-600 mt-1">
-                  Upgrade to Pro (2 users), Team (5 users), or Business (10 users) to invite team members.
+                  Upgrade to Pro (2 users) or Team (5 users) to invite team members.
                 </p>
                 <Button size="sm" variant="outline" className="mt-2 text-xs" onClick={() => window.location.href = '/pricing'}>
                   View Plans

@@ -222,7 +222,7 @@ function SubscriptionBanner() {
   }
 
   // Quote limit reached — big red banner
-  if (sub.maxQuotesPerMonth !== -1 && sub.currentQuoteCount >= sub.maxQuotesPerMonth) {
+  if ((sub.maxQuotesPerMonth as number) !== -1 && sub.currentQuoteCount >= sub.maxQuotesPerMonth) {
     return (
       <div className="flex items-center justify-between px-4 py-2.5 text-sm bg-red-600 text-white">
         <div className="flex items-center gap-2">
@@ -244,7 +244,7 @@ function SubscriptionBanner() {
   }
 
   // Quote limit approaching (80%+) — amber warning
-  if (sub.maxQuotesPerMonth !== -1 && sub.maxQuotesPerMonth > 0 && sub.currentQuoteCount >= Math.floor(sub.maxQuotesPerMonth * 0.8)) {
+  if ((sub.maxQuotesPerMonth as number) !== -1 && sub.maxQuotesPerMonth > 0 && sub.currentQuoteCount >= Math.floor(sub.maxQuotesPerMonth * 0.8)) {
     const remaining = sub.maxQuotesPerMonth - sub.currentQuoteCount;
     return (
       <div className="flex items-center justify-between px-4 py-2 text-sm bg-amber-500 text-white">

@@ -674,7 +674,7 @@ export default function Catalog() {
                   </div>
                   {(() => {
                     // Capacity hint: only show when the org has a finite cap.
-                    // -1 means unlimited (Pro/Team/Business) — nothing to say.
+                    // -1 means unlimited (Pro/Team) — nothing to say.
                     const cap = seedTemplate?.maxCatalogItems;
                     const remaining = seedTemplate?.remaining;
                     if (cap == null || cap === -1 || remaining == null) return null;

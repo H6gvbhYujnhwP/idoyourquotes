@@ -51,7 +51,6 @@ function tierColor(tier: string): string {
     case "solo": return "#3b82f6";
     case "pro": return "#8b5cf6";
     case "team": return "#f59e0b";
-    case "business": return "#ef4444";
     default: return brand.teal;
   }
 }
@@ -717,7 +716,6 @@ function OrgDetail({ orgId, onBack }: { orgId: number; onBack: () => void }) {
                   <option value="solo">Solo</option>
                   <option value="pro">Pro</option>
                   <option value="team">Team</option>
-                  <option value="business">Business</option>
                 </select>
                 <button
                   onClick={() => {

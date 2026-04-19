@@ -33,7 +33,7 @@ import { sendLimitWarningEmail, sendTierChangeEmail, sendCancellationEmail, send
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
-const PAID_TIERS = ['solo', 'pro', 'team', 'business'] as const;
+const PAID_TIERS = ['solo', 'pro', 'team'] as const;
 
 // ---- Audit log helper ----
 async function logTeamAction(
@@ -128,15 +128,6 @@ export const subscriptionRouter = router({
         maxCatalogItems: -1,
         features: TIER_CONFIG.team.features,
       },
-      business: {
-        name: 'Business',
-        price: 249,
-        priceWithVat: 298.80,
-        maxUsers: 10,
-        maxQuotesPerMonth: -1,
-        maxCatalogItems: -1,
-        features: TIER_CONFIG.business.features,
-      },
     };
   }),
 
@@ -145,7 +136,7 @@ export const subscriptionRouter = router({
   // Returns today's charge and ongoing monthly amount for the confirmation modal
   getProration: protectedProcedure
     .input(z.object({
-      newTier: z.enum(['solo', 'pro', 'team', 'business']),
+      newTier: z.enum(['solo', 'pro', 'team']),
     }))
     .query(async ({ ctx, input }) => {
       const org = await getUserPrimaryOrg(ctx.user.id);
@@ -190,7 +181,7 @@ export const subscriptionRouter = router({
 
   createCheckout: protectedProcedure
     .input(z.object({
-      tier: z.enum(['solo', 'pro', 'team', 'business']),
+      tier: z.enum(['solo', 'pro', 'team']),
     }))
     .mutation(async ({ ctx, input }) => {
       const org = await getUserPrimaryOrg(ctx.user.id);
@@ -223,7 +214,7 @@ export const subscriptionRouter = router({
   // The customer.subscription.updated webhook handles DB tier/limits update and quota reset.
   upgradeSubscription: protectedProcedure
     .input(z.object({
-      newTier: z.enum(['solo', 'pro', 'team', 'business']),
+      newTier: z.enum(['solo', 'pro', 'team']),
     }))
     .mutation(async ({ ctx, input }) => {
       const org = await getUserPrimaryOrg(ctx.user.id);
@@ -282,7 +273,7 @@ export const subscriptionRouter = router({
   // No charge today — user keeps current plan until renewal, then moves to lower tier.
   downgradeSubscription: protectedProcedure
     .input(z.object({
-      newTier: z.enum(['solo', 'pro', 'team', 'business']),
+      newTier: z.enum(['solo', 'pro', 'team']),
     }))
     .mutation(async ({ ctx, input }) => {
       const org = await getUserPrimaryOrg(ctx.user.id);

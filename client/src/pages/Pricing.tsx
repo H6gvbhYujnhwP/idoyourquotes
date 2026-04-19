@@ -10,7 +10,6 @@ import {
   ArrowRight,
   Zap,
   Users,
-  Building2,
   Crown,
   Loader2,
   ArrowLeft,
@@ -173,16 +172,16 @@ function TierCard({
 }
 
 // Tier ranks for upgrade detection (client-side)
-const TIER_RANK: Record<string, number> = { trial: 0, solo: 1, pro: 2, team: 3, business: 4 };
-const TIER_PRICES: Record<string, number> = { solo: 59, pro: 99, team: 159, business: 249 };
-const TIER_QUOTES: Record<string, number | string> = { solo: 10, pro: 15, team: 50, business: -1 };
+const TIER_RANK: Record<string, number> = { trial: 0, solo: 1, pro: 2, team: 3 };
+const TIER_PRICES: Record<string, number> = { solo: 59, pro: 99, team: 159 };
+const TIER_QUOTES: Record<string, number | string> = { solo: 10, pro: 15, team: 50 };
 
 export default function Pricing() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const [loadingTier, setLoadingTier] = useState<string | null>(null);
-  const [confirmTier, setConfirmTier] = useState<'solo' | 'pro' | 'team' | 'business' | null>(null);
-  const [downgradeTier, setDowngradeTier] = useState<'solo' | 'pro' | 'team' | 'business' | null>(null);
+  const [confirmTier, setConfirmTier] = useState<'solo' | 'pro' | 'team' | null>(null);
+  const [downgradeTier, setDowngradeTier] = useState<'solo' | 'pro' | 'team' | null>(null);
 
   const subStatus = trpc.subscription.status.useQuery(undefined, {
     enabled: !!user,
@@ -210,7 +209,7 @@ export default function Pricing() {
 
   const upgradeSubscription = trpc.subscription.upgradeSubscription.useMutation({
     onSuccess: (data) => {
-      const quotaLabel = data.newMaxQuotesPerMonth === -1 ? 'unlimited' : String(data.newMaxQuotesPerMonth);
+      const quotaLabel = (data.newMaxQuotesPerMonth as number) === -1 ? 'unlimited' : String(data.newMaxQuotesPerMonth);
       toast.success(
         `You're now on ${data.newTierName}! ${quotaLabel} quotes/month, active immediately.`,
         { duration: 6000 }
@@ -247,7 +246,7 @@ export default function Pricing() {
   // True when the user already has an active paid subscription (not just a Stripe customer)
   const hasActiveSubscription = !!(subStatus.data?.hasActiveSubscription && subStatus.data?.status === 'active');
 
-  const handleSelectTier = (tier: 'solo' | 'pro' | 'team' | 'business') => {
+  const handleSelectTier = (tier: 'solo' | 'pro' | 'team') => {
     if (!user) {
       setLocation("/register");
       return;
@@ -353,7 +352,7 @@ export default function Pricing() {
 
       {/* Tier Cards */}
       <section className="pb-20 px-4">
-        <div className="max-w-7xl mx-auto grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="max-w-7xl mx-auto grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           <TierCard
             name="Solo"
             price={59}
@@ -490,47 +489,6 @@ export default function Pricing() {
             buttonLabel={currentRank > 3 ? "Downgrade to Team" : "Upgrade to Team"}
           />
 
-          <TierCard
-            name="Business"
-            price={249}
-            priceWithVat={298.80}
-            tagline="For established contractors and multi-user organisations"
-            icon={<Building2 className="h-7 w-7 text-amber-300" />}
-            color="#d97706"
-            borderColor="#d97706"
-            bgGradient="linear-gradient(135deg, #1a2b4a 0%, #78350f 100%)"
-            whoItsFor={[
-              "Larger contracting businesses",
-              "Multi-discipline firms",
-              "High-volume tendering teams",
-              "Complex commercial projects",
-            ]}
-            limits={[
-              "Up to 10 users",
-              "Unlimited AI quotes",
-              "Advanced project modelling",
-            ]}
-            buildFrom={[
-              "📄 Large multi-set drawing packages",
-              "📧 Full tender packs with scope extraction",
-              "📝 Complex technical specifications",
-              "🖼 Marked-up drawings & layered plans",
-              "🎤 Audio briefings & recorded site walks",
-              "📂 Bulk file uploads & structured folders",
-            ]}
-            includes={[
-              "Everything in Team",
-              "Unlimited AI quotes",
-              "Priority AI processing queue",
-              "Custom branded proposals",
-              "Advanced reporting (future-ready)",
-              "Priority support (<24hr response)",
-            ]}
-            currentTier={currentTier === 'business'}
-            onSelect={() => handleSelectTier('business')}
-            loading={loadingTier === 'business'}
-            buttonLabel="Go Business"
-          />
         </div>
       </section>
 

@@ -283,7 +283,7 @@ export const adminRouter = router({
   setSubscriptionTier: adminProcedure
     .input(z.object({
       orgId: z.number(),
-      tier: z.enum(['trial', 'solo', 'pro', 'team', 'business']),
+      tier: z.enum(['trial', 'solo', 'pro', 'team']),
     }))
     .mutation(async ({ input }) => {
       const { TIER_CONFIG } = await import('./stripe');

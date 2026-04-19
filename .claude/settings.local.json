@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(tee /tmp/tsc.out)",
+      "Bash(git stash *)",
+      "Bash(tee /tmp/tsc-stashed.out)",
+      "Bash(tee /tmp/tsc-pra.out)"
     ]
   }
 }

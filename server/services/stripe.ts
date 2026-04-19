@@ -51,21 +51,12 @@ export const TIER_CONFIG = {
     monthlyPrice: 15900,
     features: ['ai_takeoff', 'quote_generation', 'pdf_export', 'shared_catalog', 'team_collaboration', 'scope_control', 'timeline_planning', 'priority_support', 'advanced_modelling'],
   },
-  business: {
-    name: 'Business',
-    priceId: process.env.STRIPE_PRICE_BUSINESS || '',
-    maxUsers: 10,
-    maxQuotesPerMonth: -1,
-    maxCatalogItems: -1,
-    monthlyPrice: 24900,
-    features: ['ai_takeoff', 'quote_generation', 'pdf_export', 'shared_catalog', 'team_collaboration', 'scope_control', 'timeline_planning', 'priority_support', 'advanced_modelling', 'branded_proposals', 'priority_ai_queue', 'advanced_reporting'],
-  },
 } as const;
 
 export type SubscriptionTier = keyof typeof TIER_CONFIG;
 
 // Ordered tiers from cheapest to most expensive (for upgrade/downgrade comparison)
-const TIER_ORDER: SubscriptionTier[] = ['trial', 'solo', 'pro', 'team', 'business'];
+const TIER_ORDER: SubscriptionTier[] = ['trial', 'solo', 'pro', 'team'];
 
 export function getTierRank(tier: SubscriptionTier): number {
   return TIER_ORDER.indexOf(tier);
@@ -90,7 +81,7 @@ export function getTierByPriceId(priceId: string): SubscriptionTier | null {
  */
 export async function createCheckoutSession(params: {
   orgId: number;
-  tier: 'solo' | 'pro' | 'team' | 'business';
+  tier: 'solo' | 'pro' | 'team';
   customerEmail: string;
   stripeCustomerId?: string;
   successUrl: string;
@@ -173,7 +164,7 @@ export async function createPortalSession(params: {
  */
 export async function changeSubscriptionTier(params: {
   stripeSubscriptionId: string;
-  newTier: 'solo' | 'pro' | 'team' | 'business';
+  newTier: 'solo' | 'pro' | 'team';
   orgId: number;
 }): Promise<{ chargedAmountPence: number; nextBillingDate: Date }> {
   const newConfig = TIER_CONFIG[params.newTier];
@@ -338,7 +329,7 @@ export async function changeSubscriptionTier(params: {
  */
 export async function getUpgradeProration(params: {
   stripeSubscriptionId: string;
-  newTier: 'solo' | 'pro' | 'team' | 'business';
+  newTier: 'solo' | 'pro' | 'team';
 }): Promise<{
   proratedAmountPence: number;
   newMonthlyPence: number;
@@ -840,7 +831,7 @@ export function getUpgradeSuggestion(currentTier: string, limitType: 'quotes' | 
     const config = TIER_CONFIG[nextTier];
     let newLimit = '';
     if (limitType === 'quotes') {
-      newLimit = config.maxQuotesPerMonth === -1 ? 'unlimited quotes' : `${config.maxQuotesPerMonth} quotes/month`;
+      newLimit = (config.maxQuotesPerMonth as number) === -1 ? 'unlimited quotes' : `${config.maxQuotesPerMonth} quotes/month`;
     } else if (limitType === 'users') {
       newLimit = `${config.maxUsers} team members`;
     } else {

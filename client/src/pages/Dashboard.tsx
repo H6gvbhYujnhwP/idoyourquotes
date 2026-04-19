@@ -701,7 +701,7 @@ export default function Dashboard() {
 
           <div className="space-y-3 py-2">
             {/* Current usage */}
-            {subStatus && subStatus.maxQuotesPerMonth !== -1 && (
+            {subStatus && (subStatus.maxQuotesPerMonth as number) !== -1 && (
               <div className="p-3 rounded-lg bg-gray-50 border">
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-muted-foreground">Quotes used this month</span>
@@ -736,7 +736,6 @@ export default function Dashboard() {
                 { name: "Solo", desc: "10 quotes/month · 1 user · 100 catalog items", price: "£59", color: "#0d9488", borderColor: "#99f6e4" },
                 { name: "Pro", desc: "15 quotes/month · 2 users · Unlimited catalog", price: "£99", color: "#3b82f6", borderColor: "#bfdbfe", badge: "Popular" },
                 { name: "Team", desc: "50 quotes/month · 5 users · Everything in Pro", price: "£159", color: "#059669", borderColor: "#bbf7d0" },
-                { name: "Business", desc: "Unlimited quotes · 10 users · Everything in Team", price: "£249", color: "#d97706", borderColor: "#fde68a" },
               ].map((plan) => (
                 <div
                   key={plan.name}
