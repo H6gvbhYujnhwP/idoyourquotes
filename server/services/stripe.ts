@@ -421,7 +421,11 @@ export async function listPaidInvoices(params: {
   for (const inv of result.data) {
     if (!inv.id || !inv.invoice_pdf) continue;
     const totalPence = inv.total;
-    const vatPence = inv.tax ?? 0;
+    // VAT = sum of total_tax_amounts[].amount. For UK single-rate this is one entry.
+    // Cast: SDK types are newer than our pinned API version and omit this field,
+    // though the API returns it at runtime (same skew as current_period_end etc.).
+    const taxAmounts = ((inv as any).total_tax_amounts ?? []) as Array<{ amount: number }>;
+    const vatPence = taxAmounts.reduce((sum, t) => sum + t.amount, 0);
     const amountExVatPence = inv.total_excluding_tax ?? (totalPence - vatPence);
     summaries.push({
       id: inv.id,

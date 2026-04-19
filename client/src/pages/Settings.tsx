@@ -973,6 +973,73 @@ function BillingTab() {
         </Card>
       )}
 
+      {/* Invoices — paid only, newest first */}
+      {sub.hasStripeCustomer && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Invoices
+            </CardTitle>
+            <CardDescription>
+              Download PDF copies of your paid invoices
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {invoicesLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : !invoices || invoices.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4">
+                No paid invoices yet.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <div className="min-w-[720px]">
+                  <div className="grid grid-cols-[auto_1fr_auto_auto_auto_auto_auto] gap-x-4 gap-y-2 items-center text-xs font-medium text-muted-foreground uppercase tracking-wide pb-2 border-b">
+                    <div>Date</div>
+                    <div>Invoice #</div>
+                    <div className="text-right">Amount ex VAT</div>
+                    <div className="text-right">VAT</div>
+                    <div className="text-right">Total</div>
+                    <div className="text-center">Status</div>
+                    <div className="text-right">Download</div>
+                  </div>
+                  {invoices.map((inv) => (
+                    <div
+                      key={inv.id}
+                      className="grid grid-cols-[auto_1fr_auto_auto_auto_auto_auto] gap-x-4 gap-y-2 items-center text-sm py-3 border-b last:border-b-0"
+                    >
+                      <div className="text-muted-foreground">
+                        {new Date(inv.created * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </div>
+                      <div className="font-mono text-xs">{inv.number || '—'}</div>
+                      <div className="text-right tabular-nums">£{(inv.amountExVatPence / 100).toFixed(2)}</div>
+                      <div className="text-right tabular-nums">£{(inv.vatPence / 100).toFixed(2)}</div>
+                      <div className="text-right tabular-nums font-medium">£{(inv.totalPence / 100).toFixed(2)}</div>
+                      <div className="text-center">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          Paid
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <a href={inv.invoicePdfUrl} target="_blank" rel="noopener noreferrer">
+                          <Button variant="outline" size="sm">
+                            <Download className="h-3 w-3 mr-1" />
+                            PDF
+                          </Button>
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Resume subscription — shown when subscription is cancelling */}
       {sub.cancelAtPeriodEnd && sub.hasActiveSubscription && (
         <Card className="border-amber-200 bg-amber-50">
