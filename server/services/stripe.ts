@@ -44,7 +44,7 @@ export const TIER_CONFIG = {
   },
   team: {
     name: 'Team',
-    priceId: process.env.STRIPE_PRICE_TEAM || 'price_1T4ifqPMGUpLvQsyi3YnQo5k',
+    priceId: process.env.STRIPE_PRICE_TEAM || '',
     maxUsers: 5,
     maxQuotesPerMonth: 50,
     maxCatalogItems: -1,
