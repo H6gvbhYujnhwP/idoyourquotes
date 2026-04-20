@@ -14,7 +14,7 @@
 - List every file and function in the call chain before writing any code
 - Confirm the file list with me before touching anything
 - Run `npx tsc --noEmit --skipLibCheck` before declaring done
-- Zero new tsc errors vs baseline (baseline was 83 as of 18 Apr)
+- Zero new tsc errors vs baseline (baseline was 82 as of 20 Apr — dropped from 83 after Business tier removal + Pricing VAT confirmation modal work)
 
 ## Sector agnosticism
 - No trade-specific examples in code, comments, or reasoning

@@ -102,6 +102,54 @@ export interface EngineOutputMaterial {
   description: string;
   pricingType: "standard" | "monthly" | "optional" | "annual";
   estimated: boolean;
+
+  /**
+   * When true, this row is a PASSTHROUGH from source evidence — the engine
+   * could not semantically map the evidenced item to any catalog item in a
+   * substitutable commodity category, and is echoing the source item name,
+   * description, quantity, unit, and price verbatim.
+   *
+   * Passthrough rows must NEVER use anchor / estimated rates: unitPrice
+   * comes directly from the evidence (or 0 if redacted / POA / blank).
+   * `estimated` is false on passthrough rows.
+   *
+   * Catalog-substituted rows and non-substitutable client-specific rows
+   * both set this to false. Undefined on rows from engines that do not
+   * emit passthrough metadata (e.g. ElectricalEngine).
+   */
+  passthrough?: boolean;
+
+  /**
+   * The engine's best identification of the commodity category this row
+   * belongs to, derived from source evidence (e.g. "firewall",
+   * "password_manager", "m365_backup", "server_backup",
+   * "endpoint_security", "email_threat_protection", "named_user_support",
+   * "managed_server_support", "project_labour", "service_desk_labour",
+   * "microsoft_365_licence", "telephony", "specific_hardware").
+   *
+   * Used by the QDS to surface category-level decisions to the user
+   * (e.g. warn when a firewall row is being substituted — which it
+   * should not be). Null if the engine could not categorise. Undefined
+   * on rows from engines that do not emit category metadata.
+   */
+  evidenceCategory?: string | null;
+
+  /**
+   * Whether the evidenceCategory is substitutable (commodity — another
+   * vendor in the same category is a valid replacement) or
+   * non-substitutable (client-specific choice — firewall brand / model,
+   * specific hardware SKU, productivity suite, telephony system — must
+   * be quoted verbatim).
+   *
+   * - true:  catalog substitution is permitted within this category
+   * - false: evidence must be quoted verbatim; anchor rate may apply
+   *          only if evidence price is redacted
+   * - null:  category unknown / cannot determine substitutability
+   *
+   * Undefined on rows from engines that do not emit substitutability
+   * metadata.
+   */
+  substitutable?: boolean | null;
 }
 
 export interface EngineOutputLabour {

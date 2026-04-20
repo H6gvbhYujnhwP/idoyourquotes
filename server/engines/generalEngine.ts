@@ -126,46 +126,95 @@ When the invoice shows prices as blacked-out boxes, "POA", or blank, you MUST st
 - Senior IT Consultant: £95–£150 per hour
 - Generic per-device monitoring / RMM: £3–£8 per device per month
 
-Pick one specific number near the middle of the range — never return null for unitPrice. The user reviews every estimated price before the quote goes to the client.
+Pick one specific number near the middle of the range — never return null for unitPrice on anchor-rated rows. The user reviews every estimated price before the quote goes to the client.
+
+SCOPE OF THESE ANCHOR RATES — IMPORTANT: the anchor rates above apply ONLY to:
+(a) non-substitutable rows where the evidence price is redacted / POA / blank, and
+(b) as a sanity check for catalog-substituted rows (catalog defaultRate takes precedence).
+Anchor rates DO NOT apply to PASSTHROUGH rows. Passthrough rows echo the source evidence price exactly, or 0 if the evidence shows no price — they never fabricate a price from anchor ranges. See PASSTHROUGH FALLBACK below.
 
 ADDITIVE BEHAVIOUR — MIXED EVIDENCE:
 If the evidence is a MIX of an invoice/contract AND a separate request for new or additional work (e.g. invoice attached plus an email saying "we also want to add 10 more users and a backup service"), extract BOTH — every invoice line item AND the additional requested work. All flow into materials[].
 
-SMART CATEGORY SUBSTITUTION (THIS IS HOW AN MSP WINS COMPETITIVE QUOTES):
-An MSP's catalog represents the vendor THEY have chosen in each commodity category. When invoice/contract evidence mentions a product from a DIFFERENT vendor in the SAME commodity category, the MSP will quote their own equivalent — that is the whole point of a competitive takeover quote. You must substitute in favour of the user's catalog item, at the user's catalog price, and note the substitution in the description.
+═══════════════════════════════════════════════════════════════
+CATEGORY-FIRST REASONING — HOW TO AVOID SILENT BUGS
+═══════════════════════════════════════════════════════════════
 
-CATEGORIES WHERE SUBSTITUTION IS CORRECT (brand-agnostic commodities):
+An MSP's catalog represents the vendor THEY have chosen in each commodity category. When invoice/contract evidence mentions a product from a DIFFERENT vendor in the SAME commodity category, the MSP will quote their own equivalent — that is how a competitive takeover quote works. But reasoning by "nearest vibe-match" causes silent, expensive bugs: firewalls get replaced with password managers, server/workstation backup agents get replaced with M365 cloud-to-cloud backup, unmapped named-user support gets reused at an invented price behind a "Catalog" badge. Reason CATEGORY-FIRST, and honour hard boundaries between categories.
+
+FORCED CATEGORISATION STEP — do this for EVERY evidence line item BEFORE deciding how to price it:
+
+STEP 1 — Identify the commodity category of the evidenced item. Emit it on the material row as "evidenceCategory" (short snake_case). Use one of these values; extend only if none fit:
+"firewall", "password_manager", "m365_backup", "server_backup", "endpoint_security", "email_threat_protection", "dns_filter", "email_signature_management", "rmm", "it_documentation", "named_user_support", "managed_server_support", "project_labour", "service_desk_labour", "microsoft_365_licence", "telephony", "specific_hardware", "other".
+
+STEP 2 — Determine whether that category is SUBSTITUTABLE per the rules below. Emit on the material row as "substitutable": true | false.
+
+STEP 3 (only if substitutable === true) — Scan the user's catalog for an item that semantically fits the evidenceCategory. Match on the catalog item's NAME, DESCRIPTION, UNIT, and PRICING TYPE — NOT on the catalog item's "category" field. The catalog's category field is a HINT, not a filter: a catalog item whose name, description, unit, and pricing model clearly match the evidenceCategory is a valid match regardless of what its category field says. For example, an item named "Managed Server Support" with unit "Server" and a description mentioning OS patching, monitoring, and AD health is a valid match for evidenceCategory: "managed_server_support" even if its category field is "IT Support Contracts", "Servers", "Management", or blank.
+  - If a semantically-matching catalog item IS FOUND → substitute (see HOW TO SUBSTITUTE below).
+  - If NO semantically-matching catalog item is found → apply the PASSTHROUGH FALLBACK (see below). Do NOT reuse a near-miss catalog item at an invented price or invented unit.
+
+STEP 4 (only if substitutable === false) — Quote the source evidence verbatim:
+  - "item" and "description" from source (apply administrative-prefix strip and bracket-tag preservation as above).
+  - "quantity" and "unit" exactly as shown on the evidence.
+  - "unitPrice" echoes the source evidence price if shown; applies the anchor rate from the UK MSP rates block above if the evidence price is redacted / POA / blank.
+  - "estimated": true when anchor rate is used, false when evidence price is echoed.
+  - Do NOT set passthrough: true for non-substitutable items — they are correctly-handled client-specific rows, not fallback rows.
+
+EXPLICIT CATEGORY BOUNDARIES — NON-NEGOTIABLE:
+
+- A FIREWALL is NOT a password manager, NOT endpoint security, NOT email threat protection, NOT a DNS filter, NOT any other security category. Firewalls (Sophos XGS, Sophos XG, Fortinet FortiGate, WatchGuard, Cisco Meraki MX, SonicWall, Ubiquiti UniFi, Juniper SRX, DrayTek Vigor) are NON-SUBSTITUTABLE and MUST be quoted by the EXACT brand / model named in the evidence. Never map a firewall to any catalog item that is not itself a firewall of the same brand and model.
+
+- MICROSOFT 365 BACKUP (cloud-to-cloud, tenant-level, agentless — Datto SaaS Protect, Barracuda Cloud-to-Cloud Backup, Veeam Backup for M365, SkyKick, Spanning, AvePoint, Redstor) and SERVER / WORKSTATION BACKUP / BCDR (agent-based, on-prem — Datto SIRIS, Datto ALTO, Veeam Backup & Replication, Acronis Cyber Protect, Axcient x360Recover, NAKIVO, StorageCraft ShadowProtect) are DIFFERENT product categories that do NOT substitute for each other. The word "Agent" in an evidenced item (e.g. "BCDR Agent", "Protected Agent") is a STRONG SIGNAL of server / workstation backup — NOT M365 backup. A per-user or per-tenant quantity with no agent count is a signal of M365 backup. These two categories do not share a single catalog item.
+
+- ENDPOINT SECURITY / AV is NOT a firewall and is NOT email threat protection. These sound related; they are SEPARATE categories. Do not cross-map.
+
+POSITIVE LIST — CATEGORIES WHERE SUBSTITUTION IS CORRECT (brand-agnostic commodities):
 - Password managers: LastPass, 1Password, Keeper, Bitwarden, Dashlane, NordPass, RoboForm — all interchangeable commodities.
-- Endpoint security / anti-virus: ESET, Sophos Intercept X, Sophos Endpoint, Bitdefender, CrowdStrike Falcon, SentinelOne, Webroot, Malwarebytes, Trend Micro Apex One, Microsoft Defender for Business, Kaspersky, Norton Small Business — all interchangeable commodities. (NOT to be confused with firewalls — see below.)
+- Endpoint security / anti-virus: ESET, Sophos Intercept X, Sophos Endpoint, Bitdefender, CrowdStrike Falcon, SentinelOne, Webroot, Malwarebytes, Trend Micro Apex One, Microsoft Defender for Business, Kaspersky, Norton Small Business — all interchangeable commodities. (NOT to be confused with firewalls — see above.)
 - Email threat protection / secure email gateway: Mimecast, Proofpoint Essentials, Barracuda Email Protection, Avanan, IRONSCALES, Microsoft Defender for Office 365 — all interchangeable commodities.
-- Microsoft 365 backup (cloud-to-cloud): Datto SaaS Protect, Barracuda Cloud-to-Cloud Backup, Veeam Backup for M365, SkyKick Cloud Backup, Spanning, AvePoint Cloud Backup, Redstor — all interchangeable commodities.
-- Server/workstation backup and BCDR: Datto SIRIS, Datto ALTO, Veeam Backup & Replication, Acronis Cyber Protect, Axcient x360Recover, NAKIVO, StorageCraft ShadowProtect — all interchangeable commodities.
+- Microsoft 365 backup (cloud-to-cloud, agentless): Datto SaaS Protect, Barracuda Cloud-to-Cloud Backup, Veeam Backup for M365, SkyKick Cloud Backup, Spanning, AvePoint Cloud Backup, Redstor — all interchangeable commodities. These are NOT interchangeable with server / workstation backup.
+- Server / workstation backup and BCDR (agent-based): Datto SIRIS, Datto ALTO, Veeam Backup & Replication, Acronis Cyber Protect, Axcient x360Recover, NAKIVO, StorageCraft ShadowProtect — all interchangeable commodities. These are NOT interchangeable with M365 backup.
 - Email signature management: Exclaimer, CodeTwo, Rocketseed, Opensense, Templafy — all interchangeable commodities.
 - Remote monitoring and management (RMM): Datto RMM, NinjaOne, Atera, ConnectWise Automate, Kaseya VSA, N-able N-sight, N-able RMM, Pulseway — all interchangeable commodities.
 - IT documentation: IT Glue, Hudu, ITBoost, Confluence (in MSP context) — all interchangeable commodities.
 - DNS filtering / web filtering: Webroot DNS, Cisco Umbrella, DNSFilter, SafeDNS — all interchangeable commodities.
+- Named-user support contracts from a competing provider (e.g. "Reach IT Support [Core] Named User" on an incumbent invoice): named-user support IS a commodity category. Map to the user's catalog support tier if a semantic match exists (e.g. "Silver IT Support — Unlimited Remote" with unit "User" and pricingType "monthly"), noting the substitution. If no semantic match exists, apply PASSTHROUGH — do NOT reuse a support SKU with a different unit or a different pricing model.
 
-CATEGORIES WHERE SUBSTITUTION IS WRONG (client-specific choices — quote exactly as evidenced):
+NEGATIVE LIST — CATEGORIES WHERE SUBSTITUTION IS WRONG (client-specific — quote exactly as evidenced):
 - Microsoft 365 vs Google Workspace vs Zoho — productivity suites are a client ecosystem decision. Never swap.
-- Specific firewall brands: Sophos XGS/XG vs Fortinet FortiGate vs WatchGuard vs Cisco Meraki MX vs SonicWall vs Ubiquiti UniFi — different management, licensing, and integration. Quote the exact brand/model the evidence specifies.
-- Specific hardware SKUs — if the evidence names a model (e.g. "Sophos XGS 118"), quote that model. The client may already own it or have integration requirements.
+- Specific firewall brands AND MODELS: Sophos XGS / XG, Fortinet FortiGate, WatchGuard, Cisco Meraki MX, SonicWall, Ubiquiti UniFi, Juniper SRX, DrayTek Vigor — different management, licensing, and integration. Quote the EXACT brand AND model named in the evidence.
+- Specific hardware SKUs — if the evidence names a model (e.g. "Sophos XGS 118", "Cisco Catalyst 9200L-24P"), quote that exact model. The client may already own it or have integration requirements.
 - Telephony systems: 3CX vs Microsoft Teams Phone vs Zoom Phone vs RingCentral vs Gamma Horizon — different integration and porting implications. Quote the same system.
-- Named-user support contracts from the EXISTING provider (e.g. "Reach IT Support [Core] Named User" on an Urban Network invoice) — these are the OLD provider's contract. Map these to the user's catalog support tier if one exists (e.g. "Silver IT Support — Unlimited Remote"), noting the substitution. This IS a valid substitution — the named-user support category is commodity.
+- Managed server support tier (per-server) — if the incumbent bills per-server for managed server support, this is NOT a named-user support line and does NOT substitute into a per-user support SKU. It is either mapped to a catalog item whose UNIT is "Server" and whose description describes server management (substitutable: true, semantic match on unit), or it is applied via PASSTHROUGH.
 
-HOW TO SUBSTITUTE:
-1. Read the evidence item. Identify its commodity category (password manager? AV? M365 backup?).
-2. Scan the user's catalog (provided above) for an item in the same category.
-3. If a catalog match exists in a SUBSTITUTABLE category:
-   - Use the catalog item's exact "name" as the materials "item" field.
-   - Use the catalog item's defaultRate as unitPrice. Set estimated: false.
-   - Copy quantity from the evidence.
-   - Start the "description" with "Replaces existing [evidenced product name]" followed by "||" then the catalog description. For example: "Replaces existing LastPass subscription || Enterprise password manager per user || Secure encrypted vault..."
-4. If a catalog match exists in a NON-SUBSTITUTABLE category (e.g. client has a specific firewall), use the evidenced product name verbatim — do NOT substitute your catalog's firewall item.
-5. If no catalog match exists in the evidenced category, fall back to the UK MSP rates above with estimated: true.
-6. Silent substitution is a bug. Every substituted item MUST have "Replaces existing [original product]" visible in the description so the user can review and revert in the QDS if needed.
+HOW TO SUBSTITUTE (only when substitutable: true AND a semantic catalog match exists on NAME + DESCRIPTION + UNIT + PRICING TYPE):
+1. Use the catalog item's EXACT "name" as the materials "item" field.
+2. Use the catalog item's EXACT "unit". Do NOT change the unit to fit evidence. If the catalog unit is "User" and the evidence is billed per "Month" (or per "Server", or per "Site"), the item DOES NOT MATCH — apply PASSTHROUGH instead.
+3. Use the catalog item's EXACT "defaultRate" as unitPrice. Set estimated: false. Never invent a different price to fit the evidence.
+4. Copy quantity from the evidence, converting only when the unit conversion is exact and unambiguous (e.g. evidence "14 users" + catalog unit "User" → quantity 14). When in doubt, passthrough.
+5. Start the "description" with "Replaces existing [evidenced product name]" followed by " || " then the catalog description. Example: "Replaces existing LastPass subscription || Enterprise password manager per user || Secure encrypted vault..."
+6. Emit: passthrough: false, evidenceCategory: <category>, substitutable: true.
+7. Silent substitution is a bug. Every substituted item MUST show "Replaces existing [original product]" in the description so the user can review and revert in the QDS.
+
+PASSTHROUGH FALLBACK — when evidenceCategory IS substitutable AND NO catalog item semantically fits:
+1. Set passthrough: true.
+2. Set "item" to the source item name verbatim. Apply the administrative-prefix strip ("Contract:" / "Service:" removed) from the INVOICE LINE ITEM MAPPING rules above.
+3. Set "description" to the source detail verbatim. Do NOT prefix with "Replaces existing" — nothing is being replaced. Preserve bracket tags exactly as evidenced.
+4. Set "quantity" and "unit" EXACTLY as shown on the source evidence. Do NOT convert units.
+5. Set "unitPrice": echo the source evidence price if shown; set to 0 if the evidence shows no price (redacted, POA, blank). Do NOT apply anchor rates. Do NOT fabricate a price.
+6. Set "estimated": false. (Estimation applies only to anchor-rated rows, never to passthrough rows.)
+7. Set "evidenceCategory" to the best category identification (not null). Set "substitutable": true. (You reached passthrough BECAUSE the category is substitutable — the category exists, the catalog just has no semantic match.)
+
+FIELD EMISSION — every material row from this addendum MUST carry evidenceCategory, substitutable, and passthrough:
+- Catalog-substituted row         → passthrough: false, evidenceCategory: <category>, substitutable: true
+- Client-specific row (firewall, specific hardware SKU, telephony, productivity suite, named model) → passthrough: false, evidenceCategory: <category>, substitutable: false
+- Passthrough row (substitutable category, no catalog semantic match) → passthrough: true, evidenceCategory: <category>, substitutable: true
+
+ANTI-FABRICATION RULE — NON-NEGOTIABLE:
+If you use a catalog item's "name" on a material row, you MUST also use that item's EXACT "unit" and EXACT "defaultRate" from the catalog. You may NOT change a catalog item's unit or price to fit evidence that doesn't match. If the evidence doesn't fit any catalog item's unit / pricing model, apply the PASSTHROUGH FALLBACK instead of reusing a near-miss catalog SKU at an invented price or invented unit. The moment you find yourself typing a unitPrice that is not the evidence price, not a catalog defaultRate, and not one of the UK MSP anchor rates above — stop. That is fabrication. Use passthrough (with unitPrice 0 if no price is known) and let the user set the price in the QDS.
 
 DO NOT INVENT SCOPE:
-Extract only what the evidence actually shows. If an invoice has 14 M365 licences, the quote has 14 — not 15, not "14 or so". If prices are redacted, flag with estimated:true — do not fabricate exact unit prices. If the client is asking about adding services, only quote what they asked for.
+Extract only what the evidence actually shows. If an invoice has 14 M365 licences, the quote has 14 — not 15, not "14 or so". If prices are redacted, flag with estimated: true on anchor-rated rows, or use passthrough with unitPrice 0 when the row cannot be anchor-rated — do not fabricate exact unit prices. If the client is asking about adding services, only quote what they asked for.
 
 ` : "";
 
