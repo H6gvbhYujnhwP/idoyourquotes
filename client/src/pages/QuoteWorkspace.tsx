@@ -245,6 +245,52 @@ export default function QuoteWorkspace() {
   const [uploadingFile, setUploadingFile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // ── Controlled field state ──
+  //
+  // These five fields can be written by EITHER the user (typing) OR the
+  // server (auto-title from upload, AI-extracted clientName/contactName/
+  // clientEmail from generateDraft, AI-generated description). We need
+  // the inputs to pick up server-side updates without overwriting the
+  // user's in-progress typing.
+  //
+  // Pattern: track per-field `userEdited` flags in a ref. On quote
+  // refetch, only snap a field's local state to the server value if the
+  // user hasn't edited it since the component mounted. Once the user
+  // types in a field, it's "theirs" for the rest of the session —
+  // subsequent refetches don't clobber their work.
+  const [titleLocal, setTitleLocal] = useState("");
+  const [clientNameLocal, setClientNameLocal] = useState("");
+  const [clientEmailLocal, setClientEmailLocal] = useState("");
+  const [contactNameLocal, setContactNameLocal] = useState("");
+  const [descriptionLocal, setDescriptionLocal] = useState("");
+  const userEdited = useRef({
+    title: false,
+    clientName: false,
+    clientEmail: false,
+    contactName: false,
+    description: false,
+  });
+
+  useEffect(() => {
+    if (!quote) return;
+    const q = quote as any;
+    if (!userEdited.current.title) {
+      setTitleLocal((q.title as string) || "");
+    }
+    if (!userEdited.current.clientName) {
+      setClientNameLocal((q.clientName as string) || "");
+    }
+    if (!userEdited.current.clientEmail) {
+      setClientEmailLocal((q.clientEmail as string) || "");
+    }
+    if (!userEdited.current.contactName) {
+      setContactNameLocal((q.contactName as string) || "");
+    }
+    if (!userEdited.current.description) {
+      setDescriptionLocal((q.description as string) || "");
+    }
+  }, [quote]);
+
   // ── Mutations — evidence ──
   const createInput = trpc.inputs.create.useMutation({
     onSuccess: () => void refetch(),
@@ -290,6 +336,8 @@ export default function QuoteWorkspace() {
   const quoteSaveFn = useCallback(
     async (patch: {
       clientName?: string;
+      clientEmail?: string;
+      contactName?: string;
       description?: string;
       title?: string;
     }) => {
@@ -299,6 +347,8 @@ export default function QuoteWorkspace() {
   );
   const quoteAutoSave = useAutoSave<{
     clientName?: string;
+    clientEmail?: string;
+    contactName?: string;
     description?: string;
     title?: string;
   }>(quoteSaveFn, 500);
@@ -363,6 +413,26 @@ export default function QuoteWorkspace() {
         inputType,
       });
       toast.success(`${file.name} uploaded`);
+
+      // Auto-title: if the user hasn't edited the title and it's still the
+      // default "New quote" (or empty), set it to the uploaded filename
+      // minus extension. This is a one-shot — further uploads don't
+      // re-trigger it because the title won't match the default.
+      const currentTitle = ((quote as any)?.title as string || "").trim();
+      const isDefault =
+        !currentTitle ||
+        currentTitle === "New Quote" ||
+        currentTitle === "New quote";
+      if (!userEdited.current.title && isDefault) {
+        const baseName = file.name.replace(/\.[^/.]+$/, "");
+        try {
+          await updateQuote.mutateAsync({ id: quoteId, title: baseName });
+          // Local state will re-sync via the useEffect watching `quote`
+          // when refetch fires.
+        } catch (err) {
+          console.warn("[QuoteWorkspace] auto-title failed:", err);
+        }
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -449,6 +519,19 @@ export default function QuoteWorkspace() {
       // Step 3 — materialise line items
       const result = await generateDraft.mutateAsync({ quoteId });
       const map = (result as any)?.sourceInputMap;
+      // Diagnostic: log the map so we can see if the engine emitted
+      // sourceInputIds on materials. If the map is {} on a real-looking
+      // quote, the AI didn't follow the [INPUT_ID: N] prefix instruction.
+      // If the map is populated but highlighting doesn't fire on click,
+      // there's a frontend state bug. Remove once Beta-1 highlighting is
+      // confirmed working across all evidence types.
+      console.log(
+        "[QuoteWorkspace] generateDraft returned sourceInputMap:",
+        map,
+        "for",
+        Object.keys(map || {}).length,
+        "line items",
+      );
       if (map && typeof map === "object") {
         setSourceInputMap(map as Record<number, number[]>);
       }
@@ -644,8 +727,8 @@ export default function QuoteWorkspace() {
 
   // ─── Main layout ───────────────────────────────────────────────────────
 
-  const quoteTitle = ((quote as any).title as string) || "New quote";
-  const clientName = ((quote as any).clientName as string) || "";
+  // Title + clientName now come from controlled state (titleLocal / clientNameLocal),
+  // which is seeded from the server and synced on refetch.
 
   return (
     <div
@@ -670,8 +753,12 @@ export default function QuoteWorkspace() {
             ·
           </span>
           <Input
-            defaultValue={quoteTitle}
-            onChange={(e) => quoteAutoSave.save({ title: e.target.value })}
+            value={titleLocal}
+            onChange={(e) => {
+              userEdited.current.title = true;
+              setTitleLocal(e.target.value);
+              quoteAutoSave.save({ title: e.target.value });
+            }}
             placeholder="Quote title"
             className="text-base font-semibold border-0 shadow-none focus-visible:ring-0 px-0 max-w-sm"
             style={{ color: brand.navy }}
@@ -739,20 +826,36 @@ export default function QuoteWorkspace() {
             />
           ) : (
             <EditorPanel
-              quote={quote}
-              clientName={clientName}
               lineItems={lineItems}
               catalogItems={catalogItems}
               totals={totals}
               activeLineItemId={activeLineItemId}
               highlightedLineItemIds={highlightedLineItemIds}
               onLineItemClick={handleLineItemClick}
-              onUpdateClientName={(v) =>
-                quoteAutoSave.save({ clientName: v })
-              }
-              onUpdateDescription={(v) =>
-                quoteAutoSave.save({ description: v })
-              }
+              clientNameValue={clientNameLocal}
+              clientEmailValue={clientEmailLocal}
+              contactNameValue={contactNameLocal}
+              descriptionValue={descriptionLocal}
+              onUpdateClientName={(v) => {
+                userEdited.current.clientName = true;
+                setClientNameLocal(v);
+                quoteAutoSave.save({ clientName: v });
+              }}
+              onUpdateClientEmail={(v) => {
+                userEdited.current.clientEmail = true;
+                setClientEmailLocal(v);
+                quoteAutoSave.save({ clientEmail: v });
+              }}
+              onUpdateContactName={(v) => {
+                userEdited.current.contactName = true;
+                setContactNameLocal(v);
+                quoteAutoSave.save({ contactName: v });
+              }}
+              onUpdateDescription={(v) => {
+                userEdited.current.description = true;
+                setDescriptionLocal(v);
+                quoteAutoSave.save({ description: v });
+              }}
               onSaveLineItem={saveLineItem}
               onDeleteLineItem={handleDeleteLineItem}
               onAddLineItem={handleAddLineItem}
@@ -1154,15 +1257,19 @@ function EmptyStatePanel({
 // ─── Editor panel (State 2 right side) ───────────────────────────────────
 
 interface EditorPanelProps {
-  quote: Record<string, unknown>;
-  clientName: string;
   lineItems: LineItem[];
   catalogItems: CatalogItemRef[];
   totals: { oneOff: number; monthly: number; annual: number; optional: number };
   activeLineItemId: number | null;
   highlightedLineItemIds: Set<number>;
   onLineItemClick: (id: number) => void;
+  clientNameValue: string;
+  clientEmailValue: string;
+  contactNameValue: string;
+  descriptionValue: string;
   onUpdateClientName: (v: string) => void;
+  onUpdateClientEmail: (v: string) => void;
+  onUpdateContactName: (v: string) => void;
   onUpdateDescription: (v: string) => void;
   onSaveLineItem: (
     id: number,
@@ -1178,15 +1285,19 @@ interface EditorPanelProps {
 }
 
 function EditorPanel({
-  quote,
-  clientName,
   lineItems,
   catalogItems,
   totals,
   activeLineItemId,
   highlightedLineItemIds,
   onLineItemClick,
+  clientNameValue,
+  clientEmailValue,
+  contactNameValue,
+  descriptionValue,
   onUpdateClientName,
+  onUpdateClientEmail,
+  onUpdateContactName,
   onUpdateDescription,
   onSaveLineItem,
   onDeleteLineItem,
@@ -1196,7 +1307,6 @@ function EditorPanel({
   isGeneratingPDF,
   addingLineItem,
 }: EditorPanelProps) {
-  const description = ((quote as any).description as string) || "";
   const lineItemCount = lineItems.length;
 
   const totalsSummary = useMemo(() => {
@@ -1215,20 +1325,53 @@ function EditorPanel({
           style={{ backgroundColor: brand.tealBg }}
         >
           <Input
-            defaultValue={clientName}
+            value={clientNameValue}
             onChange={(e) => onUpdateClientName(e.target.value)}
             placeholder="Client name"
             className="text-lg font-bold border-0 shadow-none focus-visible:ring-0 px-0 bg-transparent"
             style={{ color: brand.navy }}
           />
+          <div className="grid grid-cols-2 gap-3 mt-1.5">
+            <div>
+              <label
+                className="text-[10px] font-bold uppercase tracking-wider block"
+                style={{ color: brand.navyMuted }}
+              >
+                Contact name
+              </label>
+              <Input
+                value={contactNameValue}
+                onChange={(e) => onUpdateContactName(e.target.value)}
+                placeholder="e.g. Jane Smith"
+                className="text-sm border-0 shadow-none focus-visible:ring-0 px-0 bg-transparent h-7"
+                style={{ color: brand.navy }}
+              />
+            </div>
+            <div>
+              <label
+                className="text-[10px] font-bold uppercase tracking-wider block"
+                style={{ color: brand.navyMuted }}
+              >
+                Email
+              </label>
+              <Input
+                type="email"
+                value={clientEmailValue}
+                onChange={(e) => onUpdateClientEmail(e.target.value)}
+                placeholder="jane@example.com"
+                className="text-sm border-0 shadow-none focus-visible:ring-0 px-0 bg-transparent h-7"
+                style={{ color: brand.navy }}
+              />
+            </div>
+          </div>
           <div
-            className="text-xs mt-0.5"
+            className="text-xs mt-2"
             style={{ color: brand.navyMuted }}
           >
             {lineItemCount} {lineItemCount === 1 ? "line item" : "line items"}
           </div>
           <div
-            className="text-sm font-bold mt-2"
+            className="text-sm font-bold mt-1"
             style={{ color: brand.navy }}
           >
             {totalsSummary}
@@ -1254,7 +1397,7 @@ function EditorPanel({
             Job description
           </label>
           <Textarea
-            defaultValue={description}
+            value={descriptionValue}
             onChange={(e) => onUpdateDescription(e.target.value)}
             placeholder="Brief summary of the work — this appears on the PDF"
             className="min-h-[80px] text-sm border-0 shadow-none focus-visible:ring-0 px-0 resize-none"
@@ -1466,14 +1609,10 @@ function LineItemRow({
         borderTop: `1px solid ${brand.borderLight}`,
       }}
     >
-      <td className="px-4 py-2">
-        <Input
-          defaultValue={row.description || ""}
-          onChange={(e) => onSave(row.id, { description: e.target.value })}
-          onClick={(e) => e.stopPropagation()}
-          className="text-sm border-0 shadow-none focus-visible:ring-0 px-0 bg-transparent h-auto py-0.5"
-          style={{ color: brand.navy }}
-          placeholder="Item description"
+      <td className="px-4 py-2 align-top">
+        <ExpandingDescription
+          value={row.description || ""}
+          onChange={(v) => onSave(row.id, { description: v })}
         />
       </td>
       <td className="px-2 py-2 text-right">
@@ -1560,6 +1699,100 @@ function LineItemRow({
         </div>
       </td>
     </tr>
+  );
+}
+
+// ─── Expanding description cell ──────────────────────────────────────────
+//
+// Line-item descriptions are often long ("Project Engineer — Project engineer
+// labour 23 Jan 2025 on-site install of…") and a single-line Input truncates
+// them without a way to see the full text in context. This component shows
+// the first line by default, keeps the cell visually compact, and expands
+// to a multi-line Textarea the moment the user focuses or clicks the cell.
+// On blur it collapses back unless the content is empty.
+//
+// The Textarea's value IS the source of truth — changes save via onChange
+// (debounced upstream).
+function ExpandingDescription({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [local, setLocal] = useState(value);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Sync local state when external value changes (e.g. after refetch) and
+  // the field isn't being edited. Same pattern as the page-level fields.
+  useEffect(() => {
+    if (!expanded) {
+      setLocal(value);
+    }
+  }, [value, expanded]);
+
+  // Auto-size the textarea to its content whenever it's expanded or
+  // content changes. Cap at ~200px so a single row doesn't swallow the
+  // viewport on a very long description.
+  useEffect(() => {
+    if (!expanded || !textareaRef.current) return;
+    const el = textareaRef.current;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [expanded, local]);
+
+  if (!expanded) {
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={(e) => {
+          e.stopPropagation();
+          setExpanded(true);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setExpanded(true);
+          }
+        }}
+        className="text-sm cursor-text truncate py-0.5 hover:opacity-80"
+        style={{ color: brand.navy }}
+        title={value || "Item description"}
+      >
+        {value || (
+          <span style={{ color: brand.navyMuted }}>Item description</span>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <Textarea
+      ref={textareaRef}
+      value={local}
+      autoFocus
+      onChange={(e) => {
+        const next = e.target.value;
+        setLocal(next);
+        onChange(next);
+      }}
+      onClick={(e) => e.stopPropagation()}
+      onBlur={() => setExpanded(false)}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          (e.target as HTMLTextAreaElement).blur();
+        }
+      }}
+      className="text-sm border shadow-sm focus-visible:ring-1 focus-visible:ring-offset-0 px-2 py-1.5 resize-none leading-snug"
+      style={{
+        color: brand.navy,
+        borderColor: brand.tealBorder,
+        minHeight: 44,
+      }}
+      placeholder="Item description"
+    />
   );
 }
 
