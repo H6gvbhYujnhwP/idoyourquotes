@@ -46,6 +46,13 @@ interface MaterialItem {
   source: "voice" | "takeoff" | "containment" | "document";
   symbolCode?: string;
   catalogName?: string;
+  // ── PR1 engine metadata (optional; present on IT sector rows) ──────────────
+  /** True when the row is a passthrough from source evidence (no catalog match). */
+  passthrough?: boolean;
+  /** Commodity category identified by the engine (e.g. "firewall", "m365_backup"). */
+  evidenceCategory?: string | null;
+  /** Whether the evidenceCategory is substitutable (commodity) vs client-specific. */
+  substitutable?: boolean | null;
 }
 
 export interface QuoteDraftData {
@@ -78,6 +85,7 @@ interface CatalogItemRef {
   installTimeHrs: string | null;
   unit: string | null;
   category: string | null;
+  description?: string | null;
 }
 
 interface QuoteDraftSummaryProps {
@@ -94,6 +102,12 @@ interface QuoteDraftSummaryProps {
   onTriggerVoiceAnalysis: () => void;
   clarificationState?: { understood: string; clarificationQuestion: string } | null;
   onClarificationReply?: (reply: string) => Promise<void>;
+  /**
+   * PR2: advisory "What I heard" string from the diagnoseEvidence classifier.
+   * Rendered as a non-blocking banner above the Line Items section. Null when
+   * no advisory is available.
+   */
+  advisoryUnderstood?: string | null;
 }
 
 // ---- Helpers ----
@@ -239,7 +253,9 @@ const sourceBadgeStyles: Record<string, { bg: string; color: string }> = {
   containment: { bg: "#f0fdfa", color: "#0d9488" },
   voice: { bg: "#f0fdfa", color: "#0d9488" },
   document: { bg: "#fff7ed", color: "#ea580c" },
-  catalog: { bg: "#eff6ff", color: "#3b82f6" },
+  // PR2: "Catalog" means matched/done — green. Old pale blue reassigned to Client-Specific.
+  catalog: { bg: "#dcfce7", color: "#16a34a" },
+  clientSpecific: { bg: "#eff6ff", color: "#3b82f6" },
   estimated: { bg: "#fef3c7", color: "#b45309" },
 };
 
@@ -313,7 +329,7 @@ export default function QuoteDraftSummary({
   voiceSummary, takeoffs, takeoffOverrides, catalogItems,
   defaultMarkup, defaultLabourRate, defaultPlantMarkup,
   isLoading, hasVoiceNotes, onSave, onTriggerVoiceAnalysis,
-  clarificationState, onClarificationReply,
+  clarificationState, onClarificationReply, advisoryUnderstood,
 }: QuoteDraftSummaryProps) {
   const [isEditing, setIsEditing] = useState(false);
   // Track which material indices have been saved to catalog this session
@@ -367,6 +383,39 @@ export default function QuoteDraftSummary({
   const updateMaterial = (index: number, field: string, value: string | number | null) => {
     setEdited((prev) => {
       const materials = prev.materials.map((m, i) => i === index ? { ...m, [field]: value } : m);
+      return { ...prev, materials };
+    });
+  };
+  // PR2: catalog-swap. Replaces row[index]'s item, unit, price, description with a catalog
+  // item's values and flips the row to a catalog-substituted state. Auto-enters edit mode
+  // so the user can review and click Save to persist.
+  const swapMaterialWithCatalog = (index: number, catalog: CatalogItemRef) => {
+    if (!isEditing) setIsEditing(true);
+    setEdited((prev) => {
+      const materials = prev.materials.map((m, i) => {
+        if (i !== index) return m;
+        const previousItemName = m.item;
+        const catalogDesc = (catalog.description || "").trim();
+        const description = catalogDesc
+          ? `Replaces existing ${previousItemName} || ${catalogDesc}`
+          : `Replaces existing ${previousItemName}`;
+        const parsedRate = catalog.defaultRate != null ? parseFloat(catalog.defaultRate) : NaN;
+        const parsedCost = catalog.costPrice != null ? parseFloat(catalog.costPrice) : NaN;
+        const parsedInstall = catalog.installTimeHrs != null ? parseFloat(catalog.installTimeHrs) : NaN;
+        return {
+          ...m,
+          item: catalog.name,
+          description,
+          unit: catalog.unit || m.unit,
+          unitPrice: Number.isFinite(parsedRate) ? parsedRate : m.unitPrice,
+          costPrice: Number.isFinite(parsedCost) ? parsedCost : m.costPrice,
+          installTimeHrs: Number.isFinite(parsedInstall) ? parsedInstall : m.installTimeHrs,
+          catalogName: catalog.name,
+          passthrough: false,
+          substitutable: true,
+          estimated: false,
+        };
+      });
       return { ...prev, materials };
     });
   };
@@ -511,18 +560,68 @@ export default function QuoteDraftSummary({
     }
   };
 
-  const SourceBadge = ({ source, symbolCode, catalogName, estimated, isSaved }: { source: string; symbolCode?: string; catalogName?: string; estimated?: boolean; isSaved?: boolean }) => (
-    <span className="inline-flex items-center gap-1 flex-wrap">
-      {(source === "takeoff" || source === "containment") && symbolCode && (
-        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles[source].bg, color: sourceBadgeStyles[source].color }}>
-          {source === "takeoff" ? "Takeoff" : "Containment"}: {symbolCode}
+  const SourceBadge = ({ source, symbolCode, catalogName, estimated, isSaved, passthrough, substitutable }: { source: string; symbolCode?: string; catalogName?: string; estimated?: boolean; isSaved?: boolean; passthrough?: boolean; substitutable?: boolean | null }) => {
+    // PR2: new engine metadata takes precedence over legacy source-only inference.
+    // - passthrough === true  → render NO badge at all
+    // - substitutable === false → render BLUE "Client-Specific"
+    // - substitutable === true  → render GREEN "Catalog" (AI picked from user's catalog)
+    // - all PR2 fields undefined → fall through to the pre-PR2 rendering rules
+    if (passthrough === true) {
+      // Preserve takeoff symbolCode display on the off-chance a takeoff row is ever marked passthrough
+      return (
+        <span className="inline-flex items-center gap-1 flex-wrap">
+          {(source === "takeoff" || source === "containment") && symbolCode && (
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles[source].bg, color: sourceBadgeStyles[source].color }}>
+              {source === "takeoff" ? "Takeoff" : "Containment"}: {symbolCode}
+            </span>
+          )}
         </span>
-      )}
-      {(catalogName || isSaved) && (<span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles.catalog.bg, color: sourceBadgeStyles.catalog.color }}>Catalog</span>)}
-      {estimated && !catalogName && !isSaved && (<span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles.estimated.bg, color: sourceBadgeStyles.estimated.color }}>Estimated Price</span>)}
-      {source === "voice" && !symbolCode && !catalogName && !estimated && (<span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles.voice.bg, color: sourceBadgeStyles.voice.color }}>Voice</span>)}
-      {source === "document" && !symbolCode && !catalogName && !estimated && (<span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles.document.bg, color: sourceBadgeStyles.document.color }}>Document</span>)}
-    </span>
+      );
+    }
+    if (substitutable === false) {
+      return (
+        <span className="inline-flex items-center gap-1 flex-wrap">
+          {(source === "takeoff" || source === "containment") && symbolCode && (
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles[source].bg, color: sourceBadgeStyles[source].color }}>
+              {source === "takeoff" ? "Takeoff" : "Containment"}: {symbolCode}
+            </span>
+          )}
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles.clientSpecific.bg, color: sourceBadgeStyles.clientSpecific.color }}>Client-Specific</span>
+        </span>
+      );
+    }
+    if (substitutable === true) {
+      return (
+        <span className="inline-flex items-center gap-1 flex-wrap">
+          {(source === "takeoff" || source === "containment") && symbolCode && (
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles[source].bg, color: sourceBadgeStyles[source].color }}>
+              {source === "takeoff" ? "Takeoff" : "Containment"}: {symbolCode}
+            </span>
+          )}
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles.catalog.bg, color: sourceBadgeStyles.catalog.color }}>Catalog</span>
+        </span>
+      );
+    }
+    // Pre-PR2 fall-through: all three new fields undefined
+    return (
+      <span className="inline-flex items-center gap-1 flex-wrap">
+        {(source === "takeoff" || source === "containment") && symbolCode && (
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles[source].bg, color: sourceBadgeStyles[source].color }}>
+            {source === "takeoff" ? "Takeoff" : "Containment"}: {symbolCode}
+          </span>
+        )}
+        {(catalogName || isSaved) && (<span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles.catalog.bg, color: sourceBadgeStyles.catalog.color }}>Catalog</span>)}
+        {estimated && !catalogName && !isSaved && (<span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles.estimated.bg, color: sourceBadgeStyles.estimated.color }}>Estimated Price</span>)}
+        {source === "voice" && !symbolCode && !catalogName && !estimated && (<span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles.voice.bg, color: sourceBadgeStyles.voice.color }}>Voice</span>)}
+        {source === "document" && !symbolCode && !catalogName && !estimated && (<span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: sourceBadgeStyles.document.bg, color: sourceBadgeStyles.document.color }}>Document</span>)}
+      </span>
+    );
+  };
+
+  // PR2: missing-costs warning — count rows with no usable price
+  const missingPriceCount = useMemo(
+    () => data.materials.filter((m) => m.unitPrice == null || m.unitPrice === 0).length,
+    [data.materials]
   );
 
   if (isLoading) {
@@ -677,9 +776,27 @@ export default function QuoteDraftSummary({
           </div>
         )}
 
+        {/* PR2: Advisory banner — non-blocking "What I heard" from diagnoseEvidence */}
+        {advisoryUnderstood && (
+          <div className="px-4 py-3 rounded-lg" style={{ backgroundColor: "#f0fdfa", border: "1px solid #99f6e4" }}>
+            <p className="text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: brand.teal }}>What I heard</p>
+            <p className="text-sm" style={{ color: brand.navy, lineHeight: 1.6 }}>{advisoryUnderstood}</p>
+          </div>
+        )}
+
         {/* ======== UNIFIED LINE ITEMS ======== */}
         {(hasMaterials || isEditing) && (
           <div>
+            {/* PR2: Missing-costs warning — non-blocking, amber */}
+            {missingPriceCount > 0 && (
+              <div className="mb-2 px-3 py-2 rounded-lg flex items-start gap-2" style={{ backgroundColor: "#fffbeb", border: "1px solid #fde68a" }}>
+                <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: "#b45309" }} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold" style={{ color: "#b45309" }}>Missing Costs — {missingPriceCount} row{missingPriceCount === 1 ? "" : "s"} ha{missingPriceCount === 1 ? "s" : "ve"} no price set.</p>
+                  <p className="text-[11px]" style={{ color: "#92400e" }}>Add prices before generating your quote.</p>
+                </div>
+              </div>
+            )}
             <div className="flex items-center gap-2 mb-1.5">
               <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "#f0fdfa" }}>
                 <Package className="h-3.5 w-3.5" style={{ color: "#0d9488" }} />
@@ -714,7 +831,8 @@ export default function QuoteDraftSummary({
                         <div className="flex-1 min-w-0">
                           <input type="text" value={m.item} onChange={(e) => updateMaterial(i, "item", e.target.value)} className="w-full text-sm font-bold px-2.5 py-1.5 rounded-md outline-none focus:ring-1 focus:ring-teal-300" style={inputStyle} placeholder="Item name" />
                         </div>
-                        <SourceBadge source={m.source} symbolCode={m.symbolCode} catalogName={m.catalogName} estimated={m.estimated} isSaved={catalogSavedItems.has(i)} />
+                        <CatalogPicker catalogItems={catalogItems} onSelect={(cat) => swapMaterialWithCatalog(i, cat)} />
+                        <SourceBadge source={m.source} symbolCode={m.symbolCode} catalogName={m.catalogName} estimated={m.estimated} isSaved={catalogSavedItems.has(i)} passthrough={m.passthrough} substitutable={m.substitutable} />
                       </div>
                       {/* Row 2: description with format toolbar */}
                       <div className="ml-7 mb-2">
@@ -821,7 +939,8 @@ export default function QuoteDraftSummary({
                           <td className="py-2 px-2 align-top">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="text-[13px] font-semibold" style={{ color: brand.navy }}>{m.item}</span>
-                              <SourceBadge source={m.source} symbolCode={m.symbolCode} catalogName={m.catalogName} estimated={m.estimated} isSaved={catalogSavedItems.has(i)} />
+                              <SourceBadge source={m.source} symbolCode={m.symbolCode} catalogName={m.catalogName} estimated={m.estimated} isSaved={catalogSavedItems.has(i)} passthrough={m.passthrough} substitutable={m.substitutable} />
+                              <CatalogPicker catalogItems={catalogItems} onSelect={(cat) => swapMaterialWithCatalog(i, cat)} />
                               {m.estimated && !m.catalogName && !catalogSavedItems.has(i) && (
                                 <button
                                   onClick={() => handleAddToCatalog(m, i)}
@@ -1107,6 +1226,89 @@ export default function QuoteDraftSummary({
         </div>
       )}
     </div>
+  );
+}
+
+// ── CatalogPicker (PR2) ─────────────────────────────────────────────────────
+// Compact "Change…" button that opens a searchable popover listing the user's
+// catalog items. On select, calls onSelect(catalogItem) — the parent handles
+// swapping the row in place. Used on every material row in both read-only
+// and editing modes. In read-only mode, the parent's onSelect auto-enters
+// edit mode so the user can click Save to persist.
+function CatalogPicker({ catalogItems, onSelect }: { catalogItems: CatalogItemRef[]; onSelect: (item: CatalogItemRef) => void }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return catalogItems;
+    return catalogItems.filter((c) => {
+      const name = (c.name || "").toLowerCase();
+      const desc = (c.description || "").toLowerCase();
+      const cat = (c.category || "").toLowerCase();
+      return name.includes(q) || desc.includes(q) || cat.includes(q);
+    });
+  }, [catalogItems, query]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      const target = e.target as Element | null;
+      if (target && !target.closest("[data-catalog-picker-root]")) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open]);
+
+  if (!catalogItems || catalogItems.length === 0) return null;
+
+  return (
+    <span className="relative inline-block" data-catalog-picker-root>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        className="text-[9px] font-bold px-1.5 py-0.5 rounded border transition-colors hover:opacity-80"
+        style={{ backgroundColor: "#f0fdfa", color: "#0d9488", borderColor: "#99f6e4" }}
+        title="Replace this row with an item from your catalog"
+      >Change…</button>
+      {open && (
+        <div className="absolute right-0 z-50 mt-1 bg-white rounded-lg shadow-xl" style={{ width: 320, maxHeight: 360, border: `1px solid ${brand.border}`, overflow: "hidden" }}>
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search catalog…"
+            autoFocus
+            className="w-full text-sm px-2.5 py-2 outline-none"
+            style={{ borderBottom: `1px solid ${brand.borderLight}`, color: brand.navy }}
+          />
+          <div className="overflow-y-auto" style={{ maxHeight: 300 }}>
+            {filtered.length === 0 ? (
+              <div className="px-3 py-4 text-xs text-center" style={{ color: brand.navyMuted }}>No catalog items match</div>
+            ) : (
+              filtered.map((cat, idx) => {
+                const rate = cat.defaultRate ? `£${cat.defaultRate}` : "—";
+                const unit = cat.unit || "each";
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => { onSelect(cat); setOpen(false); setQuery(""); }}
+                    className="w-full text-left px-2.5 py-1.5 transition-colors hover:bg-teal-50"
+                    style={{ borderBottom: `1px solid ${brand.borderLight}` }}
+                  >
+                    <div className="text-xs font-bold" style={{ color: brand.navy }}>{cat.name}</div>
+                    <div className="text-[10px] flex items-center gap-1.5" style={{ color: brand.navyMuted }}>
+                      <span>{rate} / {unit}</span>
+                      {cat.category && <span>• {cat.category}</span>}
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </span>
   );
 }
 

@@ -149,6 +149,9 @@ export default function QuoteWorkspace() {
     understood: string;
     clarificationQuestion: string;
   } | null>(null);
+  // PR2: advisory "What I heard" string captured from diagnoseEvidence; surfaced as
+  // a non-blocking banner above the QDS. Replaces the old canQuote:false hard-block.
+  const [advisoryUnderstood, setAdvisoryUnderstood] = useState<string | null>(null);
   // User overrides for takeoff material quantities/names (persists across re-merges)
   const [takeoffOverrides, setTakeoffOverrides] = useState<Record<string, { quantity?: number; item?: string; unitPrice?: number | null; installTimeHrs?: number | null }>>({}); 
 
@@ -605,19 +608,14 @@ export default function QuoteWorkspace() {
     try {
       setIsSummaryLoading(true);
       setClarificationState(null); // Reset any prior clarification state
+      setAdvisoryUnderstood(null); // PR2: reset advisory banner on each analysis
 
-      // ── Stage 1: Diagnosis gate (skip on re-run after clarification) ──────
+      // ── Stage 1: Diagnosis is ADVISORY ONLY (PR2) — never blocks. ─────────
+      // Capture `understood` for display as a banner above the QDS; the engine
+      // always runs and populates the QDS regardless of canQuote.
       if (!skipDiagnosis) {
         const diagnosis = await diagnoseEvidence.mutateAsync({ quoteId });
-        if (!diagnosis.canQuote) {
-          // Surface the diagnosis to the user — don't proceed to parseDictationSummary
-          setClarificationState({
-            understood: diagnosis.understood || "",
-            clarificationQuestion: diagnosis.clarificationQuestion || "Can you tell me what you're quoting for — the job type, client, and rough scope?",
-          });
-          setIsSummaryLoading(false);
-          return;
-        }
+        setAdvisoryUnderstood(diagnosis.understood || null);
       }
 
       // ── Stage 2: Full analysis — happy path unchanged ─────────────────────
@@ -2225,6 +2223,7 @@ export default function QuoteWorkspace() {
                 installTimeHrs: c.installTimeHrs,
                 unit: c.unit,
                 category: c.category,
+                description: c.description,
               }))}
               defaultMarkup={(() => {
                 // Extract materialMarkup from org profile settings
@@ -2334,6 +2333,7 @@ export default function QuoteWorkspace() {
               }}
               onTriggerVoiceAnalysis={triggerVoiceAnalysis}
               clarificationState={clarificationState}
+              advisoryUnderstood={advisoryUnderstood}
               onClarificationReply={async (reply: string) => {
                 // Append user's reply as synthetic evidence then re-run analysis (skip diagnosis)
                 await addClarificationInput.mutateAsync({ quoteId, clarification: reply });
