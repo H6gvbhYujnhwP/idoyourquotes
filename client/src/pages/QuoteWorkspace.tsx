@@ -1,78 +1,90 @@
-import { useAuth } from "@/_core/hooks/useAuth";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
+/**
+ * QuoteWorkspace.tsx — unified quote workspace (Beta-1)
+ *
+ * Single-screen, two-click, auto-saved flow replacing the old three-state
+ * pipeline (upload → QDS → edit → Generate Quote → lineItems → PDF).
+ *
+ * Routing context: QuoteRouter decides between this workspace and
+ * ElectricalWorkspace based on tradePreset === "electrical". This
+ * workspace handles all other sectors (IT, marketing, cleaning, pest
+ * control) in simple mode only.
+ *
+ * Two states:
+ *   State 1 (lineItems.length === 0): Evidence gathering. User adds
+ *     evidence (uploads, pasted text, dictation) on the left; right
+ *     panel shows a centred "Generate Quote" button.
+ *   State 2 (lineItems.length > 0): Quote editing. Left panel unchanged;
+ *     right panel shows quote header, editable job description, line
+ *     items table, and "Generate PDF" footer.
+ *
+ * Auto-save: every field edit flows through a short debounce. The header
+ * "All changes saved" indicator reflects pending/in-flight work.
+ *
+ * Highlighting (evidence ↔ line item): backed by sourceInputMap returned
+ * from generateDraft. Held in React state only for this session; Beta-2
+ * will persist to quote_line_items.source_input_ids.
+ *
+ * Fallback: if quoteMode === "comprehensive" and tradePreset !==
+ * "electrical", renders a "coming in a future update" card. The old
+ * comprehensive tabs for non-electrical sectors are deprecated pending
+ * the tender-quote feature (future PR).
+ *
+ * Components ported from the retiring QuoteDraftSummary.tsx:
+ *   - SourceBadge (src/components/SourceBadge.tsx)
+ *   - CatalogPicker (src/components/CatalogPicker.tsx)
+ *
+ * Beta-1 simplification on pricingType: the current enum is
+ * ("standard" | "monthly" | "annual" | "optional") — we expose all four
+ * as a single "Type" dropdown. Beta-2 splits "optional" into its own
+ * boolean column and renames "standard" → "one_off"; the UI will then
+ * grow a separate Optional checkbox alongside a three-value Type.
+ */
+
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useLocation, useParams } from "wouter";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   ArrowLeft,
   Upload,
-  Brain,
-  Calculator,
   FileText,
-  Plus,
-  Trash2,
-  Save,
-  Send,
-  Download,
-  Loader2,
-  FileImage,
   Mic,
-  Mail,
-  X,
-  Check,
-  AlertTriangle,
-  ExternalLink,
-  Package,
   Sparkles,
-  HelpCircle,
-  AlertOctagon,
-  ListChecks,
-  PoundSterling,
-  Wrench,
-  MessageSquare,
-  Clock,
-  HardHat,
-  FolderOpen,
-  Layers,
-  Shield,
-  ChevronRight,
-  ArrowRight,
-  CheckCircle,
-  FileSpreadsheet,
-  RefreshCw,
+  Loader2,
+  Trash2,
+  Plus,
+  Download,
   AlertCircle,
+  Clock,
+  Info,
 } from "lucide-react";
-import { useLocation, useParams } from "wouter";
-import { useState, useEffect, useRef } from "react";
-import { toast } from "sonner";
-import { cn } from "@/lib/utils";
-import { Progress } from "@/components/ui/progress";
-import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
-import { Separator } from "@/components/ui/separator";
-import TimelineTab from "@/components/comprehensive/TimelineTab";
-import SiteQualityTab from "@/components/comprehensive/SiteQualityTab";
-import DocumentsTab from "@/components/comprehensive/DocumentsTab";
-import DictationButton, { type DictationCommand } from "@/components/DictationButton";
-import QuoteDraftSummary, { type QuoteDraftData, renderDescNode } from "@/components/QuoteDraftSummary";
-import InputsPanel from "@/components/InputsPanel";
-import FileIcon from "@/components/FileIcon";
-import { brand, symbolColors } from "@/lib/brandTheme";
-import TakeoffPanel from "@/components/TakeoffPanel";
+import DictationButton from "@/components/DictationButton";
+import CatalogPicker, { type CatalogItemRef } from "@/components/CatalogPicker";
+import MissingCostsModal from "@/components/MissingCostsModal";
+import { useAutoSave } from "@/hooks/useAutoSave";
+import { brand } from "@/lib/brandTheme";
 
-type QuoteStatus = "draft" | "sent" | "accepted" | "declined";
+// ─── Types ────────────────────────────────────────────────────────────────
 
 interface LineItem {
   id: number;
-  description: string;
+  description: string | null;
   quantity: string | null;
   unit: string | null;
   rate: string | null;
   total: string | null;
   pricingType: string | null;
+  sortOrder: number;
 }
 
 interface QuoteInput {
@@ -80,3270 +92,1511 @@ interface QuoteInput {
   inputType: string;
   filename: string | null;
   fileUrl: string | null;
-  fileKey: string | null;
   content: string | null;
   mimeType: string | null;
-  createdAt: Date;
-  processedContent: string | null;
   processingStatus: string | null;
   processingError: string | null;
+  createdAt: Date | string;
 }
 
-const statusConfig: Record<QuoteStatus, { label: string; className: string }> = {
-  draft: { label: "Draft", className: "status-draft" },
-  sent: { label: "Sent", className: "status-sent" },
-  accepted: { label: "Accepted", className: "status-accepted" },
-  declined: { label: "Declined", className: "status-declined" },
-};
+// ─── Helpers ──────────────────────────────────────────────────────────────
 
-// File type configurations
-const fileTypeConfig = {
-  pdf: {
-    accept: ".pdf",
-    mimeTypes: ["application/pdf"],
-    maxSize: 20 * 1024 * 1024, // 20MB
-  },
-  image: {
-    accept: ".jpg,.jpeg,.png,.gif,.webp,.bmp",
-    mimeTypes: ["image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp"],
-    maxSize: 10 * 1024 * 1024, // 10MB
-  },
-  audio: {
-    accept: ".mp3,.wav,.m4a,.ogg,.webm",
-    mimeTypes: ["audio/mpeg", "audio/wav", "audio/mp4", "audio/ogg", "audio/webm"],
-    maxSize: 50 * 1024 * 1024, // 50MB
-  },
-  document: {
-    accept: ".pdf,.doc,.docx,.xls,.xlsx,.csv",
-    mimeTypes: [
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.ms-excel",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "text/csv",
-      "application/csv"
-    ],
-    maxSize: 20 * 1024 * 1024, // 20MB
-  },
-};
+function fmtGBP(n: number): string {
+  if (!Number.isFinite(n)) return "£0.00";
+  return `£${n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+}
+
+function parseNum(s: string | null | undefined): number {
+  if (s == null) return 0;
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : 0;
+}
+
+type DisplayType = "one_off" | "monthly" | "annual" | "optional";
+function uiTypeFromPricing(pt: string | null | undefined): DisplayType {
+  if (pt === "monthly") return "monthly";
+  if (pt === "annual") return "annual";
+  if (pt === "optional") return "optional";
+  return "one_off";
+}
+function pricingFromUiType(
+  t: DisplayType,
+): "standard" | "monthly" | "annual" | "optional" {
+  // Beta-1 adapter: UI "one_off" → current enum "standard". Beta-2 renames.
+  if (t === "monthly") return "monthly";
+  if (t === "annual") return "annual";
+  if (t === "optional") return "optional";
+  return "standard";
+}
+
+function inputVisual(
+  inp: QuoteInput,
+): { bg: string; color: string; label: string } {
+  const isVoiceNote = inp.inputType === "audio" && inp.content && !inp.fileUrl;
+  if (isVoiceNote) return { bg: "#fef3c7", color: "#b45309", label: "VOICE" };
+  if (inp.inputType === "pdf") return { bg: "#f0fdfa", color: "#0d9488", label: "PDF" };
+  if (inp.inputType === "image") return { bg: "#eff6ff", color: "#3b82f6", label: "IMG" };
+  if (inp.inputType === "audio") return { bg: "#fef3c7", color: "#b45309", label: "AUDIO" };
+  if (inp.inputType === "email") return { bg: "#f5f3ff", color: "#8b5cf6", label: "EML" };
+  return { bg: "#eff6ff", color: "#3b82f6", label: "TXT" };
+}
+
+function inputTitle(inp: QuoteInput): string {
+  if (inp.filename) return inp.filename;
+  if (inp.inputType === "audio" && inp.content && !inp.fileUrl) return "Voice note";
+  if (inp.inputType === "text") return "Text note";
+  return "Evidence";
+}
+
+function inputSubtitle(inp: QuoteInput): string {
+  if (inp.processingStatus === "processing") return "Analysing…";
+  if (inp.processingStatus === "failed" || inp.processingStatus === "error") {
+    return "Analysis failed";
+  }
+  if (inp.inputType === "audio" && inp.content && !inp.fileUrl) return "Dictated";
+  if (inp.inputType === "pdf") return "PDF document";
+  if (inp.inputType === "image") return "Image";
+  if (inp.inputType === "audio") return "Audio recording";
+  if (inp.inputType === "text") return "Pasted text";
+  return inp.inputType;
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // result is "data:<mime>;base64,<data>" — strip the prefix
+      const comma = result.indexOf(",");
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error || new Error("Read failed"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function detectInputType(
+  file: File,
+): "pdf" | "image" | "audio" | "document" | "email" {
+  const mt = file.type || "";
+  if (mt === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+    return "pdf";
+  }
+  if (mt.startsWith("image/")) return "image";
+  if (mt.startsWith("audio/")) return "audio";
+  if (
+    mt === "message/rfc822" ||
+    file.name.toLowerCase().endsWith(".eml") ||
+    file.name.toLowerCase().endsWith(".msg")
+  ) {
+    return "email";
+  }
+  return "document";
+}
+
+// ─── Main component ───────────────────────────────────────────────────────
 
 export default function QuoteWorkspace() {
   const params = useParams<{ id: string }>();
-  const quoteId = parseInt(params.id || "0");
+  const quoteId = parseInt(params.id || "0", 10);
   const [, setLocation] = useLocation();
-  const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState("inputs");
-  const [isSaving, setIsSaving] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadingType, setUploadingType] = useState<string | null>(null);
-  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
-  const [termsModified, setTermsModified] = useState(false);
-  const [originalTerms, setOriginalTerms] = useState("");
-  const [voiceNoteCount, setVoiceNoteCount] = useState(0);
-  const [selectedInputId, setSelectedInputId] = useState<number | null>(null);
-  const [isDictating, setIsDictating] = useState(false);
-  const [voiceSummary, setVoiceSummary] = useState<QuoteDraftData | null>(null);
-  const [isSummaryLoading, setIsSummaryLoading] = useState(false);
-  const [clarificationState, setClarificationState] = useState<{
-    understood: string;
-    clarificationQuestion: string;
-  } | null>(null);
-  // PR2: advisory "What I heard" string captured from diagnoseEvidence; surfaced as
-  // a non-blocking banner above the QDS. Replaces the old canQuote:false hard-block.
-  const [advisoryUnderstood, setAdvisoryUnderstood] = useState<string | null>(null);
-  // User overrides for takeoff material quantities/names (persists across re-merges)
-  const [takeoffOverrides, setTakeoffOverrides] = useState<Record<string, { quantity?: number; item?: string; unitPrice?: number | null; installTimeHrs?: number | null }>>({}); 
 
-  // File input refs (legacy single-file refs kept for backward compat)
-  const pdfInputRef = useRef<HTMLInputElement>(null);
-  const imageInputRef = useRef<HTMLInputElement>(null);
-  const audioInputRef = useRef<HTMLInputElement>(null);
-  const documentInputRef = useRef<HTMLInputElement>(null);
-
-  // Multi-file upload state
-  const multiFileInputRef = useRef<HTMLInputElement>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [uploadQueue, setUploadQueue] = useState<Array<{
-    id: string;
-    file: File;
-    status: "pending" | "uploading" | "processing" | "completed" | "error";
-    progress: number;
-    error?: string;
-    isRateLimitError?: boolean;
-    inputId?: number;
-  }>>([]); 
-
-  // Form state
-  const [title, setTitle] = useState("");
-  const [clientName, setClientName] = useState("");
-  const [contactName, setContactName] = useState("");
-  const [clientEmail, setClientEmail] = useState("");
-  const [clientPhone, setClientPhone] = useState("");
-  const [clientAddress, setClientAddress] = useState("");
-  const [description, setDescription] = useState("");
-  const [terms, setTerms] = useState("");
-  const [taxRate, setTaxRate] = useState("0");
-
-  // Internal estimate state
-  const [internalNotes, setInternalNotes] = useState("");
-  const [riskNotes, setRiskNotes] = useState("");
-
-  // Tender context state
-  const [tenderNotes, setTenderNotes] = useState("");
-  const [assumptions, setAssumptions] = useState("");   // one item per line
-  const [exclusions, setExclusions] = useState("");     // one item per line
-
-  // New line item state
-  const [newItemDescription, setNewItemDescription] = useState("");
-  const [newItemQuantity, setNewItemQuantity] = useState("1");
-  const [newItemUnit, setNewItemUnit] = useState("each");
-  const [newItemRate, setNewItemRate] = useState("");
-
-  // New text input state
-  const [newTextInput, setNewTextInput] = useState("");
-  const [textInputId, setTextInputId] = useState<number | null>(null);
-  const [isAnalysingText, setIsAnalysingText] = useState(false);
-
-  // Catalog picker state
-  const [showCatalogPicker, setShowCatalogPicker] = useState(false);
-
-  // AI Assistant state
-  const [aiResponse, setAiResponse] = useState<string | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [customPrompt, setCustomPrompt] = useState("");
-
-  // Generate Draft state
-  const [userPrompt, setUserPrompt] = useState(""); // For pasting email/instructions
-  const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
-  const [processingInputId, setProcessingInputId] = useState<number | null>(null);
-
-  // Generate Email modal state
-  const [showEmailModal, setShowEmailModal] = useState(false);
-  const [isGeneratingEmail, setIsGeneratingEmail] = useState(false);
-  const [emailSubject, setEmailSubject] = useState("");
-  const [emailHtmlBody, setEmailHtmlBody] = useState("");
-  const [emailTextBody, setEmailTextBody] = useState("");
-
-  // Track if any inputs are currently processing for auto-refresh
-  const [hasProcessingInputs, setHasProcessingInputs] = useState(false);
-
-  const { data: fullQuote, isLoading, error, refetch } = trpc.quotes.getFull.useQuery(
+  // ── Queries ──
+  const {
+    data: fullQuote,
+    isLoading,
+    refetch,
+  } = trpc.quotes.getFull.useQuery(
     { id: quoteId },
-    { 
-      enabled: quoteId > 0,
-      retry: 1,
-      // Poll every 3 seconds when there are inputs being processed
-      refetchInterval: hasProcessingInputs ? 3000 : false,
-    }
+    { enabled: quoteId > 0 },
+  );
+  const { data: catalogItemsRaw } = trpc.catalog.list.useQuery();
+
+  const quote = (fullQuote?.quote ?? null) as Record<string, unknown> | null;
+  const inputs = useMemo<QuoteInput[]>(
+    () => ((fullQuote?.inputs || []) as unknown) as QuoteInput[],
+    [fullQuote?.inputs],
+  );
+  const lineItems = useMemo<LineItem[]>(
+    () => ((fullQuote?.lineItems || []) as unknown) as LineItem[],
+    [fullQuote?.lineItems],
+  );
+  const catalogItems = useMemo<CatalogItemRef[]>(
+    () => ((catalogItemsRaw || []) as unknown) as CatalogItemRef[],
+    [catalogItemsRaw],
   );
 
-  // Update processing state whenever fullQuote changes
-  // Auto-trigger DQS analysis when input processing completes — but ONLY on first-ever analysis
-  const prevProcessingRef = useRef(false);
-  useEffect(() => {
-    if (fullQuote?.inputs) {
-      const isProcessing = fullQuote.inputs.some(
-        (input: QuoteInput) => input.processingStatus === "processing"
-      );
-      const wasProcessing = prevProcessingRef.current;
-      prevProcessingRef.current = isProcessing;
-      setHasProcessingInputs(isProcessing);
+  // ── Derived ──
+  const isComprehensive = (quote as any)?.quoteMode === "comprehensive";
+  const tradePreset = ((quote as any)?.tradePreset as string | null) || null;
+  const showFallback = isComprehensive && tradePreset !== "electrical";
+  const isState2 = lineItems.length > 0;
 
-      // When processing just finished (was processing → no longer processing)
-      // Auto-trigger QDS analysis ONLY if QDS has never been saved
-      const hasSavedQDS = !!(fullQuote?.quote as any)?.qdsSummaryJson;
-      if (wasProcessing && !isProcessing && fullQuote.inputs.length > 0 && !hasSavedQDS && !voiceSummary) {
-        const hasCompletedInputs = fullQuote.inputs.some(
-          (input: QuoteInput) => input.processingStatus === "completed"
-        );
-        if (hasCompletedInputs) {
-          setTimeout(() => triggerVoiceAnalysis(), 500);
-        }
-      }
-    }
-  }, [fullQuote?.inputs]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const { data: storageStatus } = trpc.inputs.storageStatus.useQuery();
-
-  // Fetch org profile for default markup and company settings
-  const { data: orgProfile } = trpc.auth.orgProfile.useQuery();
-
-  // Fetch catalog items for quick-add
-  const { data: catalogItems } = trpc.catalog.list.useQuery();
-
-  // Fetch takeoff data for all inputs on this quote
-  const { data: takeoffList, refetch: refetchTakeoffs } = trpc.electricalTakeoff.list.useQuery(
-    { quoteId },
-    {
-      enabled: quoteId > 0,
-      refetchInterval: 3000, // Poll every 3s to catch takeoff updates
-      refetchOnWindowFocus: true,
-    }
+  // ── Session state ──
+  const [sourceInputMap, setSourceInputMap] = useState<Record<number, number[]>>(
+    {},
   );
+  const [activeInputId, setActiveInputId] = useState<number | null>(null);
+  const [activeLineItemId, setActiveLineItemId] = useState<number | null>(null);
+  const [pasteText, setPasteText] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [showMissingCostsModal, setShowMissingCostsModal] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Fetch containment takeoff data
-  const { data: containmentList, refetch: refetchContainment } = trpc.containmentTakeoff.list.useQuery(
-    { quoteId },
-    {
-      enabled: quoteId > 0,
-      refetchInterval: 5000,
-      refetchOnWindowFocus: true,
-    }
-  );
-
-  // Helper to find takeoff for a specific input
-  const getTakeoffForInput = (inputId: number) => {
-    if (!takeoffList) return null;
-    return (takeoffList as any[]).find((t: any) => t.inputId === inputId) || null;
-  };
-
-  // Helper to find containment takeoff for a specific input
-  const getContainmentForInput = (inputId: number) => {
-    if (!containmentList) return null;
-    return (containmentList as any[]).find((t: any) => t.inputId === inputId) || null;
-  };
-
-  const updateQuote = trpc.quotes.update.useMutation({
-    onSuccess: () => {
-      toast.success("Quote saved");
-      refetch();
-    },
-    onError: (error) => {
-      toast.error("Failed to save: " + error.message);
-    },
-  });
-
-  const createLineItem = trpc.lineItems.create.useMutation({
-    onSuccess: () => {
-      setNewItemDescription("");
-      setNewItemQuantity("1");
-      setNewItemUnit("each");
-      setNewItemRate("");
-      refetch();
-    },
-    onError: (error) => {
-      toast.error("Failed to add item: " + error.message);
-    },
-  });
-
-  const deleteLineItem = trpc.lineItems.delete.useMutation({
-    onSuccess: () => refetch(),
-    onError: (error) => toast.error("Failed to delete: " + error.message),
-  });
-
-  const updateLineItem = trpc.lineItems.update.useMutation({
-    onSuccess: () => refetch(),
-    onError: (error) => toast.error("Failed to update: " + error.message),
-  });
-
-  const updateProfile = trpc.auth.updateProfile.useMutation({
-    onSuccess: () => {
-      toast.success("Default T&C saved to your profile");
-      setTermsModified(false);
-      setOriginalTerms(terms);
-    },
-    onError: (error) => toast.error("Failed to save default T&C: " + error.message),
-  });
-
-  // State for inline editing
-  const [editingItemId, setEditingItemId] = useState<number | null>(null);
-  const [editingField, setEditingField] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState<string>("");
-
-  const handleStartEdit = (itemId: number, field: string, currentValue: string) => {
-    setEditingItemId(itemId);
-    setEditingField(field);
-    setEditValue(currentValue || "");
-  };
-
-  const handleSaveEdit = (itemId: number, field: string) => {
-    const updateData: any = {
-      id: itemId,
-      quoteId,
-    };
-    updateData[field] = editValue;
-    updateLineItem.mutate(updateData);
-    setEditingItemId(null);
-    setEditingField(null);
-    setEditValue("");
-  };
-
-  const handleCancelEdit = () => {
-    setEditingItemId(null);
-    setEditingField(null);
-    setEditValue("");
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent, itemId: number, field: string) => {
-    if (e.key === "Enter") {
-      handleSaveEdit(itemId, field);
-    } else if (e.key === "Escape") {
-      handleCancelEdit();
-    }
-  };
-
+  // ── Mutations — evidence ──
   const createInput = trpc.inputs.create.useMutation({
-    onSuccess: (data) => {
-      // If this was a text input, track its ID for editing
-      if (data && (data as any).id && (data as any).inputType === "text") {
-        setTextInputId((data as any).id);
-      }
-      refetch();
-    },
-    onError: (error) => toast.error("Failed to add input: " + error.message),
+    onSuccess: () => void refetch(),
   });
-
-  const updateInputContent = trpc.inputs.updateContent.useMutation({
-    onSuccess: () => refetch(),
-    onError: (error) => toast.error("Failed to update: " + error.message),
-  });
-
   const uploadFile = trpc.inputs.uploadFile.useMutation({
-    onSuccess: () => {
-      refetch();
-    },
-    onError: (error) => {
-      toast.error("Upload failed: " + error.message);
-    },
+    onSuccess: () => void refetch(),
   });
-
   const deleteInput = trpc.inputs.delete.useMutation({
-    onSuccess: async () => {
-      await refetch();
-      refetchTakeoffs();
-      hasRehydratedRef.current = false;
-      triggerVoiceAnalysis();
-    },
-    onError: (error) => toast.error("Failed to delete: " + error.message),
+    onSuccess: () => void refetch(),
   });
 
-  const setReferenceOnly = trpc.inputs.setReferenceOnly.useMutation({
-    onSuccess: async (_, variables) => {
-      // Refetch inputs and takeoffs so UI reflects updated mimeType and re-run takeoffs
-      await refetch();
-      refetchTakeoffs();
-      // Re-run QDS so it reflects the legend exclusion — don't clear voiceSummary
-      // first, so the screen doesn't flash blank while waiting for fresh analysis
-      hasRehydratedRef.current = false;
-      triggerVoiceAnalysis();
-      if (variables.isReference) {
-        toast.success("Legend marked — re-analysing without it");
-      } else {
-        toast.success("Reference-only removed — re-analysing");
-      }
-    },
-    onError: (error) => toast.error("Failed to update: " + error.message),
-  });
-
-  const upsertTenderContext = trpc.tenderContext.upsert.useMutation({
-    onSuccess: () => {
-      toast.success("Interpretation saved");
-      refetch();
-    },
-    onError: (error) => toast.error("Failed to save: " + error.message),
-  });
-
-  const upsertInternalEstimate = trpc.internalEstimate.upsert.useMutation({
-    onSuccess: () => {
-      toast.success("Internal estimate saved");
-      refetch();
-    },
-    onError: (error) => toast.error("Failed to save: " + error.message),
-  });
-
+  // ── Mutations — quote flow ──
+  const parseDictation = trpc.ai.parseDictationSummary.useMutation();
+  const generateDraft = trpc.ai.generateDraft.useMutation();
+  const updateQuote = trpc.quotes.update.useMutation();
   const updateStatus = trpc.quotes.updateStatus.useMutation({
-    onSuccess: (data) => {
-      toast.success(`Quote marked as ${data.status}`);
-      refetch();
-    },
-    onError: (error) => toast.error("Failed to update status: " + error.message),
+    onSuccess: () => void refetch(),
   });
-
-  const askAI = trpc.ai.askAboutQuote.useMutation({
-    onMutate: () => {
-      setAiLoading(true);
-      setAiResponse(null);
-    },
-    onSuccess: (data) => {
-      setAiResponse(data.response);
-      setAiLoading(false);
-    },
-    onError: (error) => {
-      toast.error("AI request failed: " + error.message);
-      setAiLoading(false);
-    },
-  });
-
-  const handleAskAI = (promptType: "missed" | "risks" | "assumptions" | "pricing" | "issues" | "custom") => {
-    askAI.mutate({
-      quoteId,
-      promptType,
-      customPrompt: promptType === "custom" ? customPrompt : undefined,
-    });
-  };
-
-  // AI Processing mutations
-  const transcribeAudio = trpc.inputs.transcribeAudio.useMutation({
-    onMutate: ({ inputId }) => {
-      setProcessingInputId(inputId);
-    },
-    onSuccess: (data) => {
-      toast.success("Audio transcribed successfully");
-      setProcessingInputId(null);
-      refetch();
-    },
-    onError: (error) => {
-      toast.error("Transcription failed: " + error.message);
-      setProcessingInputId(null);
-    },
-  });
-
-  const extractPdfText = trpc.inputs.extractPdfText.useMutation({
-    onMutate: ({ inputId }) => {
-      setProcessingInputId(inputId);
-    },
-    onSuccess: () => {
-      toast.success("PDF text extracted successfully");
-      setProcessingInputId(null);
-      refetch();
-    },
-    onError: (error) => {
-      toast.error("PDF extraction failed: " + error.message);
-      setProcessingInputId(null);
-    },
-  });
-
-  const analyzeImage = trpc.inputs.analyzeImage.useMutation({
-    onMutate: ({ inputId }) => {
-      setProcessingInputId(inputId);
-    },
-    onSuccess: () => {
-      toast.success("Image analyzed successfully");
-      setProcessingInputId(null);
-      refetch();
-    },
-    onError: (error) => {
-      toast.error("Image analysis failed: " + error.message);
-      setProcessingInputId(null);
-    },
-  });
-
-  const generateDraft = trpc.ai.generateDraft.useMutation({
-    onMutate: () => {
-      setIsGeneratingDraft(true);
-    },
-    onSuccess: () => {
-      toast.success("Quote draft generated! Review the Quote tab.");
-      setIsGeneratingDraft(false);
-      setActiveTab("quote");
-      refetch();
-    },
-    onError: (error) => {
-      toast.error("Draft generation failed: " + error.message);
-      setIsGeneratingDraft(false);
-    },
-  });
-
   const generatePDF = trpc.quotes.generatePDF.useMutation();
 
-  // Trade relevance pre-check (Option A guardrail)
-  const diagnoseEvidence = trpc.ai.diagnoseEvidence.useMutation();
-  const addClarificationInput = trpc.ai.addClarificationInput.useMutation();
-
-  // Dictation summary parser (Option C)
-  const parseDictationSummary = trpc.ai.parseDictationSummary.useMutation();
-  const saveVoiceNoteSummary = trpc.ai.saveVoiceNoteSummary.useMutation();
-
-  const generateEmail = trpc.quotes.generateEmail.useMutation({
-    onMutate: () => {
-      setIsGeneratingEmail(true);
-    },
-    onSuccess: (data) => {
-      setEmailSubject(data.subject);
-      setEmailHtmlBody(data.htmlBody);
-      setEmailTextBody(data.textBody);
-      setIsGeneratingEmail(false);
-      setShowEmailModal(true);
-    },
-    onError: (error) => {
-      toast.error("Email generation failed: " + error.message);
-      setIsGeneratingEmail(false);
-    },
+  // ── Mutations — line items ──
+  const createLineItem = trpc.lineItems.create.useMutation({
+    onSuccess: () => void refetch(),
+  });
+  const updateLineItem = trpc.lineItems.update.useMutation();
+  const deleteLineItem = trpc.lineItems.delete.useMutation({
+    onSuccess: () => void refetch(),
   });
 
-  const handleProcessInput = (input: QuoteInput) => {
-    if (input.inputType === "audio") {
-      transcribeAudio.mutate({ inputId: input.id, quoteId });
-    } else if (input.inputType === "pdf") {
-      // PDF files → Claude/OpenAI vision extraction
-      extractPdfText.mutate({ inputId: input.id, quoteId });
-    } else if (input.inputType === "document") {
-      // Word/Excel documents are already parsed on upload — their processedContent is stored.
-      // Re-analyse just needs to re-run QDS analysis on existing extracted content.
-      triggerVoiceAnalysis();
-    } else if (input.inputType === "image") {
-      analyzeImage.mutate({ inputId: input.id, quoteId });
+  // Refetch once after any line-item update settles (for totals)
+  const refetchAfterUpdate = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleRefetch = useCallback(() => {
+    if (refetchAfterUpdate.current) clearTimeout(refetchAfterUpdate.current);
+    refetchAfterUpdate.current = setTimeout(() => void refetch(), 600);
+  }, [refetch]);
+  useEffect(() => {
+    return () => {
+      if (refetchAfterUpdate.current) clearTimeout(refetchAfterUpdate.current);
+    };
+  }, []);
+
+  // ── Auto-save for the quote-level fields ──
+  const quoteSaveFn = useCallback(
+    async (patch: {
+      clientName?: string;
+      description?: string;
+      title?: string;
+    }) => {
+      await updateQuote.mutateAsync({ id: quoteId, ...patch });
+    },
+    [quoteId, updateQuote],
+  );
+  const quoteAutoSave = useAutoSave<{
+    clientName?: string;
+    description?: string;
+    title?: string;
+  }>(quoteSaveFn, 500);
+
+  // Aggregate "any pending autosave work" indicator
+  const anySaving =
+    quoteAutoSave.isPending ||
+    updateLineItem.isPending ||
+    deleteLineItem.isPending;
+
+  // ── Totals ──
+  const totals = useMemo(() => {
+    let oneOff = 0;
+    let monthly = 0;
+    let annual = 0;
+    let optional = 0;
+    for (const li of lineItems) {
+      const total =
+        parseNum(li.total) || parseNum(li.quantity) * parseNum(li.rate);
+      const pt = li.pricingType || "standard";
+      if (pt === "monthly") monthly += total;
+      else if (pt === "annual") annual += total;
+      else if (pt === "optional") optional += total;
+      else oneOff += total;
     }
-  };
+    return { oneOff, monthly, annual, optional };
+  }, [lineItems]);
 
-  const handleGenerateDraft = async () => {
-    // Check if line items already exist - show confirmation dialog
-    if (lineItems && lineItems.length > 0) {
-      if (!window.confirm("This will replace all existing line items. Continue?")) {
-        return;
-      }
+  // ── Highlighting derived sets ──
+  const highlightedLineItemIds = useMemo<Set<number>>(() => {
+    if (activeInputId == null) return new Set<number>();
+    const s = new Set<number>();
+    for (const [lidStr, ids] of Object.entries(sourceInputMap)) {
+      if (ids.includes(activeInputId)) s.add(parseInt(lidStr, 10));
     }
+    return s;
+  }, [activeInputId, sourceInputMap]);
 
-    setIsGeneratingDraft(true);
-    generateDraft.mutate({
-      quoteId,
-    });
-  };
+  const highlightedInputIds = useMemo<Set<number>>(() => {
+    if (activeLineItemId == null) return new Set<number>();
+    const ids = sourceInputMap[activeLineItemId];
+    return new Set(ids || []);
+  }, [activeLineItemId, sourceInputMap]);
 
-  // Analyse voice notes and update the quote draft summary.
-  // Stage 1: diagnoseEvidence — fast classifier. If canQuote:false, surface clarification UI.
-  // Stage 2: parseDictationSummary — runs only when canQuote:true (or after clarification).
-  const triggerVoiceAnalysis = async (skipDiagnosis = false) => {
+  // ── Handlers — evidence ──
+  const handleFileChoose = () => fileInputRef.current?.click();
+
+  const handleFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingFile(true);
     try {
-      setIsSummaryLoading(true);
-      setClarificationState(null); // Reset any prior clarification state
-      setAdvisoryUnderstood(null); // PR2: reset advisory banner on each analysis
-
-      // ── Stage 1: Diagnosis is ADVISORY ONLY (PR2) — never blocks. ─────────
-      // Capture `understood` for display as a banner above the QDS; the engine
-      // always runs and populates the QDS regardless of canQuote.
-      if (!skipDiagnosis) {
-        const diagnosis = await diagnoseEvidence.mutateAsync({ quoteId });
-        setAdvisoryUnderstood(diagnosis.understood || null);
-      }
-
-      // ── Stage 2: Full analysis — happy path unchanged ─────────────────────
-      const result = await parseDictationSummary.mutateAsync({ quoteId });
-      if (result.hasSummary && result.summary) {
-        // Convert to QuoteDraftData format — mark all materials as voice-sourced
-        const parsed = result.summary as any;
-        // Preserve any manually-entered plantHire rows — AI analysis never generates these
-        // and re-analysis must not wipe them (merge protection: plantHire is user-owned)
-        const existingPlantHire = voiceSummary?.plantHire || [];
-        setVoiceSummary({
-          clientName: parsed.clientName || null,
-          jobDescription: parsed.jobDescription || "",
-          labour: parsed.labour || [],
-          materials: (parsed.materials || []).map((m: any) => ({ ...m, source: "voice" as const })),
-          markup: parsed.markup ?? null,
-          sundries: parsed.sundries ?? null,
-          contingency: parsed.contingency ?? null,
-          preliminaries: parsed.preliminaries ?? null,
-          labourRate: parsed.labourRate ?? null,
-          plantMarkup: parsed.plantMarkup ?? null,
-          plantHire: existingPlantHire,
-          notes: parsed.notes ?? null,
-        });
-
-        // Auto-fill client details from parsed data
-        const updateFields: Record<string, string> = {};
-
-        // Split "Person / Company" pattern from AI into contactName + clientName
-        // AI returns e.g. "Brian / ABC Limited" or "Bjorn Gladwell / Rosetti"
-        if (parsed.clientName && !clientName) {
-          const raw = parsed.clientName as string;
-          if (raw.includes(" / ")) {
-            const [personPart, companyPart] = raw.split(" / ", 2);
-            // Company goes in clientName (the business), person goes in contactName
-            setClientName(companyPart.trim());
-            updateFields.clientName = companyPart.trim();
-            if (!contactName) {
-              setContactName(personPart.trim());
-              updateFields.contactName = personPart.trim();
-            }
-          } else {
-            // No slash — could be just a company or just a person name
-            setClientName(raw);
-            updateFields.clientName = raw;
-          }
-        }
-        if (parsed.clientEmail && !clientEmail) {
-          setClientEmail(parsed.clientEmail);
-          updateFields.clientEmail = parsed.clientEmail;
-        }
-        if (parsed.clientPhone && !clientPhone) {
-          setClientPhone(parsed.clientPhone);
-          updateFields.clientPhone = parsed.clientPhone;
-        }
-
-        // Auto-name the quote: ClientName — DD/MM/YYYY (if title is empty)
-        // Use the already-split clientName (company) rather than the raw AI value
-        if (!title && (updateFields.clientName || clientName)) {
-          const name = updateFields.clientName || clientName;
-          const today = new Date().toLocaleDateString("en-GB");
-          const autoTitle = `${name} — ${today}`;
-          setTitle(autoTitle);
-          updateFields.title = autoTitle;
-        }
-
-        // Persist the full QDS summary as JSON — this is the authoritative snapshot
-        // used to rehydrate on page refresh. Separate from userPrompt (which is the
-        // text instructions field). qdsSummaryJson is ONLY written here, never cleared.
-        const summaryToSave = {
-          clientName: parsed.clientName || null,
-          jobDescription: parsed.jobDescription || '',
-          labour: parsed.labour || [],
-          materials: parsed.materials || [],
-          markup: parsed.markup ?? null,
-          sundries: parsed.sundries ?? null,
-          contingency: parsed.contingency ?? null,
-          preliminaries: parsed.preliminaries ?? null,
-          labourRate: parsed.labourRate ?? null,
-          plantMarkup: parsed.plantMarkup ?? null,
-          plantHire: existingPlantHire,
-          notes: parsed.notes ?? null,
-        };
-        updateFields.qdsSummaryJson = JSON.stringify(summaryToSave);
-
-        // Save all auto-filled fields in one awaited mutation
-        // Using mutateAsync ensures the DB write completes before the user can navigate away
-        if (Object.keys(updateFields).length > 0) {
-          try {
-            await updateQuote.mutateAsync({ id: quoteId, ...updateFields });
-          } catch (err) {
-            console.warn("[triggerVoiceAnalysis] Auto-save failed:", err);
-          }
-        }
-      } else {
-        toast.error("Could not parse dictation");
-      }
+      const base64 = await fileToBase64(file);
+      const inputType = detectInputType(file);
+      await uploadFile.mutateAsync({
+        quoteId,
+        filename: file.name,
+        contentType: file.type || "application/octet-stream",
+        base64Data: base64,
+        inputType,
+      });
+      toast.success(`${file.name} uploaded`);
     } catch (err) {
-      console.warn("[parseDictationSummary] Failed:", err);
-      toast.error("Could not parse dictation");
+      toast.error(err instanceof Error ? err.message : "Upload failed");
     } finally {
-      setIsSummaryLoading(false);
+      setUploadingFile(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
-  const handleGenerateEmail = () => {
-    generateEmail.mutate({ id: quoteId });
-  };
-
-  const copyToClipboard = async (text: string, label: string) => {
+  const handleAddPaste = async () => {
+    const text = pasteText.trim();
+    if (!text) return;
     try {
-      await navigator.clipboard.writeText(text);
-      toast.success(`${label} copied to clipboard`);
+      await createInput.mutateAsync({
+        quoteId,
+        inputType: "text",
+        content: text,
+      });
+      setPasteText("");
+      toast.success("Text added");
     } catch (err) {
-      toast.error("Failed to copy to clipboard");
+      toast.error(err instanceof Error ? err.message : "Failed to add text");
     }
   };
 
-  const copyHtmlToClipboard = async (html: string, label: string) => {
+  const handleAddVoiceTranscript = async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
     try {
-      // Try to copy as HTML for rich paste in email clients
-      const blob = new Blob([html], { type: "text/html" });
-      const clipboardItem = new ClipboardItem({ "text/html": blob });
-      await navigator.clipboard.write([clipboardItem]);
-      toast.success(`${label} copied (HTML format)`);
+      await createInput.mutateAsync({
+        quoteId,
+        inputType: "audio",
+        content: trimmed,
+        filename: `Voice note ${new Date().toLocaleTimeString()}`,
+      });
+      toast.success("Voice note added");
     } catch (err) {
-      // Fallback to plain text
-      try {
-        await navigator.clipboard.writeText(emailTextBody);
-        toast.success(`${label} copied (plain text)`);
-      } catch (e) {
-        toast.error("Failed to copy to clipboard");
-      }
+      toast.error(
+        err instanceof Error ? err.message : "Failed to add voice note",
+      );
     }
   };
 
-  // Initialize form state from loaded data
-  useEffect(() => {
-    if (fullQuote?.quote) {
-      setTitle(fullQuote.quote.title || "");
-      setClientName(fullQuote.quote.clientName || "");
-      setContactName((fullQuote.quote as any).contactName || "");
-      setClientEmail(fullQuote.quote.clientEmail || "");
-      setClientPhone(fullQuote.quote.clientPhone || "");
-      setClientAddress(fullQuote.quote.clientAddress || "");
-      setDescription(fullQuote.quote.description || "");
-      setTerms(fullQuote.quote.terms || "");
-      setOriginalTerms(fullQuote.quote.terms || "");
-      setTermsModified(false);
-      setTaxRate(fullQuote.quote.taxRate || "0");
-      // Restore saved instruction text
-      if ((fullQuote.quote as any).userPrompt) {
-        setUserPrompt((fullQuote.quote as any).userPrompt);
-      }
+  const handleDeleteInput = async (inputId: number) => {
+    try {
+      await deleteInput.mutateAsync({ id: inputId, quoteId });
+      if (activeInputId === inputId) setActiveInputId(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Delete failed");
     }
-    if (fullQuote?.tenderContext) {
-      setTenderNotes(fullQuote.tenderContext.notes || "");
-      // Assumptions and exclusions are stored as [{text, confirmed}] arrays — flatten to one item per line
-      const tc = fullQuote.tenderContext as any;
-      if (tc.assumptions && Array.isArray(tc.assumptions)) {
-        setAssumptions(tc.assumptions.map((a: any) => typeof a === "string" ? a : a.text || "").filter(Boolean).join("\n"));
-      }
-      if (tc.exclusions && Array.isArray(tc.exclusions)) {
-        setExclusions(tc.exclusions.map((e: any) => typeof e === "string" ? e : e.text || "").filter(Boolean).join("\n"));
-      }
+  };
+
+  // ── Handler — Generate Quote ──
+  const handleGenerate = async () => {
+    if (inputs.length === 0) {
+      toast.error("Add some evidence first");
+      return;
     }
-    if (fullQuote?.internalEstimate) {
-      setInternalNotes(fullQuote.internalEstimate.notes || "");
-      setRiskNotes(fullQuote.internalEstimate.riskNotes || "");
-    }
-  }, [fullQuote]);
-
-  // Hydrate text input if one exists
-  useEffect(() => {
-    const allInputs = fullQuote?.inputs;
-    if (allInputs && allInputs.length > 0 && !textInputId) {
-      const existingTextInput = allInputs.find((i: any) => i.inputType === "text" && i.content && !i.fileUrl);
-      if (existingTextInput) {
-        setTextInputId(existingTextInput.id);
-        setNewTextInput(existingTextInput.content || "");
-      }
-    }
-  }, [fullQuote?.inputs]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // QDS Rehydration — runs once when fullQuote loads.
-  //
-  // RULE: The QDS the user last saw is ALWAYS restored exactly as they left it.
-  // We never re-run AI analysis on refresh — that would overwrite user work.
-  //
-  // Triggers for a FRESH analysis (not on refresh):
-  //   1. A new input finishes processing (handled by the wasProcessing → isProcessing effect above)
-  //   2. The legend toggle fires (handled by setReferenceOnly.onSuccess)
-  //   3. User manually clicks Re-analyse (calls triggerVoiceAnalysis directly)
-  //
-  // On refresh: restore voiceSummary from qdsSummaryJson if present. No AI call.
-  // If no qdsSummaryJson AND no userPrompt: first-time load, run initial analysis.
-  const hasRehydratedRef = useRef(false);
-  useEffect(() => {
-    if (hasRehydratedRef.current) return;
-    const allInputs = fullQuote?.inputs;
-    if (!allInputs || allInputs.length === 0) return;
-
-    const savedJson = (fullQuote?.quote as any)?.qdsSummaryJson;
-
-    // Case 1: Saved QDS snapshot exists — restore it directly, no AI call
-    if (savedJson) {
-      try {
-        const parsed = JSON.parse(savedJson);
-        setVoiceSummary({
-          clientName: parsed.clientName || null,
-          jobDescription: parsed.jobDescription || '',
-          labour: parsed.labour || [],
-          materials: (parsed.materials || []).map((m: any) => ({ ...m, source: m.source || 'voice' as const })),
-          markup: parsed.markup ?? null,
-          sundries: parsed.sundries ?? null,
-          contingency: parsed.contingency ?? null,
-          preliminaries: parsed.preliminaries ?? null,
-          labourRate: parsed.labourRate ?? null,
-          plantMarkup: parsed.plantMarkup ?? null,
-          plantHire: parsed.plantHire || [],
-          notes: parsed.notes ?? null,
-        });
-        hasRehydratedRef.current = true;
-        return;
-      } catch {
-        // JSON parse failed — fall through to fresh analysis
-        console.warn('[QDS Rehydration] Failed to parse qdsSummaryJson, running fresh analysis');
-      }
-    }
-
-    // Case 2: Legacy quotes with no qdsSummaryJson — leave QDS empty until
-    // user manually triggers Re-analyse. Prevents unwanted auto-analysis on old quotes.
-    const hasSavedQDS = !!(fullQuote?.quote as any)?.userPrompt;
-    if (hasSavedQDS) {
-      hasRehydratedRef.current = true;
+    const stillProcessing = inputs.some(
+      (i) => i.processingStatus === "processing",
+    );
+    if (stillProcessing) {
+      toast.error("Wait for evidence to finish analysing");
       return;
     }
 
-    // Case 3: Brand new quote, no saved QDS — run initial analysis if inputs are ready
-    const hasAnalysableInputs = allInputs.some(
-      (i: any) => (i.inputType === 'audio' && i.content && !i.fileUrl) ||
-                   (i.inputType === 'text' && i.content && !i.fileUrl) ||
-                   (i.processedContent && i.processingStatus === 'completed')
-    );
-    if (hasAnalysableInputs && !voiceSummary) {
-      hasRehydratedRef.current = true;
-      triggerVoiceAnalysis();
-    }
-  }, [fullQuote?.inputs, fullQuote?.quote, voiceSummary]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleSaveAssumptionsExclusions = () => {
-    const parseLines = (text: string) =>
-      text.split("\n").map(s => s.trim()).filter(Boolean).map(text => ({ text, confirmed: false }));
-    upsertTenderContext.mutate({
-      quoteId,
-      assumptions: parseLines(assumptions),
-      exclusions: parseLines(exclusions),
-    });
-  };
-
-  const handleSaveQuote = async () => {
-    setIsSaving(true);
+    setIsGenerating(true);
     try {
+      // Step 1 — parse evidence into engine output
+      const parsed = await parseDictation.mutateAsync({ quoteId });
+      if (!parsed || !(parsed as any).hasSummary) {
+        toast.error(
+          "Couldn't extract a quote from the evidence. Try adding more detail.",
+        );
+        setIsGenerating(false);
+        return;
+      }
+
+      // Step 2 — write qdsSummaryJson (adapter: keeps Beta-1 schema intact)
       await updateQuote.mutateAsync({
         id: quoteId,
-        title,
-        clientName,
-        contactName,
-        clientEmail,
-        clientPhone,
-        clientAddress,
-        description,
-        terms,
-        taxRate,
+        qdsSummaryJson: JSON.stringify((parsed as any).summary),
       });
+
+      // Step 3 — materialise line items
+      const result = await generateDraft.mutateAsync({ quoteId });
+      const map = (result as any)?.sourceInputMap;
+      if (map && typeof map === "object") {
+        setSourceInputMap(map as Record<number, number[]>);
+      }
+      toast.success("Quote generated");
+      await refetch();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Couldn't generate the quote",
+      );
     } finally {
-      setIsSaving(false);
+      setIsGenerating(false);
     }
   };
 
-  const handleGeneratePDF = async () => {
-    setIsGeneratingPDF(true);
+  // ── Handlers — line item edits (debounced auto-save) ──
+  const rowTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
+  const rowPending = useRef<Map<number, Record<string, unknown>>>(new Map());
+
+  const saveLineItem = useCallback(
+    (id: number, patch: Record<string, unknown>, delayMs = 500) => {
+      const existing = rowPending.current.get(id) || {};
+      rowPending.current.set(id, { ...existing, ...patch });
+
+      const prev = rowTimers.current.get(id);
+      if (prev) clearTimeout(prev);
+
+      const timer = setTimeout(async () => {
+        const queued = rowPending.current.get(id);
+        rowPending.current.delete(id);
+        rowTimers.current.delete(id);
+        if (!queued) return;
+        try {
+          await updateLineItem.mutateAsync({
+            id,
+            quoteId,
+            ...(queued as any),
+          });
+          scheduleRefetch();
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : "Save failed");
+        }
+      }, delayMs);
+      rowTimers.current.set(id, timer);
+    },
+    [quoteId, updateLineItem, scheduleRefetch],
+  );
+
+  useEffect(() => {
+    const timersAtMount = rowTimers.current;
+    return () => {
+      timersAtMount.forEach((t) => clearTimeout(t));
+      timersAtMount.clear();
+    };
+  }, []);
+
+  const handleDeleteLineItem = async (id: number) => {
     try {
-      // Use tRPC mutation to generate PDF HTML
+      await deleteLineItem.mutateAsync({ id, quoteId });
+      if (activeLineItemId === id) setActiveLineItemId(null);
+      setSourceInputMap((prev) => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Delete failed");
+    }
+  };
+
+  const handleAddLineItem = async () => {
+    try {
+      await createLineItem.mutateAsync({
+        quoteId,
+        description: "New item",
+        quantity: "1",
+        unit: "each",
+        rate: "0",
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't add item");
+    }
+  };
+
+  const applyCatalogItemToRow = (row: LineItem, cat: CatalogItemRef) => {
+    const patch: Record<string, unknown> = {
+      description: cat.name,
+      unit: cat.unit || "each",
+    };
+    if (cat.defaultRate) patch.rate = cat.defaultRate;
+    saveLineItem(row.id, patch, 0);
+  };
+
+  // ── Handlers — PDF ──
+  const handleGeneratePDFClick = () => {
+    const missingCount = lineItems.filter(
+      (li) => parseNum(li.rate) === 0,
+    ).length;
+    if (missingCount > 0) {
+      setShowMissingCostsModal(true);
+    } else {
+      void doGeneratePDF();
+    }
+  };
+
+  const doGeneratePDF = async () => {
+    setIsGeneratingPDF(true);
+    setShowMissingCostsModal(false);
+    try {
       const result = await generatePDF.mutateAsync({ id: quoteId });
-      
-      if (!result?.html) {
+      if (!(result as any)?.html) {
         throw new Error("No HTML content received from server");
       }
-
-      // Open in new window for printing/saving as PDF
       const printWindow = window.open("", "_blank");
       if (printWindow) {
-        printWindow.document.write(result.html);
+        printWindow.document.write((result as any).html);
         printWindow.document.close();
-        
-        // Wait for content to load, then trigger print
         printWindow.onload = () => {
-          setTimeout(() => {
-            printWindow.print();
-          }, 250);
+          setTimeout(() => printWindow.print(), 250);
         };
+        // Flip status → pdf_generated. A failed flip must not block the
+        // download — the status-transition validator may refuse certain
+        // current-state transitions and that's OK.
+        const currentStatus = (quote as any)?.status as string | undefined;
+        if (currentStatus && currentStatus !== "pdf_generated") {
+          try {
+            await updateStatus.mutateAsync({
+              id: quoteId,
+              status: "pdf_generated",
+            });
+          } catch (err) {
+            console.warn(
+              "[QuoteWorkspace] pdf_generated status flip failed:",
+              err,
+            );
+          }
+        }
       } else {
-        toast.error("Please allow popups to generate PDF");
+        toast.error("Please allow popups to generate the PDF");
       }
-    } catch (error) {
-      console.error("PDF generation error:", error);
-      toast.error("Failed to generate PDF");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "PDF generation failed",
+      );
     } finally {
       setIsGeneratingPDF(false);
     }
   };
 
-  const handleAddLineItem = () => {
-    if (!newItemDescription.trim()) {
-      toast.error("Please enter a description");
-      return;
-    }
-    createLineItem.mutate({
-      quoteId,
-      description: newItemDescription,
-      quantity: newItemQuantity,
-      unit: newItemUnit,
-      rate: newItemRate || "0",
-    });
-  };
-
-  const handleAddTextInput = async () => {
-    if (!newTextInput.trim()) {
-      toast.error("Please enter some text");
-      return;
-    }
-    setIsAnalysingText(true);
-    try {
-      if (textInputId) {
-        // Update existing text input
-        await updateInputContent.mutateAsync({
-          id: textInputId,
-          quoteId,
-          content: newTextInput,
-        });
-      } else {
-        // Create new text input
-        const result = await createInput.mutateAsync({
-          quoteId,
-          inputType: "text",
-          content: newTextInput,
-          filename: "Pasted Text / Email",
-        });
-        if (result && (result as any).id) {
-          setTextInputId((result as any).id);
-        }
-      }
-      // Now trigger QDS analysis which reads all inputs including this text
-      await triggerVoiceAnalysis();
-      toast.success("Text analysed — QDS updated");
-    } catch (err) {
-      console.warn("[handleAddTextInput] Failed:", err);
-      toast.error("Failed to analyse text");
-    } finally {
-      setIsAnalysingText(false);
-    }
-  };
-
-  // Voice dictation command handler
-  const handleDictationCommand = (command: DictationCommand) => {
-    switch (command.type) {
-      case "add": {
-        const noteNum = voiceNoteCount + 1;
-        setVoiceNoteCount(noteNum);
-        createInput.mutate({
-          quoteId,
-          inputType: "audio",
-          content: command.text,
-          filename: `Voice Note ${noteNum} — ${new Date().toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
-        }, {
-          onSuccess: () => {
-            toast.success(`Voice Note ${noteNum} saved`);
-            // Auto-analyse after saving — small delay to let the input be indexed
-            setTimeout(() => triggerVoiceAnalysis(), 500);
-          },
-        });
-        break;
-      }
-      case "remove": {
-        // Find the last voice dictation input and delete it
-        if (inputs && inputs.length > 0) {
-          const voiceInputs = [...inputs]
-            .filter((inp: QuoteInput) => inp.inputType === "audio" && inp.content && !inp.fileUrl)
-            .sort((a: QuoteInput, b: QuoteInput) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-          
-          if (voiceInputs.length > 0) {
-            const lastVoice = voiceInputs[0];
-            deleteInput.mutate({ id: lastVoice.id, quoteId });
-            setVoiceNoteCount(Math.max(0, voiceNoteCount - 1));
-            toast.success("Last voice note removed");
-          } else {
-            toast.error("No voice notes to remove");
-          }
-        } else {
-          toast.error("No voice notes to remove");
-        }
-        break;
-      }
-      case "change": {
-        // Replace the last voice dictation with new text
-        if (inputs && inputs.length > 0) {
-          const voiceInputs = [...inputs]
-            .filter((inp: QuoteInput) => inp.inputType === "audio" && inp.content && !inp.fileUrl)
-            .sort((a: QuoteInput, b: QuoteInput) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-          
-          if (voiceInputs.length > 0) {
-            const lastVoice = voiceInputs[0];
-            // Delete the old one and create a replacement
-            deleteInput.mutate({ id: lastVoice.id, quoteId });
-            createInput.mutate({
-              quoteId,
-              inputType: "audio",
-              content: command.text,
-              filename: lastVoice.filename || `Voice Note (updated) — ${new Date().toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
-            });
-            toast.success("Voice note updated");
-          } else {
-            // No previous note to change — save as new
-            const noteNum = voiceNoteCount + 1;
-            setVoiceNoteCount(noteNum);
-            createInput.mutate({
-              quoteId,
-              inputType: "audio",
-              content: command.text,
-              filename: `Voice Note ${noteNum} — ${new Date().toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
-            });
-            toast.success(`Voice Note ${noteNum} saved`);
-          }
-        }
-        break;
-      }
-      case "build_with_text": {
-        // Save the text first, then trigger generation
-        const noteNum = voiceNoteCount + 1;
-        setVoiceNoteCount(noteNum);
-        createInput.mutate({
-          quoteId,
-          inputType: "audio",
-          content: command.text,
-          filename: `Voice Note ${noteNum} — ${new Date().toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
-        }, {
-          onSuccess: () => {
-            toast.success(`Voice Note ${noteNum} saved — generating quote...`);
-            // Small delay to let the input be indexed, then generate
-            setTimeout(() => {
-              handleGenerateDraft();
-            }, 500);
-          },
-        });
-        break;
-      }
-      case "build": {
-        toast.success("Generating your quote...");
-        handleGenerateDraft();
-        break;
-      }
-    }
-  };
-
-  const handleFileUpload = async (
-    file: File,
-    inputType: "pdf" | "image" | "audio" | "document"
-  ) => {
-    const config = fileTypeConfig[inputType];
-
-    // Validate file size
-    if (file.size > config.maxSize) {
-      toast.error(`File too large. Maximum size is ${config.maxSize / 1024 / 1024}MB`);
-      return;
-    }
-
-    // Validate file type
-    if (!config.mimeTypes.includes(file.type)) {
-      toast.error(`Invalid file type. Accepted types: ${config.accept}`);
-      return;
-    }
-
-    setIsUploading(true);
-    setUploadingType(inputType);
-
-    try {
-      // Convert file to base64
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve, reject) => {
-        reader.onload = () => {
-          const result = reader.result as string;
-          // Remove data URL prefix to get pure base64
-          const base64 = result.split(",")[1];
-          resolve(base64);
-        };
-        reader.onerror = reject;
-      });
-      reader.readAsDataURL(file);
-
-      const base64Data = await base64Promise;
-
-      await uploadFile.mutateAsync({
-        quoteId,
-        filename: file.name,
-        contentType: file.type,
-        base64Data,
-        inputType,
-      });
-    } catch (error) {
-      console.error("Upload error:", error);
-    } finally {
-      setIsUploading(false);
-      setUploadingType(null);
-    }
-  };
-
-  const handleFileInputChange = (
-    event: React.ChangeEvent<HTMLInputElement>,
-    inputType: "pdf" | "image" | "audio" | "document"
-  ) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      handleFileUpload(file, inputType);
-    }
-    // Reset input so same file can be selected again
-    event.target.value = "";
-  };
-
-  // ── Multi-file upload helpers ──────────────────────────────────────
-  const detectInputType = (file: File): "pdf" | "image" | "audio" | "document" => {
-    if (file.type === "application/pdf") return "pdf";
-    if (file.type.startsWith("image/")) return "image";
-    if (file.type.startsWith("audio/")) return "audio";
-    return "document";
-  };
-
-  const fileNeedsAI = (file: File) => {
-    return file.type === "application/pdf" || file.type.startsWith("image/") || file.type.startsWith("audio/");
-  };
-
-  const uploadSingleFileFromQueue = async (file: File, queueId: string) => {
-    const inputType = detectInputType(file);
-    const config = fileTypeConfig[inputType];
-
-    // Validate file size
-    if (file.size > config.maxSize) {
-      setUploadQueue(prev => prev.map(item =>
-        item.id === queueId ? { ...item, status: "error" as const, error: `File too large (max ${config.maxSize / 1024 / 1024}MB)` } : item
-      ));
-      return;
-    }
-
-    try {
-      // Mark as uploading
-      setUploadQueue(prev => prev.map(item =>
-        item.id === queueId ? { ...item, status: "uploading" as const, progress: 20 } : item
-      ));
-
-      // Convert to base64
-      const reader = new FileReader();
-      const base64Data = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => {
-          const result = reader.result as string;
-          resolve(result.split(",")[1]);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-
-      setUploadQueue(prev => prev.map(item =>
-        item.id === queueId ? { ...item, progress: 50 } : item
-      ));
-
-      // Upload
-      const result = await uploadFile.mutateAsync({
-        quoteId,
-        filename: file.name,
-        contentType: file.type,
-        base64Data,
-        inputType,
-      });
-
-      // Mark as completed and store inputId for potential retry
-      setUploadQueue(prev => prev.map(item =>
-        item.id === queueId ? { ...item, status: "completed" as const, progress: 100, inputId: result?.id } : item
-      ));
-    } catch (error: any) {
-      // Detect rate limit errors
-      const isRateLimit =
-        error.message?.includes("rate_limit") ||
-        error.message?.includes("429") ||
-        error.message?.includes("30,000 input tokens");
-
-      setUploadQueue(prev => prev.map(item =>
-        item.id === queueId ? {
-          ...item,
-          status: "error" as const,
-          progress: 0,
-          error: isRateLimit ? "Rate limit exceeded" : (error.message || "Upload failed"),
-          isRateLimitError: isRateLimit,
-        } : item
-      ));
-
-      if (isRateLimit) {
-        toast.error(
-          "Rate limit exceeded. File uploaded but AI processing failed. Wait 60 seconds then click Retry.",
-          { duration: 10000 }
-        );
-      }
-    }
-  };
-
-  const processUploadSequentially = async (items: Array<{ id: string; file: File }>) => {
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      await uploadSingleFileFromQueue(item.file, item.id);
-
-      // Add delay between AI-processed files to avoid rate limits
-      if (i < items.length - 1) {
-        const currentNeedsAI = fileNeedsAI(item.file);
-        const nextNeedsAI = fileNeedsAI(items[i + 1].file);
-
-        if (currentNeedsAI && nextNeedsAI) {
-          const delaySeconds = 15;
-          toast.info(
-            `Waiting ${delaySeconds}s before next file to avoid rate limits...`,
-            { duration: delaySeconds * 1000 }
-          );
-          await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
-        }
-      }
-    }
-    refetch();
-    const completed = items.length;
-    toast.success(`All ${completed} file${completed > 1 ? "s" : ""} processed successfully!`);
-  };
-
-  const enforceFileLimit = (files: File[]): File[] | null => {
-    if (files.length > 3) {
-      toast.error(
-        `Maximum 3 files at once to avoid rate limits. You selected ${files.length}. Please select up to 3 files.`,
-        { duration: 5000 }
-      );
-      return null;
-    }
-    return files;
-  };
-
-  const handleMultiFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawFiles = Array.from(e.target.files || []);
-    if (rawFiles.length === 0) return;
-    e.target.value = "";
-
-    const files = enforceFileLimit(rawFiles);
-    if (!files) return;
-
-    // Warn about large PDF batches
-    const totalSizeMB = files.reduce((sum, f) => sum + (f.size / 1024 / 1024), 0);
-    const pdfCount = files.filter(f => f.type === "application/pdf").length;
-
-    if (pdfCount >= 2 && totalSizeMB > 30) {
-      const confirmed = window.confirm(
-        `You're uploading ${pdfCount} large PDFs (${totalSizeMB.toFixed(1)} MB total).\n\n` +
-        `Files will be processed one at a time with delays to avoid rate limits.\n` +
-        `This may take 1-2 minutes. Continue?`
-      );
-      if (!confirmed) return;
-    }
-
-    const newItems = files.map(file => ({
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      file,
-      status: "pending" as const,
-      progress: 0,
-    }));
-
-    setUploadQueue(prev => [...prev, ...newItems]);
-    processUploadSequentially(newItems);
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const allFiles = Array.from(e.dataTransfer.files);
-    const supported = allFiles.filter(file => {
-      const ext = file.name.split(".").pop()?.toLowerCase();
-      return ["pdf", "doc", "docx", "xls", "xlsx", "csv", "png", "jpg", "jpeg", "gif", "webp", "bmp", "mp3", "wav", "m4a", "ogg", "webm"].includes(ext || "");
-    });
-    if (supported.length === 0) {
-      toast.error("No supported files found. Upload PDF, Word, Excel, Image, or Audio files.");
-      return;
-    }
-    const files = enforceFileLimit(supported);
-    if (!files) return;
-
-    const newItems = files.map(file => ({
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      file,
-      status: "pending" as const,
-      progress: 0,
-    }));
-    setUploadQueue(prev => [...prev, ...newItems]);
-    processUploadSequentially(newItems);
-  };
-
-  const removeFromQueue = (queueId: string) => {
-    setUploadQueue(prev => prev.filter(item => item.id !== queueId));
-  };
-
-  const clearCompletedUploads = () => {
-    setUploadQueue(prev => prev.filter(item => item.status !== "completed" && item.status !== "error"));
-  };
-
-  const handleRetryUpload = async (queueId: string) => {
-    const item = uploadQueue.find(i => i.id === queueId);
-    if (!item) return;
-
-    // If we have an inputId, retry just the AI processing
-    if (item.inputId) {
-      setUploadQueue(prev => prev.map(i =>
-        i.id === queueId ? { ...i, status: "processing" as const, progress: 60, error: undefined, isRateLimitError: false } : i
-      ));
-      try {
-        const fileType = item.file.type;
-        if (fileType === "application/pdf") {
-          await extractPdfText.mutateAsync({ inputId: item.inputId, quoteId });
-        } else if (fileType.startsWith("image/")) {
-          await analyzeImage.mutateAsync({ inputId: item.inputId, quoteId });
-        } else if (fileType.startsWith("audio/")) {
-          await transcribeAudio.mutateAsync({ inputId: item.inputId, quoteId });
-        }
-        setUploadQueue(prev => prev.map(i =>
-          i.id === queueId ? { ...i, status: "completed" as const, progress: 100 } : i
-        ));
-        toast.success("Processing complete!");
-        refetch();
-      } catch (error: any) {
-        const isRateLimit = error.message?.includes("rate_limit") || error.message?.includes("429");
-        setUploadQueue(prev => prev.map(i =>
-          i.id === queueId ? {
-            ...i,
-            status: "error" as const,
-            error: isRateLimit ? "Rate limit exceeded" : error.message,
-            isRateLimitError: isRateLimit,
-          } : i
-        ));
-        if (isRateLimit) {
-          toast.error("Still rate limited. Please wait another 60 seconds and try again.");
-        }
-      }
+  // ── Highlight handlers ──
+  const handleInputClick = (inputId: number) => {
+    if (activeInputId === inputId) {
+      setActiveInputId(null);
     } else {
-      // Re-upload the whole file
-      await uploadSingleFileFromQueue(item.file, queueId);
-      refetch();
+      setActiveInputId(inputId);
+      setActiveLineItemId(null);
+    }
+  };
+  const handleLineItemClick = (lineItemId: number) => {
+    if (activeLineItemId === lineItemId) {
+      setActiveLineItemId(null);
+    } else {
+      setActiveLineItemId(lineItemId);
+      setActiveInputId(null);
     }
   };
 
-  const getFileIcon = (file: File) => {
-    if (file.type === "application/pdf") return <FileText className="h-5 w-5 text-red-500" />;
-    if (file.type.startsWith("image/")) return <FileImage className="h-5 w-5 text-blue-500" />;
-    if (file.type.startsWith("audio/")) return <Mic className="h-5 w-5 text-green-500" />;
-    if (file.type.includes("spreadsheet") || file.type.includes("excel") || file.type.includes("csv")) return <FileSpreadsheet className="h-5 w-5 text-green-600" />;
-    if (file.type.includes("word") || file.type.includes("document")) return <FileText className="h-5 w-5 text-blue-600" />;
-    return <FileText className="h-5 w-5 text-muted-foreground" />;
-  };
-
-  const handleSaveTenderContext = () => {
-    upsertTenderContext.mutate({
-      quoteId,
-      notes: tenderNotes,
-    });
-  };
-
-  const handleSaveInternalEstimate = () => {
-    upsertInternalEstimate.mutate({
-      quoteId,
-      notes: internalNotes,
-      riskNotes,
-    });
-  };
+  // ─── Render guards ─────────────────────────────────────────────────────
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-muted-foreground">Loading quote...</p>
+      <div className="flex items-center justify-center h-96 text-muted-foreground">
+        <Loader2 className="h-5 w-5 animate-spin mr-2" />
+        Loading quote…
       </div>
     );
   }
 
-  if (error) {
+  if (!fullQuote || !quote) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
-        <AlertTriangle className="h-12 w-12 text-destructive" />
-        <h2 className="text-xl font-semibold">Error loading quote</h2>
-        <p className="text-muted-foreground text-center max-w-md">
-          {error.message || "An unexpected error occurred while loading the quote."}
-        </p>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => refetch()}>
-            Try Again
-          </Button>
-          <Button variant="outline" onClick={() => setLocation("/dashboard")}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Dashboard
-          </Button>
-        </div>
+      <div className="flex items-center justify-center h-96 text-destructive gap-2">
+        <AlertCircle className="h-5 w-5" />
+        Quote not found
       </div>
     );
   }
 
-  if (!fullQuote?.quote) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
-        <FileText className="h-12 w-12 text-muted-foreground" />
-        <h2 className="text-xl font-semibold">Quote not found</h2>
-        <p className="text-muted-foreground">The quote you're looking for doesn't exist or you don't have access to it.</p>
-        <Button variant="outline" onClick={() => setLocation("/dashboard")}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Dashboard
-        </Button>
-      </div>
-    );
+  if (showFallback) {
+    return <ComprehensiveFallback onBack={() => setLocation("/dashboard")} />;
   }
 
-  const { quote, lineItems, inputs } = fullQuote;
-  const status = quote.status as QuoteStatus;
-  const isComprehensive = (quote as any).quoteMode === "comprehensive";
-  const comprehensiveConfig = (quote as any).comprehensiveConfig;
+  // ─── Main layout ───────────────────────────────────────────────────────
+
+  const quoteTitle = ((quote as any).title as string) || "New quote";
+  const clientName = ((quote as any).clientName as string) || "";
 
   return (
-    <div className="space-y-6">
-      {/* Hidden file inputs */}
-      <input
-        type="file"
-        ref={pdfInputRef}
-        className="hidden"
-        accept={fileTypeConfig.pdf.accept}
-        onChange={(e) => handleFileInputChange(e, "pdf")}
-      />
-      <input
-        type="file"
-        ref={imageInputRef}
-        className="hidden"
-        accept={fileTypeConfig.image.accept}
-        onChange={(e) => handleFileInputChange(e, "image")}
-      />
-      <input
-        type="file"
-        ref={audioInputRef}
-        className="hidden"
-        accept={fileTypeConfig.audio.accept}
-        onChange={(e) => handleFileInputChange(e, "audio")}
-      />
-      <input
-        type="file"
-        ref={documentInputRef}
-        className="hidden"
-        accept={fileTypeConfig.document.accept}
-        onChange={(e) => handleFileInputChange(e, "document")}
-      />
-      <input
-        type="file"
-        ref={multiFileInputRef}
-        className="hidden"
-        multiple
-        accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.jpg,.jpeg,.png,.gif,.webp,.bmp,.mp3,.wav,.m4a,.ogg,.webm"
-        onChange={handleMultiFileSelect}
-      />
-
-      {/* Header */}
-      <div className="flex items-start gap-4">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => setLocation("/dashboard")}>
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div>
-            <div className="flex items-center gap-3">
-              <input
-                type="text"
-                value={title || ""}
-                onChange={(e) => setTitle(e.target.value)}
-                onBlur={() => {
-                  if (title !== (quote.title || "")) {
-                    updateQuote.mutate({ id: quoteId, title });
-                  }
-                }}
-                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                placeholder={quote.reference || `Quote #${quote.id}`}
-                className="text-2xl font-bold tracking-tight bg-transparent outline-none p-0 min-w-[120px] placeholder:text-muted-foreground/40 border-b-2 border-transparent hover:border-dashed hover:border-gray-300 focus:border-solid focus:border-teal-400 transition-colors"
-                style={{ color: brand.navy, maxWidth: "500px" }}
+    <div
+      className="flex flex-col h-[calc(100vh-8rem)]"
+      style={{ backgroundColor: brand.slate }}
+    >
+      {/* ── Title bar ────────────────────────────────────────────────── */}
+      <div
+        className="flex items-center justify-between px-6 py-3 bg-white border-b"
+        style={{ borderColor: brand.border }}
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            onClick={() => setLocation("/dashboard")}
+            className="inline-flex items-center gap-1.5 text-sm hover:opacity-80"
+            style={{ color: brand.navyMuted }}
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Dashboard
+          </button>
+          <span className="text-sm" style={{ color: brand.borderLight }}>
+            ·
+          </span>
+          <Input
+            defaultValue={quoteTitle}
+            onChange={(e) => quoteAutoSave.save({ title: e.target.value })}
+            placeholder="Quote title"
+            className="text-base font-semibold border-0 shadow-none focus-visible:ring-0 px-0 max-w-sm"
+            style={{ color: brand.navy }}
+          />
+        </div>
+        <div
+          className="flex items-center gap-3 text-xs"
+          style={{ color: brand.navyMuted }}
+        >
+          {anySaving ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Clock className="w-3 h-3 animate-pulse" />
+              Saving…
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5">
+              <span
+                className="inline-block w-1.5 h-1.5 rounded-full"
+                style={{ backgroundColor: brand.teal }}
               />
-              <Badge className={statusConfig[status].className}>
-                {statusConfig[status].label}
-              </Badge>
-              {isComprehensive && (
-                <Badge variant="outline" className="flex items-center gap-1">
-                  <Layers className="h-3 w-3" /> Tender Pack
-                </Badge>
-              )}
-            </div>
-            {/* Client details row — inline editable */}
-            <div className="flex items-center gap-3 mt-1 flex-wrap">
-              <input
-                type="text"
-                value={clientName || ""}
-                onChange={(e) => setClientName(e.target.value)}
-                onBlur={() => {
-                  if (clientName !== (quote.clientName || "")) {
-                    updateQuote.mutate({ id: quoteId, clientName });
-                  }
-                }}
-                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                placeholder="Client / Customer"
-                className="text-sm bg-transparent outline-none p-0 min-w-[140px] placeholder:text-muted-foreground/40 text-muted-foreground border-b border-transparent hover:border-dashed hover:border-gray-300 focus:border-solid focus:border-teal-400 transition-colors"
-              />
-              <span className="text-muted-foreground/30">|</span>
-              <input
-                type="text"
-                value={contactName || ""}
-                onChange={(e) => setContactName(e.target.value)}
-                onBlur={() => {
-                  if (contactName !== ((quote as any).contactName || "")) {
-                    updateQuote.mutate({ id: quoteId, contactName } as any);
-                  }
-                }}
-                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                placeholder="Contact"
-                className="text-sm bg-transparent outline-none p-0 min-w-[100px] placeholder:text-muted-foreground/40 text-muted-foreground border-b border-transparent hover:border-dashed hover:border-gray-300 focus:border-solid focus:border-teal-400 transition-colors"
-              />
-              <span className="text-muted-foreground/30">|</span>
-              <input
-                type="email"
-                value={clientEmail || ""}
-                onChange={(e) => setClientEmail(e.target.value)}
-                onBlur={() => {
-                  if (clientEmail !== (quote.clientEmail || "")) {
-                    updateQuote.mutate({ id: quoteId, clientEmail });
-                  }
-                }}
-                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                placeholder="Email"
-                className="text-sm bg-transparent outline-none p-0 min-w-[100px] placeholder:text-muted-foreground/40 text-muted-foreground border-b border-transparent hover:border-dashed hover:border-gray-300 focus:border-solid focus:border-teal-400 transition-colors"
-              />
-              <span className="text-muted-foreground/30">|</span>
-              <input
-                type="tel"
-                value={clientPhone || ""}
-                onChange={(e) => setClientPhone(e.target.value)}
-                onBlur={() => {
-                  if (clientPhone !== (quote.clientPhone || "")) {
-                    updateQuote.mutate({ id: quoteId, clientPhone });
-                  }
-                }}
-                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                placeholder="Phone"
-                className="text-sm bg-transparent outline-none p-0 min-w-[80px] placeholder:text-muted-foreground/40 text-muted-foreground border-b border-transparent hover:border-dashed hover:border-gray-300 focus:border-solid focus:border-teal-400 transition-colors"
-              />
-              {isComprehensive && (quote as any).tradePreset && (
-                <span className="text-xs bg-muted px-2 py-0.5 rounded capitalize">
-                  {((quote as any).tradePreset || "").replace(/_/g, " ")}
-                </span>
-              )}
-            </div>
-          </div>
+              All changes saved
+            </span>
+          )}
         </div>
       </div>
 
-      {/* AI disclaimer */}
-      <p className="text-[10px] italic text-center -mt-2 mb-2" style={{ color: "#94a3b8" }}>
-        AI-generated quotes are estimates — always review all line items, quantities, and pricing before sending to clients
-      </p>
-
-      {/* Main Content with Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        {/* Grouped Tab Navigation - Visual Flow */}
-        <div className="flex flex-col md:flex-row items-stretch gap-0 overflow-hidden">
-          {/* STEP 1: INPUT */}
-          <div className="flex-1 bg-blue-50 border border-blue-200 rounded-l-xl md:rounded-l-xl rounded-r-none p-4 relative">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-blue-600 text-white text-xs font-bold">1</span>
-              <span className="text-xs font-bold text-blue-700 uppercase tracking-wider">Input</span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                onClick={() => setActiveTab("inputs")}
-                className={cn(
-                  "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all",
-                  activeTab === "inputs"
-                    ? "bg-blue-600 text-white font-medium shadow-md"
-                    : "text-blue-700 hover:bg-blue-100 border border-blue-200"
-                )}
-              >
-                <Upload className="h-3.5 w-3.5" />
-                Inputs
-              </button>
-              <button
-                onClick={() => setActiveTab("interpretation")}
-                className={cn(
-                  "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all",
-                  activeTab === "interpretation"
-                    ? "bg-blue-600 text-white font-medium shadow-md"
-                    : "text-blue-700 hover:bg-blue-100 border border-blue-200"
-                )}
-              >
-                <Brain className="h-3.5 w-3.5" />
-                Interpret
-              </button>
-              <button
-                onClick={() => setActiveTab("ai")}
-                className={cn(
-                  "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all",
-                  activeTab === "ai"
-                    ? "bg-blue-600 text-white font-medium shadow-md"
-                    : "text-blue-700 hover:bg-blue-100 border border-blue-200"
-                )}
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-                Ask AI
-              </button>
-              <button
-                onClick={() => {
-                  setActiveTab("inputs");
-                  setIsDictating(prev => !prev);
-                }}
-                className={cn(
-                  "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all",
-                  isDictating
-                    ? "bg-blue-600 text-white font-medium shadow-md"
-                    : "text-blue-700 hover:bg-blue-100 border border-blue-200"
-                )}
-              >
-                <Mic className="h-3.5 w-3.5" />
-                Dictate
-              </button>
-            </div>
-            {/* Arrow connector */}
-            <div className="hidden md:flex absolute -right-3 top-1/2 -translate-y-1/2 z-10">
-              <div className="bg-blue-600 text-white rounded-full p-1 shadow-md">
-                <ChevronRight className="h-4 w-4" />
-              </div>
-            </div>
-            <div className="md:hidden flex justify-center py-1">
-              <ArrowRight className="h-4 w-4 text-blue-400 rotate-90" />
-            </div>
-          </div>
-
-          {/* STEP 2: OUTPUT */}
-          <div className="flex-1 bg-emerald-50 border border-emerald-200 p-4 relative">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-emerald-600 text-white text-xs font-bold">2</span>
-              <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">
-                Output
-              </span>
-              {isComprehensive && (
-                <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-100 border border-emerald-300 px-1.5 py-0.5 rounded-full">
-                  Tender Pack
-                </span>
-              )}
-            </div>
-            {/* Output view tabs */}
-            <div className="flex flex-wrap gap-1.5 mb-3">
-              <button
-                onClick={() => setActiveTab("quote")}
-                className={cn(
-                  "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all",
-                  activeTab === "quote"
-                    ? "bg-emerald-600 text-white font-medium shadow-md"
-                    : "text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
-                )}
-              >
-                <FileText className="h-3.5 w-3.5" />
-                Quote
-              </button>
-              {isComprehensive && (
-                <>
-                  <button
-                    onClick={() => setActiveTab("timeline")}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all",
-                      activeTab === "timeline"
-                        ? "bg-emerald-600 text-white font-medium shadow-md"
-                        : "text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
-                    )}
-                  >
-                    <Clock className="h-3.5 w-3.5" />
-                    Timeline
-                  </button>
-                  <button
-                    onClick={() => setActiveTab("sitequality")}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all",
-                      activeTab === "sitequality"
-                        ? "bg-emerald-600 text-white font-medium shadow-md"
-                        : "text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
-                    )}
-                  >
-                    <Shield className="h-3.5 w-3.5" />
-                    Site/Quality
-                  </button>
-                  <button
-                    onClick={() => setActiveTab("documents")}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all",
-                      activeTab === "documents"
-                        ? "bg-emerald-600 text-white font-medium shadow-md"
-                        : "text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
-                    )}
-                  >
-                    <FolderOpen className="h-3.5 w-3.5" />
-                    Documents
-                  </button>
-                </>
-              )}
-            </div>
-            {/* Action buttons — live inside the Output panel */}
-            <div className="flex flex-col gap-2">
-              <Button
-                onClick={handleGenerateDraft}
-                disabled={isGeneratingDraft}
-                className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
-              >
-                {isGeneratingDraft ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                {lineItems && lineItems.length > 0 ? "Regenerate Quote" : "Generate Quote"}
-              </Button>
-              <div className="grid grid-cols-3 gap-1.5">
-                <Button variant="outline" onClick={handleSaveQuote} disabled={isSaving} className="border-emerald-300 text-emerald-700 hover:bg-emerald-100">
-                  {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                  <span className="ml-1.5 text-xs">Save</span>
-                </Button>
-                <Button variant="outline" onClick={handleGeneratePDF} disabled={isGeneratingPDF} className="border-emerald-300 text-emerald-700 hover:bg-emerald-100">
-                  {isGeneratingPDF ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                  <span className="ml-1.5 text-xs">PDF</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={handleGenerateEmail}
-                  disabled={isGeneratingEmail || (!quote.clientName && !(quote as any).contactName)}
-                  title={(!quote.clientName && !(quote as any).contactName) ? "Add client details first" : "Generate email to send quote"}
-                  className="border-emerald-300 text-emerald-700 hover:bg-emerald-100"
-                >
-                  {isGeneratingEmail ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
-                  <span className="ml-1.5 text-xs">Email</span>
-                </Button>
-              </div>
-              {status === "draft" && (
-                <Button
-                  onClick={() => {
-                    if (window.confirm("Mark this quote as sent? This indicates the quote has been delivered to the client.")) {
-                      updateStatus.mutate({ id: quoteId, status: "sent" });
-                    }
-                  }}
-                  disabled={updateStatus.isPending}
-                  className="w-full bg-slate-800 hover:bg-slate-900 text-white"
-                >
-                  {updateStatus.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                  Mark as Sent
-                </Button>
-              )}
-              {status === "sent" && (
-                <div className="flex gap-1.5">
-                  <Button
-                    onClick={() => {
-                      if (window.confirm("Mark this quote as accepted? This indicates the client has approved the quote.")) {
-                        updateStatus.mutate({ id: quoteId, status: "accepted" });
-                      }
-                    }}
-                    disabled={updateStatus.isPending}
-                    className="flex-1 bg-green-600 hover:bg-green-700 text-white"
-                  >
-                    {updateStatus.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-2 h-3.5 w-3.5" />}
-                    <span className="text-xs">Accepted</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      if (window.confirm("Mark this quote as declined?")) {
-                        updateStatus.mutate({ id: quoteId, status: "declined" });
-                      }
-                    }}
-                    disabled={updateStatus.isPending}
-                    className="flex-1"
-                  >
-                    <X className="mr-2 h-3.5 w-3.5" />
-                    <span className="text-xs">Declined</span>
-                  </Button>
-                </div>
-              )}
-              {(status === "accepted" || status === "declined") && (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    if (window.confirm("Revert this quote back to draft status?")) {
-                      updateStatus.mutate({ id: quoteId, status: "draft" });
-                    }
-                  }}
-                  disabled={updateStatus.isPending}
-                  className="w-full"
-                >
-                  {updateStatus.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowLeft className="mr-2 h-4 w-4" />}
-                  Revert to Draft
-                </Button>
-              )}
-            </div>
-            {/* Arrow connector */}
-            <div className="hidden md:flex absolute -right-3 top-1/2 -translate-y-1/2 z-10">
-              <div className="bg-emerald-600 text-white rounded-full p-1 shadow-md">
-                <ChevronRight className="h-4 w-4" />
-              </div>
-            </div>
-            <div className="md:hidden flex justify-center py-1">
-              <ArrowRight className="h-4 w-4 text-emerald-400 rotate-90" />
-            </div>
-          </div>
-
-          {/* STEP 3: INTERNAL */}
-          <div className="flex-1 bg-amber-50 border border-amber-200 rounded-r-xl md:rounded-r-xl rounded-l-none p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-amber-600 text-white text-xs font-bold">3</span>
-              <span className="text-xs font-bold text-amber-700 uppercase tracking-wider">Internal</span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                onClick={() => setActiveTab("estimate")}
-                className={cn(
-                  "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-all",
-                  activeTab === "estimate"
-                    ? "bg-amber-600 text-white font-medium shadow-md"
-                    : "text-amber-700 hover:bg-amber-100 border border-amber-200"
-                )}
-              >
-                <Calculator className="h-3.5 w-3.5" />
-                Internal Notes
-              </button>
-            </div>
-          </div>
+      {/* ── Two-panel body ───────────────────────────────────────────── */}
+      <div className="flex flex-1 overflow-hidden">
+        <div
+          className="flex flex-col overflow-hidden"
+          style={{
+            width: "42%",
+            backgroundColor: "#f7fbfc",
+            borderRight: `1px solid ${brand.border}`,
+          }}
+        >
+          <EvidencePanel
+            inputs={inputs}
+            activeInputId={activeInputId}
+            highlightedInputIds={highlightedInputIds}
+            onSelect={handleInputClick}
+            onDelete={handleDeleteInput}
+            onFileChoose={handleFileChoose}
+            onAddVoiceTranscript={handleAddVoiceTranscript}
+            onAddPaste={handleAddPaste}
+            pasteText={pasteText}
+            setPasteText={setPasteText}
+            uploadingFile={uploadingFile}
+          />
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.bmp,.mp3,.wav,.m4a,.ogg,.webm,.eml,.msg"
+            onChange={handleFileChange}
+            className="hidden"
+          />
         </div>
 
-        {/* INPUTS TAB */}
-        <TabsContent value="inputs" className="space-y-5">
-
-          {/* Page header */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-extrabold" style={{ color: brand.navy }}>Evidence & Inputs</h2>
-              <p className="text-xs mt-0.5" style={{ color: brand.navyMuted }}>Upload documents, drawings, and specifications for your quote</p>
-            </div>
-            <div className="flex items-center gap-2 text-xs" style={{ color: brand.navyMuted }}>
-              <span>{inputs?.length || 0} files</span>
-              <span>•</span>
-              <span>{inputs?.filter((i: QuoteInput) => i.processingStatus === "completed").length || 0} analysed</span>
-            </div>
-          </div>
-
-          {/* Storage status warning */}
-          {storageStatus && !storageStatus.configured && (
-            <div className="flex items-start gap-3 p-4 rounded-xl" style={{ backgroundColor: "#fffbeb", border: "1px solid #fde68a" }}>
-              <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" style={{ color: "#d97706" }} />
-              <div>
-                <p className="font-bold text-sm" style={{ color: "#92400e" }}>File storage not configured</p>
-                <p className="text-xs mt-0.5" style={{ color: "#a16207" }}>
-                  File uploads are disabled. Contact support to enable file storage.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Upload bar — dark gradient with Option B instructions */}
-          <div className="rounded-xl overflow-hidden" style={{ border: `1.5px solid ${brand.border}` }}>
-            {/* Dark gradient top bar */}
-            <div
-              className="flex items-center gap-3 px-4 py-2.5"
-              style={{ background: `linear-gradient(135deg, ${brand.navy} 0%, #1e3a5f 100%)` }}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-            >
-              <button
-                className="flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-lg shadow-sm whitespace-nowrap"
-                style={{ backgroundColor: brand.teal, color: '#fff' }}
-                onClick={() => multiFileInputRef.current?.click()}
-                disabled={!storageStatus?.configured}
-              >
-                <Plus className="w-4 h-4" />
-                Upload Files
-              </button>
-              <div
-                className={cn(
-                  "flex-1 flex items-center gap-2 px-3 py-2 border border-dashed rounded-lg text-xs cursor-pointer transition-colors",
-                  isDragging
-                    ? "border-white/60 bg-white/10 text-white/80"
-                    : "border-white/20 text-white/50 hover:border-white/40"
-                )}
-                onClick={() => multiFileInputRef.current?.click()}
-              >
-                <Upload className="w-4 h-4" />
-                <span className="font-medium">{isDragging ? "Drop files here" : "Drop files here"}</span>
-                <span className="text-[10px] text-white/30">PDF, Word, Excel, Images, Audio — max 3</span>
-              </div>
-            </div>
-
-            {/* Paste Email / Text — scrollable input with analyse button */}
-            <div className="px-4 py-3" style={{ borderTop: `1px solid ${brand.border}`, backgroundColor: brand.white }}>
-              <div className="flex items-center justify-between mb-1.5">
-                <div className="flex items-center gap-2">
-                  <Mail className="h-4 w-4" style={{ color: brand.teal }} />
-                  <span className="text-sm font-bold" style={{ color: brand.navy }}>Paste Email / Text</span>
-                  {textInputId && (
-                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: `${brand.teal}15`, color: brand.teal }}>
-                      Saved
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {newTextInput.trim() && (
-                    <button
-                      onClick={handleAddTextInput}
-                      disabled={isAnalysingText}
-                      className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors shadow-sm"
-                      style={{ backgroundColor: brand.teal, color: "#fff", opacity: isAnalysingText ? 0.6 : 1 }}
-                    >
-                      {isAnalysingText ? (
-                        <><Loader2 className="h-3.5 w-3.5 animate-spin" />Analysing…</>
-                      ) : textInputId ? (
-                        <><RefreshCw className="h-3.5 w-3.5" />Re-analyse</>
-                      ) : (
-                        <><Sparkles className="h-3.5 w-3.5" />Analyse & Build QDS</>
-                      )}
-                    </button>
-                  )}
-                  {textInputId && (
-                    <button
-                      onClick={() => {
-                        if (window.confirm("Remove pasted text?")) {
-                          deleteInput.mutate({ id: textInputId, quoteId });
-                          setTextInputId(null);
-                          setNewTextInput("");
-                        }
-                      }}
-                      className="text-xs font-medium px-2 py-1 rounded hover:bg-red-50 transition-colors"
-                      style={{ color: "#dc2626" }}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                </div>
-              </div>
-              <Textarea
-                value={newTextInput}
-                onChange={(e) => setNewTextInput(e.target.value)}
-                className="w-full px-3 py-2.5 text-sm rounded-lg resize-none focus:ring-1 focus:ring-teal-300 overflow-y-auto"
-                style={{
-                  color: brand.navy,
-                  backgroundColor: `${brand.teal}04`,
-                  border: `1.5px solid ${brand.border}`,
-                  maxHeight: "160px",
-                  minHeight: "80px",
-                }}
-                rows={5}
-                placeholder={"Paste an email, brief, specification, or any text here...\nThe AI will extract client details, job scope, materials, and labour to pre-fill your Quote Draft Summary."}
-              />
-              {!newTextInput.trim() && (
-                <p className="text-[10px] mt-1 ml-1" style={{ color: brand.navyMuted }}>
-                  Paste client emails, project briefs, or scope descriptions — the AI will extract everything it can to build your QDS
-                </p>
-              )}
-            </div>
-
-            {/* Voice Dictation — floating bottom bar when dictating is active */}
-            {isDictating && (
-              <div style={{
-                position: "fixed",
-                bottom: 0,
-                left: 0,
-                right: 0,
-                zIndex: 9999,
-                background: "linear-gradient(to top, #1a2b4a 0%, #1e3a5f 100%)",
-                borderTop: "2px solid #0d9488",
-                boxShadow: "0 -4px 24px rgba(0,0,0,0.25)",
-                padding: "0",
-              }}>
-                <div style={{ maxWidth: 900, margin: "0 auto", padding: "12px 20px" }}>
-                  <DictationButton
-                    onCommand={handleDictationCommand}
-                    autoStart={isDictating}
-                    onListeningChange={(listening) => {
-                      if (!listening) setIsDictating(false);
-                    }}
-                    variant="floating"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Upload Queue */}
-          {uploadQueue.length > 0 && (
-            <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${brand.border}` }}>
-              <div className="flex items-center justify-between px-4 py-2.5" style={{ backgroundColor: '#f8fafc' }}>
-                <span className="text-xs font-bold" style={{ color: brand.navy }}>
-                  {uploadQueue.filter(u => u.status === "uploading" || u.status === "pending").length > 0
-                    ? `Uploading ${uploadQueue.filter(u => u.status === "completed").length} of ${uploadQueue.length} files…`
-                    : `${uploadQueue.length} file${uploadQueue.length > 1 ? "s" : ""} uploaded`}
-                </span>
-                <button
-                  onClick={clearCompletedUploads}
-                  className="text-[10px] font-bold underline underline-offset-2"
-                  style={{ color: brand.navyMuted }}
-                >
-                  Clear
-                </button>
-              </div>
-              <div className="px-4 pb-3 space-y-1.5">
-                {uploadQueue.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-center gap-3 p-2.5 rounded-lg"
-                    style={{
-                      border: `1px solid ${item.status === "error" && item.isRateLimitError ? "#fb923c" : item.status === "error" ? "#fca5a5" : item.status === "completed" ? "#bbf7d0" : brand.border}`,
-                      backgroundColor: item.status === "error" && item.isRateLimitError ? "#fff7ed" : item.status === "error" ? "#fef2f2" : item.status === "completed" ? "#f0fdf4" : brand.white,
-                    }}
-                  >
-                    <div className="flex-shrink-0">{getFileIcon(item.file)}</div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs font-bold truncate" style={{ color: brand.navy }}>{item.file.name}</p>
-                        <div className="flex items-center gap-1.5 ml-2 flex-shrink-0">
-                          {item.status === "pending" && <span className="text-[10px]" style={{ color: brand.navyMuted }}>Queued</span>}
-                          {item.status === "uploading" && (
-                            <span className="text-[10px] flex items-center gap-1" style={{ color: brand.teal }}>
-                              <Loader2 className="h-3 w-3 animate-spin" /> Uploading
-                            </span>
-                          )}
-                          {item.status === "processing" && (
-                            <span className="text-[10px] flex items-center gap-1" style={{ color: "#7c3aed" }}>
-                              <Loader2 className="h-3 w-3 animate-spin" /> Processing
-                            </span>
-                          )}
-                          {item.status === "completed" && (
-                            <span className="text-[10px] flex items-center gap-1" style={{ color: "#16a34a" }}>
-                              <CheckCircle className="h-3 w-3" /> Done
-                            </span>
-                          )}
-                          {item.status === "error" && (
-                            <span className="text-[10px]" style={{ color: "#dc2626" }}>Failed</span>
-                          )}
-                          {(item.status === "completed" || item.status === "error") && (
-                            <button onClick={(e) => { e.stopPropagation(); removeFromQueue(item.id); }} style={{ color: brand.navyMuted }}>
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      {(item.status === "uploading" || item.status === "pending" || item.status === "processing") && (
-                        <div className="h-1.5 rounded-full overflow-hidden mt-1.5" style={{ backgroundColor: `${brand.teal}15` }}>
-                          <div className="h-full rounded-full transition-all duration-300" style={{ width: `${item.progress}%`, backgroundColor: brand.teal }} />
-                        </div>
-                      )}
-
-                      {/* Rate limit error */}
-                      {item.status === "error" && item.isRateLimitError && (
-                        <div className="mt-2 p-2 rounded text-xs space-y-1" style={{ backgroundColor: "#fff7ed", border: "1px solid #fed7aa" }}>
-                          <p className="font-bold" style={{ color: "#9a3412" }}>Rate Limit Exceeded</p>
-                          <p style={{ color: "#c2410c" }}>File uploaded but AI processing delayed. Wait 60s then retry.</p>
-                        </div>
-                      )}
-
-                      {/* Non-rate-limit error */}
-                      {item.status === "error" && !item.isRateLimitError && (
-                        <p className="text-[10px] mt-1" style={{ color: "#dc2626" }}>{item.error || "Upload failed"}</p>
-                      )}
-
-                      {item.status === "error" && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 text-[10px] mt-1 px-2"
-                          onClick={(e) => { e.stopPropagation(); handleRetryUpload(item.id); }}
-                        >
-                          <RefreshCw className="h-3 w-3 mr-1" /> Retry
-                        </Button>
-                      )}
-
-                      <span className="text-[10px] block mt-0.5" style={{ color: brand.navyMuted }}>
-                        {(item.file.size / 1024 / 1024).toFixed(2)} MB
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Quote Draft Summary — always visible, merges voice + takeoff data */}
-          {((inputs && inputs.length > 0) || voiceSummary || isSummaryLoading) && (
-            <QuoteDraftSummary
-              voiceSummary={voiceSummary}
-              takeoffs={[
-                // Symbol takeoff materials
-                ...(takeoffList || []).map((t: any) => ({
-                  counts: t.counts || {},
-                  symbolDescriptions: t.symbolDescriptions || {},
-                  userAnswers: t.userAnswers || {},
-                  status: t.status || "pending",
-                  source: "takeoff" as const,
-                })),
-                // Containment takeoff materials (tray runs + fittings + cable)
-                ...(containmentList || []).map((ct: any) => {
-                  const counts: Record<string, number> = {};
-                  const descriptions: Record<string, string> = {};
-                  const allTrayRuns = (ct.trayRuns || []) as any[];
-                  const cableSummary = ct.cableSummary as any;
-
-                  // Apply tray type filter — only include runs in scope (e.g. LV only for lighting).
-                  // userInputs.trayFilter is stored on the containment_takeoffs record.
-                  // fittingSummary stored in DB is keyed by size only (not type) so it mixes
-                  // LV and ELV fittings — we rebuild it from the filtered runs instead.
-                  const trayFilter: string = (ct.userInputs as any)?.trayFilter || 'all';
-                  const trayRuns = trayFilter === 'all'
-                    ? allTrayRuns
-                    : allTrayRuns.filter((r: any) => r.trayType === trayFilter);
-
-                  // Rebuild fittingSummary from filtered runs only (avoids mixing ELV/FA fittings into LV)
-                  const filteredFittingSummary: Record<string, any> = {};
-                  for (const run of trayRuns) {
-                    const sizeKey = `${run.sizeMillimetres}mm`;
-                    if (!filteredFittingSummary[sizeKey]) {
-                      filteredFittingSummary[sizeKey] = { tPieces: 0, crossPieces: 0, bends90: 0, drops: 0, couplers: 0 };
-                    }
-                    filteredFittingSummary[sizeKey].tPieces += run.tPieces || 0;
-                    filteredFittingSummary[sizeKey].crossPieces += run.crossPieces || 0;
-                    filteredFittingSummary[sizeKey].bends90 += run.bends90 || 0;
-                    filteredFittingSummary[sizeKey].drops += run.drops || 0;
-                    filteredFittingSummary[sizeKey].couplers += Math.max(0, (run.wholesalerLengths || 0) - 1);
-                  }
-
-                  // Tray runs → material lines (3m lengths)
-                  for (const run of trayRuns) {
-                    const key = `tray-${run.sizeMillimetres}mm-${run.trayType}`;
-                    counts[key] = (counts[key] || 0) + run.wholesalerLengths;
-                    descriptions[key] = `${run.sizeMillimetres}mm ${run.trayType} Cable Tray (3m lengths)`;
-                  }
-
-                  // Fittings → material lines (from filtered summary)
-                  for (const [sizeKey, fittings] of Object.entries(filteredFittingSummary)) {
-                    const f = fittings as any;
-                    if (f.bends90 > 0) {
-                      const key = `fitting-${sizeKey}-bend90`;
-                      counts[key] = f.bends90;
-                      descriptions[key] = `${sizeKey} 90° Flat Bend`;
-                    }
-                    if (f.tPieces > 0) {
-                      const key = `fitting-${sizeKey}-tpiece`;
-                      counts[key] = f.tPieces;
-                      descriptions[key] = `${sizeKey} T-Piece`;
-                    }
-                    if (f.crossPieces > 0) {
-                      const key = `fitting-${sizeKey}-cross`;
-                      counts[key] = f.crossPieces;
-                      descriptions[key] = `${sizeKey} Cross Piece`;
-                    }
-                    if (f.drops > 0) {
-                      const key = `fitting-${sizeKey}-drop`;
-                      counts[key] = f.drops;
-                      descriptions[key] = `${sizeKey} Column Drop`;
-                    }
-                    if (f.couplers > 0) {
-                      const key = `fitting-${sizeKey}-coupler`;
-                      counts[key] = f.couplers;
-                      descriptions[key] = `${sizeKey} Coupler`;
-                    }
-                  }
-
-                  // Cable estimate → drums
-                  if (cableSummary && cableSummary.cableDrums > 0) {
-                    counts["cable-drums"] = cableSummary.cableDrums;
-                    descriptions["cable-drums"] = `100m Cable Drum (${cableSummary.totalCableMetres}m total)`;
-                  }
-
-                  return {
-                    counts,
-                    symbolDescriptions: descriptions,
-                    userAnswers: ct.userAnswers || {},
-                    status: ct.status || "draft",
-                    source: "containment" as const,
-                  };
-                }),
-              ]}
-              takeoffOverrides={takeoffOverrides}
-              catalogItems={(catalogItems || []).map((c: any) => ({
-                name: c.name,
-                defaultRate: c.defaultRate,
-                costPrice: c.costPrice,
-                installTimeHrs: c.installTimeHrs,
-                unit: c.unit,
-                category: c.category,
-                description: c.description,
-              }))}
-              defaultMarkup={(() => {
-                // Extract materialMarkup from org profile settings
-                const dw = (orgProfile as any)?.defaultDayWorkRates as any;
-                return dw?.materialMarkup ?? null;
-              })()}
-              defaultLabourRate={(() => {
-                const dw = (orgProfile as any)?.defaultDayWorkRates as any;
-                return dw?.labourRate ?? null;
-              })()}
-              defaultPlantMarkup={(() => {
-                const dw = (orgProfile as any)?.defaultDayWorkRates as any;
-                return dw?.plantMarkup ?? null;
-              })()}
-              isLoading={isSummaryLoading}
-              hasVoiceNotes={!!(inputs && inputs.some((inp: QuoteInput) => inp.inputType === "audio" && inp.content && !inp.fileUrl))}
-              onSave={(data) => {
-                // Store takeoff + containment material overrides (user edits to quantities/names/prices/install time)
-                const overrides: Record<string, { quantity?: number; item?: string; unitPrice?: number | null; installTimeHrs?: number | null }> = {};
-                data.materials.filter(m => (m.source === "takeoff" || m.source === "containment") && m.symbolCode).forEach(m => {
-                  overrides[m.symbolCode!] = {
-                    quantity: m.quantity,
-                    item: m.item,
-                    unitPrice: m.unitPrice,
-                    installTimeHrs: m.installTimeHrs,
-                  };
-                });
-                setTakeoffOverrides(overrides);
-
-                // Update the voiceSummary state with voice-only materials
-                setVoiceSummary({
-                  ...data,
-                  materials: data.materials.filter(m => m.source === "voice"),
-                });
-
-                // Persist the full QDS snapshot (including takeoff rows and user edits) so
-                // refresh restores exactly what the user saved — not a stale AI-analysed version.
-                // generateDraft reads qdsSummaryJson directly — no text serialisation needed.
-                const qdsSave = {
-                  clientName: data.clientName || null,
-                  jobDescription: data.jobDescription || "",
-                  labour: data.labour || [],
-                  materials: data.materials || [],
-                  markup: data.markup ?? null,
-                  sundries: data.sundries ?? null,
-                  contingency: data.contingency ?? null,
-                  preliminaries: data.preliminaries ?? null,
-                  labourRate: data.labourRate ?? null,
-                  plantMarkup: data.plantMarkup ?? null,
-                  plantHire: data.plantHire || [],
-                  notes: data.notes ?? null,
-                };
-                updateQuote.mutate({
-                  id: quoteId,
-                  qdsSummaryJson: JSON.stringify(qdsSave),
-                });
-
-                // Auto-name if client provided and title is empty
-                if (data.clientName && !title) {
-                  const today = new Date().toLocaleDateString("en-GB");
-                  const autoTitle = `${data.clientName} — ${today}`;
-                  setTitle(autoTitle);
-                  updateQuote.mutate({ id: quoteId, title: autoTitle, clientName: data.clientName });
-                } else if (data.clientName) {
-                  setClientName(data.clientName);
-                  updateQuote.mutate({ id: quoteId, clientName: data.clientName });
-                }
-
-                // Also save voice data to DB
-                saveVoiceNoteSummary.mutate({
-                  quoteId,
-                  summary: {
-                    clientName: data.clientName,
-                    jobDescription: data.jobDescription,
-                    labour: data.labour.map(l => ({
-                      role: l.role,
-                      quantity: Number(l.quantity) || 1,
-                      duration: l.duration,
-                    })),
-                    materials: data.materials.filter(m => m.source === "voice").map(m => ({
-                      item: m.item,
-                      quantity: Number(m.quantity) || 1,
-                      unitPrice: m.unitPrice != null ? Number(m.unitPrice) || 0 : null,
-                    })),
-                    markup: data.markup != null ? Number(data.markup) || 0 : null,
-                    sundries: data.sundries != null ? Number(data.sundries) || 0 : null,
-                    contingency: data.contingency || null,
-                    preliminaries: data.preliminaries != null ? Number(data.preliminaries) || 0 : null,
-                    labourRate: data.labourRate != null ? Number(data.labourRate) || 0 : null,
-                    plantMarkup: data.plantMarkup != null ? Number(data.plantMarkup) || 0 : null,
-                    plantHire: (data.plantHire || []).map(p => ({
-                      description: p.description,
-                      costPrice: p.costPrice != null ? Number(p.costPrice) || 0 : null,
-                      sellPrice: p.sellPrice != null ? Number(p.sellPrice) || 0 : null,
-                      quantity: Number(p.quantity) || 1,
-                      duration: p.duration || "",
-                    })),
-                    notes: data.notes || null,
-                  },
-                }, {
-                  onSuccess: () => {
-                    toast.success("Quote summary saved to instructions");
-                    refetch();
-                  },
-                  onError: () => toast.error("Failed to save summary"),
-                });
-              }}
-              onTriggerVoiceAnalysis={triggerVoiceAnalysis}
-              clarificationState={clarificationState}
-              advisoryUnderstood={advisoryUnderstood}
-              onClarificationReply={async (reply: string) => {
-                // Append user's reply as synthetic evidence then re-run analysis (skip diagnosis)
-                await addClarificationInput.mutateAsync({ quoteId, clarification: reply });
-                await triggerVoiceAnalysis(true);
-              }}
+        <div className="flex flex-col flex-1 overflow-hidden bg-white">
+          {!isState2 ? (
+            <EmptyStatePanel
+              onGenerate={handleGenerate}
+              isGenerating={isGenerating}
+              evidenceCount={inputs.length}
+            />
+          ) : (
+            <EditorPanel
+              quote={quote}
+              clientName={clientName}
+              lineItems={lineItems}
+              catalogItems={catalogItems}
+              totals={totals}
+              activeLineItemId={activeLineItemId}
+              highlightedLineItemIds={highlightedLineItemIds}
+              onLineItemClick={handleLineItemClick}
+              onUpdateClientName={(v) =>
+                quoteAutoSave.save({ clientName: v })
+              }
+              onUpdateDescription={(v) =>
+                quoteAutoSave.save({ description: v })
+              }
+              onSaveLineItem={saveLineItem}
+              onDeleteLineItem={handleDeleteLineItem}
+              onAddLineItem={handleAddLineItem}
+              onApplyCatalog={applyCatalogItemToRow}
+              onGeneratePDF={handleGeneratePDFClick}
+              isGeneratingPDF={isGeneratingPDF}
+              addingLineItem={createLineItem.isPending}
             />
           )}
+        </div>
+      </div>
 
-          {/* Split View / Accordion inputs panel */}
-          {inputs && inputs.length > 0 && (
-            <InputsPanel
-              inputs={inputs}
-              selectedInputId={selectedInputId}
-              onSelectInput={setSelectedInputId}
-              getTakeoffForInput={getTakeoffForInput}
-              onProcessInput={handleProcessInput}
-              onDeleteInput={(input) => {
-                deleteInput.mutate({ id: input.id, quoteId });
-              }}
-              onSetReferenceOnly={(input, isReference) => {
-                setReferenceOnly.mutate({ inputId: input.id, quoteId, isReference });
-              }}
-              onTriggerVoiceAnalysis={triggerVoiceAnalysis}
-              onTakeoffChanged={refetchTakeoffs}
-              processingInputId={processingInputId}
-              quoteId={quoteId}
-              tradePreset={(quote as any).tradePreset || (user as any)?.defaultTradeSector || ''}
-            />
-          )}
+      <MissingCostsModal
+        open={showMissingCostsModal}
+        missingCount={
+          lineItems.filter((li) => parseNum(li.rate) === 0).length
+        }
+        onCancel={() => setShowMissingCostsModal(false)}
+        onContinue={() => void doGeneratePDF()}
+      />
+    </div>
+  );
+}
 
-        </TabsContent>
+// ─── Evidence panel ───────────────────────────────────────────────────────
 
-        {/* INTERPRETATION TAB */}
-        <TabsContent value="interpretation" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Brain className="h-5 w-5" />
-                Tender Interpretation
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Define what symbols and terms mean for this specific tender. Once confirmed, these become locked.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-3">
-                <Label>Interpretation Notes</Label>
-                <Textarea
-                  placeholder="Document your understanding of the tender requirements, symbols, abbreviations, and any clarifications..."
-                  value={tenderNotes}
-                  onChange={(e) => setTenderNotes(e.target.value)}
-                  rows={8}
-                />
-              </div>
+interface EvidencePanelProps {
+  inputs: QuoteInput[];
+  activeInputId: number | null;
+  highlightedInputIds: Set<number>;
+  onSelect: (id: number) => void;
+  onDelete: (id: number) => void;
+  onFileChoose: () => void;
+  onAddVoiceTranscript: (text: string) => void;
+  onAddPaste: () => void;
+  pasteText: string;
+  setPasteText: (s: string) => void;
+  uploadingFile: boolean;
+}
 
-              <div className="bg-muted/50 rounded-lg p-4 border">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-medium">Symbol & Term Mapping</p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Advanced symbol mapping and AI-assisted interpretation will be available in a future update.
-                      For now, document your interpretations in the notes above.
-                    </p>
-                  </div>
-                </div>
-              </div>
+function EvidencePanel({
+  inputs,
+  activeInputId,
+  highlightedInputIds,
+  onSelect,
+  onDelete,
+  onFileChoose,
+  onAddVoiceTranscript,
+  onAddPaste,
+  pasteText,
+  setPasteText,
+  uploadingFile,
+}: EvidencePanelProps) {
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="flex-shrink-0 px-5 pt-5 pb-3">
+        <h2
+          className="text-[11px] font-bold uppercase tracking-wider mb-3"
+          style={{ color: brand.navyMuted }}
+        >
+          Add evidence
+        </h2>
+        <div className="grid grid-cols-3 gap-2">
+          <ActionTile
+            icon={<Upload className="w-4 h-4" />}
+            label="Upload"
+            color={brand.teal}
+            bg={brand.tealBg}
+            onClick={onFileChoose}
+            disabled={uploadingFile}
+            busy={uploadingFile}
+          />
+          <ActionTile
+            icon={<FileText className="w-4 h-4" />}
+            label="Paste"
+            color="#3b82f6"
+            bg="#eff6ff"
+            onClick={() => {
+              document.getElementById("paste-textarea")?.focus();
+            }}
+          />
+          <DictateTile onTranscript={onAddVoiceTranscript} />
+        </div>
 
-              <Button onClick={handleSaveTenderContext} disabled={upsertTenderContext.isPending}>
-                {upsertTenderContext.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="mr-2 h-4 w-4" />
-                )}
-                Save Interpretation
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* INTERNAL ESTIMATE TAB */}
-        <TabsContent value="estimate" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Calculator className="h-5 w-5" />
-                Internal Estimate
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Private workspace for your reasoning. Nothing here is ever shown to clients.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-3">
-                <Label>Internal Notes</Label>
-                <Textarea
-                  placeholder="Your private notes, cost calculations, time estimates, and reasoning..."
-                  value={internalNotes}
-                  onChange={(e) => setInternalNotes(e.target.value)}
-                  rows={6}
-                />
-              </div>
-
-              <div className="space-y-3">
-                <Label>Risk Notes</Label>
-                <Textarea
-                  placeholder="Potential risks, concerns, or issues to consider..."
-                  value={riskNotes}
-                  onChange={(e) => setRiskNotes(e.target.value)}
-                  rows={4}
-                />
-              </div>
-
-              <div className="bg-muted/50 rounded-lg p-4 border">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-medium">AI Estimator Prompt</p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      The "Ask About This Quote" AI feature will be available in a future update.
-                      This will help you identify missed items, risks, and assumptions.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <Button onClick={handleSaveInternalEstimate} disabled={upsertInternalEstimate.isPending}>
-                {upsertInternalEstimate.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="mr-2 h-4 w-4" />
-                )}
-                Save Internal Estimate
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* AI REVIEW TAB */}
-        <TabsContent value="ai" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5" />
-                AI Quote Review
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Get intelligent feedback on your quote. The AI reviews your quote details, line items, and terms to provide actionable insights.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Pre-defined prompt buttons */}
-              <div className="space-y-3">
-                <Label className="text-base font-medium">Ask the AI:</Label>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  <Button
-                    variant="outline"
-                    className="h-auto py-4 px-4 justify-start text-left"
-                    onClick={() => handleAskAI("missed")}
-                    disabled={aiLoading}
-                  >
-                    <HelpCircle className="h-5 w-5 mr-3 flex-shrink-0 text-blue-500" />
-                    <div>
-                      <div className="font-medium">What might I have missed?</div>
-                      <div className="text-xs text-muted-foreground">Common oversights and missing items</div>
-                    </div>
-                  </Button>
-                  
-                  <Button
-                    variant="outline"
-                    className="h-auto py-4 px-4 justify-start text-left"
-                    onClick={() => handleAskAI("risks")}
-                    disabled={aiLoading}
-                  >
-                    <AlertOctagon className="h-5 w-5 mr-3 flex-shrink-0 text-orange-500" />
-                    <div>
-                      <div className="font-medium">What risks should I consider?</div>
-                      <div className="text-xs text-muted-foreground">Project and delivery risks</div>
-                    </div>
-                  </Button>
-                  
-                  <Button
-                    variant="outline"
-                    className="h-auto py-4 px-4 justify-start text-left"
-                    onClick={() => handleAskAI("assumptions")}
-                    disabled={aiLoading}
-                  >
-                    <ListChecks className="h-5 w-5 mr-3 flex-shrink-0 text-green-500" />
-                    <div>
-                      <div className="font-medium">What assumptions should I state?</div>
-                      <div className="text-xs text-muted-foreground">Clarify before proceeding</div>
-                    </div>
-                  </Button>
-                  
-                  <Button
-                    variant="outline"
-                    className="h-auto py-4 px-4 justify-start text-left"
-                    onClick={() => handleAskAI("pricing")}
-                    disabled={aiLoading}
-                  >
-                    <PoundSterling className="h-5 w-5 mr-3 flex-shrink-0 text-emerald-500" />
-                    <div>
-                      <div className="font-medium">Does this look under-priced?</div>
-                      <div className="text-xs text-muted-foreground">Pricing analysis and suggestions</div>
-                    </div>
-                  </Button>
-                  
-                  <Button
-                    variant="outline"
-                    className="h-auto py-4 px-4 justify-start text-left"
-                    onClick={() => handleAskAI("issues")}
-                    disabled={aiLoading}
-                  >
-                    <Wrench className="h-5 w-5 mr-3 flex-shrink-0 text-red-500" />
-                    <div>
-                      <div className="font-medium">What usually causes issues?</div>
-                      <div className="text-xs text-muted-foreground">Common problems and delays</div>
-                    </div>
-                  </Button>
-                </div>
-              </div>
-
-              {/* Custom prompt */}
-              <div className="space-y-3 border-t pt-6">
-                <Label className="text-base font-medium">Or ask your own question:</Label>
-                <div className="flex gap-3">
-                  <Textarea
-                    placeholder="Type your question about this quote..."
-                    value={customPrompt}
-                    onChange={(e) => setCustomPrompt(e.target.value)}
-                    className="min-h-[80px]"
-                  />
-                </div>
-                <Button
-                  onClick={() => handleAskAI("custom")}
-                  disabled={aiLoading || !customPrompt.trim()}
-                  className="w-full sm:w-auto"
-                >
-                  {aiLoading ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <MessageSquare className="mr-2 h-4 w-4" />
-                  )}
-                  Ask AI
-                </Button>
-              </div>
-
-              {/* AI Response */}
-              {aiLoading && (
-                <div className="border rounded-lg p-6 bg-muted/30">
-                  <div className="flex items-center gap-3">
-                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                    <span className="text-muted-foreground">AI is analyzing your quote...</span>
-                  </div>
-                </div>
-              )}
-
-              {aiResponse && !aiLoading && (
-                <div className="border rounded-lg p-6 bg-muted/20">
-                  <div className="flex items-start gap-3">
-                    <Sparkles className="h-5 w-5 text-primary flex-shrink-0 mt-1" />
-                    <div className="prose prose-sm max-w-none dark:prose-invert">
-                      <div className="whitespace-pre-wrap">{aiResponse}</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {!aiResponse && !aiLoading && (
-                <div className="border rounded-lg p-6 bg-muted/10 text-center">
-                  <Sparkles className="h-8 w-8 mx-auto mb-3 text-muted-foreground" />
-                  <p className="text-muted-foreground">
-                    Click one of the questions above to get AI-powered insights about your quote.
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* QUOTE TAB */}
-        <TabsContent value="quote" className="space-y-6">
-          {/* Client Details */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Client Details</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="clientName">Client / Customer</Label>
-                  <Input
-                    id="clientName"
-                    value={clientName}
-                    onChange={(e) => setClientName(e.target.value)}
-                    placeholder="Company or organisation name"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="contactName">Contact</Label>
-                  <Input
-                    id="contactName"
-                    value={contactName}
-                    onChange={(e) => setContactName(e.target.value)}
-                    placeholder="Contact person name"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="clientEmail">Email</Label>
-                  <Input
-                    id="clientEmail"
-                    type="email"
-                    value={clientEmail}
-                    onChange={(e) => setClientEmail(e.target.value)}
-                    placeholder="client@example.com"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="clientPhone">Phone</Label>
-                  <Input
-                    id="clientPhone"
-                    value={clientPhone}
-                    onChange={(e) => setClientPhone(e.target.value)}
-                    placeholder="+44 123 456 7890"
-                  />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="clientAddress">Address</Label>
-                  <Input
-                    id="clientAddress"
-                    value={clientAddress}
-                    onChange={(e) => setClientAddress(e.target.value)}
-                    placeholder="Full address"
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Quote Details */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Quote Details</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="title">Quote Title</Label>
-                <Input
-                  id="title"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Brief description of the work"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  id="description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Detailed description of the scope of work..."
-                  rows={4}
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Line Items */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Line Items</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Existing line items */}
-              {lineItems && lineItems.length > 0 && (
-                <div className="border rounded-lg overflow-hidden">
-                  <table className="w-full">
-                    <thead className="bg-muted/50">
-                      <tr>
-                        <th className="text-left p-3 font-medium">Description</th>
-                        <th className="text-right p-3 font-medium w-20">Qty</th>
-                        <th className="text-left p-3 font-medium w-20">Unit</th>
-                        <th className="text-right p-3 font-medium w-24">Rate</th>
-                        <th className="text-right p-3 font-medium w-24">Total</th>
-                        <th className="text-center p-3 font-medium w-28">Type</th>
-                        <th className="text-right p-3 font-medium w-28">
-                          <span className="text-green-600" title="Internal only — not shown on PDF">Margin</span>
-                        </th>
-                        <th className="w-12"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {lineItems.map((item: LineItem, index: number) => (
-                        <tr key={item.id} className={index % 2 === 0 ? "bg-background" : "bg-muted/20"}>
-                          {/* Description - editable */}
-                          <td className="p-3">
-                            {editingItemId === item.id && editingField === "description" ? (
-                              <Input
-                                value={editValue}
-                                onChange={(e) => setEditValue(e.target.value)}
-                                onBlur={() => handleSaveEdit(item.id, "description")}
-                                onKeyDown={(e) => handleKeyDown(e, item.id, "description")}
-                                autoFocus
-                                className="h-8"
-                              />
-                            ) : (
-                              <span
-                                className="cursor-pointer hover:bg-muted/50 px-2 py-1 rounded block"
-                                onClick={() => handleStartEdit(item.id, "description", item.description)}
-                              >
-                                {item.description ? renderDescNode(item.description) : "Click to edit"}
-                              </span>
-                            )}
-                          </td>
-                          {/* Quantity - editable */}
-                          <td className="p-3 text-right">
-                            {editingItemId === item.id && editingField === "quantity" ? (
-                              <Input
-                                type="number"
-                                value={editValue}
-                                onChange={(e) => setEditValue(e.target.value)}
-                                onBlur={() => handleSaveEdit(item.id, "quantity")}
-                                onKeyDown={(e) => handleKeyDown(e, item.id, "quantity")}
-                                autoFocus
-                                className="h-8 w-20 text-right"
-                              />
-                            ) : (
-                              <span
-                                className="cursor-pointer hover:bg-muted/50 px-2 py-1 rounded inline-block"
-                                onClick={() => handleStartEdit(item.id, "quantity", item.quantity || "1")}
-                              >
-                                {(() => {
-                                  const qty = parseFloat(item.quantity || "1");
-                                  return qty % 1 === 0 ? qty.toFixed(0) : qty.toFixed(2);
-                                })()}
-                              </span>
-                            )}
-                          </td>
-                          {/* Unit - editable */}
-                          <td className="p-3">
-                            {editingItemId === item.id && editingField === "unit" ? (
-                              <Input
-                                value={editValue}
-                                onChange={(e) => setEditValue(e.target.value)}
-                                onBlur={() => handleSaveEdit(item.id, "unit")}
-                                onKeyDown={(e) => handleKeyDown(e, item.id, "unit")}
-                                autoFocus
-                                className="h-8 w-20"
-                              />
-                            ) : (
-                              <span
-                                className="cursor-pointer hover:bg-muted/50 px-2 py-1 rounded inline-block"
-                                onClick={() => handleStartEdit(item.id, "unit", item.unit || "each")}
-                              >
-                                {item.unit || "each"}
-                              </span>
-                            )}
-                          </td>
-                          {/* Rate - editable */}
-                          <td className="p-3 text-right">
-                            {editingItemId === item.id && editingField === "rate" ? (
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={editValue}
-                                onChange={(e) => setEditValue(e.target.value)}
-                                onBlur={() => handleSaveEdit(item.id, "rate")}
-                                onKeyDown={(e) => handleKeyDown(e, item.id, "rate")}
-                                autoFocus
-                                className="h-8 w-24 text-right"
-                              />
-                            ) : (
-                              <span
-                                className="cursor-pointer hover:bg-muted/50 px-2 py-1 rounded inline-block"
-                                onClick={() => handleStartEdit(item.id, "rate", item.rate || "0")}
-                              >
-                                £{parseFloat(item.rate || "0").toFixed(2)}
-                              </span>
-                            )}
-                          </td>
-                          {/* Total - calculated, not editable */}
-                          <td className="p-3 text-right font-medium">£{parseFloat(item.total || "0").toFixed(2)}</td>
-                          {/* Pricing Type - dropdown */}
-                          <td className="p-3 text-center">
-                            <select
-                              value={(item as any).pricingType || "standard"}
-                              onChange={(e) => {
-                                updateLineItem.mutate({
-                                  id: item.id,
-                                  quoteId,
-                                  pricingType: e.target.value as any,
-                                });
-                              }}
-                              className="text-xs px-2 py-1 rounded border cursor-pointer"
-                              style={{
-                                borderColor: "#e2e8f0",
-                                fontWeight: 600,
-                                color: (item as any).pricingType === "monthly" ? "#0d9488" : (item as any).pricingType === "optional" ? "#8b5cf6" : (item as any).pricingType === "annual" ? "#b45309" : "#1a2b4a",
-                                background: (item as any).pricingType === "monthly" ? "#f0fdfa" : (item as any).pricingType === "optional" ? "#f5f3ff" : (item as any).pricingType === "annual" ? "#fef3c7" : "white",
-                              }}
-                            >
-                              <option value="standard">Standard</option>
-                              <option value="monthly">Monthly</option>
-                              <option value="optional">Optional</option>
-                              <option value="annual">Annual</option>
-                            </select>
-                          </td>
-                          {/* Margin - internal only. Reads costPrice from line item record first, falls back to catalog match */}
-                          <td className="p-3 text-right text-xs">
-                            {(() => {
-                              const rate = parseFloat(item.rate || "0");
-                              const qty = parseFloat(item.quantity || "0");
-                              if (rate <= 0 || qty <= 0) return <span className="text-muted-foreground">—</span>;
-                              // Prefer costPrice stored on the line item (written by generateDraft from QDS)
-                              let costPrice = item.costPrice ? parseFloat(item.costPrice) : null;
-                              // Fall back to catalog match if line item has no costPrice
-                              if (!costPrice || costPrice <= 0) {
-                                const desc = (item.description || "").toLowerCase();
-                                const catalogMatch = (catalogItems || []).find((c: any) => {
-                                  const catName = (c.name || "").toLowerCase();
-                                  return catName && (desc.includes(catName.toLowerCase()) || catName.includes(desc));
-                                });
-                                costPrice = catalogMatch?.costPrice ? parseFloat(catalogMatch.costPrice) : null;
-                              }
-                              if (!costPrice || costPrice <= 0) return <span className="text-muted-foreground">—</span>;
-                              const marginPerUnit = rate - costPrice;
-                              const totalMargin = marginPerUnit * qty;
-                              const marginPct = (marginPerUnit / rate * 100).toFixed(0);
-                              return (
-                                <span className={totalMargin >= 0 ? "text-green-600 font-medium" : "text-red-500 font-medium"}>
-                                  £{totalMargin.toFixed(2)} ({marginPct}%)
-                                </span>
-                              );
-                            })()}
-                          </td>
-                          <td className="p-3">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                              onClick={() => deleteLineItem.mutate({ id: item.id, quoteId })}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-
-                  {/* Total Margin Summary — internal only, broken down by pricingType */}
-                  {(() => {
-                    // Helper: resolve costPrice for a line item (stored value first, catalog fallback)
-                    const resolveCostPrice = (item: LineItem): number | null => {
-                      let costPrice = item.costPrice ? parseFloat(item.costPrice) : null;
-                      if (!costPrice || costPrice <= 0) {
-                        const desc = (item.description || "").toLowerCase();
-                        const catalogMatch = (catalogItems || []).find((c: any) => {
-                          const catName = (c.name || "").toLowerCase();
-                          return catName && (desc.includes(catName) || catName.includes(desc));
-                        });
-                        costPrice = catalogMatch?.costPrice ? parseFloat(catalogMatch.costPrice) : null;
-                      }
-                      return costPrice && costPrice > 0 ? costPrice : null;
-                    };
-
-                    // Accumulate margin per pricingType
-                    const buckets: Record<string, { revenue: number; cost: number; count: number }> = {
-                      standard: { revenue: 0, cost: 0, count: 0 },
-                      monthly:  { revenue: 0, cost: 0, count: 0 },
-                      annual:   { revenue: 0, cost: 0, count: 0 },
-                      optional: { revenue: 0, cost: 0, count: 0 },
-                    };
-
-                    (lineItems || []).forEach((item: LineItem) => {
-                      const rate = parseFloat(item.rate || "0");
-                      const qty = parseFloat(item.quantity || "0");
-                      if (rate <= 0 || qty <= 0) return;
-                      const costPrice = resolveCostPrice(item);
-                      if (!costPrice) return;
-                      const type = (item as any).pricingType || "standard";
-                      const bucket = buckets[type] ?? buckets.standard;
-                      bucket.revenue += rate * qty;
-                      bucket.cost += costPrice * qty;
-                      bucket.count++;
-                    });
-
-                    const totalCount = Object.values(buckets).reduce((s, b) => s + b.count, 0);
-                    if (totalCount === 0) return null;
-
-                    const bucketConfig = [
-                      { key: "standard", label: "One-off margin",          suffix: "",       bg: "#f0fdf4", color: "#15803d" },
-                      { key: "monthly",  label: "Monthly recurring margin", suffix: "/month", bg: "#f0fdfa", color: "#0d9488" },
-                      { key: "annual",   label: "Annual recurring margin",  suffix: "/year",  bg: "#fef9ee", color: "#b45309" },
-                      { key: "optional", label: "Optional items margin",    suffix: "",       bg: "#faf5ff", color: "#7c3aed" },
-                    ];
-
-                    const totalRevenue = Object.values(buckets).reduce((s, b) => s + b.revenue, 0);
-                    const totalCost    = Object.values(buckets).reduce((s, b) => s + b.cost, 0);
-                    const totalMargin  = totalRevenue - totalCost;
-                    const totalPct     = totalRevenue > 0 ? (totalMargin / totalRevenue * 100).toFixed(1) : "0";
-
-                    return (
-                      <div className="border-t border-green-200 rounded-b-lg overflow-hidden">
-                        {bucketConfig.map(({ key, label, suffix, bg, color }) => {
-                          const b = buckets[key];
-                          if (b.count === 0) return null;
-                          const margin = b.revenue - b.cost;
-                          const pct = b.revenue > 0 ? (margin / b.revenue * 100).toFixed(0) : "0";
-                          return (
-                            <div key={key} className="flex items-center justify-between gap-4 px-3 py-1" style={{ backgroundColor: bg }}>
-                              <span className="text-xs" style={{ color }}>{label}</span>
-                              <span className="text-xs font-semibold" style={{ color }}>
-                                £{margin.toFixed(2)}{suffix} ({pct}%)
-                              </span>
-                            </div>
-                          );
-                        })}
-                        <div className="flex items-center justify-end gap-4 px-3 py-2 bg-green-50">
-                          <span className="text-xs text-muted-foreground">
-                            Total margin on {totalCount} priced item{totalCount !== 1 ? "s" : ""}
-                          </span>
-                          <span className="text-sm font-bold text-green-700">
-                            £{totalMargin.toFixed(2)} ({totalPct}%)
-                          </span>
-                          <span className="text-[9px] italic text-muted-foreground">Internal only — not on PDF</span>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-
-              {/* Add new line item */}
-              <div className="border rounded-lg p-4 bg-muted/20">
-                <div className="grid grid-cols-12 gap-3">
-                  <div className="col-span-12 md:col-span-5">
-                    <Input
-                      placeholder="Description"
-                      value={newItemDescription}
-                      onChange={(e) => setNewItemDescription(e.target.value)}
-                    />
-                  </div>
-                  <div className="col-span-4 md:col-span-2">
-                    <Input
-                      type="number"
-                      placeholder="Qty"
-                      value={newItemQuantity}
-                      onChange={(e) => setNewItemQuantity(e.target.value)}
-                    />
-                  </div>
-                  <div className="col-span-4 md:col-span-2">
-                    <Input
-                      placeholder="Unit"
-                      value={newItemUnit}
-                      onChange={(e) => setNewItemUnit(e.target.value)}
-                    />
-                  </div>
-                  <div className="col-span-4 md:col-span-2">
-                    <Input
-                      type="number"
-                      step="0.01"
-                      placeholder="Rate"
-                      value={newItemRate}
-                      onChange={(e) => setNewItemRate(e.target.value)}
-                    />
-                  </div>
-                  <div className="col-span-12 md:col-span-1">
-                    <Button
-                      onClick={handleAddLineItem}
-                      disabled={createLineItem.isPending}
-                      className="w-full"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Add from Catalog */}
-              <div className="relative">
-                <Button
-                  variant="outline"
-                  onClick={() => setShowCatalogPicker(!showCatalogPicker)}
-                  className="w-full justify-start"
-                  disabled={!catalogItems || catalogItems.length === 0}
-                >
-                  <Package className="mr-2 h-4 w-4" />
-                  {catalogItems && catalogItems.length > 0 
-                    ? `Add from Catalog (${catalogItems.length} items)` 
-                    : "No catalog items - add some in Settings"}
-                </Button>
-                
-                {showCatalogPicker && catalogItems && catalogItems.length > 0 && (
-                  <div className="absolute z-50 mt-2 w-full bg-popover border rounded-lg shadow-lg max-h-64 overflow-y-auto">
-                    {catalogItems.map((item: { id: number; name: string; description: string | null; unit: string | null; defaultRate: string | null; category: string | null }, index: number) => (
-                      <div
-                        key={item.id}
-                        className={`p-3 cursor-pointer hover:bg-accent transition-colors ${index % 2 === 1 ? 'bg-muted/30' : ''}`}
-                        onClick={() => {
-                          createLineItem.mutate({
-                            quoteId,
-                            description: item.name + (item.description ? ` - ${item.description}` : ''),
-                            quantity: "1",
-                            unit: item.unit || "each",
-                            rate: item.defaultRate || "0",
-                          });
-                          setShowCatalogPicker(false);
-                          toast.success(`Added "${item.name}" to quote`);
-                        }}
-                      >
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <div className="font-medium">{item.name}</div>
-                            {item.description && (
-                              <div className="text-sm text-muted-foreground truncate max-w-xs">
-                                {renderDescNode(item.description)}
-                              </div>
-                            )}
-                            {item.category && (
-                              <Badge variant="secondary" className="mt-1 text-xs">
-                                {item.category}
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="text-right">
-                            <div className="font-medium">£{parseFloat(item.defaultRate || "0").toFixed(2)}</div>
-                            <div className="text-xs text-muted-foreground">per {item.unit || "each"}</div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Totals */}
-              <div className="border-t pt-4 space-y-2">
-                {lineItems && lineItems.some((i: any) => !i.pricingType || i.pricingType === "standard") && (
-                  <>
-                    <div className="flex justify-between text-sm">
-                      <span>Subtotal</span>
-                      <span>£{parseFloat(quote.subtotal || "0").toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-sm">
-                      <div className="flex items-center gap-2">
-                        <span>VAT</span>
-                        <Input
-                          type="number"
-                          className="w-16 h-7 text-xs"
-                          value={taxRate}
-                          onChange={(e) => setTaxRate(e.target.value)}
-                          onBlur={() => handleSaveQuote()}
-                        />
-                        <span>%</span>
-                      </div>
-                      <span>£{parseFloat(quote.taxAmount || "0").toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between font-bold text-lg border-t pt-2">
-                      <span>Total</span>
-                      <span>£{parseFloat(quote.total || "0").toFixed(2)}</span>
-                    </div>
-                  </>
-                )}
-                {/* Recurring totals — computed live from line items, not included in main total */}
-                {lineItems && (() => {
-                  const monthlyAmt = lineItems.filter((i: any) => i.pricingType === "monthly").reduce((s: number, i: any) => s + parseFloat(i.total || "0"), 0);
-                  const annualAmt = lineItems.filter((i: any) => i.pricingType === "annual").reduce((s: number, i: any) => s + parseFloat(i.total || "0"), 0);
-                  const optionalAmt = lineItems.filter((i: any) => i.pricingType === "optional").reduce((s: number, i: any) => s + parseFloat(i.total || "0"), 0);
-                  if (monthlyAmt <= 0 && annualAmt <= 0 && optionalAmt <= 0) return null;
-                  return (
-                    <div className="border-t pt-2 mt-1 space-y-1">
-                      <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "#94a3b8" }}>{lineItems.some((i: any) => !i.pricingType || i.pricingType === "standard") ? "Not included in total above" : "Recurring charges"}</p>
-                      {monthlyAmt > 0 && (
-                        <div className="flex justify-between items-center text-sm font-semibold rounded px-2 py-1" style={{ backgroundColor: "#f0fdfa", color: "#0d9488" }}>
-                          <span>Recurring monthly</span>
-                          <span>£{monthlyAmt.toFixed(2)}<span className="font-normal text-xs">/month</span></span>
-                        </div>
-                      )}
-                      {annualAmt > 0 && (
-                        <div className="flex justify-between items-center text-sm font-semibold rounded px-2 py-1" style={{ backgroundColor: "#fef9ee", color: "#b45309" }}>
-                          <span>Recurring annual</span>
-                          <span>£{annualAmt.toFixed(2)}<span className="font-normal text-xs">/year</span></span>
-                        </div>
-                      )}
-                      {optionalAmt > 0 && (
-                        <div className="flex justify-between items-center text-sm font-semibold rounded px-2 py-1" style={{ backgroundColor: "#faf5ff", color: "#7c3aed" }}>
-                          <span>Optional items</span>
-                          <span>£{optionalAmt.toFixed(2)}</span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Terms */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Terms & Conditions</CardTitle>
-                {termsModified && terms !== user?.defaultTerms && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => updateProfile.mutate({ defaultTerms: terms })}
-                    disabled={updateProfile.isPending}
-                  >
-                    {updateProfile.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    ) : (
-                      <Save className="h-4 w-4 mr-2" />
-                    )}
-                    Save as Default
-                  </Button>
-                )}
-              </div>
-              {!terms && user?.defaultTerms && (
-                <p className="text-sm text-muted-foreground mt-1">
-                  You have default T&C saved.{" "}
-                  <button
-                    className="text-primary hover:underline"
-                    onClick={() => {
-                      setTerms(user.defaultTerms || "");
-                      setOriginalTerms(user.defaultTerms || "");
-                    }}
-                  >
-                    Click to use your default
-                  </button>
-                </p>
-              )}
-            </CardHeader>
-            <CardContent>
-              <Textarea
-                value={terms}
-                onChange={(e) => {
-                  setTerms(e.target.value);
-                  if (e.target.value !== originalTerms) {
-                    setTermsModified(true);
-                  }
-                }}
-                placeholder="Payment terms, warranty, exclusions, etc..."
-                rows={6}
-              />
-              {termsModified && terms !== originalTerms && (
-                <p className="text-sm text-muted-foreground mt-2">
-                  T&C modified. Save the quote to apply changes, or click "Save as Default" to use these terms on all future quotes.
-                </p>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Assumptions & Exclusions */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Assumptions &amp; Exclusions</CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">These appear on the generated PDF. Enter one item per line.</p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">Exclusions</label>
-                <Textarea
-                  value={exclusions}
-                  onChange={(e) => setExclusions(e.target.value)}
-                  onBlur={handleSaveAssumptionsExclusions}
-                  placeholder={"Physical hardware upgrades or replacements.\nTravel costs outside standard operational radius."}
-                  rows={4}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">Assumptions</label>
-                <Textarea
-                  value={assumptions}
-                  onChange={(e) => setAssumptions(e.target.value)}
-                  onBlur={handleSaveAssumptionsExclusions}
-                  placeholder={"Client has existing infrastructure in place.\nAll areas accessible during normal working hours."}
-                  rows={4}
-                />
-              </div>
+        <div className="mt-3">
+          <Textarea
+            id="paste-textarea"
+            placeholder="Paste an email, brief, or note here and press ⌘/Ctrl+Enter…"
+            value={pasteText}
+            onChange={(e) => setPasteText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                onAddPaste();
+              }
+            }}
+            className="min-h-[72px] text-sm bg-white"
+            style={{ borderColor: brand.border }}
+          />
+          {pasteText.trim().length > 0 && (
+            <div className="mt-1.5 flex justify-end">
               <Button
                 size="sm"
-                variant="outline"
-                onClick={handleSaveAssumptionsExclusions}
-                disabled={upsertTenderContext.isPending}
+                onClick={onAddPaste}
+                className="text-xs text-white h-7"
+                style={{
+                  background:
+                    "linear-gradient(135deg, #0d9488 0%, #0f766e 100%)",
+                }}
               >
-                {upsertTenderContext.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : (
-                  <Save className="h-4 w-4 mr-2" />
-                )}
-                Save
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        {isComprehensive && (
-          <TabsContent value="timeline" className="space-y-6">
-            <TimelineTab quoteId={quoteId} config={comprehensiveConfig} refetch={refetch} />
-          </TabsContent>
-        )}
-
-        {/* COMPREHENSIVE: SITE/QUALITY TAB */}
-        {isComprehensive && (
-          <TabsContent value="sitequality" className="space-y-6">
-            <SiteQualityTab quoteId={quoteId} config={comprehensiveConfig} refetch={refetch} />
-          </TabsContent>
-        )}
-
-        {/* COMPREHENSIVE: DOCUMENTS TAB */}
-        {isComprehensive && (
-          <TabsContent value="documents" className="space-y-6">
-            <DocumentsTab quoteId={quoteId} config={comprehensiveConfig} inputs={inputs || []} refetch={refetch} />
-          </TabsContent>
-        )}
-      </Tabs>
-
-      {/* Generate Email Modal */}
-      {showEmailModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-background rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-4 border-b">
-              <div>
-                <h2 className="text-lg font-semibold">Generated Email</h2>
-                <p className="text-sm text-muted-foreground">Copy and paste into your email client</p>
-              </div>
-              <Button variant="ghost" size="icon" onClick={() => setShowEmailModal(false)}>
-                <X className="h-4 w-4" />
+                <Plus className="w-3 h-3 mr-1" />
+                Add as evidence
               </Button>
             </div>
-
-            {/* Modal Content */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {/* Subject Line */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="font-medium">Subject Line</Label>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => copyToClipboard(emailSubject, "Subject")}
-                  >
-                    Copy Subject
-                  </Button>
-                </div>
-                <div className="p-3 bg-muted rounded-md font-medium">
-                  {emailSubject}
-                </div>
-              </div>
-
-              {/* HTML Preview */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="font-medium">Email Body (Rich Format)</Label>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => copyHtmlToClipboard(emailHtmlBody, "Email body")}
-                  >
-                    Copy HTML Body
-                  </Button>
-                </div>
-                <div 
-                  className="p-4 bg-white text-black rounded-md border max-h-80 overflow-y-auto"
-                  dangerouslySetInnerHTML={{ __html: emailHtmlBody }}
-                />
-              </div>
-
-              {/* Plain Text Version */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="font-medium">Plain Text Version</Label>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => copyToClipboard(emailTextBody, "Plain text")}
-                  >
-                    Copy Plain Text
-                  </Button>
-                </div>
-                <pre className="p-4 bg-muted rounded-md text-sm whitespace-pre-wrap font-mono max-h-60 overflow-y-auto">
-                  {emailTextBody}
-                </pre>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="flex items-center justify-between p-4 border-t bg-muted/30">
-              <p className="text-sm text-muted-foreground">
-                Tip: Use "Copy HTML Body" for rich formatting in Gmail, Outlook, etc.
-              </p>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setShowEmailModal(false)}>
-                  Close
-                </Button>
-                <Button 
-                  onClick={() => {
-                    // Copy both subject and body
-                    copyToClipboard(`Subject: ${emailSubject}\n\n${emailTextBody}`, "Full email");
-                  }}
-                >
-                  Copy All (Plain Text)
-                </Button>
-              </div>
-            </div>
-          </div>
+          )}
         </div>
-      )}
+      </div>
+
+      <div className="flex-shrink-0 px-5 pb-2 mt-2 flex items-center justify-between">
+        <h2
+          className="text-[11px] font-bold uppercase tracking-wider"
+          style={{ color: brand.navyMuted }}
+        >
+          Added inputs
+        </h2>
+        <span
+          className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+          style={{
+            backgroundColor: brand.tealBg,
+            color: brand.teal,
+          }}
+        >
+          {inputs.length}
+        </span>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-5 pb-5 space-y-2">
+        {inputs.length === 0 ? (
+          <div
+            className="text-xs text-center py-8 rounded-lg border border-dashed"
+            style={{ color: brand.navyMuted, borderColor: brand.border }}
+          >
+            Nothing added yet. Upload a file, paste text, or dictate.
+          </div>
+        ) : (
+          inputs.map((inp) => (
+            <InputCard
+              key={inp.id}
+              input={inp}
+              isActive={activeInputId === inp.id}
+              isHighlighted={highlightedInputIds.has(inp.id)}
+              onClick={() => onSelect(inp.id)}
+              onDelete={() => onDelete(inp.id)}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Action tile ──────────────────────────────────────────────────────────
+
+interface ActionTileProps {
+  icon: React.ReactNode;
+  label: string;
+  color: string;
+  bg: string;
+  onClick: () => void;
+  disabled?: boolean;
+  busy?: boolean;
+}
+
+function ActionTile({
+  icon,
+  label,
+  color,
+  bg,
+  onClick,
+  disabled,
+  busy,
+}: ActionTileProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="flex flex-col items-center justify-center gap-1.5 rounded-lg py-3 px-2 bg-white transition-all hover:shadow-sm disabled:opacity-60"
+      style={{ border: `1px solid ${brand.border}` }}
+    >
+      <div
+        className="w-7 h-7 rounded-md flex items-center justify-center"
+        style={{ backgroundColor: bg, color }}
+      >
+        {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : icon}
+      </div>
+      <span
+        className="text-[11px] font-semibold"
+        style={{ color: brand.navy }}
+      >
+        {label}
+      </span>
+    </button>
+  );
+}
+
+// ─── Dictate tile ─────────────────────────────────────────────────────────
+
+function DictateTile({
+  onTranscript,
+}: {
+  onTranscript: (text: string) => void;
+}) {
+  const [recording, setRecording] = useState(false);
+
+  return (
+    <div
+      className="relative flex flex-col items-center justify-center gap-1.5 rounded-lg py-3 px-2 bg-white"
+      style={{ border: `1px solid ${brand.border}` }}
+    >
+      <div
+        className="w-7 h-7 rounded-md flex items-center justify-center"
+        style={{ backgroundColor: "#fef3c7", color: "#b45309" }}
+      >
+        <Mic className="w-4 h-4" />
+      </div>
+      <span
+        className="text-[11px] font-semibold"
+        style={{ color: brand.navy }}
+      >
+        {recording ? "Listening…" : "Dictate"}
+      </span>
+      <DictationButton
+        variant="inline"
+        autoStart={false}
+        onTranscript={onTranscript}
+        onListeningChange={setRecording}
+        className="absolute inset-0 opacity-0"
+      />
+    </div>
+  );
+}
+
+// ─── Input card ───────────────────────────────────────────────────────────
+
+function InputCard({
+  input,
+  isActive,
+  isHighlighted,
+  onClick,
+  onDelete,
+}: {
+  input: QuoteInput;
+  isActive: boolean;
+  isHighlighted: boolean;
+  onClick: () => void;
+  onDelete: () => void;
+}) {
+  const visual = inputVisual(input);
+  const title = inputTitle(input);
+  const subtitle = inputSubtitle(input);
+  const isProcessing = input.processingStatus === "processing";
+  const isFailed =
+    input.processingStatus === "failed" ||
+    input.processingStatus === "error";
+
+  const borderColor = isActive
+    ? brand.teal
+    : isHighlighted
+      ? brand.tealBorder
+      : brand.border;
+  const bgColor = isActive
+    ? brand.tealBg
+    : isHighlighted
+      ? "#f0fdfa"
+      : "white";
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      className="group flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-all hover:shadow-sm"
+      style={{
+        backgroundColor: bgColor,
+        border: `1px solid ${borderColor}`,
+      }}
+    >
+      <div
+        className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-[10px] font-bold"
+        style={{ backgroundColor: visual.bg, color: visual.color }}
+      >
+        {visual.label}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div
+          className="text-sm font-semibold truncate"
+          style={{ color: brand.navy }}
+        >
+          {title}
+        </div>
+        <div
+          className="text-[11px] flex items-center gap-1.5"
+          style={{ color: brand.navyMuted }}
+        >
+          {isProcessing && <Loader2 className="w-3 h-3 animate-spin" />}
+          {isFailed && (
+            <AlertCircle className="w-3 h-3" style={{ color: "#dc2626" }} />
+          )}
+          <span>{subtitle}</span>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete();
+        }}
+        className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-red-50"
+        title="Remove"
+      >
+        <Trash2 className="w-3.5 h-3.5" style={{ color: "#dc2626" }} />
+      </button>
+    </div>
+  );
+}
+
+// ─── Empty state panel (State 1 right side) ──────────────────────────────
+
+function EmptyStatePanel({
+  onGenerate,
+  isGenerating,
+  evidenceCount,
+}: {
+  onGenerate: () => void;
+  isGenerating: boolean;
+  evidenceCount: number;
+}) {
+  const canGenerate = evidenceCount > 0 && !isGenerating;
+  return (
+    <div className="flex-1 flex items-center justify-center p-10">
+      <div className="max-w-sm w-full text-center">
+        <div
+          className="mx-auto w-16 h-16 rounded-2xl flex items-center justify-center mb-5"
+          style={{
+            background: "linear-gradient(135deg, #0d9488 0%, #0f766e 100%)",
+          }}
+        >
+          <Sparkles className="w-8 h-8 text-white" />
+        </div>
+        <h2
+          className="text-xl font-bold mb-2"
+          style={{ color: brand.navy }}
+        >
+          Ready when you are
+        </h2>
+        <p
+          className="text-sm mb-6 leading-relaxed"
+          style={{ color: brand.navyMuted }}
+        >
+          {evidenceCount === 0
+            ? "Add evidence on the left — uploads, pasted text, or a quick voice note. Then generate the quote."
+            : `${evidenceCount} ${evidenceCount === 1 ? "input" : "inputs"} added. Press Generate Quote and I'll turn them into line items.`}
+        </p>
+        <Button
+          size="lg"
+          onClick={onGenerate}
+          disabled={!canGenerate}
+          className="text-white w-full"
+          style={{
+            background: canGenerate
+              ? "linear-gradient(135deg, #0d9488 0%, #0f766e 100%)"
+              : undefined,
+          }}
+        >
+          {isGenerating ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Generating…
+            </>
+          ) : (
+            <>
+              <Sparkles className="w-4 h-4 mr-2" />
+              Generate Quote
+            </>
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Editor panel (State 2 right side) ───────────────────────────────────
+
+interface EditorPanelProps {
+  quote: Record<string, unknown>;
+  clientName: string;
+  lineItems: LineItem[];
+  catalogItems: CatalogItemRef[];
+  totals: { oneOff: number; monthly: number; annual: number; optional: number };
+  activeLineItemId: number | null;
+  highlightedLineItemIds: Set<number>;
+  onLineItemClick: (id: number) => void;
+  onUpdateClientName: (v: string) => void;
+  onUpdateDescription: (v: string) => void;
+  onSaveLineItem: (
+    id: number,
+    patch: Record<string, unknown>,
+    delayMs?: number,
+  ) => void;
+  onDeleteLineItem: (id: number) => void;
+  onAddLineItem: () => void;
+  onApplyCatalog: (row: LineItem, cat: CatalogItemRef) => void;
+  onGeneratePDF: () => void;
+  isGeneratingPDF: boolean;
+  addingLineItem: boolean;
+}
+
+function EditorPanel({
+  quote,
+  clientName,
+  lineItems,
+  catalogItems,
+  totals,
+  activeLineItemId,
+  highlightedLineItemIds,
+  onLineItemClick,
+  onUpdateClientName,
+  onUpdateDescription,
+  onSaveLineItem,
+  onDeleteLineItem,
+  onAddLineItem,
+  onApplyCatalog,
+  onGeneratePDF,
+  isGeneratingPDF,
+  addingLineItem,
+}: EditorPanelProps) {
+  const description = ((quote as any).description as string) || "";
+  const lineItemCount = lineItems.length;
+
+  const totalsSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (totals.oneOff > 0) parts.push(`${fmtGBP(totals.oneOff)}`);
+    if (totals.monthly > 0) parts.push(`${fmtGBP(totals.monthly)}/mo`);
+    if (totals.annual > 0) parts.push(`${fmtGBP(totals.annual)}/yr`);
+    return parts.length > 0 ? `${parts.join(" + ")} · Ex VAT` : "No totals yet";
+  }, [totals]);
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+        <div
+          className="rounded-xl p-4"
+          style={{ backgroundColor: brand.tealBg }}
+        >
+          <Input
+            defaultValue={clientName}
+            onChange={(e) => onUpdateClientName(e.target.value)}
+            placeholder="Client name"
+            className="text-lg font-bold border-0 shadow-none focus-visible:ring-0 px-0 bg-transparent"
+            style={{ color: brand.navy }}
+          />
+          <div
+            className="text-xs mt-0.5"
+            style={{ color: brand.navyMuted }}
+          >
+            {lineItemCount} {lineItemCount === 1 ? "line item" : "line items"}
+          </div>
+          <div
+            className="text-sm font-bold mt-2"
+            style={{ color: brand.navy }}
+          >
+            {totalsSummary}
+          </div>
+          {totals.optional > 0 && (
+            <div
+              className="text-[11px] mt-0.5"
+              style={{ color: brand.navyMuted }}
+            >
+              + {fmtGBP(totals.optional)} optional
+            </div>
+          )}
+        </div>
+
+        <div
+          className="rounded-xl p-4 bg-white"
+          style={{ border: `1px solid ${brand.border}` }}
+        >
+          <label
+            className="text-[11px] font-bold uppercase tracking-wider block mb-2"
+            style={{ color: brand.navyMuted }}
+          >
+            Job description
+          </label>
+          <Textarea
+            defaultValue={description}
+            onChange={(e) => onUpdateDescription(e.target.value)}
+            placeholder="Brief summary of the work — this appears on the PDF"
+            className="min-h-[80px] text-sm border-0 shadow-none focus-visible:ring-0 px-0 resize-none"
+            style={{ color: brand.navy }}
+          />
+        </div>
+
+        <div
+          className="rounded-xl bg-white overflow-hidden"
+          style={{ border: `1px solid ${brand.border}` }}
+        >
+          <div
+            className="px-4 py-2.5 flex items-center justify-between"
+            style={{ borderBottom: `1px solid ${brand.border}` }}
+          >
+            <h3
+              className="text-[11px] font-bold uppercase tracking-wider"
+              style={{ color: brand.navyMuted }}
+            >
+              Line items
+            </h3>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onAddLineItem}
+              disabled={addingLineItem}
+              className="h-7 text-xs"
+            >
+              <Plus className="w-3 h-3 mr-1" />
+              Add row
+            </Button>
+          </div>
+          <LineItemsTable
+            rows={lineItems}
+            catalogItems={catalogItems}
+            activeLineItemId={activeLineItemId}
+            highlightedLineItemIds={highlightedLineItemIds}
+            onRowClick={onLineItemClick}
+            onSave={onSaveLineItem}
+            onDelete={onDeleteLineItem}
+            onApplyCatalog={onApplyCatalog}
+          />
+        </div>
+
+        <div
+          className="text-[11px] italic px-1 flex items-center gap-1.5"
+          style={{ color: brand.navyMuted }}
+        >
+          <Info className="w-3 h-3" />
+          Click an evidence card or a line item to see what was derived from
+          what.
+        </div>
+      </div>
+
+      <div
+        className="flex-shrink-0 px-6 py-3 bg-white flex items-center justify-end gap-3"
+        style={{ borderTop: `1px solid ${brand.border}` }}
+      >
+        <Button
+          size="lg"
+          onClick={onGeneratePDF}
+          disabled={isGeneratingPDF || lineItems.length === 0}
+          className="text-white"
+          style={{
+            background: "linear-gradient(135deg, #0d9488 0%, #0f766e 100%)",
+          }}
+        >
+          {isGeneratingPDF ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Preparing PDF…
+            </>
+          ) : (
+            <>
+              <Download className="w-4 h-4 mr-2" />
+              Generate PDF
+            </>
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Line items table ────────────────────────────────────────────────────
+
+interface LineItemsTableProps {
+  rows: LineItem[];
+  catalogItems: CatalogItemRef[];
+  activeLineItemId: number | null;
+  highlightedLineItemIds: Set<number>;
+  onRowClick: (id: number) => void;
+  onSave: (
+    id: number,
+    patch: Record<string, unknown>,
+    delayMs?: number,
+  ) => void;
+  onDelete: (id: number) => void;
+  onApplyCatalog: (row: LineItem, cat: CatalogItemRef) => void;
+}
+
+function LineItemsTable({
+  rows,
+  catalogItems,
+  activeLineItemId,
+  highlightedLineItemIds,
+  onRowClick,
+  onSave,
+  onDelete,
+  onApplyCatalog,
+}: LineItemsTableProps) {
+  if (rows.length === 0) {
+    return (
+      <div
+        className="text-xs text-center py-8"
+        style={{ color: brand.navyMuted }}
+      >
+        No line items yet.
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr
+            className="text-[10px] uppercase font-bold tracking-wider"
+            style={{
+              color: brand.navyMuted,
+              backgroundColor: "#fafbfc",
+            }}
+          >
+            <th className="text-left px-4 py-2 w-[38%]">Line item</th>
+            <th className="text-right px-2 py-2 w-[10%]">Qty</th>
+            <th className="text-left px-2 py-2 w-[10%]">Unit</th>
+            <th className="text-right px-2 py-2 w-[12%]">Rate</th>
+            <th className="text-right px-2 py-2 w-[12%]">Total</th>
+            <th className="text-left px-2 py-2 w-[14%]">Type</th>
+            <th className="w-[4%]" />
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <LineItemRow
+              key={row.id}
+              row={row}
+              catalogItems={catalogItems}
+              isActive={activeLineItemId === row.id}
+              isHighlighted={highlightedLineItemIds.has(row.id)}
+              onRowClick={() => onRowClick(row.id)}
+              onSave={onSave}
+              onDelete={() => onDelete(row.id)}
+              onApplyCatalog={(cat) => onApplyCatalog(row, cat)}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ─── Line items row ──────────────────────────────────────────────────────
+
+function LineItemRow({
+  row,
+  catalogItems,
+  isActive,
+  isHighlighted,
+  onRowClick,
+  onSave,
+  onDelete,
+  onApplyCatalog,
+}: {
+  row: LineItem;
+  catalogItems: CatalogItemRef[];
+  isActive: boolean;
+  isHighlighted: boolean;
+  onRowClick: () => void;
+  onSave: (
+    id: number,
+    patch: Record<string, unknown>,
+    delayMs?: number,
+  ) => void;
+  onDelete: () => void;
+  onApplyCatalog: (cat: CatalogItemRef) => void;
+}) {
+  const rowTotal = useMemo(() => {
+    const q = parseNum(row.quantity);
+    const r = parseNum(row.rate);
+    const stored = parseNum(row.total);
+    return stored || q * r;
+  }, [row.quantity, row.rate, row.total]);
+
+  const bgColor = isActive
+    ? brand.tealBg
+    : isHighlighted
+      ? "#f0fdfa"
+      : "white";
+
+  const uiType = uiTypeFromPricing(row.pricingType);
+
+  return (
+    <tr
+      onClick={onRowClick}
+      className="group cursor-pointer transition-colors hover:bg-slate-50"
+      style={{
+        backgroundColor: bgColor,
+        borderTop: `1px solid ${brand.borderLight}`,
+      }}
+    >
+      <td className="px-4 py-2">
+        <Input
+          defaultValue={row.description || ""}
+          onChange={(e) => onSave(row.id, { description: e.target.value })}
+          onClick={(e) => e.stopPropagation()}
+          className="text-sm border-0 shadow-none focus-visible:ring-0 px-0 bg-transparent h-auto py-0.5"
+          style={{ color: brand.navy }}
+          placeholder="Item description"
+        />
+      </td>
+      <td className="px-2 py-2 text-right">
+        <Input
+          defaultValue={row.quantity || ""}
+          onChange={(e) => onSave(row.id, { quantity: e.target.value })}
+          onClick={(e) => e.stopPropagation()}
+          className="text-sm text-right border-0 shadow-none focus-visible:ring-0 px-0 bg-transparent h-auto py-0.5 w-full"
+          style={{ color: brand.navy }}
+          inputMode="decimal"
+        />
+      </td>
+      <td className="px-2 py-2">
+        <Input
+          defaultValue={row.unit || ""}
+          onChange={(e) => onSave(row.id, { unit: e.target.value })}
+          onClick={(e) => e.stopPropagation()}
+          className="text-sm border-0 shadow-none focus-visible:ring-0 px-0 bg-transparent h-auto py-0.5 w-full"
+          style={{ color: brand.navy }}
+          placeholder="each"
+        />
+      </td>
+      <td className="px-2 py-2 text-right">
+        <Input
+          defaultValue={row.rate || ""}
+          onChange={(e) => onSave(row.id, { rate: e.target.value })}
+          onClick={(e) => e.stopPropagation()}
+          className="text-sm text-right border-0 shadow-none focus-visible:ring-0 px-0 bg-transparent h-auto py-0.5 w-full"
+          style={{ color: brand.navy }}
+          inputMode="decimal"
+          placeholder="0.00"
+        />
+      </td>
+      <td
+        className="px-2 py-2 text-right text-sm font-semibold"
+        style={{ color: brand.navy }}
+      >
+        {fmtGBP(rowTotal)}
+      </td>
+      <td className="px-2 py-2">
+        <div onClick={(e) => e.stopPropagation()}>
+          <Select
+            value={uiType}
+            onValueChange={(v) =>
+              onSave(
+                row.id,
+                { pricingType: pricingFromUiType(v as DisplayType) },
+                0,
+              )
+            }
+          >
+            <SelectTrigger
+              className="h-7 text-xs border-0 shadow-none focus:ring-0 bg-transparent px-0"
+              style={{ color: brand.navy }}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="one_off">One-off cost</SelectItem>
+              <SelectItem value="monthly">Monthly cost</SelectItem>
+              <SelectItem value="annual">Annual cost</SelectItem>
+              <SelectItem value="optional">Optional</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </td>
+      <td className="px-2 py-2">
+        <div
+          className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <CatalogPicker
+            catalogItems={catalogItems}
+            onSelect={onApplyCatalog}
+          />
+          <button
+            type="button"
+            onClick={onDelete}
+            className="p-1 rounded hover:bg-red-50"
+            title="Remove row"
+          >
+            <Trash2 className="w-3.5 h-3.5" style={{ color: "#dc2626" }} />
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+// ─── Comprehensive-mode fallback ─────────────────────────────────────────
+
+function ComprehensiveFallback({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="flex items-center justify-center p-10">
+      <div
+        className="max-w-md w-full rounded-xl p-6 bg-white text-center"
+        style={{ border: `1px solid ${brand.border}` }}
+      >
+        <div
+          className="mx-auto w-12 h-12 rounded-xl flex items-center justify-center mb-4"
+          style={{ backgroundColor: "#fef3c7" }}
+        >
+          <Info className="w-6 h-6" style={{ color: "#b45309" }} />
+        </div>
+        <h2
+          className="text-lg font-bold mb-2"
+          style={{ color: brand.navy }}
+        >
+          Tender-pack mode isn't available for this sector yet
+        </h2>
+        <p
+          className="text-sm mb-5 leading-relaxed"
+          style={{ color: brand.navyMuted }}
+        >
+          Styled tender packs for non-electrical sectors are coming in a
+          future update. For now, please use simple mode — it still
+          produces a professional quote with your branding.
+        </p>
+        <Button variant="outline" onClick={onBack} className="w-full">
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Back to dashboard
+        </Button>
+      </div>
     </div>
   );
 }

@@ -942,7 +942,7 @@ Respond with valid JSON:
     updateStatus: protectedProcedure
       .input(z.object({
         id: z.number(),
-        status: z.enum(["draft", "sent", "accepted", "declined"]),
+        status: z.enum(["draft", "sent", "accepted", "declined", "pdf_generated"]),
       }))
       .mutation(async ({ ctx, input }) => {
         // Try org-based access first
@@ -957,11 +957,18 @@ Respond with valid JSON:
         if (!currentQuote) throw new Error("Quote not found");
 
         // Validate status transitions
+        // Beta-1: "pdf_generated" is a new terminal-ish state added after the
+        // unified workspace's Generate PDF action. A quote can move draft →
+        // pdf_generated when the PDF download succeeds, and from there to any
+        // of sent / accepted / declined / draft. The other states can also
+        // move directly into pdf_generated for users who regenerate a PDF
+        // after sending/winning/losing.
         const validTransitions: Record<string, string[]> = {
-          draft: ["sent"],
-          sent: ["accepted", "declined", "draft"],
-          accepted: ["draft"], // Allow reverting to draft
-          declined: ["draft"], // Allow reverting to draft
+          draft: ["sent", "pdf_generated"],
+          sent: ["accepted", "declined", "draft", "pdf_generated"],
+          accepted: ["draft", "pdf_generated"],
+          declined: ["draft", "pdf_generated"],
+          pdf_generated: ["sent", "accepted", "declined", "draft"],
         };
 
         const currentStatus = currentQuote.status;
@@ -3888,6 +3895,11 @@ Respond ONLY with valid JSON — no preamble, no markdown:
         // items — bypassing GPT-4o reinterpretation entirely.
         // GPT-4o only handles: description, title, clientName/address, assumptions,
         // exclusions, terms, riskNotes.
+        //
+        // Beta-1: materials may carry `sourceInputIds` from the engine. We thread
+        // them through so the response can expose a lineItemId → inputIds map for
+        // the unified workspace's two-way highlighting (held in-memory on the
+        // client for Beta-1; Beta-2 will persist to quote_line_items.source_input_ids).
         let qdsLineItems: Array<{
           description: string;
           quantity: number;
@@ -3895,6 +3907,7 @@ Respond ONLY with valid JSON — no preamble, no markdown:
           rate: number;
           pricingType: string;
           sortOrder: number;
+          sourceInputIds?: number[];
         }> = [];
 
         const qdsSummaryRaw = (quote as any).qdsSummaryJson;
@@ -3927,6 +3940,15 @@ Respond ONLY with valid JSON — no preamble, no markdown:
                   ? `${m.item} — ${m.description}`
                   : m.item;
                 const costPrice = m.costPrice != null ? parseFloat(String(m.costPrice)) || null : null;
+                // Beta-1: preserve sourceInputIds if the material carries them.
+                // Sanitise to a clean number[] — tolerate missing or malformed.
+                let sourceInputIds: number[] | undefined;
+                if (Array.isArray(m.sourceInputIds)) {
+                  const valid = (m.sourceInputIds as unknown[])
+                    .map((v) => (typeof v === "number" ? v : parseInt(String(v), 10)))
+                    .filter((v): v is number => Number.isFinite(v) && v > 0);
+                  if (valid.length > 0) sourceInputIds = valid;
+                }
                 qdsLineItems.push({
                   description,
                   quantity: qty,
@@ -3935,7 +3957,8 @@ Respond ONLY with valid JSON — no preamble, no markdown:
                   costPrice: costPrice != null ? String(costPrice) : null,
                   pricingType: m.pricingType || "standard",
                   sortOrder: sortIdx++,
-                });
+                  sourceInputIds,
+                } as any);
               }
             }
 
@@ -4391,7 +4414,14 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
           // Create line items
           // For simple quotes: use QDS direct line items (exact items user confirmed in QDS).
           // For comprehensive quotes (or no QDS): fall back to AI-generated line items.
+          //
+          // Beta-1: while creating line items we build a sourceInputMap
+          // (lineItemId → inputIds) that the client uses for evidence ↔
+          // line-item highlighting. The mapping is held in-memory on the
+          // client for this session only; Beta-2 persists to
+          // quote_line_items.source_input_ids.
           const createdLineItems = [];
+          const sourceInputMap: Record<number, number[]> = {};
           const useQdsItems = !isComprehensive && qdsLineItems.length > 0;
           const itemsToCreate = useQdsItems ? qdsLineItems : (draft.lineItems && Array.isArray(draft.lineItems) ? draft.lineItems : []);
 
@@ -4417,6 +4447,14 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
               costPrice: (item as any).costPrice ?? null,
             });
             createdLineItems.push(lineItem);
+            // Beta-1: record the evidence-input mapping if this line item
+            // carries sourceInputIds (QDS direct path, non-electrical). The
+            // electrical QDS branch does not emit sourceInputIds, so its
+            // rows are absent from the map and highlighting no-ops for them.
+            const sids = (item as any).sourceInputIds;
+            if (Array.isArray(sids) && sids.length > 0 && (lineItem as any)?.id) {
+              sourceInputMap[(lineItem as any).id as number] = sids as number[];
+            }
           }
 
           // Update tender context with assumptions/exclusions
@@ -4473,6 +4511,13 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
             quote: updatedQuote,
             lineItems: createdLineItems,
             draft,
+            // Beta-1: evidence → line-item mapping for two-way highlighting.
+            // Empty object on electrical (which doesn't emit sourceInputIds)
+            // or when no materials carried evidence IDs. Client holds this in
+            // session state; lost on refresh. Beta-2 will persist to
+            // quote_line_items.source_input_ids and this field becomes
+            // redundant (client can read it off each line item instead).
+            sourceInputMap,
           };
         } catch (parseError) {
           console.error("Failed to parse AI response:", parseError);
