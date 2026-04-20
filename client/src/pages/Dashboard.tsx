@@ -1,18 +1,13 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { StatusPill, statusLabel } from "@/components/StatusPill";
 import { trpc } from "@/lib/trpc";
 import {
   Plus,
   FileText,
-  Clock,
-  CheckCircle2,
-  Send,
-  XCircle,
   MoreHorizontal,
   Search,
-  Layers,
   Crown,
   ArrowRight,
   AlertTriangle,
@@ -54,10 +49,27 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
-type QuoteStatus = "draft" | "sent" | "accepted" | "declined";
+/**
+ * Dashboard (v2) — brand-refreshed quotes list.
+ *
+ * Changes from v1:
+ *  - Header: title + subtitle summary (N total · N draft · N awaiting
+ *    response), replacing the 4 stats cards at the top of the page.
+ *  - Filter pills use v2 terminology: Won (=accepted), Lost (=declined),
+ *    PDF Generated (new enum value, first use is here in the filter
+ *    row; auto-flip on PDF download lands in PR-Beta).
+ *  - The quote list is now a proper HTML table (Client / Sector /
+ *    Status / Total / Updated / ⋯) instead of a divided div-list.
+ *  - Seed-catalog nudge and Load Example Quote preserved; restyled to
+ *    brand tokens. Upgrade modal and dialogs preserved verbatim.
+ *  - New Quote button keeps the existing quote-mode dialog (simple /
+ *    comprehensive) — the unified workspace lands in PR-Beta.
+ */
+
+type QuoteStatus = "draft" | "sent" | "accepted" | "declined" | "pdf_generated";
 
 interface QuoteData {
   id: number;
@@ -66,16 +78,43 @@ interface QuoteData {
   clientName: string | null;
   status: string;
   total: string | null;
-  createdAt: Date;
+  monthlyTotal?: string | null;
+  description?: string | null;
+  createdAt: Date | string;
+  updatedAt?: Date | string;
   quoteMode?: string | null;
+  tradePreset?: string | null;
 }
 
-const statusConfig: Record<QuoteStatus, { label: string; icon: typeof FileText; className: string }> = {
-  draft: { label: "Draft", icon: Clock, className: "status-draft" },
-  sent: { label: "Sent", icon: Send, className: "status-sent" },
-  accepted: { label: "Accepted", icon: CheckCircle2, className: "status-accepted" },
-  declined: { label: "Declined", icon: XCircle, className: "status-declined" },
-};
+const FILTER_OPTIONS: Array<{ value: QuoteStatus | "all"; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "draft", label: "Draft" },
+  { value: "sent", label: "Sent" },
+  { value: "pdf_generated", label: "PDF Generated" },
+  { value: "accepted", label: "Won" },
+  { value: "declined", label: "Lost" },
+];
+
+/** Relative time — small helper so we don't pull in date-fns for one use. */
+function relativeTime(date: Date | string | undefined | null): string {
+  if (!date) return "—";
+  const then = new Date(date).getTime();
+  if (isNaN(then)) return "—";
+  const sec = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (sec < 60) return "just now";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const d = Math.floor(hr / 24);
+  if (d < 7) return `${d}d ago`;
+  const w = Math.floor(d / 7);
+  if (w < 5) return `${w}w ago`;
+  const mo = Math.floor(d / 30);
+  if (mo < 12) return `${mo}mo ago`;
+  const y = Math.floor(d / 365);
+  return `${y}y ago`;
+}
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -98,24 +137,45 @@ export default function Dashboard() {
   const { data: quotes, isLoading, refetch } = trpc.quotes.list.useQuery();
   const { data: tradePresets } = trpc.quotes.getTradePresets.useQuery();
 
+  // Client-side sector-label lookup. Same query drives the create dialog
+  // and the Sector column in the table — TanStack caches it across the
+  // page so this is essentially free.
+  const sectorLabels = useMemo<Record<string, string>>(() => {
+    const lookup: Record<string, string> = {};
+    (tradePresets || []).forEach((p: any) => {
+      if (p?.key && p?.name) lookup[p.key] = p.name;
+    });
+    return lookup;
+  }, [tradePresets]);
+
   // Auto-populate trade preset from user's default when opening comprehensive mode
   useEffect(() => {
-    if (showCreateDialog && quoteMode === "comprehensive" && !tradePreset && (user as any)?.defaultTradeSector) {
+    if (
+      showCreateDialog &&
+      quoteMode === "comprehensive" &&
+      !tradePreset &&
+      (user as any)?.defaultTradeSector
+    ) {
       setTradePreset((user as any).defaultTradeSector);
     }
-  }, [showCreateDialog, quoteMode, user]);
+  }, [showCreateDialog, quoteMode, user, tradePreset]);
 
   const createQuote = trpc.quotes.create.useMutation({
-    onSuccess: (data) => {
+    onSuccess: data => {
       setShowCreateDialog(false);
       setQuoteMode("simple");
       setTradePreset("");
       setLocation(`/quotes/${data.id}`);
     },
-    onError: (error) => {
-      // If the error is a quota/subscription block, show upgrade modal instead of toast
+    onError: error => {
       const msg = error.message || "";
-      if (msg.includes("monthly limit") || msg.includes("trial has expired") || msg.includes("cancelled") || msg.includes("past due") || msg.includes("unpaid")) {
+      if (
+        msg.includes("monthly limit") ||
+        msg.includes("trial has expired") ||
+        msg.includes("cancelled") ||
+        msg.includes("past due") ||
+        msg.includes("unpaid")
+      ) {
         setShowCreateDialog(false);
         setUpgradeReason(msg);
         setShowUpgradeModal(true);
@@ -129,17 +189,11 @@ export default function Dashboard() {
   const { data: subStatus } = trpc.subscription.status.useQuery();
 
   // Catalog items — used to decide whether to show the seed-catalog nudge.
-  // Same query powers the Catalog page; TanStack shares the cache so this
-  // is essentially free when the user navigates between the two.
   const { data: catalogItems } = trpc.catalog.list.useQuery();
 
   // ── Seed-catalog nudge ──────────────────────────────────────────────────
-  // Shown to users on GTM sectors with empty catalogs who haven't dismissed.
-  // One dismiss state governs BOTH the top banner and the empty-state card
-  // so clicking X on either makes both disappear. Dismiss is persisted in
-  // localStorage under a per-user key. Sync with server/catalogSeeds/index.ts
-  // — client can't import server code, so the list is duplicated by design
-  // (same rationale as SEEDABLE_SECTORS in Catalog.tsx).
+  // Kept from v1. Shown to users on GTM sectors with empty catalogs who
+  // haven't dismissed. Restyled to brand tokens; logic unchanged.
   const SEEDABLE_SECTORS = [
     "it_services",
     "website_marketing",
@@ -157,8 +211,7 @@ export default function Dashboard() {
       );
       setNudgeDismissed(stored === "true");
     } catch {
-      // localStorage unavailable (private mode, storage quota, etc.) —
-      // treat as not dismissed for this session.
+      // localStorage unavailable — treat as not dismissed for this session.
     }
   }, [(user as any)?.id]);
 
@@ -181,14 +234,8 @@ export default function Dashboard() {
     setLocation("/catalog?seed=1");
   };
 
-  // Example-quote nudge — shares the same gate as the catalog-seed nudge
-  // (sector is in SEEDABLE_SECTORS, catalog empty, not dismissed). Mutation
-  // is server-side idempotent — clicking twice on a sector that already has
-  // a demo returns the existing quoteId, so redirect-on-success is safe
-  // either way. refetch() keeps the Dashboard quote list up to date so
-  // the newly seeded "(Example)" quote appears at the top immediately.
   const seedDemoForSector = trpc.quotes.seedDemoForSector.useMutation({
-    onSuccess: (data) => {
+    onSuccess: data => {
       if (data?.quoteId) {
         refetch();
         if (data.seeded) {
@@ -197,11 +244,11 @@ export default function Dashboard() {
         setLocation(`/quote/${data.quoteId}`);
       } else {
         toast.error(
-          "Couldn't load an example quote for this sector — set a sector in Settings and try again.",
+          "Couldn't load an example quote for this sector — set a sector in Settings and try again."
         );
       }
     },
-    onError: (error) => {
+    onError: error => {
       toast.error("Failed to load example quote: " + error.message);
     },
   });
@@ -220,24 +267,29 @@ export default function Dashboard() {
     catalogItems?.length === 0 &&
     !nudgeDismissed;
 
-
   const deleteQuote = trpc.quotes.delete.useMutation({
-    onSuccess: (data) => {
-      toast.success(`Quote deleted${data.deletedFilesCount > 0 ? ` (${data.deletedFilesCount} files removed)` : ""}`);
+    onSuccess: data => {
+      toast.success(
+        `Quote deleted${
+          data.deletedFilesCount > 0
+            ? ` (${data.deletedFilesCount} files removed)`
+            : ""
+        }`
+      );
       refetch();
       setDeleteConfirmId(null);
     },
-    onError: (error) => {
+    onError: error => {
       toast.error("Failed to delete quote: " + error.message);
     },
   });
 
   const duplicateQuote = trpc.quotes.duplicate.useMutation({
-    onSuccess: (data) => {
+    onSuccess: data => {
       toast.success("Quote duplicated successfully");
       setLocation(`/quotes/${data.id}`);
     },
-    onError: (error) => {
+    onError: error => {
       toast.error("Failed to duplicate quote: " + error.message);
     },
   });
@@ -248,9 +300,11 @@ export default function Dashboard() {
   };
 
   const handleCreateQuote = () => {
-    // If quota is blocked, show upgrade modal immediately instead of opening create dialog
     if (subStatus?.canCreateQuote === false) {
-      setUpgradeReason(subStatus.quoteBlockReason || "You've reached your plan's limit. Upgrade to create more quotes.");
+      setUpgradeReason(
+        subStatus.quoteBlockReason ||
+          "You've reached your plan's limit. Upgrade to create more quotes."
+      );
       setShowUpgradeModal(true);
       return;
     }
@@ -271,7 +325,9 @@ export default function Dashboard() {
   const handleDeleteClick = (e: React.MouseEvent, quote: QuoteData) => {
     e.stopPropagation();
     setDeleteConfirmId(quote.id);
-    setDeleteConfirmTitle(quote.title || quote.reference || `Quote #${quote.id}`);
+    setDeleteConfirmTitle(
+      quote.title || quote.reference || `Quote #${quote.id}`
+    );
   };
 
   const handleConfirmDelete = () => {
@@ -280,297 +336,509 @@ export default function Dashboard() {
     }
   };
 
-  const filteredQuotes = quotes?.filter((quote: QuoteData) => {
+  const filteredQuotes = (quotes as QuoteData[] | undefined)?.filter(quote => {
     const matchesSearch =
       !searchQuery ||
       quote.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       quote.clientName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       quote.reference?.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesStatus = statusFilter === "all" || quote.status === statusFilter;
+    const matchesStatus =
+      statusFilter === "all" || quote.status === statusFilter;
 
     return matchesSearch && matchesStatus;
   });
 
   const stats = {
     total: quotes?.length || 0,
-    draft: quotes?.filter((q: QuoteData) => q.status === "draft").length || 0,
-    sent: quotes?.filter((q: QuoteData) => q.status === "sent").length || 0,
-    accepted: quotes?.filter((q: QuoteData) => q.status === "accepted").length || 0,
+    draft:
+      (quotes as QuoteData[] | undefined)?.filter(q => q.status === "draft")
+        .length || 0,
+    awaitingResponse:
+      (quotes as QuoteData[] | undefined)?.filter(q => q.status === "sent")
+        .length || 0,
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-5">
+      {/* ── Header ───────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Quotes</h1>
-          <p className="text-muted-foreground">
-            Welcome back, {user?.name || "there"}. Manage your quotes here.
+          <h1
+            className="text-xl"
+            style={{ fontWeight: 500, color: "var(--brand-text-primary)" }}
+          >
+            Quotes
+          </h1>
+          <p
+            className="text-sm mt-1"
+            style={{ color: "var(--brand-text-secondary)" }}
+          >
+            {stats.total} total · {stats.draft} draft · {stats.awaitingResponse}{" "}
+            awaiting response
           </p>
         </div>
         <div className="flex items-center gap-3">
           {subStatus?.quoteUsage && subStatus.quoteUsage.max > 0 && (
-            <span className="text-xs text-muted-foreground">
-              {subStatus.quoteUsage.current} of {subStatus.quoteUsage.max} quotes used
+            <span
+              className="text-xs"
+              style={{ color: "var(--brand-text-tertiary)" }}
+            >
+              {subStatus.quoteUsage.current} of {subStatus.quoteUsage.max}{" "}
+              quotes used
             </span>
           )}
-          <Button onClick={handleCreateQuote} disabled={createQuote.isPending}>
+          <Button
+            onClick={handleCreateQuote}
+            disabled={createQuote.isPending}
+            style={{
+              background: "var(--brand-primary-gradient)",
+              color: "#ffffff",
+              border: "none",
+              fontWeight: 500,
+            }}
+          >
             <Plus className="mr-2 h-4 w-4" />
-            New Quote
+            New quote
           </Button>
         </div>
       </div>
 
-      {/* Seed-catalog nudge banner — dismissible, shared state with the
-          empty-state card below. Shows only when user is on a GTM sector,
-          their catalog is empty, and they haven't dismissed. */}
+      {/* ── Seed-catalog nudge (dismissible, restyled) ─────────── */}
       {showSeedNudge && (
-        <Card className="border-teal-200 bg-teal-50">
-          <CardContent className="py-4 px-5 flex items-start gap-3">
-            <div className="shrink-0 mt-0.5">
-              <Sparkles className="h-5 w-5 text-teal-600" />
+        <div
+          className="rounded-lg border flex items-start gap-3 py-4 px-5"
+          style={{
+            background: "var(--brand-teal-pale)",
+            borderColor: "var(--brand-teal-border)",
+          }}
+        >
+          <div className="shrink-0 mt-0.5">
+            <Sparkles
+              className="h-5 w-5"
+              style={{ color: "var(--brand-teal)" }}
+            />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div
+              className="font-medium mb-0.5"
+              style={{ color: "var(--brand-text-primary)" }}
+            >
+              Kick-start your catalogue
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="font-medium text-teal-900 mb-0.5">
-                Kick-start your catalogue
-              </div>
-              <p className="text-sm text-teal-800">
-                Load a starter catalogue of UK market-anchored products and
-                services for your sector. All prices are fully editable, and
-                catalogue items flow straight into new quotes.
-              </p>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Button
-                onClick={handleSeedNudgeClick}
-                size="sm"
-                className="bg-teal-600 hover:bg-teal-700 text-white"
-              >
-                <Sparkles className="mr-2 h-4 w-4" />
-                Load Starter Catalogue
-              </Button>
-              <Button
-                onClick={handleLoadExampleQuote}
-                size="sm"
-                variant="outline"
-                disabled={seedDemoForSector.isPending}
-                className="border-teal-300 text-teal-900 hover:bg-teal-100"
-              >
-                <FileText className="mr-2 h-4 w-4" />
-                {seedDemoForSector.isPending ? "Loading…" : "Load Example Quote"}
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-teal-700 hover:bg-teal-100"
-                onClick={handleDismissNudge}
-                aria-label="Dismiss"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+            <p
+              className="text-sm"
+              style={{ color: "var(--brand-text-secondary)" }}
+            >
+              Load a starter catalogue of UK market-anchored products and
+              services for your sector. All prices are fully editable, and
+              catalogue items flow straight into new quotes.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              onClick={handleSeedNudgeClick}
+              size="sm"
+              style={{
+                background: "var(--brand-primary-gradient)",
+                color: "#ffffff",
+                border: "none",
+              }}
+            >
+              <Sparkles className="mr-2 h-4 w-4" />
+              Load Starter Catalogue
+            </Button>
+            <Button
+              onClick={handleLoadExampleQuote}
+              size="sm"
+              variant="outline"
+              disabled={seedDemoForSector.isPending}
+              style={{
+                borderColor: "var(--brand-teal-border)",
+                color: "var(--brand-teal-dark)",
+                background: "#ffffff",
+              }}
+            >
+              <FileText className="mr-2 h-4 w-4" />
+              {seedDemoForSector.isPending ? "Loading…" : "Load Example Quote"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              style={{ color: "var(--brand-teal-dark)" }}
+              onClick={handleDismissNudge}
+              aria-label="Dismiss"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
       )}
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="cursor-pointer hover:border-primary/50 transition-colors" onClick={() => setStatusFilter("all")}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Quotes</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.total}</div>
-          </CardContent>
-        </Card>
-        <Card className="cursor-pointer hover:border-primary/50 transition-colors" onClick={() => setStatusFilter("draft")}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Drafts</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.draft}</div>
-          </CardContent>
-        </Card>
-        <Card className="cursor-pointer hover:border-primary/50 transition-colors" onClick={() => setStatusFilter("sent")}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Sent</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.sent}</div>
-          </CardContent>
-        </Card>
-        <Card className="cursor-pointer hover:border-primary/50 transition-colors" onClick={() => setStatusFilter("accepted")}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Accepted</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.accepted}</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      {/* ── Filter pills + search ──────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+        <div className="flex gap-2 flex-wrap">
+          {FILTER_OPTIONS.map(opt => {
+            const active = statusFilter === opt.value;
+            return (
+              <button
+                key={opt.value}
+                onClick={() => setStatusFilter(opt.value)}
+                className="px-3 py-1.5 text-xs rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                style={{
+                  background: active ? "var(--brand-teal-pale)" : "#ffffff",
+                  border: `1px solid ${
+                    active
+                      ? "var(--brand-teal-border)"
+                      : "var(--brand-border-light)"
+                  }`,
+                  color: active
+                    ? "var(--brand-teal-dark)"
+                    : "var(--brand-text-secondary)",
+                  fontWeight: active ? 500 : 400,
+                }}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="relative w-full sm:w-64">
+          <Search
+            className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4"
+            style={{ color: "var(--brand-text-tertiary)" }}
+          />
           <Input
             placeholder="Search quotes..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={e => setSearchQuery(e.target.value)}
             className="pl-9"
           />
         </div>
-        <div className="flex gap-2 flex-wrap">
-          {(["all", "draft", "sent", "accepted", "declined"] as const).map((status) => (
-            <Button
-              key={status}
-              variant={statusFilter === status ? "default" : "outline"}
-              size="sm"
-              onClick={() => setStatusFilter(status)}
-            >
-              {status === "all" ? "All" : statusConfig[status].label}
-            </Button>
-          ))}
-        </div>
       </div>
 
-      {/* Quote List */}
-      <Card>
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="p-8 text-center text-muted-foreground">Loading quotes...</div>
-          ) : !filteredQuotes?.length ? (
-            <div className="p-8 text-center">
-              <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium mb-2">No quotes yet</h3>
-              <p className="text-muted-foreground mb-4">
-                Create your first quote to get started.
-              </p>
-              <Button onClick={handleCreateQuote} disabled={createQuote.isPending}>
+      {/* ── Quotes table ───────────────────────────────────────── */}
+      <div
+        className="rounded-lg border overflow-hidden"
+        style={{
+          borderColor: "var(--brand-border)",
+          background: "var(--brand-bg)",
+        }}
+      >
+        {isLoading ? (
+          <div
+            className="p-8 text-center text-sm"
+            style={{ color: "var(--brand-text-secondary)" }}
+          >
+            Loading quotes...
+          </div>
+        ) : !filteredQuotes?.length ? (
+          <div className="p-10 text-center">
+            <FileText
+              className="h-12 w-12 mx-auto mb-4"
+              style={{ color: "var(--brand-text-tertiary)" }}
+            />
+            <h3
+              className="text-base mb-2"
+              style={{
+                fontWeight: 500,
+                color: "var(--brand-text-primary)",
+              }}
+            >
+              {statusFilter === "all" && !searchQuery
+                ? "No quotes yet"
+                : "No quotes match your filters"}
+            </h3>
+            <p
+              className="text-sm mb-4"
+              style={{ color: "var(--brand-text-secondary)" }}
+            >
+              {statusFilter === "all" && !searchQuery
+                ? "Create your first quote to get started."
+                : "Try a different filter or search term."}
+            </p>
+            {statusFilter === "all" && !searchQuery && (
+              <Button
+                onClick={handleCreateQuote}
+                disabled={createQuote.isPending}
+                style={{
+                  background: "var(--brand-primary-gradient)",
+                  color: "#ffffff",
+                  border: "none",
+                }}
+              >
                 <Plus className="mr-2 h-4 w-4" />
-                Create Quote
+                New quote
               </Button>
-              {showSeedNudge && (
-                <div className="mt-6 max-w-md mx-auto p-4 rounded-lg border border-teal-200 bg-teal-50 text-left">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Sparkles className="h-5 w-5 text-teal-600" />
-                    <span className="font-medium text-teal-900">
-                      Before your first quote
-                    </span>
-                  </div>
-                  <p className="text-sm text-teal-800 mb-3">
-                    Load your sector's starter catalogue so pricing flows
-                    straight into every quote. UK market-anchored items,
-                    fully editable.
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleSeedNudgeClick}
-                      className="border-teal-300 text-teal-900 hover:bg-teal-100"
-                    >
-                      <Sparkles className="mr-2 h-4 w-4" />
-                      Load Starter Catalogue
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleLoadExampleQuote}
-                      disabled={seedDemoForSector.isPending}
-                      className="border-teal-300 text-teal-900 hover:bg-teal-100"
-                    >
-                      <FileText className="mr-2 h-4 w-4" />
-                      {seedDemoForSector.isPending ? "Loading…" : "Load Example Quote"}
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="divide-y">
-              {filteredQuotes.map((quote: QuoteData, index: number) => {
-                const status = quote.status as QuoteStatus;
-                const config = statusConfig[status];
-                const StatusIcon = config.icon;
+            )}
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr
+                style={{
+                  background: "var(--brand-bg-tinted)",
+                  borderBottom: `1px solid ${"var(--brand-border)"}`,
+                }}
+              >
+                <th
+                  className="text-left px-4 py-2.5"
+                  style={{
+                    fontSize: "0.625rem",
+                    fontWeight: 500,
+                    letterSpacing: "0.05em",
+                    textTransform: "uppercase",
+                    color: "var(--brand-text-tertiary)",
+                  }}
+                >
+                  Client
+                </th>
+                <th
+                  className="text-left px-4 py-2.5"
+                  style={{
+                    fontSize: "0.625rem",
+                    fontWeight: 500,
+                    letterSpacing: "0.05em",
+                    textTransform: "uppercase",
+                    color: "var(--brand-text-tertiary)",
+                  }}
+                >
+                  Sector
+                </th>
+                <th
+                  className="text-left px-4 py-2.5"
+                  style={{
+                    fontSize: "0.625rem",
+                    fontWeight: 500,
+                    letterSpacing: "0.05em",
+                    textTransform: "uppercase",
+                    color: "var(--brand-text-tertiary)",
+                  }}
+                >
+                  Status
+                </th>
+                <th
+                  className="text-right px-4 py-2.5"
+                  style={{
+                    fontSize: "0.625rem",
+                    fontWeight: 500,
+                    letterSpacing: "0.05em",
+                    textTransform: "uppercase",
+                    color: "var(--brand-text-tertiary)",
+                  }}
+                >
+                  Total
+                </th>
+                <th
+                  className="text-right px-4 py-2.5"
+                  style={{
+                    fontSize: "0.625rem",
+                    fontWeight: 500,
+                    letterSpacing: "0.05em",
+                    textTransform: "uppercase",
+                    color: "var(--brand-text-tertiary)",
+                  }}
+                >
+                  Updated
+                </th>
+                <th className="w-10 px-2 py-2.5"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredQuotes.map(quote => {
+                const sectorKey = quote.tradePreset || "";
+                const sectorName = sectorKey ? sectorLabels[sectorKey] : null;
+                const total = parseFloat(quote.total || "0");
+                const monthlyTotal = parseFloat(
+                  (quote.monthlyTotal as string) || "0"
+                );
+                const clientDisplay =
+                  quote.clientName || quote.reference || `Quote #${quote.id}`;
+                const descriptionPreview =
+                  quote.title ||
+                  quote.description ||
+                  (quote.clientName ? quote.reference : null) ||
+                  null;
 
                 return (
-                  <div
+                  <tr
                     key={quote.id}
-                    className={`flex items-center justify-between p-4 hover:bg-muted/50 cursor-pointer transition-colors ${
-                      index % 2 === 1 ? "bg-muted/30" : ""
-                    }`}
                     onClick={() => setLocation(`/quotes/${quote.id}`)}
+                    className="cursor-pointer transition-colors border-t hover:[background:var(--brand-teal-pale)]"
+                    style={{ borderColor: "var(--brand-border)" }}
                   >
-                    <div className="flex items-center gap-4 min-w-0">
-                      <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                        {(quote as any).quoteMode === "comprehensive" ? (
-                          <Layers className="h-5 w-5 text-primary" />
-                        ) : (
-                          <FileText className="h-5 w-5 text-primary" />
+                    {/* Client */}
+                    <td className="px-4 py-3">
+                      <div
+                        className="flex items-center gap-2 min-w-0"
+                        style={{ color: "var(--brand-text-primary)" }}
+                      >
+                        <span
+                          className="truncate"
+                          style={{ fontWeight: 500 }}
+                        >
+                          {clientDisplay}
+                        </span>
+                        {quote.quoteMode === "comprehensive" && (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] shrink-0"
+                          >
+                            Tender Pack
+                          </Badge>
                         )}
                       </div>
-                      <div className="min-w-0">
-                        <div className="font-medium truncate flex items-center gap-2">
-                          {quote.title || quote.reference || `Quote #${quote.id}`}
-                          {(quote as any).quoteMode === "comprehensive" && (
-                            <Badge variant="outline" className="text-xs shrink-0">Tender Pack</Badge>
-                          )}
-                        </div>
-                        <div className="text-sm text-muted-foreground truncate">
-                          {quote.clientName || "No client specified"}
-                        </div>
+                      {descriptionPreview &&
+                        descriptionPreview !== clientDisplay && (
+                          <div
+                            className="text-xs truncate mt-0.5"
+                            style={{ color: "var(--brand-text-tertiary)" }}
+                          >
+                            {descriptionPreview}
+                          </div>
+                        )}
+                    </td>
+
+                    {/* Sector */}
+                    <td className="px-4 py-3">
+                      {sectorName ? (
+                        <span
+                          className="inline-flex items-center px-2 py-0.5 rounded text-[10px]"
+                          style={{
+                            background: "var(--brand-teal-pale)",
+                            color: "var(--brand-teal-dark)",
+                            fontWeight: 500,
+                          }}
+                        >
+                          {sectorName}
+                        </span>
+                      ) : (
+                        <span
+                          className="text-xs"
+                          style={{ color: "var(--brand-text-tertiary)" }}
+                        >
+                          —
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Status */}
+                    <td className="px-4 py-3">
+                      <StatusPill status={quote.status} />
+                    </td>
+
+                    {/* Total */}
+                    <td className="px-4 py-3 text-right">
+                      <div
+                        style={{
+                          fontWeight: 500,
+                          color: "var(--brand-text-primary)",
+                        }}
+                      >
+                        £
+                        {total.toLocaleString("en-GB", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
                       </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-right hidden sm:block">
-                        <div className="font-medium">
-                          £{parseFloat(quote.total || "0").toLocaleString("en-GB", { minimumFractionDigits: 2 })}
+                      {monthlyTotal > 0 && (
+                        <div
+                          className="text-[11px] mt-0.5"
+                          style={{ color: "var(--brand-text-tertiary)" }}
+                        >
+                          + £
+                          {monthlyTotal.toLocaleString("en-GB", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                          /mo
                         </div>
-                        <div className="text-xs text-muted-foreground">
-                          {new Date(quote.createdAt).toLocaleDateString("en-GB")}
-                        </div>
-                      </div>
-                      <Badge className={config.className}>
-                        <StatusIcon className="h-3 w-3 mr-1" />
-                        {config.label}
-                      </Badge>
+                      )}
+                    </td>
+
+                    {/* Updated */}
+                    <td
+                      className="px-4 py-3 text-right text-xs"
+                      style={{ color: "var(--brand-text-secondary)" }}
+                    >
+                      {relativeTime(quote.updatedAt || quote.createdAt)}
+                    </td>
+
+                    {/* Actions */}
+                    <td className="px-2 py-3 w-10">
                       <DropdownMenu>
-                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <MoreHorizontal className="h-4 w-4" />
+                        <DropdownMenuTrigger
+                          asChild
+                          onClick={e => e.stopPropagation()}
+                        >
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            aria-label="Quote actions"
+                          >
+                            <MoreHorizontal
+                              className="h-4 w-4"
+                              style={{
+                                color: "var(--brand-text-tertiary)",
+                              }}
+                            />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setLocation(`/quotes/${quote.id}`); }}>
+                          <DropdownMenuItem
+                            onClick={e => {
+                              e.stopPropagation();
+                              setLocation(`/quotes/${quote.id}`);
+                            }}
+                          >
                             Open
                           </DropdownMenuItem>
-                          <DropdownMenuItem 
-                            onClick={(e) => handleDuplicateClick(e, quote.id)}
+                          <DropdownMenuItem
+                            onClick={e => handleDuplicateClick(e, quote.id)}
                             disabled={duplicateQuote.isPending}
                           >
-                            {duplicateQuote.isPending ? "Duplicating..." : "Duplicate"}
+                            {duplicateQuote.isPending
+                              ? "Duplicating..."
+                              : "Duplicate"}
                           </DropdownMenuItem>
-                          <DropdownMenuItem 
+                          <DropdownMenuItem
                             className="text-destructive"
-                            onClick={(e) => handleDeleteClick(e, quote)}
+                            onClick={e => handleDeleteClick(e, quote)}
                           >
                             Delete
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
-                    </div>
-                  </div>
+                    </td>
+                  </tr>
                 );
               })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            </tbody>
+          </table>
+        )}
+      </div>
 
-      {/* New Quote Creation Dialog */}
-      <Dialog open={showCreateDialog} onOpenChange={(open) => { if (!open) { setShowCreateDialog(false); setQuoteMode("simple"); setTradePreset(""); } }}>
+      {/* Live-region announcer for status filter changes (a11y) —
+          non-visual, useful when the pills change what's shown. */}
+      <div className="sr-only" aria-live="polite">
+        Showing {filteredQuotes?.length || 0} quote
+        {filteredQuotes?.length === 1 ? "" : "s"}
+        {statusFilter !== "all" ? ` with status ${statusLabel(statusFilter)}` : ""}
+      </div>
+
+      {/* ── New Quote Creation Dialog (preserved verbatim) ────── */}
+      <Dialog
+        open={showCreateDialog}
+        onOpenChange={open => {
+          if (!open) {
+            setShowCreateDialog(false);
+            setQuoteMode("simple");
+            setTradePreset("");
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>Create New Quote</DialogTitle>
@@ -581,26 +849,46 @@ export default function Dashboard() {
           <div className="space-y-6 py-4">
             <div className="space-y-3">
               <Label className="text-sm font-medium">Quote Type</Label>
-              <RadioGroup value={quoteMode} onValueChange={(v) => { setQuoteMode(v as "simple" | "comprehensive"); if (v === "simple") setTradePreset(""); }}>
+              <RadioGroup
+                value={quoteMode}
+                onValueChange={v => {
+                  setQuoteMode(v as "simple" | "comprehensive");
+                  if (v === "simple") setTradePreset("");
+                }}
+              >
                 <div className="flex items-start space-x-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors">
                   <RadioGroupItem value="simple" id="simple" className="mt-0.5" />
                   <div className="flex-1">
-                    <Label htmlFor="simple" className="font-medium cursor-pointer">
+                    <Label
+                      htmlFor="simple"
+                      className="font-medium cursor-pointer"
+                    >
                       Simple Quote
                     </Label>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Standard single-page quote with line items, terms, and PDF output. Best for straightforward pricing.
+                      Standard single-page quote with line items, terms, and
+                      PDF output. Best for straightforward pricing.
                     </p>
                   </div>
                 </div>
                 <div className="flex items-start space-x-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors">
-                  <RadioGroupItem value="comprehensive" id="comprehensive" className="mt-0.5" />
+                  <RadioGroupItem
+                    value="comprehensive"
+                    id="comprehensive"
+                    className="mt-0.5"
+                  />
                   <div className="flex-1">
-                    <Label htmlFor="comprehensive" className="font-medium cursor-pointer">
+                    <Label
+                      htmlFor="comprehensive"
+                      className="font-medium cursor-pointer"
+                    >
                       Tender Pack
                     </Label>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Multi-section tender document with cover letter, timeline, site requirements, quality compliance, and document organisation. Best for complex or formal projects.
+                      Multi-section tender document with cover letter,
+                      timeline, site requirements, quality compliance, and
+                      document organisation. Best for complex or formal
+                      projects.
                     </p>
                   </div>
                 </div>
@@ -609,33 +897,46 @@ export default function Dashboard() {
 
             {quoteMode === "comprehensive" && (
               <div className="space-y-3">
-                <Label className="text-sm font-medium">Trade / Industry Type</Label>
+                <Label className="text-sm font-medium">
+                  Trade / Industry Type
+                </Label>
                 <Select value={tradePreset} onValueChange={setTradePreset}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select your trade..." />
                   </SelectTrigger>
                   <SelectContent className="max-h-80">
-                    {tradePresets && (() => {
-                      const grouped = tradePresets.reduce<Record<string, typeof tradePresets>>((acc, preset) => {
-                        const cat = (preset as any).category || "Other";
-                        if (!acc[cat]) acc[cat] = [];
-                        acc[cat].push(preset);
-                        return acc;
-                      }, {});
-                      return Object.entries(grouped).map(([category, presets]) => (
-                        <div key={category}>
-                          <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{category}</div>
-                          {presets.map((preset) => (
-                            <SelectItem key={preset.key} value={preset.key}>
-                              <div>
-                                <div className="font-medium">{preset.name}</div>
-                                <div className="text-xs text-muted-foreground">{preset.description}</div>
+                    {tradePresets &&
+                      (() => {
+                        const grouped = tradePresets.reduce<
+                          Record<string, typeof tradePresets>
+                        >((acc, preset) => {
+                          const cat = (preset as any).category || "Other";
+                          if (!acc[cat]) acc[cat] = [];
+                          acc[cat].push(preset);
+                          return acc;
+                        }, {});
+                        return Object.entries(grouped).map(
+                          ([category, presets]) => (
+                            <div key={category}>
+                              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                {category}
                               </div>
-                            </SelectItem>
-                          ))}
-                        </div>
-                      ));
-                    })()}
+                              {presets.map(preset => (
+                                <SelectItem key={preset.key} value={preset.key}>
+                                  <div>
+                                    <div className="font-medium">
+                                      {preset.name}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {preset.description}
+                                    </div>
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </div>
+                          )
+                        );
+                      })()}
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
@@ -647,12 +948,27 @@ export default function Dashboard() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowCreateDialog(false); setQuoteMode("simple"); setTradePreset(""); }}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowCreateDialog(false);
+                setQuoteMode("simple");
+                setTradePreset("");
+              }}
+            >
               Cancel
             </Button>
-            <Button 
-              onClick={handleConfirmCreate} 
-              disabled={createQuote.isPending || (quoteMode === "comprehensive" && !tradePreset)}
+            <Button
+              onClick={handleConfirmCreate}
+              disabled={
+                createQuote.isPending ||
+                (quoteMode === "comprehensive" && !tradePreset)
+              }
+              style={{
+                background: "var(--brand-primary-gradient)",
+                color: "#ffffff",
+                border: "none",
+              }}
             >
               {createQuote.isPending ? "Creating..." : "Create Quote"}
             </Button>
@@ -660,17 +976,24 @@ export default function Dashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={deleteConfirmId !== null} onOpenChange={(open) => !open && setDeleteConfirmId(null)}>
+      {/* ── Delete Confirmation Dialog (preserved) ────────────── */}
+      <AlertDialog
+        open={deleteConfirmId !== null}
+        onOpenChange={open => !open && setDeleteConfirmId(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Quote</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{deleteConfirmTitle}"? This will permanently remove the quote and all associated files. This action cannot be undone.
+              Are you sure you want to delete "{deleteConfirmTitle}"? This will
+              permanently remove the quote and all associated files. This
+              action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleteQuote.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleteQuote.isPending}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleConfirmDelete}
               disabled={deleteQuote.isPending}
@@ -682,13 +1005,19 @@ export default function Dashboard() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ── Upgrade Modal — shown when quota blocks quote creation ── */}
+      {/* ── Upgrade Modal (preserved) ─────────────────────────── */}
       <Dialog open={showUpgradeModal} onOpenChange={setShowUpgradeModal}>
         <DialogContent className="sm:max-w-[440px]">
           <DialogHeader>
             <div className="flex items-center gap-3 mb-1">
-              <div className="flex items-center justify-center w-10 h-10 rounded-full" style={{ backgroundColor: '#f0fdfa' }}>
-                <Crown className="h-5 w-5" style={{ color: '#0d9488' }} />
+              <div
+                className="flex items-center justify-center w-10 h-10 rounded-full"
+                style={{ backgroundColor: "var(--brand-teal-pale)" }}
+              >
+                <Crown
+                  className="h-5 w-5"
+                  style={{ color: "var(--brand-teal)" }}
+                />
               </div>
               <div>
                 <DialogTitle className="text-lg">Upgrade Your Plan</DialogTitle>
@@ -704,16 +1033,18 @@ export default function Dashboard() {
             {subStatus && (subStatus.maxQuotesPerMonth as number) !== -1 && (
               <div className="p-3 rounded-lg bg-gray-50 border">
                 <div className="flex justify-between text-sm mb-2">
-                  <span className="text-muted-foreground">Quotes used this month</span>
-                  <span className="font-semibold">{subStatus.currentQuoteCount} / {subStatus.maxQuotesPerMonth}</span>
+                  <span className="text-muted-foreground">
+                    Quotes used this month
+                  </span>
+                  <span className="font-semibold">
+                    {subStatus.currentQuoteCount} /{" "}
+                    {subStatus.maxQuotesPerMonth}
+                  </span>
                 </div>
                 <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
                   <div
                     className="h-full rounded-full"
-                    style={{
-                      width: '100%',
-                      backgroundColor: '#ef4444',
-                    }}
+                    style={{ width: "100%", backgroundColor: "#ef4444" }}
                   />
                 </div>
               </div>
@@ -724,35 +1055,76 @@ export default function Dashboard() {
               <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200">
                 <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
                 <p className="text-xs text-amber-700">
-                  Your 14-day free trial has ended. Choose a plan below to continue creating professional quotes.
+                  Your 14-day free trial has ended. Choose a plan below to
+                  continue creating professional quotes.
                 </p>
               </div>
             )}
 
             {/* Quick plan comparison */}
             <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Available plans</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Available plans
+              </p>
               {[
-                { name: "Solo", desc: "10 quotes/month · 1 user · 100 catalog items", price: "£59", color: "#0d9488", borderColor: "#99f6e4" },
-                { name: "Pro", desc: "15 quotes/month · 2 users · Unlimited catalog", price: "£99", color: "#3b82f6", borderColor: "#bfdbfe", badge: "Popular" },
-                { name: "Team", desc: "50 quotes/month · 5 users · Everything in Pro", price: "£159", color: "#059669", borderColor: "#bbf7d0" },
-              ].map((plan) => (
+                {
+                  name: "Solo",
+                  desc: "10 quotes/month · 1 user · 100 catalog items",
+                  price: "£59",
+                  color: "#0d9488",
+                  borderColor: "#99f6e4",
+                },
+                {
+                  name: "Pro",
+                  desc: "15 quotes/month · 2 users · Unlimited catalog",
+                  price: "£99",
+                  color: "#3b82f6",
+                  borderColor: "#bfdbfe",
+                  badge: "Popular",
+                },
+                {
+                  name: "Team",
+                  desc: "50 quotes/month · 5 users · Everything in Pro",
+                  price: "£159",
+                  color: "#059669",
+                  borderColor: "#bbf7d0",
+                },
+              ].map(plan => (
                 <div
                   key={plan.name}
                   className="flex items-center justify-between p-3 rounded-lg border-2 cursor-pointer transition-colors"
                   style={{ borderColor: plan.borderColor }}
-                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = plan.color)}
-                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = plan.borderColor)}
-                  onClick={() => { setShowUpgradeModal(false); setLocation('/pricing'); }}
+                  onMouseEnter={e =>
+                    (e.currentTarget.style.borderColor = plan.color)
+                  }
+                  onMouseLeave={e =>
+                    (e.currentTarget.style.borderColor = plan.borderColor)
+                  }
+                  onClick={() => {
+                    setShowUpgradeModal(false);
+                    setLocation("/pricing");
+                  }}
                 >
                   <div>
                     <p className="font-semibold text-sm">
                       {plan.name}
-                      {plan.badge && <span className="text-xs font-normal px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 ml-1">{plan.badge}</span>}
+                      {plan.badge && (
+                        <span className="text-xs font-normal px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 ml-1">
+                          {plan.badge}
+                        </span>
+                      )}
                     </p>
                     <p className="text-xs text-muted-foreground">{plan.desc}</p>
                   </div>
-                  <p className="font-bold text-sm" style={{ color: plan.color }}>{plan.price}<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
+                  <p
+                    className="font-bold text-sm"
+                    style={{ color: plan.color }}
+                  >
+                    {plan.price}
+                    <span className="text-xs font-normal text-muted-foreground">
+                      /mo
+                    </span>
+                  </p>
                 </div>
               ))}
             </div>
@@ -767,9 +1139,16 @@ export default function Dashboard() {
               Maybe later
             </Button>
             <Button
-              onClick={() => { setShowUpgradeModal(false); setLocation('/pricing'); }}
+              onClick={() => {
+                setShowUpgradeModal(false);
+                setLocation("/pricing");
+              }}
               className="w-full sm:w-auto"
-              style={{ backgroundColor: '#0d9488' }}
+              style={{
+                background: "var(--brand-primary-gradient)",
+                color: "#ffffff",
+                border: "none",
+              }}
             >
               View Plans & Upgrade
               <ArrowRight className="h-4 w-4 ml-1" />

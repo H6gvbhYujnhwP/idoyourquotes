@@ -43,6 +43,34 @@
 }
 
 :root {
+  /* IdoYourQuotes Brand Tokens (v2)
+   * ─────────────────────────────────────────────────────────────────
+   * These are the formalised brand colours used by the new top-nav
+   * chrome, dashboard table, status pills, and the upcoming unified
+   * quote workspace (PR-Beta). They are layered alongside the shadcn
+   * OKLCH variables below — shadcn components continue to work as
+   * before, and new components opt in to --brand-* when they want the
+   * explicit brand identity.
+   *
+   * Hex values are fixed — do NOT translate to OKLCH, they must match
+   * the marketing site and PDF output exactly.
+   * ───────────────────────────────────────────────────────────────── */
+  --brand-navy: #1e3a5f;
+  --brand-navy-light: #1e3a5f;
+  --brand-teal: #0d9488;
+  --brand-teal-dark: #0f766e;
+  --brand-teal-pale: #f0fdfa;
+  --brand-teal-border: #99f6e4;
+  --brand-text-primary: #1e3a5f;
+  --brand-text-secondary: #5a6b7a;
+  --brand-text-tertiary: #8a9aa8;
+  --brand-border: #e2e8ed;
+  --brand-border-light: #d8e1e8;
+  --brand-bg: #ffffff;
+  --brand-bg-tinted: #f7fbfc;
+  --brand-primary-gradient: linear-gradient(135deg, #0d9488 0%, #0f766e 100%);
+
+  /* shadcn/ui component tokens (OKLCH) — untouched below this line */
   /* IdoYourQuotes Brand - Professional Teal, Bold & Trustworthy */
   --primary: oklch(0.45 0.12 195);
   --primary-foreground: oklch(0.98 0.01 195);
@@ -203,6 +231,41 @@
     background-color: oklch(0.9 0.1 25);
     color: oklch(0.45 0.15 25);
   }
+
+  .status-pdf-generated {
+    background-color: var(--brand-teal-pale);
+    color: var(--brand-teal-dark);
+  }
+}
+
+/* v2 brand-aligned status pills (used by StatusPill.tsx on the new
+ * dashboard). Kept separate from the legacy .status-* classes above so
+ * existing usages are untouched. */
+@layer components {
+  .brand-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.125rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    line-height: 1.25rem;
+    white-space: nowrap;
+  }
+  .brand-status-pill::before {
+    content: "";
+    width: 0.375rem;
+    height: 0.375rem;
+    border-radius: 9999px;
+    background: currentColor;
+    opacity: 0.85;
+  }
+  .brand-status-draft         { background: var(--brand-teal-pale); color: var(--brand-teal-dark); }
+  .brand-status-sent          { background: #dbeafe; color: #1d4ed8; }
+  .brand-status-pdf-generated { background: var(--brand-teal-pale); color: var(--brand-teal-dark); }
+  .brand-status-won           { background: #dcfce7; color: #15803d; }
+  .brand-status-lost          { background: #e5e7eb; color: #4b5563; }
 }
 
 /* Alternating row colors for tables */

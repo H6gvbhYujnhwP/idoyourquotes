@@ -1,45 +1,57 @@
+/**
+ * DashboardLayoutSkeleton — loading-state mirror of the v2 top-nav
+ * chrome (logo left, nav centre, avatar right + breadcrumb bar below).
+ *
+ * Rendered while useAuth() is loading. Stays visually close to the
+ * real DashboardLayout so the user sees a stable shell rather than a
+ * layout flash when auth resolves.
+ */
 import { Skeleton } from './ui/skeleton';
 
 export function DashboardLayoutSkeleton() {
   return (
-    <div className="flex min-h-screen bg-background">
-      {/* Sidebar skeleton */}
-      <div className="w-[280px] border-r border-border bg-background p-4 space-y-6">
-        {/* Logo area */}
-        <div className="flex items-center gap-3 px-2">
-          <Skeleton className="h-8 w-8 rounded-md" />
-          <Skeleton className="h-4 w-24" />
+    <div
+      className="flex flex-col min-h-screen"
+      style={{ background: 'var(--brand-bg)' }}
+    >
+      {/* Top nav skeleton */}
+      <div
+        className="flex items-center justify-between h-14 px-6 border-b"
+        style={{ borderColor: 'var(--brand-border)' }}
+      >
+        <Skeleton className="h-9 w-36" />
+        <div className="flex gap-2">
+          <Skeleton className="h-7 w-16 rounded-md" />
+          <Skeleton className="h-7 w-16 rounded-md" />
+          <Skeleton className="h-7 w-16 rounded-md" />
         </div>
-
-        {/* Menu items */}
-        <div className="space-y-2 px-2">
-          <Skeleton className="h-10 w-full rounded-lg" />
-          <Skeleton className="h-10 w-full rounded-lg" />
-          <Skeleton className="h-10 w-full rounded-lg" />
-        </div>
-
-        {/* User profile area at bottom */}
-        <div className="absolute bottom-4 left-4 right-4">
-          <div className="flex items-center gap-3 px-1">
-            <Skeleton className="h-9 w-9 rounded-full" />
-            <div className="flex-1 space-y-2">
-              <Skeleton className="h-3 w-20" />
-              <Skeleton className="h-2 w-32" />
-            </div>
-          </div>
-        </div>
+        <Skeleton className="h-8 w-8 rounded-full" />
       </div>
 
-      {/* Main content skeleton */}
-      <div className="flex-1 p-4 space-y-4">
-        {/* Content blocks */}
-        <Skeleton className="h-12 w-48 rounded-lg" />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <Skeleton className="h-32 rounded-xl" />
-          <Skeleton className="h-32 rounded-xl" />
-          <Skeleton className="h-32 rounded-xl" />
+      {/* Breadcrumb skeleton */}
+      <div
+        className="flex items-center h-10 px-6 border-b"
+        style={{ borderColor: 'var(--brand-border)' }}
+      >
+        <Skeleton className="h-3 w-40" />
+      </div>
+
+      {/* Content skeleton */}
+      <div className="flex-1 p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-7 w-32" />
+          <Skeleton className="h-9 w-32 rounded-md" />
         </div>
-        <Skeleton className="h-64 rounded-xl" />
+        <div className="flex gap-2">
+          <Skeleton className="h-8 w-16 rounded-full" />
+          <Skeleton className="h-8 w-20 rounded-full" />
+          <Skeleton className="h-8 w-24 rounded-full" />
+        </div>
+        <div className="space-y-2">
+          <Skeleton className="h-14 w-full rounded-lg" />
+          <Skeleton className="h-14 w-full rounded-lg" />
+          <Skeleton className="h-14 w-full rounded-lg" />
+        </div>
       </div>
     </div>
   );

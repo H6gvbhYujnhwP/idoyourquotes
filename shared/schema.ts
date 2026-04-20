@@ -12,7 +12,7 @@ import { pgTable, pgEnum, text, timestamp, varchar, decimal, json, integer, bool
 // Enums
 export const userRoleEnum = pgEnum("user_role", ["user", "admin"]);
 export const orgMemberRoleEnum = pgEnum("org_member_role", ["owner", "admin", "member"]);
-export const quoteStatusEnum = pgEnum("quote_status", ["draft", "sent", "accepted", "declined"]);
+export const quoteStatusEnum = pgEnum("quote_status", ["draft", "sent", "accepted", "declined", "pdf_generated"]);
 export const inputTypeEnum = pgEnum("input_type", ["pdf", "image", "audio", "email", "text", "document"]);
 export const quoteModeEnum = pgEnum("quote_mode", ["simple", "comprehensive"]);
 export const subscriptionTierEnum = pgEnum("subscription_tier", ["trial", "solo", "pro", "business"]);
