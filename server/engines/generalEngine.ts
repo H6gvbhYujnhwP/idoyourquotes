@@ -38,12 +38,18 @@ export class GeneralEngine implements SectorEngine {
     const allContent: string[] = [];
 
     for (const inp of activeInputs) {
+      // Beta-1: tag every evidence block with [INPUT_ID: N] so the model can
+      // echo the IDs back on each materials row (see sourceInputIds in the
+      // system prompt below). A single input that emits multiple blocks
+      // (content + processedContent) shares the same tag — both trace back
+      // to the same input row.
+      const idTag = `[INPUT_ID: ${inp.id}]`;
       if (inp.inputType === "audio" && inp.content && !inp.fileUrl) {
-        allContent.push(`Voice Note (${inp.filename || "untitled"}): ${inp.content}`);
+        allContent.push(`${idTag} Voice Note (${inp.filename || "untitled"}): ${inp.content}`);
       } else if (inp.inputType === "audio" && inp.content && inp.fileUrl) {
-        allContent.push(`Audio Transcription (${inp.filename || "untitled"}): ${inp.content}`);
+        allContent.push(`${idTag} Audio Transcription (${inp.filename || "untitled"}): ${inp.content}`);
       } else if (inp.content && !inp.fileUrl) {
-        allContent.push(`Text Input: ${inp.content}`);
+        allContent.push(`${idTag} Text Input: ${inp.content}`);
       }
 
       if (inp.processedContent) {
@@ -54,7 +60,7 @@ export class GeneralEngine implements SectorEngine {
               inp.processedContent.length +
               " characters]"
             : inp.processedContent;
-        allContent.push(`Document (${inp.filename || inp.inputType}): ${content}`);
+        allContent.push(`${idTag} Document (${inp.filename || inp.inputType}): ${content}`);
       } else if (inp.extractedText) {
         const content =
           inp.extractedText.length > 50000
@@ -63,7 +69,7 @@ export class GeneralEngine implements SectorEngine {
               inp.extractedText.length +
               " characters]"
             : inp.extractedText;
-        allContent.push(`Extracted Text (${inp.filename || inp.inputType}): ${content}`);
+        allContent.push(`${idTag} Extracted Text (${inp.filename || inp.inputType}): ${content}`);
       }
     }
 
@@ -554,6 +560,7 @@ THINK LIKE AN EXPERIENCED PROFESSIONAL in the "${tradeLabel}" sector. Consider:
 
 INPUT PROCESSING:
 - Inputs are listed chronologically. Later inputs override earlier ones for quantities, prices, or scope changes.
+- Each evidence block begins with an identifier in the form [INPUT_ID: N] where N is the numeric ID of that evidence record. These IDs must be echoed back on every materials row you emit (see the sourceInputIds field in the JSON schema and field guidelines below) — they are how the app links each quote line back to the evidence it came from.
 - Emails contain conversation, signatures, disclaimers — extract ONLY the quotable content. Ignore "have a good weekend", email footers, legal disclaimers, confidentiality notices, and social pleasantries.
 - Voice notes are natural speech — "quid" means pounds, "sparky" means electrician, "a day" typically means 8 hours, "half a day" means 4 hours in UK trades.
 - When multiple inputs cover the same work, MERGE them into one coherent summary — never duplicate line items.
@@ -634,7 +641,7 @@ ${itInvoiceAddendum}${websiteMarketingAddendum}${commercialCleaningAddendum}${pe
   "clientPhone": string | null,
   "jobDescription": string,
   "labour": [{"role": string, "quantity": number, "duration": string}],
-  "materials": [{"item": string, "quantity": number, "unitPrice": number, "unit": string, "description": string, "pricingType": "standard" | "monthly" | "optional" | "annual", "estimated": boolean}],
+  "materials": [{"item": string, "quantity": number, "unitPrice": number, "unit": string, "description": string, "pricingType": "standard" | "monthly" | "optional" | "annual", "estimated": boolean, "sourceInputIds": number[]}],
   "markup": number | null,
   "sundries": number | null,
   "contingency": string | null,
@@ -660,6 +667,7 @@ FIELD GUIDELINES:
     - Pest control: inspection frequency, covered pests, treatment methods, certificates provided
     Example: "Comprehensive managed support for 16-device network || 24/7 monitoring of all network devices || Security patch management and firmware updates || Remote support up to 4 hours/month || Monthly health report and configuration backups || 4-hour response SLA during business hours"
   Never leave description blank for any item.
+- sourceInputIds: On every materials row, an array of the input IDs whose evidence contributed to that row. Read the [INPUT_ID: N] prefix at the start of each evidence block and include those numbers here as integers. If a row comes from one evidence block, it is a single-element array (e.g. [3]). If a row merges evidence from multiple inputs (for example one block stating the item and another confirming the quantity), include every contributing ID (e.g. [3, 7]). Never omit this field. Never leave it as an empty array — every materials row must trace back to at least one input.
 - notes: Assumptions, site access requirements, items needing verification, phasing suggestions, anything the user should review.
 - isTradeRelevant: false only if the content has nothing to do with ${tradeLabel} work.
 
@@ -670,7 +678,8 @@ BEFORE OUTPUTTING JSON — run this mental checklist:
 4. Does every materials line item have a meaningful description drawn from the evidence?
 5. Are pricingTypes correct — standard for one-off, monthly for recurring?
 6. Does labour[] contain ONLY roles that are NOT already priced as materials line items? If a labour role appears in materials, remove it from labour[].
-Only output JSON once all six checks pass.
+7. Does every materials row include a non-empty sourceInputIds array naming the [INPUT_ID: N] values of the evidence block(s) that justify the row?
+Only output JSON once all seven checks pass.
 
 If a field is not mentioned or cannot be determined, use null. Respond with valid JSON only — no preamble, no explanation, no markdown fences.`;
 

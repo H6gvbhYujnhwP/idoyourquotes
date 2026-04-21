@@ -150,6 +150,18 @@ export interface EngineOutputMaterial {
    * metadata.
    */
   substitutable?: boolean | null;
+
+  /**
+   * IDs of the EngineInput inputRecords whose evidence blocks contributed
+   * to this material row. Used by the unified workspace for two-way
+   * evidence ↔ line-item highlighting (click an evidence card, matching
+   * line items highlight; click a line item, matching evidence highlights).
+   *
+   * Empty or undefined when the engine cannot confidently map the row
+   * back to specific source inputs. Undefined on rows from engines that
+   * do not emit provenance metadata (e.g. ElectricalEngine).
+   */
+  sourceInputIds?: number[];
 }
 
 export interface EngineOutputLabour {
