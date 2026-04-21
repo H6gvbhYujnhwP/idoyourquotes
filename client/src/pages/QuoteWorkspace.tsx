@@ -396,49 +396,111 @@ export default function QuoteWorkspace() {
   // ── Handlers — evidence ──
   const handleFileChoose = () => fileInputRef.current?.click();
 
-  const handleFileChange = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadingFile(true);
-    try {
-      const base64 = await fileToBase64(file);
-      const inputType = detectInputType(file);
-      await uploadFile.mutateAsync({
-        quoteId,
-        filename: file.name,
-        contentType: file.type || "application/octet-stream",
-        base64Data: base64,
-        inputType,
-      });
-      toast.success(`${file.name} uploaded`);
+  // Accepted file extensions — must stay in sync with the hidden input's
+  // `accept` attribute below. Drag-and-drop bypasses that attribute, so we
+  // validate client-side before upload.
+  const ACCEPTED_EXTS = [
+    ".pdf", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp",
+    ".mp3", ".wav", ".m4a", ".ogg", ".webm",
+    ".eml", ".msg",
+  ];
+  const isAcceptedFile = (file: File): boolean => {
+    const lower = file.name.toLowerCase();
+    return ACCEPTED_EXTS.some((ext) => lower.endsWith(ext));
+  };
 
-      // Auto-title: if the user hasn't edited the title and it's still the
-      // default "New quote" (or empty), set it to the uploaded filename
-      // minus extension. This is a one-shot — further uploads don't
-      // re-trigger it because the title won't match the default.
-      const currentTitle = ((quote as any)?.title as string || "").trim();
-      const isDefault =
-        !currentTitle ||
-        currentTitle === "New Quote" ||
-        currentTitle === "New quote";
-      if (!userEdited.current.title && isDefault) {
-        const baseName = file.name.replace(/\.[^/.]+$/, "");
+  // Guard against concurrent batch uploads (click-to-browse + drag drop
+  // racing each other). A ref avoids React state stale-closure issues.
+  const uploadInFlightRef = useRef(false);
+
+  const handleFiles = async (files: File[]) => {
+    if (files.length === 0) return;
+    if (uploadInFlightRef.current) {
+      toast.error("Another upload is still in progress — try again in a moment");
+      return;
+    }
+
+    // Split accepted / rejected by extension
+    const accepted: File[] = [];
+    const rejected: string[] = [];
+    for (const f of files) {
+      if (isAcceptedFile(f)) accepted.push(f);
+      else rejected.push(f.name);
+    }
+    if (rejected.length > 0) {
+      toast.error(
+        rejected.length === 1
+          ? `Unsupported file: ${rejected[0]}`
+          : `Unsupported files skipped: ${rejected.join(", ")}`,
+      );
+    }
+    if (accepted.length === 0) {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    uploadInFlightRef.current = true;
+    setUploadingFile(true);
+
+    let firstSuccessfulFilename: string | null = null;
+    let successCount = 0;
+    try {
+      for (const file of accepted) {
         try {
-          await updateQuote.mutateAsync({ id: quoteId, title: baseName });
-          // Local state will re-sync via the useEffect watching `quote`
-          // when refetch fires.
+          const base64 = await fileToBase64(file);
+          const inputType = detectInputType(file);
+          await uploadFile.mutateAsync({
+            quoteId,
+            filename: file.name,
+            contentType: file.type || "application/octet-stream",
+            base64Data: base64,
+            inputType,
+          });
+          if (firstSuccessfulFilename === null) {
+            firstSuccessfulFilename = file.name;
+          }
+          successCount += 1;
         } catch (err) {
-          console.warn("[QuoteWorkspace] auto-title failed:", err);
+          const msg = err instanceof Error ? err.message : "upload failed";
+          toast.error(`${file.name}: ${msg}`);
         }
       }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Upload failed");
+
+      if (successCount === 1 && accepted.length === 1) {
+        toast.success(`${accepted[0].name} uploaded`);
+      } else if (successCount > 0) {
+        toast.success(`${successCount} file${successCount === 1 ? "" : "s"} uploaded`);
+      }
+
+      // Auto-title: if the user hasn't edited the title and it's still the
+      // default "New quote" (or empty), set it to the first successfully
+      // uploaded file's name minus extension. One-shot — further uploads
+      // won't re-trigger because the title won't match the default.
+      if (firstSuccessfulFilename) {
+        const currentTitle = ((quote as any)?.title as string || "").trim();
+        const isDefault =
+          !currentTitle ||
+          currentTitle === "New Quote" ||
+          currentTitle === "New quote";
+        if (!userEdited.current.title && isDefault) {
+          const baseName = firstSuccessfulFilename.replace(/\.[^/.]+$/, "");
+          try {
+            await updateQuote.mutateAsync({ id: quoteId, title: baseName });
+          } catch (err) {
+            console.warn("[QuoteWorkspace] auto-title failed:", err);
+          }
+        }
+      }
     } finally {
       setUploadingFile(false);
+      uploadInFlightRef.current = false;
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    void handleFiles(files);
   };
 
   const handleAddPaste = async () => {
@@ -802,6 +864,7 @@ export default function QuoteWorkspace() {
             onSelect={handleInputClick}
             onDelete={handleDeleteInput}
             onFileChoose={handleFileChoose}
+            onFilesDropped={handleFiles}
             onAddVoiceTranscript={handleAddVoiceTranscript}
             onAddPaste={handleAddPaste}
             pasteText={pasteText}
@@ -811,6 +874,7 @@ export default function QuoteWorkspace() {
           <input
             ref={fileInputRef}
             type="file"
+            multiple
             accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.bmp,.mp3,.wav,.m4a,.ogg,.webm,.eml,.msg"
             onChange={handleFileChange}
             className="hidden"
@@ -889,6 +953,7 @@ interface EvidencePanelProps {
   onSelect: (id: number) => void;
   onDelete: (id: number) => void;
   onFileChoose: () => void;
+  onFilesDropped: (files: File[]) => void;
   onAddVoiceTranscript: (text: string) => void;
   onAddPaste: () => void;
   pasteText: string;
@@ -903,6 +968,7 @@ function EvidencePanel({
   onSelect,
   onDelete,
   onFileChoose,
+  onFilesDropped,
   onAddVoiceTranscript,
   onAddPaste,
   pasteText,
@@ -910,7 +976,19 @@ function EvidencePanel({
   uploadingFile,
 }: EvidencePanelProps) {
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div
+      className="flex flex-col h-full overflow-hidden"
+      // Panel-level suppression: if the user misses the drop zone and drops
+      // on any other part of the sidebar, prevent the browser's default
+      // "navigate to file" behaviour. Drops inside the DropZone stop
+      // propagation themselves, so these only fire for stray drops.
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes("Files")) e.preventDefault();
+      }}
+      onDrop={(e) => {
+        if (e.dataTransfer.types.includes("Files")) e.preventDefault();
+      }}
+    >
       <div className="flex-shrink-0 px-5 pt-5 pb-3">
         <h2
           className="text-[11px] font-bold uppercase tracking-wider mb-3"
@@ -918,16 +996,14 @@ function EvidencePanel({
         >
           Add evidence
         </h2>
-        <div className="grid grid-cols-3 gap-2">
-          <ActionTile
-            icon={<Upload className="w-4 h-4" />}
-            label="Upload"
-            color={brand.teal}
-            bg={brand.tealBg}
-            onClick={onFileChoose}
-            disabled={uploadingFile}
-            busy={uploadingFile}
-          />
+
+        <DropZone
+          onFilesSelected={onFilesDropped}
+          onClick={onFileChoose}
+          busy={uploadingFile}
+        />
+
+        <div className="grid grid-cols-2 gap-2 mt-3">
           <ActionTile
             icon={<FileText className="w-4 h-4" />}
             label="Paste"
@@ -1012,6 +1088,106 @@ function EvidencePanel({
             />
           ))
         )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Drop zone (drag + click to upload) ──────────────────────────────────
+
+function DropZone({
+  onFilesSelected,
+  onClick,
+  busy,
+}: {
+  onFilesSelected: (files: File[]) => void;
+  onClick: () => void;
+  busy: boolean;
+}) {
+  const [dragOver, setDragOver] = useState(false);
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(true);
+  };
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Ignore leave events triggered by crossing onto a child element.
+    if (
+      e.currentTarget.contains(e.relatedTarget as Node | null)
+    ) {
+      return;
+    }
+    setDragOver(false);
+  };
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length > 0) onFilesSelected(files);
+  };
+
+  const borderColor = dragOver ? brand.teal : brand.border;
+  const bgColor = dragOver ? brand.tealBg : "#f8fafc";
+  const label = busy
+    ? "Uploading…"
+    : dragOver
+      ? "Drop to upload"
+      : "Drag files here";
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-disabled={busy}
+      onClick={busy ? undefined : onClick}
+      onKeyDown={(e) => {
+        if (busy) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className="rounded-xl px-4 py-5 flex flex-col items-center gap-1.5 transition-colors"
+      style={{
+        border: `2px dashed ${borderColor}`,
+        backgroundColor: bgColor,
+        cursor: busy ? "default" : "pointer",
+        opacity: busy ? 0.7 : 1,
+      }}
+    >
+      {busy ? (
+        <Loader2
+          className="w-6 h-6 animate-spin"
+          style={{ color: brand.teal }}
+        />
+      ) : (
+        <Upload className="w-6 h-6" style={{ color: brand.teal }} />
+      )}
+      <div
+        className="text-sm font-semibold"
+        style={{ color: brand.navy }}
+      >
+        {label}
+      </div>
+      <div
+        className="text-[11px] text-center leading-tight"
+        style={{ color: brand.navyMuted }}
+      >
+        or click to browse — PDF, image, audio, email
       </div>
     </div>
   );
@@ -1144,47 +1320,66 @@ function InputCard({
           onClick();
         }
       }}
-      className="group flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-all hover:shadow-sm"
+      className="group rounded-lg cursor-pointer transition-all hover:shadow-sm overflow-hidden"
       style={{
         backgroundColor: bgColor,
         border: `1px solid ${borderColor}`,
       }}
     >
-      <div
-        className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-[10px] font-bold"
-        style={{ backgroundColor: visual.bg, color: visual.color }}
-      >
-        {visual.label}
-      </div>
-      <div className="flex-1 min-w-0">
+      <div className="flex items-center gap-3 p-2.5">
         <div
-          className="text-sm font-semibold truncate"
-          style={{ color: brand.navy }}
+          className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-[10px] font-bold"
+          style={{ backgroundColor: visual.bg, color: visual.color }}
         >
-          {title}
+          {visual.label}
         </div>
-        <div
-          className="text-[11px] flex items-center gap-1.5"
-          style={{ color: brand.navyMuted }}
+        <div className="flex-1 min-w-0">
+          <div
+            className="text-sm font-semibold truncate"
+            style={{ color: brand.navy }}
+          >
+            {title}
+          </div>
+          <div
+            className="text-[11px] flex items-center gap-1.5"
+            style={{ color: brand.navyMuted }}
+          >
+            {isFailed && (
+              <AlertCircle className="w-3 h-3" style={{ color: "#dc2626" }} />
+            )}
+            <span>{subtitle}</span>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-red-50"
+          title="Remove"
         >
-          {isProcessing && <Loader2 className="w-3 h-3 animate-spin" />}
-          {isFailed && (
-            <AlertCircle className="w-3 h-3" style={{ color: "#dc2626" }} />
-          )}
-          <span>{subtitle}</span>
-        </div>
+          <Trash2 className="w-3.5 h-3.5" style={{ color: "#dc2626" }} />
+        </button>
       </div>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete();
-        }}
-        className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-red-50"
-        title="Remove"
-      >
-        <Trash2 className="w-3.5 h-3.5" style={{ color: "#dc2626" }} />
-      </button>
+      {isProcessing && (
+        <div style={{ padding: "0 10px 10px" }}>
+          <div className="iyq-progress-track" style={{ height: 8 }}>
+            <div className="iyq-progress-sweep" />
+          </div>
+        </div>
+      )}
+      {isFailed && (
+        <div style={{ padding: "0 10px 10px" }}>
+          <div
+            style={{
+              height: 8,
+              background: "#dc2626",
+              borderRadius: 4,
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -1522,7 +1717,7 @@ function LineItemsTable({
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+      <table className="w-full text-sm table-fixed">
         <thead>
           <tr
             className="text-[10px] uppercase font-bold tracking-wider"
@@ -1610,7 +1805,7 @@ function LineItemRow({
       }}
     >
       <td className="px-4 py-2 align-top">
-        <ExpandingDescription
+        <WrappingDescription
           value={row.description || ""}
           onChange={(v) => onSave(row.id, { description: v })}
         />
@@ -1713,84 +1908,46 @@ function LineItemRow({
 //
 // The Textarea's value IS the source of truth — changes save via onChange
 // (debounced upstream).
-function ExpandingDescription({
+function WrappingDescription({
   value,
   onChange,
 }: {
   value: string;
   onChange: (v: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const [local, setLocal] = useState(value);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // Sync local state when external value changes (e.g. after refetch) and
-  // the field isn't being edited. Same pattern as the page-level fields.
+  // Sync from parent when value changes (e.g. after refetch or AI regenerate),
+  // unless the textarea is currently focused — avoids clobbering mid-type.
   useEffect(() => {
-    if (!expanded) {
+    if (document.activeElement !== textareaRef.current) {
       setLocal(value);
     }
-  }, [value, expanded]);
+  }, [value]);
 
-  // Auto-size the textarea to its content whenever it's expanded or
-  // content changes. Cap at ~200px so a single row doesn't swallow the
-  // viewport on a very long description.
+  // Auto-size to content height on every local change, so the row grows
+  // tall enough to show the whole description without horizontal scroll.
   useEffect(() => {
-    if (!expanded || !textareaRef.current) return;
+    if (!textareaRef.current) return;
     const el = textareaRef.current;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-  }, [expanded, local]);
-
-  if (!expanded) {
-    return (
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={(e) => {
-          e.stopPropagation();
-          setExpanded(true);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            setExpanded(true);
-          }
-        }}
-        className="text-sm cursor-text truncate py-0.5 hover:opacity-80"
-        style={{ color: brand.navy }}
-        title={value || "Item description"}
-      >
-        {value || (
-          <span style={{ color: brand.navyMuted }}>Item description</span>
-        )}
-      </div>
-    );
-  }
+    el.style.height = `${el.scrollHeight}px`;
+  }, [local]);
 
   return (
     <Textarea
       ref={textareaRef}
       value={local}
-      autoFocus
       onChange={(e) => {
         const next = e.target.value;
         setLocal(next);
         onChange(next);
       }}
       onClick={(e) => e.stopPropagation()}
-      onBlur={() => setExpanded(false)}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          (e.target as HTMLTextAreaElement).blur();
-        }
-      }}
-      className="text-sm border shadow-sm focus-visible:ring-1 focus-visible:ring-offset-0 px-2 py-1.5 resize-none leading-snug"
-      style={{
-        color: brand.navy,
-        borderColor: brand.tealBorder,
-        minHeight: 44,
-      }}
+      rows={1}
+      className="text-sm border-0 shadow-none focus-visible:ring-0 px-0 py-1 resize-none leading-snug bg-transparent w-full block break-words overflow-hidden"
+      style={{ color: brand.navy }}
       placeholder="Item description"
     />
   );
