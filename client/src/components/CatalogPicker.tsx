@@ -31,7 +31,7 @@ interface CatalogPickerProps {
 export default function CatalogPicker({
   catalogItems,
   onSelect,
-  label = "Change…",
+  label = "Catalog",
 }: CatalogPickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -59,7 +59,17 @@ export default function CatalogPicker({
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [open]);
 
-  if (!catalogItems || catalogItems.length === 0) return null;
+  if (!catalogItems || catalogItems.length === 0) {
+    return (
+      <span
+        className="text-[10px]"
+        style={{ color: brand.navyMuted, opacity: 0.6 }}
+        title="Add items to your catalog in Settings → Catalog"
+      >
+        No catalog
+      </span>
+    );
+  }
 
   return (
     <span className="relative inline-block" data-catalog-picker-root>
@@ -69,7 +79,7 @@ export default function CatalogPicker({
           e.stopPropagation();
           setOpen((v) => !v);
         }}
-        className="text-[9px] font-bold px-1.5 py-0.5 rounded border transition-colors hover:opacity-80"
+        className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-md border transition-colors hover:brightness-95"
         style={{
           backgroundColor: "#f0fdfa",
           color: "#0d9488",
@@ -77,11 +87,36 @@ export default function CatalogPicker({
         }}
         title="Replace this row with an item from your catalog"
       >
-        {label}
+        <svg
+          width="11"
+          height="11"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+        </svg>
+        <span>{label}</span>
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 120ms" }}
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
       </button>
       {open && (
         <div
-          className="absolute right-0 z-50 mt-1 bg-white rounded-lg shadow-xl"
+          className="absolute left-0 z-50 mt-1 bg-white rounded-lg shadow-xl"
           style={{
             width: 320,
             maxHeight: 360,

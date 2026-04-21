@@ -863,7 +863,7 @@ export default function QuoteWorkspace() {
         <div
           className="flex flex-col overflow-hidden"
           style={{
-            width: "42%",
+            width: "30%",
             backgroundColor: "#f7fbfc",
             borderRight: `1px solid ${brand.border}`,
           }}
@@ -1803,12 +1803,13 @@ function LineItemsTable({
               backgroundColor: "#fafbfc",
             }}
           >
-            <th className="text-left px-4 py-2 w-[38%]">Line item</th>
+            <th className="text-left px-2 py-2 w-[10%]">Catalog</th>
+            <th className="text-left px-4 py-2 w-[30%]">Line item</th>
             <th className="text-right px-2 py-2 w-[10%]">Qty</th>
             <th className="text-left px-2 py-2 w-[10%]">Unit</th>
             <th className="text-right px-2 py-2 w-[12%]">Rate</th>
             <th className="text-right px-2 py-2 w-[12%]">Total</th>
-            <th className="text-left px-2 py-2 w-[14%]">Type</th>
+            <th className="text-left px-2 py-2 w-[12%]">Type</th>
             <th className="w-[4%]" />
           </tr>
         </thead>
@@ -1881,6 +1882,15 @@ function LineItemRow({
         borderTop: `1px solid ${brand.borderLight}`,
       }}
     >
+      <td
+        className="px-2 py-2 align-top"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <CatalogPicker
+          catalogItems={catalogItems}
+          onSelect={onApplyCatalog}
+        />
+      </td>
       <td className="px-4 py-2 align-top">
         <WrappingDescription
           value={row.description || ""}
@@ -1956,10 +1966,6 @@ function LineItemRow({
           className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
           onClick={(e) => e.stopPropagation()}
         >
-          <CatalogPicker
-            catalogItems={catalogItems}
-            onSelect={onApplyCatalog}
-          />
           <button
             type="button"
             onClick={onDelete}
