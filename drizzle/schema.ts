@@ -204,6 +204,15 @@ export const quoteLineItems = pgTable("quote_line_items", {
   category: varchar("category", { length: 100 }),
   pricingType: varchar("pricing_type", { length: 20 }).default("standard"),
   costPrice: decimal("cost_price", { precision: 12, scale: 2 }),
+  // Beta-2 provenance — populated by Chunk 2 (backend rewrite),
+  // read by Chunk 3 (frontend chips + hover pills). Unused in Chunk 1.
+  itemName: varchar("item_name", { length: 255 }),
+  isPassthrough: boolean("is_passthrough").default(false).notNull(),
+  evidenceCategory: varchar("evidence_category", { length: 100 }),
+  isSubstitutable: boolean("is_substitutable"),
+  isEstimated: boolean("is_estimated").default(false).notNull(),
+  isOptional: boolean("is_optional").default(false).notNull(),
+  sourceInputIds: json("source_input_ids").$type<number[]>(),
 });
 
 export type QuoteLineItem = typeof quoteLineItems.$inferSelect;
