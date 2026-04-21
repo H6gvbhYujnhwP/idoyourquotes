@@ -31,7 +31,8 @@
  * display). Status is always "draft".
  */
 
-import type { DemoQuoteFactory, DemoQuoteBundle } from "./index";
+import type { DemoQuoteFactory, DemoQuoteBundle, CoreDemoLineItem } from "./index";
+import { enrichDemoLineItem } from "./index";
 
 const CLIENT_NAME = "Northfield Surveyors Ltd";
 const CONTACT_NAME = "Sarah Mitchell";
@@ -45,7 +46,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
   // Helper: multiply two decimals, return as string to 2dp
   const mul = (qty: number, rate: number) => (qty * rate).toFixed(2);
 
-  const lineItems: DemoQuoteBundle["lineItems"] = [
+  const coreLineItems: CoreDemoLineItem[] = [
     {
       description:
         "Microsoft 365 Business Standard — Annual — Microsoft 365 Business Standard [NCE / 1-Year term, billed monthly — best value] || Full desktop Office apps (Word, Excel, PowerPoint, Outlook) || Exchange Online mailbox (50GB) || Teams, OneDrive (1TB), SharePoint || Installs on up to 5 PCs/Macs and 5 mobile devices per user",
@@ -108,11 +109,14 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
       unit: "Hour",
       rate: "99.00",
       total: mul(4, 99.0),
-      pricingType: "standard",
+      pricingType: "one_off",
       category: "Engineer Labour",
       costPrice: null,
     },
   ];
+
+  // Beta-2 provenance is uniform across demo rows — enrich in one pass.
+  const lineItems: DemoQuoteBundle["lineItems"] = coreLineItems.map(enrichDemoLineItem);
 
   // Materials inside qdsSummaryJson mirror the line items but in the QDS
   // MaterialItem shape. source: "voice" because that's the source value

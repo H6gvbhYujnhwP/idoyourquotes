@@ -11,7 +11,8 @@
  * full factory-contract rationale; this file follows the same shape.
  */
 
-import type { DemoQuoteFactory, DemoQuoteBundle } from "./index";
+import type { DemoQuoteFactory, DemoQuoteBundle, CoreDemoLineItem } from "./index";
+import { enrichDemoLineItem } from "./index";
 
 const CLIENT_NAME = "Thornley Landscapes Ltd";
 const CONTACT_NAME = "James Thornley";
@@ -24,7 +25,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
 
   const mul = (qty: number, rate: number) => (qty * rate).toFixed(2);
 
-  const lineItems: DemoQuoteBundle["lineItems"] = [
+  const coreLineItems: CoreDemoLineItem[] = [
     {
       description:
         "Business Website — 10–15 Pages — Mid-size business website with 10–15 pages || Custom design and bespoke layout || Fully responsive across all devices || CMS-managed with editor training || Contact forms with CRM integration (HubSpot, Mailchimp, Salesforce) || Blog / news module included || On-page SEO optimised || Google Analytics 4 and GTM setup || 30-day post-launch support",
@@ -32,7 +33,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
       unit: "Project",
       rate: "3495.00",
       total: mul(1, 3495.0),
-      pricingType: "standard",
+      pricingType: "one_off",
       category: "Web Design & Development",
       costPrice: null,
     },
@@ -43,7 +44,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
       unit: "Project",
       rate: "595.00",
       total: mul(1, 595.0),
-      pricingType: "standard",
+      pricingType: "one_off",
       category: "Content & Branding",
       costPrice: null,
     },
@@ -54,7 +55,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
       unit: "Article",
       rate: "185.00",
       total: mul(3, 185.0),
-      pricingType: "standard",
+      pricingType: "one_off",
       category: "SEO Services",
       costPrice: null,
     },
@@ -92,6 +93,9 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
       costPrice: null,
     },
   ];
+
+  // Beta-2 provenance is uniform across demo rows — enrich in one pass.
+  const lineItems: DemoQuoteBundle["lineItems"] = coreLineItems.map(enrichDemoLineItem);
 
   const materials = lineItems.map((li) => {
     const [item, ...rest] = li.description.split(" — ");

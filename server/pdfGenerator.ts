@@ -612,7 +612,32 @@ export async function generateQuoteHTML(data: PDFQuoteData): Promise<string> {
   } else if (isComprehensive) {
     html = generateComprehensiveProposalHTML(resolvedData);
   } else {
-    html = generateSimpleQuoteHTML(resolvedData);
+    // Beta-2 Chunk 2a — pricing_type backwards-compatibility shim.
+    //
+    // generateSimpleQuoteHTML filters on the legacy vocabulary
+    // ("standard" and "optional") and is forbidden from being modified.
+    // After the Chunk 2a rename, the DB holds "one_off" in place of
+    // "standard", and optional rows now carry is_optional = TRUE with
+    // pricing_type = "one_off". We map each row back to the legacy
+    // shape here — in the WRAPPER, outside the locked function — so the
+    // inner filter set (standardItems / optionalItems / monthlyItems /
+    // annualItems) continues to bucket rows correctly.
+    //
+    //   is_optional = TRUE  →  pricing_type = "optional"
+    //   "one_off"           →  "standard"
+    //   everything else     →  untouched
+    //
+    // This shim goes away entirely in Chunk 3 when the PDF path is
+    // refreshed alongside the chips UI.
+    const shimmed: PDFQuoteData = {
+      ...resolvedData,
+      lineItems: resolvedData.lineItems.map(li => {
+        if ((li as any).isOptional) return { ...li, pricingType: "optional" };
+        if (li.pricingType === "one_off") return { ...li, pricingType: "standard" };
+        return li;
+      }),
+    };
+    html = generateSimpleQuoteHTML(shimmed);
   }
 
   // Inject trial watermark if applicable

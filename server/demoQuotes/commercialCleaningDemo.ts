@@ -11,7 +11,8 @@
  * the full factory-contract rationale; this file follows the same shape.
  */
 
-import type { DemoQuoteFactory, DemoQuoteBundle } from "./index";
+import type { DemoQuoteFactory, DemoQuoteBundle, CoreDemoLineItem } from "./index";
+import { enrichDemoLineItem } from "./index";
 
 const CLIENT_NAME = "Oakhaven Solicitors LLP";
 const CONTACT_NAME = "Rachel Dhaliwal";
@@ -24,7 +25,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
 
   const mul = (qty: number, rate: number) => (qty * rate).toFixed(2);
 
-  const lineItems: DemoQuoteBundle["lineItems"] = [
+  const coreLineItems: CoreDemoLineItem[] = [
     {
       description:
         "Daily Office Cleaning — Medium Site (2,000–10,000 sq ft) — Recurring office cleaning contract for medium sites || Monday–Friday evening cleans (or morning, as agreed) || Full office, kitchen, and washroom cleaning || Periodic touch-points included (door handles, switches, shared surfaces) || Cleaning materials supplied; consumables restock included || Fortnightly supervisor site visit with quality audit || Minimum 12-month contract",
@@ -65,11 +66,14 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
       unit: "Sq ft",
       rate: "0.35",
       total: mul(4500, 0.35),
-      pricingType: "standard",
+      pricingType: "one_off",
       category: "Periodic Deep Cleans",
       costPrice: null,
     },
   ];
+
+  // Beta-2 provenance is uniform across demo rows — enrich in one pass.
+  const lineItems: DemoQuoteBundle["lineItems"] = coreLineItems.map(enrichDemoLineItem);
 
   const materials = lineItems.map((li) => {
     const [item, ...rest] = li.description.split(" — ");

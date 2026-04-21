@@ -202,10 +202,11 @@ export const quoteLineItems = pgTable("quote_line_items", {
   // Comprehensive quote phase tracking
   phaseId: varchar("phase_id", { length: 50 }),
   category: varchar("category", { length: 100 }),
-  pricingType: varchar("pricing_type", { length: 20 }).default("standard"),
+  pricingType: varchar("pricing_type", { length: 20 }).default("one_off"),
   costPrice: decimal("cost_price", { precision: 12, scale: 2 }),
-  // Beta-2 provenance — populated by Chunk 2 (backend rewrite),
-  // read by Chunk 3 (frontend chips + hover pills). Unused in Chunk 1.
+  // Beta-2 provenance — populated at seed time by demo quotes (Chunk 2a)
+  // and by the generate-draft rewrite (Chunk 2b); consumed by the
+  // frontend chips + hover pills (Chunk 3).
   itemName: varchar("item_name", { length: 255 }),
   isPassthrough: boolean("is_passthrough").default(false).notNull(),
   evidenceCategory: varchar("evidence_category", { length: 100 }),

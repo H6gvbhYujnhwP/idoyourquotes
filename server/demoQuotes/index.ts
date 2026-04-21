@@ -78,13 +78,73 @@ export interface DemoQuoteBundle {
     unit: string;
     rate: string;
     total: string;
-    pricingType: "standard" | "monthly" | "annual" | "optional";
+    pricingType: "one_off" | "monthly" | "annual" | "optional";
     category: string;
     costPrice: string | null;
+    // Beta-2 provenance (Chunk 2a) — written straight into
+    // quote_line_items at seed time by seedDemoQuoteForSector. Demos
+    // have no inputs and are priced directly from the sector catalog,
+    // so: not estimated, not passthrough, no source inputs, and
+    // substitutability is unknown at demo-authoring time.
+    itemName: string;
+    isPassthrough: boolean;
+    evidenceCategory: string | null;
+    isSubstitutable: boolean | null;
+    isEstimated: boolean;
+    isOptional: boolean;
+    sourceInputIds: number[];
   }>;
 }
 
 export type DemoQuoteFactory = () => DemoQuoteBundle;
+
+/**
+ * The core line-item fields each demo factory hand-authors. Provenance
+ * fields (itemName + six Beta-2 flags) are NOT hand-authored — they're
+ * produced by enrichDemoLineItem() so every demo picks up the same
+ * defaults without 7 extra lines per row of boilerplate.
+ */
+export type CoreDemoLineItem = Pick<
+  DemoQuoteBundle["lineItems"][number],
+  | "description"
+  | "quantity"
+  | "unit"
+  | "rate"
+  | "total"
+  | "pricingType"
+  | "category"
+  | "costPrice"
+>;
+
+/**
+ * Adds Beta-2 provenance defaults to a hand-authored core demo row.
+ *
+ * Defaults for demo rows:
+ *   - itemName:         split from description on the first " — "
+ *                       (the "{item} — {description}" prefix convention
+ *                       used app-wide)
+ *   - isPassthrough:    false  — priced from catalog, not echoed from evidence
+ *   - evidenceCategory: null   — demos carry no evidence
+ *   - isSubstitutable:  null   — unknown at demo-authoring time
+ *   - isEstimated:      false  — every rate is a real catalog number
+ *   - isOptional:       false  — demos don't showcase optional rows today
+ *   - sourceInputIds:   []     — no inputs exist
+ */
+export function enrichDemoLineItem(
+  core: CoreDemoLineItem
+): DemoQuoteBundle["lineItems"][number] {
+  const [itemName] = core.description.split(" — ");
+  return {
+    ...core,
+    itemName: itemName ?? core.description,
+    isPassthrough: false,
+    evidenceCategory: null,
+    isSubstitutable: null,
+    isEstimated: false,
+    isOptional: false,
+    sourceInputIds: [],
+  };
+}
 
 /**
  * Registry of available demo factories keyed by tradePreset /

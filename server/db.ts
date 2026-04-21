@@ -940,6 +940,10 @@ export async function seedDemoQuoteForSector(
   // index so rows render in factory-authored order. Every other field
   // comes straight from the factory — totals are pre-computed so
   // recalculateQuoteTotals in Step 4 can sum them without row recompute.
+  // Beta-2: provenance fields (itemName, isPassthrough, isEstimated,
+  // isOptional, evidenceCategory, isSubstitutable, sourceInputIds) are
+  // carried through so Chunk 3's chips have real data for demo quotes
+  // the moment the new UI lights up.
   for (let i = 0; i < demo.lineItems.length; i++) {
     const li = demo.lineItems[i];
     await createLineItem({
@@ -953,6 +957,13 @@ export async function seedDemoQuoteForSector(
       pricingType: li.pricingType,
       category: li.category,
       costPrice: li.costPrice,
+      itemName: li.itemName,
+      isPassthrough: li.isPassthrough,
+      evidenceCategory: li.evidenceCategory,
+      isSubstitutable: li.isSubstitutable,
+      isEstimated: li.isEstimated,
+      isOptional: li.isOptional,
+      sourceInputIds: li.sourceInputIds,
     });
   }
 
@@ -997,10 +1008,17 @@ export async function recalculateQuoteTotals(quoteId: number, userId: number): P
   
   if (!quote) return undefined;
 
-  // Only include 'standard' pricing type in the quote total
-  // Monthly, annual, and optional items are shown separately and not included
+  // Subtotal = one-off rows that are NOT flagged optional.
+  // During the Beta-2 pricing-type rename transition, both the legacy
+  // "standard" and the new "one_off" values must be accepted — the AI
+  // writer and user-edit paths still emit "standard" until Chunk 2b.
+  // Optional rows (is_optional = true, regardless of cadence) are
+  // always excluded from all three totals.
+  const isOneOff = (pt: string | null | undefined) =>
+    !pt || pt === 'standard' || pt === 'one_off';
+
   const subtotal = lineItems
-    .filter(item => !item.pricingType || item.pricingType === 'standard')
+    .filter(item => !item.isOptional && isOneOff(item.pricingType))
     .reduce((sum, item) => sum + parseFloat(item.total || "0"), 0);
   const taxRate = parseFloat(quote.taxRate || "0");
   const taxAmount = subtotal * (taxRate / 100);
@@ -1008,10 +1026,10 @@ export async function recalculateQuoteTotals(quoteId: number, userId: number): P
 
   // Compute recurring totals for dashboard / email / future use
   const monthlyTotal = lineItems
-    .filter(item => item.pricingType === 'monthly')
+    .filter(item => !item.isOptional && item.pricingType === 'monthly')
     .reduce((sum, item) => sum + parseFloat(item.total || "0"), 0);
   const annualTotal = lineItems
-    .filter(item => item.pricingType === 'annual')
+    .filter(item => !item.isOptional && item.pricingType === 'annual')
     .reduce((sum, item) => sum + parseFloat(item.total || "0"), 0);
 
   return updateQuote(quoteId, userId, {

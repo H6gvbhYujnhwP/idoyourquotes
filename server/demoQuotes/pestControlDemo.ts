@@ -12,7 +12,8 @@
  * full factory-contract rationale; this file follows the same shape.
  */
 
-import type { DemoQuoteFactory, DemoQuoteBundle } from "./index";
+import type { DemoQuoteFactory, DemoQuoteBundle, CoreDemoLineItem } from "./index";
+import { enrichDemoLineItem } from "./index";
 
 const CLIENT_NAME = "The Millhouse Kitchen";
 const CONTACT_NAME = "David Ellis";
@@ -25,7 +26,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
 
   const mul = (qty: number, rate: number) => (qty * rate).toFixed(2);
 
-  const lineItems: DemoQuoteBundle["lineItems"] = [
+  const coreLineItems: CoreDemoLineItem[] = [
     {
       description:
         "Food Premises Pest Control Contract — Restaurant / Café — Commercial pest control contract for restaurants, cafés, and commercial kitchens || 8 scheduled visits per year (every 6 weeks) || Rodent, crawling insect, and flying insect monitoring || EFK (electric fly killer) servicing and lamp changes || Full BRC / CIEH-compliant documentation pack || Call-back visits included within contract term || Technician trained in food-sector environments || Minimum 12-month contract || Monthly figure shown — billed quarterly in arrears",
@@ -55,7 +56,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
       unit: "Survey",
       rate: "145.00",
       total: mul(1, 145.0),
-      pricingType: "standard",
+      pricingType: "one_off",
       category: "Proofing & Exclusion",
       costPrice: null,
     },
@@ -66,7 +67,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
       unit: "Hour",
       rate: "65.00",
       total: mul(3, 65.0),
-      pricingType: "standard",
+      pricingType: "one_off",
       category: "Proofing & Exclusion",
       costPrice: null,
     },
@@ -77,11 +78,14 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
       unit: "Survey",
       rate: "125.00",
       total: mul(1, 125.0),
-      pricingType: "standard",
+      pricingType: "one_off",
       category: "Labour & Callouts",
       costPrice: null,
     },
   ];
+
+  // Beta-2 provenance is uniform across demo rows — enrich in one pass.
+  const lineItems: DemoQuoteBundle["lineItems"] = coreLineItems.map(enrichDemoLineItem);
 
   const materials = lineItems.map((li) => {
     const [item, ...rest] = li.description.split(" — ");
