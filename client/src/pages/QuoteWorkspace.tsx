@@ -240,6 +240,11 @@ export default function QuoteWorkspace() {
   const [activeLineItemId, setActiveLineItemId] = useState<number | null>(null);
   const [pasteText, setPasteText] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  // Stage within the Generate Quote flow — drives the "Creating your quote…"
+  // panel's rotating status text so the wait feels transparent instead of opaque.
+  const [generateStage, setGenerateStage] = useState<
+    "reading" | "building" | "finalising" | null
+  >(null);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [showMissingCostsModal, setShowMissingCostsModal] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
@@ -561,6 +566,7 @@ export default function QuoteWorkspace() {
     }
 
     setIsGenerating(true);
+    setGenerateStage("reading");
     try {
       // Step 1 — parse evidence into engine output
       const parsed = await parseDictation.mutateAsync({ quoteId });
@@ -569,10 +575,12 @@ export default function QuoteWorkspace() {
           "Couldn't extract a quote from the evidence. Try adding more detail.",
         );
         setIsGenerating(false);
+        setGenerateStage(null);
         return;
       }
 
       // Step 2 — write qdsSummaryJson (adapter: keeps Beta-1 schema intact)
+      setGenerateStage("building");
       await updateQuote.mutateAsync({
         id: quoteId,
         qdsSummaryJson: JSON.stringify((parsed as any).summary),
@@ -597,6 +605,8 @@ export default function QuoteWorkspace() {
       if (map && typeof map === "object") {
         setSourceInputMap(map as Record<number, number[]>);
       }
+
+      setGenerateStage("finalising");
       toast.success("Quote generated");
       await refetch();
     } catch (err) {
@@ -605,6 +615,7 @@ export default function QuoteWorkspace() {
       );
     } finally {
       setIsGenerating(false);
+      setGenerateStage(null);
     }
   };
 
@@ -886,6 +897,7 @@ export default function QuoteWorkspace() {
             <EmptyStatePanel
               onGenerate={handleGenerate}
               isGenerating={isGenerating}
+              generateStage={generateStage}
               evidenceCount={inputs.length}
             />
           ) : (
@@ -1069,6 +1081,26 @@ function EvidencePanel({
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 pb-5 space-y-2">
+        {inputs.some((i) => i.processingStatus === "processing") && (
+          <div
+            className="flex items-start gap-2 px-3 py-2.5 rounded-lg"
+            style={{
+              backgroundColor: brand.tealBg,
+              border: `1px solid ${brand.tealBorder}`,
+            }}
+          >
+            <Loader2
+              className="w-3.5 h-3.5 animate-spin flex-shrink-0 mt-0.5"
+              style={{ color: brand.teal }}
+            />
+            <div
+              className="text-[11px] leading-snug"
+              style={{ color: brand.navy }}
+            >
+              Analysing your files — this may take a minute or two.
+            </div>
+          </div>
+        )}
         {inputs.length === 0 ? (
           <div
             className="text-xs text-center py-8 rounded-lg border border-dashed"
@@ -1389,13 +1421,67 @@ function InputCard({
 function EmptyStatePanel({
   onGenerate,
   isGenerating,
+  generateStage,
   evidenceCount,
 }: {
   onGenerate: () => void;
   isGenerating: boolean;
+  generateStage: "reading" | "building" | "finalising" | null;
   evidenceCount: number;
 }) {
   const canGenerate = evidenceCount > 0 && !isGenerating;
+
+  // Design 2 — hero animated generating panel. Stage text matches the real
+  // async phases inside handleGenerate: parseDictation → generateDraft →
+  // refetch.
+  if (isGenerating) {
+    const stageLabel =
+      generateStage === "reading"
+        ? "Reading your evidence…"
+        : generateStage === "building"
+          ? "Building line items…"
+          : generateStage === "finalising"
+            ? "Finalising quote…"
+            : "Getting started…";
+    return (
+      <div className="flex-1 flex items-center justify-center p-10">
+        <div className="max-w-sm w-full text-center flex flex-col items-center gap-4">
+          <div
+            className="w-16 h-16 rounded-2xl flex items-center justify-center animate-pulse"
+            style={{
+              background: "linear-gradient(135deg, #0d9488 0%, #0f766e 100%)",
+            }}
+          >
+            <Sparkles className="w-8 h-8 text-white" />
+          </div>
+          <h2
+            className="text-xl font-bold"
+            style={{ color: brand.navy }}
+          >
+            Creating your quote…
+          </h2>
+          <p
+            className="text-sm"
+            style={{ color: brand.navyMuted, minHeight: 20 }}
+          >
+            {stageLabel}
+          </p>
+          <div className="w-full mt-2">
+            <div className="iyq-progress-track" style={{ height: 8 }}>
+              <div className="iyq-progress-sweep" />
+            </div>
+          </div>
+          <p
+            className="text-xs"
+            style={{ color: brand.navyMuted, opacity: 0.75 }}
+          >
+            Usually takes about 30 seconds
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 flex items-center justify-center p-10">
       <div className="max-w-sm w-full text-center">
@@ -1432,17 +1518,8 @@ function EmptyStatePanel({
               : undefined,
           }}
         >
-          {isGenerating ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Generating…
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-4 h-4 mr-2" />
-              Generate Quote
-            </>
-          )}
+          <Sparkles className="w-4 h-4 mr-2" />
+          Generate Quote
         </Button>
       </div>
     </div>
