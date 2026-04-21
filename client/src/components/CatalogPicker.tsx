@@ -20,6 +20,7 @@ export interface CatalogItemRef {
   unit: string | null;
   category: string | null;
   description?: string | null;
+  pricingType?: string | null;
 }
 
 interface CatalogPickerProps {

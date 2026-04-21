@@ -692,11 +692,34 @@ export default function QuoteWorkspace() {
   };
 
   const applyCatalogItemToRow = (row: LineItem, cat: CatalogItemRef) => {
+    // Full field mapping from catalog to line item. QTY is explicitly left
+    // alone — the user has already committed to a quantity, only the item
+    // identity changes. Total is recomputed by the row's memo from the new
+    // rate × existing quantity.
+    //
+    // Description uses the same "Name — Description" convention as the AI
+    // engine (generalEngine.ts line item building) so quotes look consistent
+    // whether lines came from AI or from catalog.
+    const combinedDescription = cat.description
+      ? `${cat.name} — ${cat.description}`
+      : cat.name;
+
     const patch: Record<string, unknown> = {
-      description: cat.name,
+      description: combinedDescription,
       unit: cat.unit || "each",
     };
-    if (cat.defaultRate) patch.rate = cat.defaultRate;
+    if (cat.defaultRate !== null && cat.defaultRate !== undefined) {
+      patch.rate = cat.defaultRate;
+    }
+    if (cat.costPrice !== null && cat.costPrice !== undefined) {
+      patch.costPrice = cat.costPrice;
+    }
+    if (cat.category) {
+      patch.category = cat.category;
+    }
+    if (cat.pricingType) {
+      patch.pricingType = cat.pricingType;
+    }
     saveLineItem(row.id, patch, 0);
   };
 
@@ -1898,32 +1921,25 @@ function LineItemRow({
         />
       </td>
       <td className="px-2 py-2 text-right">
-        <Input
-          defaultValue={row.quantity || ""}
-          onChange={(e) => onSave(row.id, { quantity: e.target.value })}
-          onClick={(e) => e.stopPropagation()}
-          className="text-sm text-right border-0 shadow-none focus-visible:ring-0 px-0 bg-transparent h-auto py-0.5 w-full"
-          style={{ color: brand.navy }}
+        <RowCellInput
+          value={row.quantity || ""}
+          onSave={(v) => onSave(row.id, { quantity: v })}
+          align="right"
           inputMode="decimal"
         />
       </td>
       <td className="px-2 py-2">
-        <Input
-          defaultValue={row.unit || ""}
-          onChange={(e) => onSave(row.id, { unit: e.target.value })}
-          onClick={(e) => e.stopPropagation()}
-          className="text-sm border-0 shadow-none focus-visible:ring-0 px-0 bg-transparent h-auto py-0.5 w-full"
-          style={{ color: brand.navy }}
+        <RowCellInput
+          value={row.unit || ""}
+          onSave={(v) => onSave(row.id, { unit: v })}
           placeholder="each"
         />
       </td>
       <td className="px-2 py-2 text-right">
-        <Input
-          defaultValue={row.rate || ""}
-          onChange={(e) => onSave(row.id, { rate: e.target.value })}
-          onClick={(e) => e.stopPropagation()}
-          className="text-sm text-right border-0 shadow-none focus-visible:ring-0 px-0 bg-transparent h-auto py-0.5 w-full"
-          style={{ color: brand.navy }}
+        <RowCellInput
+          value={row.rate || ""}
+          onSave={(v) => onSave(row.id, { rate: v })}
+          align="right"
           inputMode="decimal"
           placeholder="0.00"
         />
@@ -1991,6 +2007,53 @@ function LineItemRow({
 //
 // The Textarea's value IS the source of truth — changes save via onChange
 // (debounced upstream).
+// ─── Row cell input ──────────────────────────────────────────────────────
+//
+// Focus-aware controlled input. Syncs its shown value from the parent prop
+// whenever the field is NOT currently focused — so programmatic updates
+// (e.g. applying a catalog item to the row) refresh the UI, while in-flight
+// typing isn't clobbered by a round-trip from the server.
+function RowCellInput({
+  value,
+  onSave,
+  align,
+  inputMode,
+  placeholder,
+}: {
+  value: string;
+  onSave: (v: string) => void;
+  align?: "right";
+  inputMode?: "decimal" | "text";
+  placeholder?: string;
+}) {
+  const [local, setLocal] = useState(value);
+  const ref = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (document.activeElement !== ref.current) {
+      setLocal(value);
+    }
+  }, [value]);
+
+  return (
+    <Input
+      ref={ref}
+      value={local}
+      onChange={(e) => {
+        setLocal(e.target.value);
+        onSave(e.target.value);
+      }}
+      onClick={(e) => e.stopPropagation()}
+      className={`text-sm border-0 shadow-none focus-visible:ring-0 px-0 bg-transparent h-auto py-0.5 w-full${
+        align === "right" ? " text-right" : ""
+      }`}
+      style={{ color: brand.navy }}
+      inputMode={inputMode}
+      placeholder={placeholder}
+    />
+  );
+}
+
 function WrappingDescription({
   value,
   onChange,
