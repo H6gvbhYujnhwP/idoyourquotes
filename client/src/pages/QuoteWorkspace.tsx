@@ -308,7 +308,8 @@ export default function QuoteWorkspace() {
   });
 
   // ── Mutations — quote flow ──
-  const parseDictation = trpc.ai.parseDictationSummary.useMutation();
+  // Beta-2 Chunk 2b-i: parseDictationSummary is no longer called from the
+  // client — generateDraft runs the engine inline server-side in one round-trip.
   const generateDraft = trpc.ai.generateDraft.useMutation();
   const updateQuote = trpc.quotes.update.useMutation();
   const updateStatus = trpc.quotes.updateStatus.useMutation({
@@ -565,29 +566,23 @@ export default function QuoteWorkspace() {
       return;
     }
 
+    // Beta-2 Chunk 2b-i: one round-trip. The server now runs the engine
+    // inline and materialises line items in a single mutation. The three
+    // wait-screen stages ("reading" → "building" → "finalising") advance
+    // on timers during the call so the UX matches what users are used to;
+    // "finalising" still flips on real completion just before refetch.
     setIsGenerating(true);
     setGenerateStage("reading");
+    const stageTimers: ReturnType<typeof setTimeout>[] = [];
+    stageTimers.push(
+      setTimeout(() => setGenerateStage("building"), 1500),
+    );
     try {
-      // Step 1 — parse evidence into engine output
-      const parsed = await parseDictation.mutateAsync({ quoteId });
-      if (!parsed || !(parsed as any).hasSummary) {
-        toast.error(
-          "Couldn't extract a quote from the evidence. Try adding more detail.",
-        );
-        setIsGenerating(false);
-        setGenerateStage(null);
-        return;
-      }
-
-      // Step 2 — write qdsSummaryJson (adapter: keeps Beta-1 schema intact)
-      setGenerateStage("building");
-      await updateQuote.mutateAsync({
-        id: quoteId,
-        qdsSummaryJson: JSON.stringify((parsed as any).summary),
-      });
-
-      // Step 3 — materialise line items
       const result = await generateDraft.mutateAsync({ quoteId });
+      // Clear any still-pending stage timers before flipping to finalising.
+      stageTimers.forEach((t) => clearTimeout(t));
+      stageTimers.length = 0;
+
       const map = (result as any)?.sourceInputMap;
       // Diagnostic: log the map so we can see if the engine emitted
       // sourceInputIds on materials. If the map is {} on a real-looking
@@ -614,6 +609,7 @@ export default function QuoteWorkspace() {
         err instanceof Error ? err.message : "Couldn't generate the quote",
       );
     } finally {
+      stageTimers.forEach((t) => clearTimeout(t));
       setIsGenerating(false);
       setGenerateStage(null);
     }
@@ -1063,7 +1059,7 @@ function EvidencePanel({
                 onAddPaste();
               }
             }}
-            className="min-h-[72px] text-sm bg-white"
+            className="min-h-[72px] max-h-[240px] overflow-y-auto text-sm bg-white"
             style={{ borderColor: brand.border }}
           />
           {pasteText.trim().length > 0 && (
@@ -1454,9 +1450,8 @@ function EmptyStatePanel({
 }) {
   const canGenerate = evidenceCount > 0 && !isGenerating;
 
-  // Design 2 — hero animated generating panel. Stage text matches the real
-  // async phases inside handleGenerate: parseDictation → generateDraft →
-  // refetch.
+  // Design 2 — hero animated generating panel. Stage text advances on timers
+  // during the single generateDraft call: reading → building → finalising.
   if (isGenerating) {
     const stageLabel =
       generateStage === "reading"
