@@ -14,11 +14,10 @@
  *
  * Design:
  *   - Factories are plain-data functions — no DB access, no side effects.
- *   - Each factory returns a fully-formed { quoteFields, qdsSummaryJson,
- *     lineItems[] } bundle that the seedDemoQuoteForSector helper in
- *     db.ts writes in the correct order: createQuote → updateQuote (for
- *     qdsSummaryJson, which createQuote doesn't set) → loop createLineItem
- *     → recalculateQuoteTotals.
+ *   - Each factory returns a fully-formed { quoteFields, lineItems[] }
+ *     bundle that the seedDemoQuoteForSector helper in db.ts writes in
+ *     the correct order: createQuote → loop createLineItem →
+ *     recalculateQuoteTotals.
  *   - Demo factories are fully isolated from each other. Changing the IT
  *     demo cannot affect any other sector's registration flow.
  *   - Factories that return null mean "no demo available" — handled
@@ -38,8 +37,7 @@ import { getDemoQuote as getPestControlDemo } from "./pestControlDemo";
 export interface DemoQuoteBundle {
   /**
    * Fields written via createQuote() in db.ts. Only columns that
-   * createQuote explicitly spreads are honoured here; qdsSummaryJson is
-   * handled separately below.
+   * createQuote explicitly spreads are honoured here.
    */
   quoteFields: {
     reference: string;
@@ -56,15 +54,6 @@ export interface DemoQuoteBundle {
     terms?: string;
     validUntil?: Date;
   };
-  /**
-   * Stringified QDS snapshot. Shape matches what triggerVoiceAnalysis
-   * writes to quotes.qds_summary_json. Note: demo quotes have no inputs,
-   * so the QuoteWorkspace rehydration useEffect bails on the
-   * `inputs.length === 0` guard — this column stays in the DB ready for
-   * future use but doesn't render on the QDS tab. The Quote tab (line
-   * items + totals) is the user-visible payoff.
-   */
-  qdsSummaryJson: string;
   /**
    * Pre-totalled line-item rows. quoteId and sortOrder are injected by
    * the seedDemoQuoteForSector helper; every other field comes from the

@@ -97,42 +97,6 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
   // Beta-2 provenance is uniform across demo rows — enrich in one pass.
   const lineItems: DemoQuoteBundle["lineItems"] = coreLineItems.map(enrichDemoLineItem);
 
-  const materials = lineItems.map((li) => {
-    const [item, ...rest] = li.description.split(" — ");
-    const description = rest.join(" — ");
-    return {
-      item,
-      quantity: parseFloat(li.quantity),
-      unitPrice: parseFloat(li.rate),
-      costPrice: li.costPrice !== null ? parseFloat(li.costPrice) : null,
-      installTimeHrs: null as number | null,
-      labourCost: null as number | null,
-      unit: li.unit,
-      description,
-      pricingType: li.pricingType,
-      estimated: false,
-      source: "voice" as const,
-      catalogName: item,
-    };
-  });
-
-  const qdsSummaryJson = JSON.stringify({
-    clientName: CLIENT_NAME,
-    jobDescription:
-      `Example brand launch — ${CLIENT_NAME}. New 10–15 page business website with bespoke logo design and 3 launch-phase SEO articles, plus ongoing managed hosting, monthly care plan, and local SEO retainer. Project-style build charged one-off, recurring retainers billed monthly.`,
-    labour: [],
-    materials,
-    plantHire: [],
-    markup: null,
-    sundries: null,
-    contingency: null,
-    preliminaries: null,
-    labourRate: null,
-    plantMarkup: null,
-    notes:
-      "This is an example quote auto-seeded to show you what a finished brand-launch quote looks like. Edit or delete anytime — nothing here affects your real quotes.",
-  });
-
   const quoteFields: DemoQuoteBundle["quoteFields"] = {
     reference: `EXAMPLE-WEB-${today.getTime()}`,
     status: "draft",
@@ -148,5 +112,5 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
     validUntil,
   };
 
-  return { quoteFields, qdsSummaryJson, lineItems };
+  return { quoteFields, lineItems };
 };

@@ -75,42 +75,6 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
   // Beta-2 provenance is uniform across demo rows — enrich in one pass.
   const lineItems: DemoQuoteBundle["lineItems"] = coreLineItems.map(enrichDemoLineItem);
 
-  const materials = lineItems.map((li) => {
-    const [item, ...rest] = li.description.split(" — ");
-    const description = rest.join(" — ");
-    return {
-      item,
-      quantity: parseFloat(li.quantity),
-      unitPrice: parseFloat(li.rate),
-      costPrice: li.costPrice !== null ? parseFloat(li.costPrice) : null,
-      installTimeHrs: null as number | null,
-      labourCost: null as number | null,
-      unit: li.unit,
-      description,
-      pricingType: li.pricingType,
-      estimated: false,
-      source: "voice" as const,
-      catalogName: item,
-    };
-  });
-
-  const qdsSummaryJson = JSON.stringify({
-    clientName: CLIENT_NAME,
-    jobDescription:
-      `Example office cleaning contract — ${CLIENT_NAME}. Daily Mon–Fri evening clean of a 4,500 sq ft office across 4 washrooms, plus monthly washroom services and consumables supply, and a one-off contract-start deep clean. Recurring work billed monthly; deep clean as a one-off on commencement.`,
-    labour: [],
-    materials,
-    plantHire: [],
-    markup: null,
-    sundries: null,
-    contingency: null,
-    preliminaries: null,
-    labourRate: null,
-    plantMarkup: null,
-    notes:
-      "This is an example quote auto-seeded to show you what a finished office-cleaning contract looks like. Edit or delete anytime — nothing here affects your real quotes.",
-  });
-
   const quoteFields: DemoQuoteBundle["quoteFields"] = {
     reference: `EXAMPLE-CLN-${today.getTime()}`,
     status: "draft",
@@ -126,5 +90,5 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
     validUntil,
   };
 
-  return { quoteFields, qdsSummaryJson, lineItems };
+  return { quoteFields, lineItems };
 };

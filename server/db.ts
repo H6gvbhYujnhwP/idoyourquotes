@@ -920,23 +920,16 @@ export async function seedDemoQuoteForSector(
   // functions — no DB access, no side effects.
   const demo = factory();
 
-  // Step 1: Create the quote shell. createQuote only spreads a specific
-  // subset of InsertQuote fields — qdsSummaryJson is NOT among them,
-  // which is why we handle it separately in Step 2 below.
+  // Step 1: Create the quote shell. createQuote spreads a specific
+  // subset of InsertQuote fields — quoteFields below carries every
+  // column the demo factory wants to set at creation time.
   const quote = await createQuote({
     userId,
     orgId,
     ...demo.quoteFields,
   });
 
-  // Step 2: Persist the QDS snapshot. updateQuote accepts qdsSummaryJson
-  // via Partial<InsertQuote> and filters by (quoteId, userId) for
-  // ownership — consistent with every other updateQuote call site.
-  await updateQuote(quote.id, userId, {
-    qdsSummaryJson: demo.qdsSummaryJson,
-  });
-
-  // Step 3: Insert line items. sortOrder is injected from the array
+  // Step 2: Insert line items. sortOrder is injected from the array
   // index so rows render in factory-authored order. Every other field
   // comes straight from the factory — totals are pre-computed so
   // recalculateQuoteTotals in Step 4 can sum them without row recompute.
@@ -967,7 +960,7 @@ export async function seedDemoQuoteForSector(
     });
   }
 
-  // Step 4: Recompute subtotal / tax / total / monthlyTotal / annualTotal
+  // Step 3: Recompute subtotal / tax / total / monthlyTotal / annualTotal
   // from the now-inserted line items. Standard pricingType feeds total
   // and tax; monthly/annual pricingTypes feed their respective recurring
   // totals for the Dashboard / email surfaces.

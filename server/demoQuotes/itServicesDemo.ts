@@ -16,12 +16,6 @@
  * Factory contract:
  *   - Returns plain-data fields only — no database access, no side effects.
  *   - `quoteFields` goes straight into createQuote() in db.ts.
- *   - `qdsSummaryJson` goes straight into updateQuote() after createQuote
- *     (createQuote doesn't set that column). Shape matches exactly what
- *     `triggerVoiceAnalysis` writes, so future rehydration would restore
- *     cleanly. Note: demo quotes have no inputs, so the QuoteWorkspace
- *     rehydration useEffect bails on the `inputs.length === 0` guard and
- *     the QDS tab stays empty — acceptable, the Quote tab is the payoff.
  *   - `lineItems` each carry pre-computed `total = quantity × rate` as a
  *     decimal-string (recalculateQuoteTotals reads `total`, doesn't
  *     recompute rows).
@@ -118,46 +112,6 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
   // Beta-2 provenance is uniform across demo rows — enrich in one pass.
   const lineItems: DemoQuoteBundle["lineItems"] = coreLineItems.map(enrichDemoLineItem);
 
-  // Materials inside qdsSummaryJson mirror the line items but in the QDS
-  // MaterialItem shape. source: "voice" because that's the source value
-  // the rehydration useEffect would restore with.
-  const materials = lineItems.map((li) => {
-    // Split "{item} — {description}" to recover item name
-    const [item, ...rest] = li.description.split(" — ");
-    const description = rest.join(" — ");
-    return {
-      item,
-      quantity: parseFloat(li.quantity),
-      unitPrice: parseFloat(li.rate),
-      costPrice: li.costPrice !== null ? parseFloat(li.costPrice) : null,
-      installTimeHrs: null as number | null,
-      labourCost: null as number | null,
-      unit: li.unit,
-      description,
-      pricingType: li.pricingType,
-      estimated: false,
-      source: "voice" as const,
-      catalogName: item,
-    };
-  });
-
-  const qdsSummaryJson = JSON.stringify({
-    clientName: CLIENT_NAME,
-    jobDescription:
-      `Example IT takeover — ${CLIENT_NAME} (20 users). Migration from incumbent provider covering Microsoft 365 licensing, endpoint security, M365 backup, email protection, and ongoing managed support, plus a one-off onsite engineer day for onboarding. Billed monthly per user; onboarding billed as a one-off.`,
-    labour: [],
-    materials,
-    plantHire: [],
-    markup: null,
-    sundries: null,
-    contingency: null,
-    preliminaries: null,
-    labourRate: null,
-    plantMarkup: null,
-    notes:
-      "This is an example quote auto-seeded to show you what a finished IT takeover looks like. Edit or delete anytime — nothing here affects your real quotes.",
-  });
-
   const quoteFields: DemoQuoteBundle["quoteFields"] = {
     reference: `EXAMPLE-IT-${today.getTime()}`,
     status: "draft",
@@ -173,5 +127,5 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
     validUntil,
   };
 
-  return { quoteFields, qdsSummaryJson, lineItems };
+  return { quoteFields, lineItems };
 };

@@ -87,42 +87,6 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
   // Beta-2 provenance is uniform across demo rows — enrich in one pass.
   const lineItems: DemoQuoteBundle["lineItems"] = coreLineItems.map(enrichDemoLineItem);
 
-  const materials = lineItems.map((li) => {
-    const [item, ...rest] = li.description.split(" — ");
-    const description = rest.join(" — ");
-    return {
-      item,
-      quantity: parseFloat(li.quantity),
-      unitPrice: parseFloat(li.rate),
-      costPrice: li.costPrice !== null ? parseFloat(li.costPrice) : null,
-      installTimeHrs: null as number | null,
-      labourCost: null as number | null,
-      unit: li.unit,
-      description,
-      pricingType: li.pricingType,
-      estimated: false,
-      source: "voice" as const,
-      catalogName: item,
-    };
-  });
-
-  const qdsSummaryJson = JSON.stringify({
-    clientName: CLIENT_NAME,
-    jobDescription:
-      `Example food-premises pest control takeover — ${CLIENT_NAME}. BRC/CIEH-compliant 8-visit annual contract for a restaurant kitchen, supplemented by 6 electronic rodent monitoring units for IPM coverage of high-risk zones. Includes a one-off rodent proofing survey and 3 hours of remedial proofing works, plus an initial site survey (waived if the contract is signed within 30 days). Installed hardware ownership to be confirmed with incumbent provider on takeover.`,
-    labour: [],
-    materials,
-    plantHire: [],
-    markup: null,
-    sundries: null,
-    contingency: null,
-    preliminaries: null,
-    labourRate: null,
-    plantMarkup: null,
-    notes:
-      "This is an example quote auto-seeded to show you what a finished food-premises pest contract looks like. Edit or delete anytime — nothing here affects your real quotes.",
-  });
-
   const quoteFields: DemoQuoteBundle["quoteFields"] = {
     reference: `EXAMPLE-PST-${today.getTime()}`,
     status: "draft",
@@ -138,5 +102,5 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
     validUntil,
   };
 
-  return { quoteFields, qdsSummaryJson, lineItems };
+  return { quoteFields, lineItems };
 };

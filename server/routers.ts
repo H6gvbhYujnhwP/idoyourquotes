@@ -428,7 +428,11 @@ export const appRouter = router({
         qdsSummaryJson: z.string().nullable().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const { id, ...data } = input;
+        // Beta-2 Chunk 2b-ii: qdsSummaryJson column has been dropped from
+        // the quotes table. The zod input still accepts the field so that
+        // legacy callers that haven't been updated yet continue to type-
+        // check and send without error — we silently discard it on write.
+        const { id, qdsSummaryJson: _discarded, ...data } = input;
         // Try org-based access first to verify ownership
         const org = await getUserPrimaryOrg(ctx.user.id);
         let existingQuote = null;
@@ -3908,9 +3912,71 @@ Respond ONLY with valid JSON — no preamble, no markdown:
           pricingType: string;
           sortOrder: number;
           sourceInputIds?: number[];
+          // Chunk 2b-ii: provenance signals from the engine, threaded
+          // straight into the provenance columns on each line item.
+          itemName?: string;
+          passthrough?: boolean;
+          evidenceCategory?: string | null;
+          substitutable?: boolean | null;
+          estimated?: boolean;
         }> = [];
 
-        const qdsSummaryRaw = (quote as any).qdsSummaryJson;
+        // ── Beta-2 Chunk 2b-ii: inline engine run (adapter column dropped) ─────
+        // Run the sector engine directly inside generateDraft so the whole
+        // Generate Quote action is one round-trip. The qds_summary_json
+        // scratch-pad column that this used to hand off through was dropped
+        // in migration 0014; nothing reads or writes it in the four-sector
+        // flow anymore.
+        let qdsSummaryRaw: string | null = null;
+        {
+          const tradePresetKey = (quote as any)?.tradePreset as string | null;
+          const userTradeSector = ctx.user.defaultTradeSector || null;
+
+          let catalogContext = "";
+          if (catalogItems.length > 0) {
+            catalogContext = `\n\nCOMPANY CATALOG — these are the user's products and services with their set prices:
+${catalogItems.map(c => `- "${c.name}" | Sell: £${c.defaultRate}/${c.unit}${c.costPrice ? ` | Buy-in: £${c.costPrice}` : ""}${(c as any).installTimeHrs ? ` | Install: ${(c as any).installTimeHrs}hrs/unit` : ""} | Category: ${c.category || "General"} | Pricing: ${(c as any).pricingType || "standard"}${c.description ? ` | ${c.description}` : ""}`).join("\n")}
+
+PRICING TYPES — each catalog item has a pricing type that MUST be preserved:
+- "standard" = one-off cost included in the quote total (the default)
+- "monthly" = recurring monthly service — shown separately, NOT included in the one-off total
+- "optional" = add-on the client can choose — shown separately, NOT included in the one-off total
+- "annual" = yearly recurring cost — shown separately, NOT included in the one-off total
+When extracting materials, ALWAYS include a "pricingType" field matching the catalog item's pricing type.
+CRITICAL: Look at the "Pricing:" field shown next to each catalog item above. If a catalog item says "Pricing: optional", the material MUST have "pricingType": "optional". If it says "Pricing: monthly", it MUST be "monthly". If it says "Pricing: annual", it MUST be "annual". Do NOT override the catalog's pricing type — it was set by the user for a reason. If no catalog match, default to "standard". For tenders that explicitly request annual costs (e.g. maintenance contracts), use "annual".`;
+          }
+
+          const engineInput: EngineInput = {
+            tradePreset: tradePresetKey,
+            userTradeSector,
+            inputRecords: inputs.map((inp: any) => ({
+              id: inp.id,
+              inputType: inp.inputType,
+              content: inp.content ?? null,
+              fileUrl: inp.fileUrl ?? null,
+              filename: inp.filename ?? null,
+              processedContent: inp.processedContent ?? null,
+              extractedText: inp.extractedText ?? null,
+              mimeType: inp.mimeType ?? null,
+            })),
+            catalogContext,
+          };
+
+          const engine = selectEngine(tradePresetKey || userTradeSector);
+          console.log(`[generateDraft] Inline engine run: ${engine.constructor.name} for preset="${tradePresetKey || userTradeSector || "none"}"`);
+          const engineOutput = await engine.analyse(engineInput);
+          console.log(`[generateDraft] Inline engine output: engineUsed=${engineOutput.engineUsed}, materials=${engineOutput.materials?.length ?? 0}`);
+
+          // Guard: engine returned nothing usable — surface the same toast
+          // text the client used to show. Thrown before any destructive
+          // work (no line items have been deleted yet at this point).
+          if (!engineOutput.jobDescription && (!engineOutput.materials || engineOutput.materials.length === 0)) {
+            throw new Error("Couldn't extract a quote from the evidence. Try adding more detail.");
+          }
+
+          qdsSummaryRaw = JSON.stringify(engineOutput);
+        }
+        // ── end Chunk 2b-ii inline engine run ──────────────────────────────────
         if (qdsSummaryRaw) {
           try {
             const qds = JSON.parse(qdsSummaryRaw);
@@ -3958,6 +4024,13 @@ Respond ONLY with valid JSON — no preamble, no markdown:
                   pricingType: m.pricingType || "standard",
                   sortOrder: sortIdx++,
                   sourceInputIds,
+                  // Chunk 2b-ii: engine-emitted provenance, threaded
+                  // through for population at line-item creation.
+                  itemName: m.item,
+                  passthrough: m.passthrough === true,
+                  evidenceCategory: m.evidenceCategory ?? null,
+                  substitutable: m.substitutable ?? null,
+                  estimated: m.estimated === true,
                 } as any);
               }
             }
@@ -3977,6 +4050,13 @@ Respond ONLY with valid JSON — no preamble, no markdown:
                   rate: labourRate,
                   pricingType: "standard",
                   sortOrder: sortIdx++,
+                  // Chunk 2b-ii: labour rows have no engine-emitted
+                  // provenance — use defaults matching the demo seeders.
+                  itemName: l.role,
+                  passthrough: false,
+                  evidenceCategory: "labour",
+                  substitutable: null,
+                  estimated: false,
                 });
               }
             }
@@ -3997,7 +4077,14 @@ Respond ONLY with valid JSON — no preamble, no markdown:
                   costPrice: costPrice != null ? String(costPrice) : null,
                   pricingType: "standard",
                   sortOrder: sortIdx++,
-                });
+                  // Chunk 2b-ii: plant-hire has no engine-emitted
+                  // provenance — use defaults matching the demo seeders.
+                  itemName: p.description,
+                  passthrough: false,
+                  evidenceCategory: "plant_hire",
+                  substitutable: null,
+                  estimated: false,
+                } as any);
               }
             }
 
@@ -4433,6 +4520,38 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
             const rate = parseFloat(String(item.rate)) || 0;
             const total = quantity * rate;
 
+            // ── Chunk 2b-ii: provenance + pricing-vocabulary mapping ───────
+            // The engines and AI-draft path both still emit the legacy
+            // pricing vocabulary ("standard" / "optional" / "monthly" /
+            // "annual"). Chunk 2a renamed "standard" → "one_off" and moved
+            // "optional" onto the isOptional flag with pricingType "one_off".
+            // Map here at write time so downstream reads see the new shape.
+            const rawPricingType = (item as any).pricingType || "standard";
+            const isOptional = rawPricingType === "optional";
+            const pricingType =
+              rawPricingType === "standard" || rawPricingType === "optional"
+                ? "one_off"
+                : rawPricingType; // "monthly" | "annual" pass through
+
+            // Derive an item name: engines emit it directly; AI-draft items
+            // don't, so split the "{item} — {description}" convention used
+            // app-wide as a fallback.
+            const fallbackItemName = String(item.description || "").split(" — ")[0] || null;
+            const itemName = (item as any).itemName ?? fallbackItemName;
+
+            // Source input IDs: sanitise to number[] (or null for DB). Only
+            // the QDS-materials path emits these today.
+            const sidsRaw = (item as any).sourceInputIds;
+            let sourceInputIds: number[] | null = null;
+            if (Array.isArray(sidsRaw)) {
+              const valid = (sidsRaw as unknown[])
+                .map((v) => (typeof v === "number" ? v : parseInt(String(v), 10)))
+                .filter((v): v is number => Number.isFinite(v) && v > 0);
+              sourceInputIds = valid.length > 0 ? valid : [];
+            } else {
+              sourceInputIds = [];
+            }
+
             const lineItem = await createLineItem({
               quoteId: input.quoteId,
               sortOrder: i,
@@ -4443,17 +4562,31 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
               total: total.toFixed(2),
               phaseId: isComprehensive && (item as any).phase ? (item as any).phase : undefined,
               category: isComprehensive && (item as any).category ? (item as any).category : undefined,
-              pricingType: (item as any).pricingType || "standard",
+              pricingType,
               costPrice: (item as any).costPrice ?? null,
+              // Beta-2 provenance — populated at creation time so Chunk 3's
+              // chips / hover pills find real data on every row regardless
+              // of how the row was produced (engine QDS, engine labour /
+              // plantHire, or AI-draft comprehensive).
+              itemName,
+              isPassthrough: (item as any).passthrough === true,
+              evidenceCategory: (item as any).evidenceCategory ?? null,
+              isSubstitutable:
+                typeof (item as any).substitutable === "boolean"
+                  ? (item as any).substitutable
+                  : null,
+              isEstimated: (item as any).estimated === true,
+              isOptional,
+              sourceInputIds,
             });
             createdLineItems.push(lineItem);
             // Beta-1: record the evidence-input mapping if this line item
-            // carries sourceInputIds (QDS direct path, non-electrical). The
-            // electrical QDS branch does not emit sourceInputIds, so its
-            // rows are absent from the map and highlighting no-ops for them.
-            const sids = (item as any).sourceInputIds;
-            if (Array.isArray(sids) && sids.length > 0 && (lineItem as any)?.id) {
-              sourceInputMap[(lineItem as any).id as number] = sids as number[];
+            // carries sourceInputIds. The client holds this in session
+            // state for two-way highlighting; Beta-2 persists the same
+            // data on the row via quote_line_items.source_input_ids so
+            // the client could read it there directly in future.
+            if (sourceInputIds && sourceInputIds.length > 0 && (lineItem as any)?.id) {
+              sourceInputMap[(lineItem as any).id as number] = sourceInputIds;
             }
           }
 
