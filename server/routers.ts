@@ -1692,7 +1692,16 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
               // This ensures takeoffs run regardless of which input is selected in the UI.
               // Previously, takeoffs only ran when TakeoffPanel mounted (required the PDF to be selected).
               // Skip if this PDF is marked as reference-only (legend sheet) — it has no installation counts.
-              if (input.inputType === "pdf" && !inputRecord.mimeType?.includes(";reference=true")) {
+              //
+              // Sector gate: only run auto-takeoff when the quote's tradePreset is
+              // "electrical". Without this gate, PDFs uploaded on IT / cleaning /
+              // website / pest quotes have their processedContent (real PDF text
+              // from OpenAI extraction) overwritten by the electrical takeoff
+              // stub further down this block, which breaks Generate Quote for
+              // the four sectors. Explicit allow-list — any new sector added in
+              // future will safely not run electrical processing by default.
+              const isElectricalQuote = (quote as any).tradePreset === "electrical";
+              if (input.inputType === "pdf" && !inputRecord.mimeType?.includes(";reference=true") && isElectricalQuote) {
                 try {
                   // Check if a takeoff already exists for this input (avoid duplicates)
                   const existingTakeoff = await getElectricalTakeoffByInputId(inputRecord.id);
