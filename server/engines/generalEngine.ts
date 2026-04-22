@@ -77,6 +77,15 @@ export class GeneralEngine implements SectorEngine {
       return this.emptyOutput("No active inputs after reference-only filter");
     }
 
+    // ── Step 2.5: Inventory pre-pass (Chunk 3 Delivery A2 — Option 2) ─────
+    // Decouples "what's in the evidence" from "how do we price it". The
+    // pricing pass below receives the inventory as ground truth and must
+    // reconcile its materials[] output against it. If this pass fails for
+    // any reason (API error, parse error, zero items), the helper returns
+    // null and we fall through to today's single-pass behaviour unchanged.
+    const inventoryBlock = await this.runInventoryPass(allContent);
+    const inventoryContext = inventoryBlock ? `\n\n${inventoryBlock}\n` : "";
+
     // ── Step 3: Build catalog context (already formatted by parseDictationSummary) ─
     const catalogContext = input.catalogContext;
 
@@ -570,8 +579,7 @@ CLIENT EXTRACTION:
 - The RECIPIENT of the quote is the client (the person asking for work), NOT the user (the person sending the quote).
 - Look for patterns: "Dear [name]", "Hi [name]", email From/To headers, signature blocks with company name, phone, email, address.
 - If an email chain shows the user replying to someone, the "someone" is the client.
-${catalogContext}
-
+${catalogContext}${inventoryContext}
 COMPLETENESS AUDIT — NON-NEGOTIABLE FIRST PASS:
 Before you consider matching anything to the catalog, you must do an extraction pass that captures EVERY discrete item named in the evidence. An item is "discrete" if it appears as:
 - A row in a table or invoice
@@ -699,7 +707,7 @@ BEFORE OUTPUTTING JSON — run this mental checklist:
 5. Are pricingTypes correct — standard for one-off, monthly for recurring?
 6. Does labour[] contain ONLY roles that are NOT already priced as materials line items? If a labour role appears in materials, remove it from labour[].
 7. Does every materials row include a non-empty sourceInputIds array naming the [INPUT_ID: N] values of the evidence block(s) that justify the row?
-8. COMPLETENESS: Mentally count the discrete items in the evidence (rows in tables, bullets in lists, checkboxes on service sheets, named products/licences/services/contracts). Then count the materials[] rows. If materials is materially smaller than the evidence item count, re-read and add the missing items back — with estimated prices if no catalog match. The only legitimate drop reasons are the narrow list in COMPLETENESS AUDIT above. If the numbers don't reconcile and you can't cite one of those reasons, the output is incomplete.
+8. COMPLETENESS: If an EVIDENCE INVENTORY block appears above, use it as ground truth — every inventory entry must either appear as a materials row or have been legitimately skipped per the narrow list in COMPLETENESS AUDIT; nothing else may be dropped. If no inventory block is present, mentally count the discrete items in the evidence (rows in tables, bullets in lists, checkboxes on service sheets, named products/licences/services/contracts) and reconcile against materials[] the same way. If materials is materially smaller than the inventory or the evidence item count, re-read and add the missing items back — with estimated UK-market prices if no catalog match. The only legitimate drop reasons are the narrow list in COMPLETENESS AUDIT above. If the numbers don't reconcile and you can't cite one of those reasons, the output is incomplete.
 Only output JSON once all eight checks pass.
 
 If a field is not mentioned or cannot be determined, use null. Respond with valid JSON only — no preamble, no explanation, no markdown fences.`;
@@ -749,6 +757,124 @@ If a field is not mentioned or cannot be determined, use null. Respond with vali
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[GeneralEngine] analyse failed: ${message}`);
       return this.emptyOutput(`Engine error: ${message}`);
+    }
+  }
+
+  // ─── Inventory pre-pass ──────────────────────────────────────────────────
+  //
+  // Chunk 3 Delivery A2 (Option 2 — two-pass extraction):
+  //
+  // Runs BEFORE the main pricing pass. Asks Claude to enumerate every
+  // discrete item visible in the evidence — no pricing, no catalogue,
+  // no scope judgement. The result is formatted as an EVIDENCE INVENTORY
+  // block and injected into the main pricing prompt as ground truth that
+  // the pricing pass must reconcile against.
+  //
+  // Decouples "what items are in this evidence" from "how do we price them",
+  // which is the failure mode the single-pass prompt hits: a strong
+  // high-level scope summary in the evidence anchors the pricing pass and
+  // causes it to collapse the detailed item list into catalogue-shaped
+  // rows, dropping uncatalogued items entirely.
+  //
+  // Silent fallback: any failure (API error, empty response, malformed
+  // JSON) returns null and the engine proceeds with today's single-pass
+  // behaviour unchanged. We never regress below the current baseline.
+  private async runInventoryPass(allContent: string[]): Promise<string | null> {
+    const inventorySystemPrompt = `You are performing an evidence-inventory pre-pass for a quoting system.
+
+JOB: List every discrete item mentioned in the evidence that could appear as a billable line item on a quote. You do NOT price, match against any catalogue, or judge scope. Enumerate everything discrete.
+
+An item is "discrete" if it appears as any of:
+- A row in a table or invoice, a bullet in a list, a checkbox line on a form
+- A named product, licence, service, hosting subscription, domain name, contract, or deliverable written out anywhere in the text
+- A distinct labour engagement (onsite visit, workshop work, remote support, discovery/scoping session, training, commissioning, site survey, out-of-hours callout, project management)
+- A recurring service (support contract, subscription, monitoring, maintenance, hosting, managed service)
+- A piece of hardware, equipment, consumable, or material — even without an explicit price
+- A distinct deliverable described in prose (e.g. "build the website", "migrate the mailboxes", "install the cabling")
+
+When the evidence contains BOTH a high-level scope summary ("13 workstations, 1 server, 2 networking devices") AND a detailed list of specific items/licences/services alongside or below it, the detailed list is authoritative — enumerate the detailed items, not the summary's rolled-up counts.
+
+EXCLUDE from the inventory:
+- Email signatures, confidentiality notices, footers, legal disclaimers, social pleasantries
+- Historical references with no forward-looking relevance ("last year we spent £X on Y")
+- Section headings or labels that are not themselves billable items
+- Exact duplicates within the same evidence input (list once)
+
+Each evidence block is tagged with [INPUT_ID: N]. Record which inputs each item came from.
+
+OUTPUT — STRICT JSON only, no preamble, no markdown fences, no explanation:
+{
+  "items": [
+    { "id": 1, "label": "<short item name>", "excerpt": "<the short snippet from the evidence that named this item>", "sourceInputIds": [<input IDs>] }
+  ]
+}
+
+If the evidence genuinely contains no discrete items (e.g. a one-line enquiry), return {"items":[]}.`;
+
+    try {
+      const response = await invokeClaude({
+        system: inventorySystemPrompt,
+        maxTokens: 4096,
+        messages: [
+          { role: "user", content: allContent.join("\n\n") },
+        ],
+      });
+
+      if (response.stopReason === "max_tokens") {
+        console.warn("[GeneralEngine:Inventory] Response hit max_tokens — falling back to single-pass");
+        return null;
+      }
+
+      const raw = response.content;
+      if (!raw || typeof raw !== "string") {
+        console.warn("[GeneralEngine:Inventory] Empty response — falling back to single-pass");
+        return null;
+      }
+
+      const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+
+      let parsed: { items?: Array<{ id?: number; label?: string; excerpt?: string; sourceInputIds?: number[] }> };
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch (parseErr) {
+        console.warn("[GeneralEngine:Inventory] JSON parse failed — falling back to single-pass:", parseErr instanceof Error ? parseErr.message : String(parseErr));
+        return null;
+      }
+
+      const items = Array.isArray(parsed.items) ? parsed.items : [];
+      if (items.length === 0) {
+        // Legitimate empty inventory (one-line enquiry etc.) — no value in injecting
+        // an empty block. Fall through to single-pass behaviour; mental checklist
+        // item 8 handles completeness on its own for minimal evidence.
+        console.info("[GeneralEngine:Inventory] Zero items detected — skipping injection");
+        return null;
+      }
+
+      const lines: string[] = [];
+      lines.push("EVIDENCE INVENTORY — GROUND TRUTH FOR COMPLETENESS:");
+      lines.push(`A pre-pass has enumerated the following ${items.length} discrete item(s) in the evidence. Your materials[] output MUST contain one row for each inventory entry, UNLESS the entry falls under the narrow legitimate-skip list in COMPLETENESS AUDIT below (email signatures, prorated catch-up lines, ad-spend passthrough, historical references only). No other drop is permitted. Items you cannot match to the catalogue must still be emitted with "estimated": true and a reasonable UK-market price — they are NOT drop candidates.`);
+      lines.push("");
+      lines.push("Inventory:");
+
+      items.forEach((item, idx) => {
+        const id = typeof item.id === "number" ? item.id : idx + 1;
+        const label = (item.label ?? "").toString().trim() || "(unlabelled item)";
+        const excerpt = (item.excerpt ?? "").toString().trim();
+        const inputIds = Array.isArray(item.sourceInputIds) ? item.sourceInputIds.filter(n => typeof n === "number") : [];
+        const inputTag = inputIds.length > 0 ? ` (from [INPUT_ID: ${inputIds.join(", ")}])` : "";
+        const excerptStr = excerpt ? ` — "${excerpt.replace(/"/g, "'").slice(0, 200)}"` : "";
+        lines.push(`#${id} ${label}${excerptStr}${inputTag}`);
+      });
+
+      lines.push("");
+      lines.push("Reconciliation rule: after building materials[], count your rows. The count must be >= the inventory count minus any entries you legitimately skipped per the narrow list above. If materials is smaller, re-read the evidence and add the missing items — use catalogue prices where a genuine match exists, estimated UK-market prices otherwise.");
+
+      console.info(`[GeneralEngine:Inventory] Injected inventory with ${items.length} item(s), ${response.usage.inputTokens}→${response.usage.outputTokens} tokens`);
+
+      return lines.join("\n");
+    } catch (err) {
+      console.warn("[GeneralEngine:Inventory] Pass failed — falling back to single-pass:", err instanceof Error ? err.message : String(err));
+      return null;
     }
   }
 
