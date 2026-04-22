@@ -375,16 +375,17 @@ export function isClaudeConfigured(): boolean {
 // ══════════════════════════════════════════════════════════════════════
 
 import { openai, isOpenAIConfigured } from './openai';
-// pdf-parse is CommonJS - use createRequire for ESM compatibility
+// pdf-parse v2 is ESM-with-CJS entry; use createRequire for the CJS build.
+// The v2 API is { PDFParse } class (breaking change from v1's callable export).
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const pdfParse = require('pdf-parse');
+const { PDFParse } = require('pdf-parse') as { PDFParse: new (opts: { data: Buffer | Uint8Array }) => any };
 
 export { isOpenAIConfigured };
 
 const TEXT_CHUNK_SIZE = 80000; // ~20K tokens worth of text per chunk
 const GPT4_DELAY_BETWEEN_CHUNKS_MS = 1000; // 1 second between chunks
-const OCR_PAGE_CAP = 20; // Max pages sent to Vision on scanned-PDF fallback
+const OCR_PAGE_CAP = 20; // Max pages sent to GPT-4o on PDF-native fallback
 
 /**
  * Secondary text-layer extractor — uses pdfjs-dist as a fallback when
@@ -420,9 +421,13 @@ async function extractTextWithPdfJs(pdfBuffer: Buffer): Promise<{ text: string; 
 }
 
 /**
- * OCR fallback — rasterises PDF pages and sends each to OpenAI Vision.
- * Triggered only when both text-layer extractors return empty (true scans,
- * image-only PDFs, flattened exports). Capped at OCR_PAGE_CAP pages to
+ * PDF-native fallback — sends the PDF directly to GPT-4o via the Chat
+ * Completions file input. GPT-4o reads PDFs natively (both text layers and
+ * page imagery), so this covers true scans, image-only PDFs, and flattened
+ * exports without any server-side rasterisation or extra dependencies.
+ *
+ * If the PDF has more than OCR_PAGE_CAP pages, it's trimmed to the first
+ * OCR_PAGE_CAP pages using pdf-lib (already a project dependency) to
  * protect against runaway cost on mis-uploaded large scans.
  */
 async function ocrPdfWithVision(
@@ -430,112 +435,108 @@ async function ocrPdfWithVision(
   prompt: string,
   systemPrompt: string
 ): Promise<string> {
-  const { pdfToPng }: any = await import('pdf-to-png-converter');
+  // Count pages and, if over cap, produce a trimmed copy that only contains
+  // the first OCR_PAGE_CAP pages.
+  let totalPages = 1;
+  let bufferToSend: Buffer = pdfBuffer;
+  let skippedPages = 0;
 
-  // viewportScale 2.0 is a reasonable quality/size trade-off for OCR accuracy.
-  // disableFontFace/useSystemFonts help rendering succeed on Render's Linux
-  // container without embedded font assets.
-  const pngPages = await pdfToPng(pdfBuffer, {
-    viewportScale: 2.0,
-    disableFontFace: true,
-    useSystemFonts: false,
-  });
-
-  const totalPages = pngPages.length;
-  const pagesToProcess = pngPages.slice(0, OCR_PAGE_CAP);
-  const skippedPages = totalPages - pagesToProcess.length;
-
-  console.log(
-    `[OpenAI PDF] OCR: rasterised ${totalPages} page(s), sending ${pagesToProcess.length} to Vision` +
-      (skippedPages > 0 ? ` (${skippedPages} beyond ${OCR_PAGE_CAP}-page cap skipped)` : '')
-  );
-
-  const pageResults: string[] = [];
-  for (let i = 0; i < pagesToProcess.length; i++) {
-    const page: any = pagesToProcess[i];
-    const pageLabel = `Page ${i + 1} of ${totalPages}`;
-    const content: Buffer | undefined = page?.content;
-    if (!content) {
-      console.error(`[OpenAI PDF] OCR: ${pageLabel} has no rasterised content, skipping`);
-      pageResults.push(`[${pageLabel}: no image produced]`);
-      continue;
+  try {
+    const srcDoc = await PDFDocument.load(pdfBuffer);
+    totalPages = srcDoc.getPageCount();
+    if (totalPages > OCR_PAGE_CAP) {
+      skippedPages = totalPages - OCR_PAGE_CAP;
+      const trimmedDoc = await PDFDocument.create();
+      const indexes = Array.from({ length: OCR_PAGE_CAP }, (_, i) => i);
+      const copied = await trimmedDoc.copyPages(srcDoc, indexes);
+      copied.forEach((p) => trimmedDoc.addPage(p));
+      const trimmedBytes = await trimmedDoc.save();
+      bufferToSend = Buffer.from(trimmedBytes);
+      console.log(
+        `[OpenAI PDF] PDF has ${totalPages} pages — trimming to first ${OCR_PAGE_CAP} for Vision send (${skippedPages} page(s) skipped)`
+      );
     }
+  } catch (err: any) {
+    console.error(`[OpenAI PDF] Page-count/trim step failed (continuing with original buffer):`, err?.message);
+  }
 
-    console.log(`[OpenAI PDF] OCR: processing ${pageLabel}...`);
-    try {
-      const base64 = content.toString('base64');
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: `${prompt}\n\nThis is ${pageLabel} of a scanned or image-based document. Extract every visible text element, number, table row, heading, annotation, and diagram label from this page image. Preserve structure where possible (headings, lists, tables).`,
-              },
-              { type: 'image_url', image_url: { url: `data:image/png;base64,${base64}` } },
-            ],
-          },
-        ],
-        max_tokens: 4096,
-        temperature: 0.1,
-      });
-      const pageAnalysis = response.choices[0]?.message?.content || '';
-      pageResults.push(`## ${pageLabel}\n\n${pageAnalysis}`);
-      console.log(`[OpenAI PDF] OCR: ${pageLabel} complete (${pageAnalysis.length} chars)`);
+  const pagesProcessed = Math.min(totalPages, OCR_PAGE_CAP);
+  console.log(`[OpenAI PDF] Sending ${pagesProcessed}-page PDF directly to GPT-4o (${bufferToSend.length} bytes)...`);
 
-      if (i < pagesToProcess.length - 1) {
-        await sleep(GPT4_DELAY_BETWEEN_CHUNKS_MS);
+  const base64 = bufferToSend.toString('base64');
+  const fileContent: any = {
+    type: 'file',
+    file: {
+      file_data: `data:application/pdf;base64,${base64}`,
+      filename: 'document.pdf',
+    },
+  };
+  const promptText = `${prompt}\n\nThis PDF has no extractable text layer — read the page imagery directly. Extract every visible text element, number, table row, heading, annotation, and diagram label. Preserve structure where possible (headings, lists, tables).`;
+
+  let analysis = '';
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: promptText },
+            fileContent,
+          ] as any,
+        },
+      ],
+      max_tokens: 4096,
+      temperature: 0.1,
+    });
+    analysis = response.choices[0]?.message?.content || '';
+    console.log(`[OpenAI PDF] Vision PDF analysis complete (${analysis.length} chars)`);
+  } catch (err: any) {
+    if (err?.status === 429) {
+      console.log(`[OpenAI PDF] Rate limit on Vision PDF send, waiting 10s and retrying once...`);
+      await sleep(10000);
+      try {
+        const retryResponse = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: promptText },
+                fileContent,
+              ] as any,
+            },
+          ],
+          max_tokens: 4096,
+          temperature: 0.1,
+        });
+        analysis = retryResponse.choices[0]?.message?.content || '';
+        console.log(`[OpenAI PDF] Vision PDF retry succeeded (${analysis.length} chars)`);
+      } catch (retryErr: any) {
+        console.error(`[OpenAI PDF] Vision PDF retry failed:`, retryErr?.message);
+        throw retryErr;
       }
-    } catch (err: any) {
-      console.error(`[OpenAI PDF] OCR: ${pageLabel} failed:`, err?.message);
-      if (err?.status === 429) {
-        console.log(`[OpenAI PDF] OCR: rate limit on ${pageLabel}, waiting 10s and retrying once...`);
-        await sleep(10000);
-        try {
-          const base64 = content.toString('base64');
-          const retryResponse = await openai.chat.completions.create({
-            model: 'gpt-4o',
-            messages: [
-              { role: 'system', content: systemPrompt },
-              {
-                role: 'user',
-                content: [
-                  {
-                    type: 'text',
-                    text: `${prompt}\n\nThis is ${pageLabel} of a scanned or image-based document. Extract every visible text element, number, table row, heading, annotation, and diagram label from this page image.`,
-                  },
-                  { type: 'image_url', image_url: { url: `data:image/png;base64,${base64}` } },
-                ],
-              },
-            ],
-            max_tokens: 4096,
-            temperature: 0.1,
-          });
-          const retryAnalysis = retryResponse.choices[0]?.message?.content || '';
-          pageResults.push(`## ${pageLabel}\n\n${retryAnalysis}`);
-          console.log(`[OpenAI PDF] OCR: retry on ${pageLabel} succeeded`);
-        } catch (retryErr: any) {
-          console.error(`[OpenAI PDF] OCR: retry on ${pageLabel} failed:`, retryErr?.message);
-          pageResults.push(`[${pageLabel}: OCR failed - ${retryErr?.message || 'unknown error'}]`);
-        }
-      } else {
-        pageResults.push(`[${pageLabel}: OCR failed - ${err?.message || 'unknown error'}]`);
-      }
+    } else {
+      console.error(`[OpenAI PDF] Vision PDF send failed:`, err?.message);
+      throw err;
     }
+  }
+
+  if (!analysis.trim()) {
+    return '';
   }
 
   let output =
     `# Document Analysis (${totalPages} page${totalPages === 1 ? '' : 's'}, ` +
-    `OCR-processed ${pagesToProcess.length} page${pagesToProcess.length === 1 ? '' : 's'} via GPT-4o Vision)\n\n` +
-    pageResults.join('\n\n---\n\n');
+    `processed ${pagesProcessed} page${pagesProcessed === 1 ? '' : 's'} via GPT-4o direct PDF read)\n\n` +
+    analysis;
 
   if (skippedPages > 0) {
     output +=
       `\n\n---\n\n**Note:** ${skippedPages} additional page${skippedPages === 1 ? ' was' : 's were'} ` +
-      `present in this PDF but skipped because they exceed the ${OCR_PAGE_CAP}-page OCR cap. ` +
+      `present in this PDF but skipped because they exceed the ${OCR_PAGE_CAP}-page cap. ` +
       `Upload a smaller section if quoting from those pages is needed.`;
   }
 
@@ -568,16 +569,22 @@ export async function analyzePdfWithOpenAI(
   const system = systemPrompt ||
     "You are a document analyzer specializing in construction, engineering, and technical documents. Extract all relevant information for quoting purposes.";
 
-  // Stage 1: pdf-parse (fast, no API call)
+  // Stage 1: pdf-parse v2 (fast, no API call)
   let pdfText = "";
   let totalPages = 1;
 
   try {
     console.log(`[OpenAI PDF] Extracting text from PDF (primary parser)...`);
-    const parsed = await pdfParse(pdfBuffer);
-    pdfText = (parsed.text || "").trim();
-    totalPages = parsed.numpages || 1;
-    console.log(`[OpenAI PDF] Primary parser: ${pdfText.length} chars from ${totalPages} page(s)`);
+    const parser = new PDFParse({ data: pdfBuffer });
+    try {
+      const parsed = await parser.getText();
+      pdfText = (parsed?.text || "").trim();
+      totalPages = parsed?.total || 1;
+      console.log(`[OpenAI PDF] Primary parser: ${pdfText.length} chars from ${totalPages} page(s)`);
+    } finally {
+      // Release the underlying pdfjs document — v2 keeps a handle open otherwise.
+      try { await parser.destroy(); } catch { /* noop */ }
+    }
   } catch (err: any) {
     console.error(`[OpenAI PDF] Primary parser failed:`, err?.message);
     try {
