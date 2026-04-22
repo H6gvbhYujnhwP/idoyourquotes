@@ -1582,19 +1582,19 @@ IMPORTANT: Address the email greeting using the first name only (e.g. "Hi ${gree
                 
                 processedContent = await analyzePdfWithOpenAI(
                   pdfBuffer,
-                  `Analyze this document for quoting/estimation purposes. This could be a technical drawing, floor plan, specification sheet, architectural plan, or project documentation.
+                  `Transcribe this document for a quoting system. Your job is VERBATIM TRANSCRIPTION — not analysis, not summarisation, not interpretation.
 
-Extract and report:
-1. **Document Overview**: What type of document is this? What project does it relate to?
-2. **Text Content**: All visible text, labels, annotations, and notes
-3. **Measurements & Dimensions**: All dimensions, areas, quantities, and measurements shown
-4. **Technical Specifications**: Materials, equipment, standards, or specifications mentioned
-5. **Layout & Structure**: Room layouts, floor plans, cable routes, equipment positions if applicable
-6. **Symbols & Legends**: Any symbols, abbreviations, or legend items with their meanings
-7. **Key Details for Quoting**: Quantities, scope of work, deliverables, or requirements
-8. **Notes & Warnings**: Any special instructions, warnings, or conditions
+Rules:
+1. Reproduce every visible row, bullet, checkbox line, table cell, and list item as a separate line of output. Do NOT roll repeated rows into a count (if the document has 14 identical-looking rows for the same product, write the line out 14 times — do not shortcut to "14 × [item]").
+2. Write every named identifier out in full: every domain name (e.g. fabricflare.co.uk), email address, phone number, account number, product model, subscription variant, hire agreement reference, service plan, and tier name. Never paraphrase ("various domains") or group ("multiple M365 licences") — list each instance.
+3. Preserve the document's own wording, column headings, and section titles. Use the terminology on the page. Do NOT invent headings like "Document Overview", "Key Details for Quoting", or "Items Listed" — those encourage summarising.
+4. Include every number exactly as written — prices, quantities, dimensions, model codes, reference numbers, dates.
+5. Where text is arranged in a table, output one logical row per line with column values separated by " | ".
+6. Where text is arranged under a heading, keep the heading and the items beneath it together in the same reading order.
+7. If an item appears inside a checkbox, tick box, or radio selector, include it — the checkbox state is irrelevant, the item name and any accompanying identifier are what matter.
+8. Ignore page headers/footers that repeat on every page (page numbers, corporate banners) — list them once at most.
 
-Be thorough and precise - missed details in technical drawings often lead to costly errors in quotes. Include all numbers, dates, and technical details exactly as they appear.`,
+Output the text of the document laid out as close to the original reading order as possible, with every discrete item on its own line. No preamble, no trailing summary, no explanatory notes from you.`,
                   "You are a document extraction tool for trade and construction tenders. Extract all text, measurements, specifications, and quantities exactly as they appear. Report facts only. Do not summarise, interpret, or add commentary. Use the document's own terminology."
                 );
               } else if (input.inputType === "image") {
@@ -1994,19 +1994,19 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
           // Use OpenAI GPT-4 Turbo for faster processing with higher rate limits
           const extractedText = await analyzePdfWithOpenAI(
             pdfBuffer,
-            `Analyze this document for quoting/estimation purposes. This could be a technical drawing, floor plan, specification sheet, architectural plan, or project documentation.
+            `Transcribe this document for a quoting system. Your job is VERBATIM TRANSCRIPTION — not analysis, not summarisation, not interpretation.
 
-Extract and report:
-1. **Document Overview**: What type of document is this? What project does it relate to?
-2. **Text Content**: All visible text, labels, annotations, and notes
-3. **Measurements & Dimensions**: All dimensions, areas, quantities, and measurements shown
-4. **Technical Specifications**: Materials, equipment, standards, or specifications mentioned
-5. **Layout & Structure**: Room layouts, floor plans, cable routes, equipment positions if applicable
-6. **Symbols & Legends**: Any symbols, abbreviations, or legend items with their meanings
-7. **Key Details for Quoting**: Quantities, scope of work, deliverables, or requirements
-8. **Notes & Warnings**: Any special instructions, warnings, or conditions
+Rules:
+1. Reproduce every visible row, bullet, checkbox line, table cell, and list item as a separate line of output. Do NOT roll repeated rows into a count (if the document has 14 identical-looking rows for the same product, write the line out 14 times — do not shortcut to "14 × [item]").
+2. Write every named identifier out in full: every domain name (e.g. fabricflare.co.uk), email address, phone number, account number, product model, subscription variant, hire agreement reference, service plan, and tier name. Never paraphrase ("various domains") or group ("multiple M365 licences") — list each instance.
+3. Preserve the document's own wording, column headings, and section titles. Use the terminology on the page. Do NOT invent headings like "Document Overview", "Key Details for Quoting", or "Items Listed" — those encourage summarising.
+4. Include every number exactly as written — prices, quantities, dimensions, model codes, reference numbers, dates.
+5. Where text is arranged in a table, output one logical row per line with column values separated by " | ".
+6. Where text is arranged under a heading, keep the heading and the items beneath it together in the same reading order.
+7. If an item appears inside a checkbox, tick box, or radio selector, include it — the checkbox state is irrelevant, the item name and any accompanying identifier are what matter.
+8. Ignore page headers/footers that repeat on every page (page numbers, corporate banners) — list them once at most.
 
-Be thorough and precise - missed details in technical drawings often lead to costly errors in quotes. Include all numbers, dates, and technical details exactly as they appear.`,
+Output the text of the document laid out as close to the original reading order as possible, with every discrete item on its own line. No preamble, no trailing summary, no explanatory notes from you.`,
             "You are a document analyzer specializing in construction, engineering, IT infrastructure, and technical documents. Your role is to extract all relevant information from technical drawings, floor plans, specifications, and project documents to support accurate quote generation. Be meticulous about measurements, quantities, and specifications."
           );
 
