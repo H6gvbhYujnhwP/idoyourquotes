@@ -572,13 +572,33 @@ CLIENT EXTRACTION:
 - If an email chain shows the user replying to someone, the "someone" is the client.
 ${catalogContext}
 
+COMPLETENESS AUDIT — NON-NEGOTIABLE FIRST PASS:
+Before you consider matching anything to the catalog, you must do an extraction pass that captures EVERY discrete item named in the evidence. An item is "discrete" if it appears as:
+- A row in a table or invoice
+- A bullet in a bulleted list
+- A checkbox line on a form or service sheet
+- A row in a configuration / equipment / licence list
+- A named product, licence, service, hosting subscription, domain, contract, or deliverable written out anywhere in the text
+
+When the evidence contains BOTH a high-level scope summary ("13 workstations, 1 server, 2 networking devices") AND a detailed list of specific items/services/licences below or alongside it, the detailed list is authoritative. The high-level summary is context for you — it does NOT replace the detailed list. You must emit one materials row per item in the detailed list. Emitting only the summary's implied items (e.g. 13 × support, 1 × server support, 2 × network monitoring) while dropping the named domains, hosting subscriptions, broadband service, specific licences, backup storage entries, SIM cards, or hire agreements shown in the detailed list is the failure mode this rule exists to prevent.
+
+An item being listed without a price does NOT justify dropping it. An item being listed with an unusual unit, unusual cadence, or wording that doesn't closely match any catalog entry does NOT justify dropping it. An item you can't immediately price from the catalog does NOT justify dropping it — estimate from UK market knowledge and flag "estimated": true (see CATALOG MATCHING RULES below).
+
+The ONLY reasons to legitimately skip an item found in the evidence are:
+- It is an email signature, confidentiality notice, footer, or social pleasantry (not quotable content)
+- It is a prorated catch-up line paired with a full-month line for the same service (see IT invoice rules if applicable)
+- It is ad-spend-to-platform passed through with no agency markup (see website/marketing rules if applicable)
+- It is clearly historical / informational (e.g. "last year we spent £X on Y")
+
+Every other discrete item in the evidence MUST appear in materials[], even if it needs an estimated price.
+
 CATALOG MATCHING RULES:
-- STEP 1: First, extract ALL items, services, and deliverables from the evidence independently. Identify what hardware, software, labour, and services are actually needed based on what the document describes. Do NOT look at the catalog yet.
+- STEP 1: First, extract ALL items, services, and deliverables from the evidence independently (see COMPLETENESS AUDIT above). Identify what hardware, software, labour, and services are actually named based on what the document lists. Do NOT look at the catalog yet.
 - STEP 2: Then, for each extracted item, check if there is a CLEAR and ACCURATE catalog match. "IT Labour Onsite" matches "engineer onsite for installation" — that is a good match. "Website 7 Pages" does NOT match "network infrastructure upgrade" — that is a bad match. Reject bad matches.
 - ONLY use a catalog item if the scope item genuinely IS that catalog product or service. If a catalog item is unrelated to the project scope, IGNORE it completely.
 - Never force catalog matches. If the catalog has 3 items and the project needs 10 different things, create 10 line items — only the ones that genuinely match get catalog prices, the rest get estimated prices.
 - If the user states a specific price that differs from catalog, use the USER's price.
-- If no catalog item matches, create a new line item with an estimated UK market price. Set "estimated" to true on that material. NEVER return null for unitPrice — always provide either a catalog price or a reasonable estimate.
+- If no catalog item matches, create a new line item with an estimated UK market price. Set "estimated" to true on that material. NEVER return null for unitPrice — always provide either a catalog price or a reasonable estimate. NEVER drop the item just because it's outside the catalog — an uncatalogued item is an estimate candidate, not a skip candidate.
 - For estimated prices, use realistic UK market rates for the specific trade and item type. Be specific: "Ubiquiti U6 Pro WAP" not "networking equipment"; "VoIP Desk Phone" not "phone setup".
 - ALL prices must be EXCLUSIVE of VAT (ex VAT). Never include VAT in any unitPrice. VAT is calculated separately by the system after quote generation.
 
@@ -679,7 +699,8 @@ BEFORE OUTPUTTING JSON — run this mental checklist:
 5. Are pricingTypes correct — standard for one-off, monthly for recurring?
 6. Does labour[] contain ONLY roles that are NOT already priced as materials line items? If a labour role appears in materials, remove it from labour[].
 7. Does every materials row include a non-empty sourceInputIds array naming the [INPUT_ID: N] values of the evidence block(s) that justify the row?
-Only output JSON once all seven checks pass.
+8. COMPLETENESS: Mentally count the discrete items in the evidence (rows in tables, bullets in lists, checkboxes on service sheets, named products/licences/services/contracts). Then count the materials[] rows. If materials is materially smaller than the evidence item count, re-read and add the missing items back — with estimated prices if no catalog match. The only legitimate drop reasons are the narrow list in COMPLETENESS AUDIT above. If the numbers don't reconcile and you can't cite one of those reasons, the output is incomplete.
+Only output JSON once all eight checks pass.
 
 If a field is not mentioned or cannot be determined, use null. Respond with valid JSON only — no preamble, no explanation, no markdown fences.`;
 
