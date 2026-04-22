@@ -578,9 +578,15 @@ export async function analyzePdfWithOpenAI(
     const parser = new PDFParse({ data: pdfBuffer });
     try {
       const parsed = await parser.getText();
-      pdfText = (parsed?.text || "").trim();
+      // pdf-parse v2 injects "-- N of M --" page separators into its text output
+      // even for PDFs with no extractable content. Strip them before the emptiness
+      // check — otherwise a scan-only PDF with 3 pages returns ~44 chars of pure
+      // separators, which naively trims to non-empty and sends garbage to GPT-4o.
+      const rawText = parsed?.text || "";
+      const stripped = rawText.replace(/--\s*\d+\s+of\s+\d+\s*--/g, '').trim();
+      pdfText = stripped;
       totalPages = parsed?.total || 1;
-      console.log(`[OpenAI PDF] Primary parser: ${pdfText.length} chars from ${totalPages} page(s)`);
+      console.log(`[OpenAI PDF] Primary parser: ${pdfText.length} chars (post-strip) from ${totalPages} page(s)`);
     } finally {
       // Release the underlying pdfjs document — v2 keeps a handle open otherwise.
       try { await parser.destroy(); } catch { /* noop */ }
