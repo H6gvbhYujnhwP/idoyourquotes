@@ -208,7 +208,23 @@ export default function QuoteWorkspace() {
     refetch,
   } = trpc.quotes.getFull.useQuery(
     { id: quoteId },
-    { enabled: quoteId > 0 },
+    {
+      enabled: quoteId > 0,
+      // Smart background polling: while any uploaded piece of evidence is
+      // still being analysed server-side (processingStatus === "processing")
+      // re-fetch every 3 seconds so the UI picks up the completion event
+      // without the user needing to refresh the page. As soon as every
+      // input has settled (completed / failed), the callback returns false
+      // and polling stops automatically — idle pages do not hit the server.
+      refetchInterval: (query) => {
+        const data = query.state.data as { inputs?: Array<{ processingStatus?: string | null }> } | undefined;
+        const inputs = data?.inputs ?? [];
+        const anyProcessing = inputs.some(
+          (i) => i?.processingStatus === "processing",
+        );
+        return anyProcessing ? 3000 : false;
+      },
+    },
   );
   const { data: catalogItemsRaw } = trpc.catalog.list.useQuery();
 
@@ -448,29 +464,63 @@ export default function QuoteWorkspace() {
     uploadInFlightRef.current = true;
     setUploadingFile(true);
 
+    // Upload pool — process up to UPLOAD_CONCURRENCY files at a time rather
+    // than strictly one-at-a-time. Four files on typical broadband used to
+    // mean ~4× the big-bar animation time; the pool cuts that to roughly
+    // one-file-worth for small batches. The cap prevents a 20-file drop
+    // from hammering R2 / the server with 20 simultaneous uploads.
+    const UPLOAD_CONCURRENCY = 3;
+    const results: Array<{ index: number; success: boolean }> = [];
+    const uploadSingle = async (file: File, index: number): Promise<void> => {
+      try {
+        const base64 = await fileToBase64(file);
+        const inputType = detectInputType(file);
+        await uploadFile.mutateAsync({
+          quoteId,
+          filename: file.name,
+          contentType: file.type || "application/octet-stream",
+          base64Data: base64,
+          inputType,
+        });
+        results.push({ index, success: true });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "upload failed";
+        toast.error(`${file.name}: ${msg}`);
+        results.push({ index, success: false });
+      }
+    };
+
     let firstSuccessfulFilename: string | null = null;
     let successCount = 0;
     try {
-      for (const file of accepted) {
-        try {
-          const base64 = await fileToBase64(file);
-          const inputType = detectInputType(file);
-          await uploadFile.mutateAsync({
-            quoteId,
-            filename: file.name,
-            contentType: file.type || "application/octet-stream",
-            base64Data: base64,
-            inputType,
-          });
-          if (firstSuccessfulFilename === null) {
-            firstSuccessfulFilename = file.name;
-          }
-          successCount += 1;
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : "upload failed";
-          toast.error(`${file.name}: ${msg}`);
+      // Shared queue of files. Workers pull the next file off the front
+      // until the queue is empty. Order-independent — results carry the
+      // original index so we can derive the "first successful" filename
+      // by original drop order, not completion order (matters for the
+      // auto-title below).
+      const queue = accepted.map((file, idx) => ({ file, idx }));
+      const worker = async (): Promise<void> => {
+        while (queue.length > 0) {
+          const next = queue.shift();
+          if (!next) return;
+          await uploadSingle(next.file, next.idx);
         }
+      };
+      const workerCount = Math.min(UPLOAD_CONCURRENCY, accepted.length);
+      const workers: Promise<void>[] = [];
+      for (let i = 0; i < workerCount; i++) {
+        workers.push(worker());
       }
+      await Promise.all(workers);
+
+      // First successful filename in ORIGINAL drop order (not completion order).
+      const firstSuccess = results
+        .filter((r) => r.success)
+        .sort((a, b) => a.index - b.index)[0];
+      firstSuccessfulFilename = firstSuccess
+        ? accepted[firstSuccess.index].name
+        : null;
+      successCount = results.filter((r) => r.success).length;
 
       if (successCount === 1 && accepted.length === 1) {
         toast.success(`${accepted[0].name} uploaded`);
