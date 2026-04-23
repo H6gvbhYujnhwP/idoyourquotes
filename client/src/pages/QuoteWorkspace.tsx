@@ -924,35 +924,24 @@ export default function QuoteWorkspace() {
       className="flex flex-col h-[calc(100vh-8rem)]"
       style={{ backgroundColor: brand.slate }}
     >
-      {/* ── Title bar ────────────────────────────────────────────────── */}
+      {/* ── Title bar ──────────────────────────────────────────────────
+          Chunk 3 Delivery G — the editable quote-title field moved into
+          the light green client card below. The title bar is now just a
+          back-button on the left and the save-state indicator on the
+          right so the user has a quiet, stable chrome above the
+          workspace content. */}
       <div
         className="flex items-center justify-between px-6 py-3 bg-white border-b"
         style={{ borderColor: brand.border }}
       >
-        <div className="flex items-center gap-3 min-w-0">
-          <button
-            onClick={() => setLocation("/dashboard")}
-            className="inline-flex items-center gap-1.5 text-sm hover:opacity-80"
-            style={{ color: brand.navyMuted }}
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Dashboard
-          </button>
-          <span className="text-sm" style={{ color: brand.borderLight }}>
-            ·
-          </span>
-          <Input
-            value={titleLocal}
-            onChange={(e) => {
-              userEdited.current.title = true;
-              setTitleLocal(e.target.value);
-              quoteAutoSave.save({ title: e.target.value });
-            }}
-            placeholder="Quote title"
-            className="text-base font-semibold border-0 shadow-none focus-visible:ring-0 px-0 max-w-sm"
-            style={{ color: brand.navy }}
-          />
-        </div>
+        <button
+          onClick={() => setLocation("/dashboard")}
+          className="inline-flex items-center gap-1.5 text-sm hover:opacity-80"
+          style={{ color: brand.navyMuted }}
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Dashboard
+        </button>
         <div
           className="flex items-center gap-3 text-xs"
           style={{ color: brand.navyMuted }}
@@ -1060,6 +1049,12 @@ export default function QuoteWorkspace() {
               onRequestRegenerate={handleRequestRegenerate}
               generationCount={generationCount}
               isGenerating={isGenerating}
+              titleValue={titleLocal}
+              onUpdateTitle={(v) => {
+                userEdited.current.title = true;
+                setTitleLocal(v);
+                quoteAutoSave.save({ title: v });
+              }}
             />
           )}
         </div>
@@ -1777,6 +1772,10 @@ interface EditorPanelProps {
   onRequestRegenerate: () => void;
   generationCount: number;
   isGenerating: boolean;
+  // Chunk 3 Delivery G — quote title moved from the old title bar into
+  // the light green client card so the workspace chrome stays quiet.
+  titleValue: string;
+  onUpdateTitle: (v: string) => void;
 }
 
 function EditorPanel({
@@ -1804,6 +1803,8 @@ function EditorPanel({
   onRequestRegenerate,
   generationCount,
   isGenerating,
+  titleValue,
+  onUpdateTitle,
 }: EditorPanelProps) {
   const lineItemCount = lineItems.length;
   // Chunk 3 Delivery F — show the Re-generate affordance only while the
@@ -1826,6 +1827,22 @@ function EditorPanel({
           className="rounded-xl p-4"
           style={{ backgroundColor: brand.tealBg }}
         >
+          {/* Chunk 3 Delivery G — quote title, moved from the old title bar.
+              Small labelled field so it doesn't compete with the client
+              name for visual weight but stays easy to edit. */}
+          <label
+            className="text-[10px] font-bold uppercase tracking-wider block"
+            style={{ color: brand.navyMuted }}
+          >
+            Quote title
+          </label>
+          <Input
+            value={titleValue}
+            onChange={(e) => onUpdateTitle(e.target.value)}
+            placeholder="e.g. IT support renewal"
+            className="text-sm border-0 shadow-none focus-visible:ring-0 px-0 bg-transparent h-7 mb-2"
+            style={{ color: brand.navy }}
+          />
           <Input
             value={clientNameValue}
             onChange={(e) => onUpdateClientName(e.target.value)}

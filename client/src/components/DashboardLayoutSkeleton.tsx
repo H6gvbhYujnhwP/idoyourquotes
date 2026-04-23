@@ -1,10 +1,14 @@
 /**
  * DashboardLayoutSkeleton — loading-state mirror of the v2 top-nav
- * chrome (logo left, nav centre, avatar right + breadcrumb bar below).
+ * chrome (logo left, nav centre, avatar right).
  *
  * Rendered while useAuth() is loading. Stays visually close to the
  * real DashboardLayout so the user sees a stable shell rather than a
  * layout flash when auth resolves.
+ *
+ * Chunk 3 Delivery G — header grew from 56px → 64px and the breadcrumb
+ * strip was removed. Keep this file in sync with DashboardLayout.tsx
+ * whenever either of those sizes change.
  */
 import { Skeleton } from './ui/skeleton';
 
@@ -16,24 +20,16 @@ export function DashboardLayoutSkeleton() {
     >
       {/* Top nav skeleton */}
       <div
-        className="flex items-center justify-between h-14 px-6 border-b"
+        className="flex items-center justify-between h-16 px-6 border-b"
         style={{ borderColor: 'var(--brand-border)' }}
       >
-        <Skeleton className="h-9 w-36" />
+        <Skeleton className="h-11 w-40" />
         <div className="flex gap-2">
           <Skeleton className="h-7 w-16 rounded-md" />
           <Skeleton className="h-7 w-16 rounded-md" />
           <Skeleton className="h-7 w-16 rounded-md" />
         </div>
         <Skeleton className="h-8 w-8 rounded-full" />
-      </div>
-
-      {/* Breadcrumb skeleton */}
-      <div
-        className="flex items-center h-10 px-6 border-b"
-        style={{ borderColor: 'var(--brand-border)' }}
-      >
-        <Skeleton className="h-3 w-40" />
       </div>
 
       {/* Content skeleton */}

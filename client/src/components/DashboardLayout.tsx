@@ -4,9 +4,7 @@
  * Replaces the previous collapsible left-sidebar layout. The new shell is:
  *
  *   ┌────────────────────────────────────────────────────┐
- *   │ [logo]          Quotes  Catalog  Settings   [user] │  ← top nav, 56px
- *   ├────────────────────────────────────────────────────┤
- *   │ All quotes                                         │  ← breadcrumb, 40px
+ *   │ [logo]          Quotes  Catalog  Settings   [user] │  ← top nav, 64px
  *   ├────────────────────────────────────────────────────┤
  *   │ [SubscriptionBanner — trial / quota / past-due]    │  ← unchanged
  *   ├────────────────────────────────────────────────────┤
@@ -14,6 +12,13 @@
  *   │                    page content                    │
  *   │                                                    │
  *   └────────────────────────────────────────────────────┘
+ *
+ * Chunk 3 Delivery G — removed the 40px breadcrumb strip that used to sit
+ * between the top nav and the subscription banner. It was non-functional
+ * display text ("All quotes / Quote") and the top nav already tells the
+ * user where they are. Also bumped the top nav from 56px → 64px and the
+ * logo from 40px → 48px tall so the brand doesn't feel undersized next
+ * to the nav text.
  *
  * Colours, spacing and nav-active styling come from the brand tokens
  * in index.css (`--brand-*`). Shadcn components used inside pages (buttons,
@@ -69,11 +74,10 @@ const navItems: Array<{
   },
 ];
 
-function breadcrumbFor(location: string): string | null {
-  if (location === "/dashboard") return "All quotes";
-  if (location.startsWith("/quotes/")) return "All quotes / Quote";
-  if (location.startsWith("/catalog")) return "Catalog";
-  if (location.startsWith("/settings")) return "Settings";
+function breadcrumbFor(_location: string): string | null {
+  // Chunk 3 Delivery G — breadcrumb strip retired. Kept as a no-op so
+  // anything still importing this function doesn't break; can be deleted
+  // entirely in a follow-up cleanup once nothing references it.
   return null;
 }
 
@@ -104,16 +108,22 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const initials = ((user?.name as string | undefined) || "?")
     .charAt(0)
     .toUpperCase();
-  const breadcrumb = breadcrumbFor(location);
 
   return (
     <div
       className="flex flex-col min-h-screen"
       style={{ background: "var(--brand-bg)" }}
     >
-      {/* ── Top nav ────────────────────────────────────────────── */}
+      {/* ── Top nav ──────────────────────────────────────────────
+          Chunk 3 Delivery G — header grew from h-14 (56px) to h-16 (64px)
+          and the logo grew from h-10 (40px) to h-12 (48px) so the brand
+          no longer feels undersized next to the nav text. The breadcrumb
+          strip beneath the top nav has been removed entirely — it was
+          non-functional display text and the top nav tabs already tell
+          the user where they are. Keep DashboardLayoutSkeleton in sync
+          if either of these sizes change. */}
       <header
-        className="flex items-center justify-between h-14 px-6 border-b shrink-0"
+        className="flex items-center justify-between h-16 px-6 border-b shrink-0"
         style={{
           background: "var(--brand-bg)",
           borderColor: "var(--brand-border)",
@@ -127,7 +137,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
           <img
             src={LOGO_URL}
             alt="IdoYourQuotes"
-            className="h-10 w-auto object-contain cursor-pointer select-none"
+            className="h-12 w-auto object-contain cursor-pointer select-none"
             onClick={() => setLocation("/dashboard")}
             draggable={false}
           />
@@ -212,20 +222,6 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
           </DropdownMenu>
         </div>
       </header>
-
-      {/* ── Breadcrumb bar ─────────────────────────────────────── */}
-      {breadcrumb && (
-        <div
-          className="flex items-center h-10 px-6 border-b text-xs shrink-0"
-          style={{
-            background: "var(--brand-bg)",
-            borderColor: "var(--brand-border)",
-            color: "var(--brand-text-secondary)",
-          }}
-        >
-          {breadcrumb}
-        </div>
-      )}
 
       {/* ── Subscription banner (trial / quota / past-due) ─────── */}
       <SubscriptionBanner />
