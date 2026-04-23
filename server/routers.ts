@@ -3834,6 +3834,30 @@ Respond ONLY with valid JSON — no preamble, no markdown:
         const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
         if (!quote) throw new Error("Quote not found");
 
+        // ── Chunk 3 Delivery F — one-shot re-generate gate ──────────────
+        // Every user, every tier, gets one initial Generate + one Re-generate
+        // per quote. After that the quote is locked to manual edits only.
+        // This guard is the authoritative check — UI also hides the button,
+        // but a determined user hitting the endpoint directly gets caught here.
+        const currentGenerationCount = (quote as any).generationCount ?? 0;
+        if (currentGenerationCount >= 2) {
+          throw new Error(
+            "This quote has already been re-generated. To rebuild from new evidence, duplicate the quote and try again.",
+          );
+        }
+
+        // Count existing line items before any delete — used to decide how
+        // to transition the counter at the end of the call:
+        //   • No existing items, count=0 → this is the first generation,  counter goes 0 → 1
+        //   • Existing items, count=0   → legacy quote being re-generated, counter jumps 0 → 2
+        //   • Count=1                   → explicit re-generation,          counter goes 1 → 2
+        // A legacy quote (created before this migration) with line items
+        // thus gets exactly one Re-generate, matching everyone else.
+        const existingLineItemsAtStart =
+          (await getLineItemsByQuoteId(input.quoteId)).length;
+        const nextGenerationCount =
+          existingLineItemsAtStart > 0 ? 2 : currentGenerationCount + 1;
+
         // Get all inputs for this quote
         const inputs = await getInputsByQuoteId(input.quoteId);
         const tenderContext = await getTenderContextByQuoteId(input.quoteId);
@@ -4444,6 +4468,11 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
             clientAddress: draft.clientAddress || quote.clientAddress,
             title: draft.title || quote.title,
             description: draft.description || quote.description,
+            // Chunk 3 Delivery F — advance the one-shot counter. Pre-computed
+            // at the top of the handler based on existing line items and the
+            // current counter value; committed here alongside the rest of
+            // the draft so it persists atomically with the new line items.
+            generationCount: nextGenerationCount,
           };
 
           // Option C terms guardrail: org defaultTerms always wins.

@@ -55,6 +55,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   ArrowLeft,
   Upload,
   FileText,
@@ -67,6 +77,8 @@ import {
   AlertCircle,
   Clock,
   Info,
+  RefreshCw,
+  Lock,
 } from "lucide-react";
 import DictationButton from "@/components/DictationButton";
 import CatalogPicker, { type CatalogItemRef } from "@/components/CatalogPicker";
@@ -247,6 +259,13 @@ export default function QuoteWorkspace() {
   const tradePreset = ((quote as any)?.tradePreset as string | null) || null;
   const showFallback = isComprehensive && tradePreset !== "electrical";
   const isState2 = lineItems.length > 0;
+  // Chunk 3 Delivery F — one-shot re-generate gate. Counter is persisted
+  // on the quote (0 = never generated, 1 = generated once, 2 = re-generated
+  // and locked). UI reads this to decide the button label and whether a
+  // confirmation dialog is needed before running generation.
+  const generationCount = Number(
+    (quote as any)?.generationCount ?? 0,
+  );
 
   // ── Session state ──
   const [sourceInputMap, setSourceInputMap] = useState<Record<number, number[]>>(
@@ -264,6 +283,9 @@ export default function QuoteWorkspace() {
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [showMissingCostsModal, setShowMissingCostsModal] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
+  // Chunk 3 Delivery F — controls the "Last chance to re-generate" dialog
+  // shown whenever the user is about to burn their one-shot re-generation.
+  const [showRegenerateConfirm, setShowRegenerateConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // ── Controlled field state ──
@@ -665,6 +687,31 @@ export default function QuoteWorkspace() {
     }
   };
 
+  // ── Handler — Request Re-generate (opens confirm dialog) ──
+  // Chunk 3 Delivery F. Called when the user clicks the Re-generate button.
+  // Runs the same pre-flight checks handleGenerate does, then opens the
+  // confirmation dialog instead of generating directly. The dialog's
+  // confirm button calls handleGenerate.
+  const handleRequestRegenerate = () => {
+    if (inputs.length === 0) {
+      toast.error("Add some evidence first");
+      return;
+    }
+    const stillProcessing = inputs.some(
+      (i) => i.processingStatus === "processing",
+    );
+    if (stillProcessing) {
+      toast.error("Wait for evidence to finish analysing");
+      return;
+    }
+    setShowRegenerateConfirm(true);
+  };
+
+  const handleConfirmRegenerate = () => {
+    setShowRegenerateConfirm(false);
+    void handleGenerate();
+  };
+
   // ── Handlers — line item edits (debounced auto-save) ──
   const rowTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(
     new Map(),
@@ -965,9 +1012,11 @@ export default function QuoteWorkspace() {
           {!isState2 ? (
             <EmptyStatePanel
               onGenerate={handleGenerate}
+              onRequestRegenerate={handleRequestRegenerate}
               isGenerating={isGenerating}
               generateStage={generateStage}
               evidenceCount={inputs.length}
+              generationCount={generationCount}
             />
           ) : (
             <EditorPanel
@@ -1008,6 +1057,9 @@ export default function QuoteWorkspace() {
               onGeneratePDF={handleGeneratePDFClick}
               isGeneratingPDF={isGeneratingPDF}
               addingLineItem={createLineItem.isPending}
+              onRequestRegenerate={handleRequestRegenerate}
+              generationCount={generationCount}
+              isGenerating={isGenerating}
             />
           )}
         </div>
@@ -1021,6 +1073,40 @@ export default function QuoteWorkspace() {
         onCancel={() => setShowMissingCostsModal(false)}
         onContinue={() => void doGeneratePDF()}
       />
+
+      {/* Chunk 3 Delivery F — confirmation dialog for the one-shot re-generate.
+          Shown whenever the user clicks Re-generate, before any work happens.
+          Copy is deliberately blunt about the consequences (wipe + locked). */}
+      <AlertDialog
+        open={showRegenerateConfirm}
+        onOpenChange={setShowRegenerateConfirm}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Last chance to re-generate</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will wipe every line item on this quote — including any
+              you've edited, added, or priced manually — and rebuild it from
+              the evidence currently attached. You cannot undo this, and you
+              cannot re-generate this quote again. It's a one-shot to keep
+              things fair across all tiers. If you need another fresh
+              rebuild after this, duplicate the quote.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmRegenerate}
+              style={{
+                background:
+                  "linear-gradient(135deg, #0d9488 0%, #0f766e 100%)",
+              }}
+            >
+              Yes, re-generate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -1489,16 +1575,27 @@ function InputCard({
 
 function EmptyStatePanel({
   onGenerate,
+  onRequestRegenerate,
   isGenerating,
   generateStage,
   evidenceCount,
+  generationCount,
 }: {
   onGenerate: () => void;
+  onRequestRegenerate: () => void;
   isGenerating: boolean;
   generateStage: "reading" | "building" | "finalising" | null;
   evidenceCount: number;
+  generationCount: number;
 }) {
   const canGenerate = evidenceCount > 0 && !isGenerating;
+  // Chunk 3 Delivery F — three gating states driven by generationCount:
+  //   • 0 → first generation. Plain "Generate Quote" button, no dialog.
+  //   • 1 → this call would be the one-shot re-generate. "Re-generate" label,
+  //         amber hint, clicking opens confirmation dialog.
+  //   • 2 → locked. No button; a quiet message explains the duplicate route.
+  const isLocked = generationCount >= 2;
+  const isRegenerate = generationCount === 1;
 
   // Design 2 — hero animated generating panel. Stage text advances on timers
   // during the single generateDraft call: reading → building → finalising.
@@ -1550,6 +1647,40 @@ function EmptyStatePanel({
     );
   }
 
+  // Locked state — quote has been generated and re-generated already. No
+  // button; the user's route forward is to duplicate the quote.
+  if (isLocked) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-10">
+        <div className="max-w-sm w-full text-center">
+          <div
+            className="mx-auto w-16 h-16 rounded-2xl flex items-center justify-center mb-5"
+            style={{ backgroundColor: "#f3f4f6" }}
+          >
+            <Lock
+              className="w-8 h-8"
+              style={{ color: brand.navyMuted }}
+            />
+          </div>
+          <h2
+            className="text-xl font-bold mb-2"
+            style={{ color: brand.navy }}
+          >
+            Quote locked
+          </h2>
+          <p
+            className="text-sm leading-relaxed"
+            style={{ color: brand.navyMuted }}
+          >
+            This quote has already used its one re-generation. To rebuild
+            from different evidence, duplicate the quote from your
+            dashboard and start fresh there.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 flex items-center justify-center p-10">
       <div className="max-w-sm w-full text-center">
@@ -1565,7 +1696,7 @@ function EmptyStatePanel({
           className="text-xl font-bold mb-2"
           style={{ color: brand.navy }}
         >
-          Ready when you are
+          {isRegenerate ? "One re-generation left" : "Ready when you are"}
         </h2>
         <p
           className="text-sm mb-6 leading-relaxed"
@@ -1573,11 +1704,13 @@ function EmptyStatePanel({
         >
           {evidenceCount === 0
             ? "Add evidence on the left — uploads, pasted text, or a quick voice note. Then generate the quote."
-            : `${evidenceCount} ${evidenceCount === 1 ? "input" : "inputs"} added. Press Generate Quote and I'll turn them into line items.`}
+            : isRegenerate
+              ? `${evidenceCount} ${evidenceCount === 1 ? "input" : "inputs"} attached. You can re-generate this quote one more time — after that it's locked.`
+              : `${evidenceCount} ${evidenceCount === 1 ? "input" : "inputs"} added. Press Generate Quote and I'll turn them into line items.`}
         </p>
         <Button
           size="lg"
-          onClick={onGenerate}
+          onClick={isRegenerate ? onRequestRegenerate : onGenerate}
           disabled={!canGenerate}
           className="text-white w-full"
           style={{
@@ -1586,9 +1719,27 @@ function EmptyStatePanel({
               : undefined,
           }}
         >
-          <Sparkles className="w-4 h-4 mr-2" />
-          Generate Quote
+          {isRegenerate ? (
+            <>
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Re-generate
+            </>
+          ) : (
+            <>
+              <Sparkles className="w-4 h-4 mr-2" />
+              Generate Quote
+            </>
+          )}
         </Button>
+        {isRegenerate && (
+          <p
+            className="text-xs mt-3 leading-snug"
+            style={{ color: "#b45309" }}
+          >
+            Last chance — this will wipe the existing line items and lock
+            the quote afterwards.
+          </p>
+        )}
       </div>
     </div>
   );
@@ -1622,6 +1773,10 @@ interface EditorPanelProps {
   onGeneratePDF: () => void;
   isGeneratingPDF: boolean;
   addingLineItem: boolean;
+  // Chunk 3 Delivery F — one-shot re-generate gating.
+  onRequestRegenerate: () => void;
+  generationCount: number;
+  isGenerating: boolean;
 }
 
 function EditorPanel({
@@ -1646,8 +1801,15 @@ function EditorPanel({
   onGeneratePDF,
   isGeneratingPDF,
   addingLineItem,
+  onRequestRegenerate,
+  generationCount,
+  isGenerating,
 }: EditorPanelProps) {
   const lineItemCount = lineItems.length;
+  // Chunk 3 Delivery F — show the Re-generate affordance only while the
+  // user still has their one-shot. Once generationCount hits 2, the button
+  // and hint disappear entirely (quote is locked to manual edits).
+  const canRegenerate = generationCount < 2 && !isGenerating;
 
   const totalsSummary = useMemo(() => {
     const parts: string[] = [];
@@ -1759,17 +1921,60 @@ function EditorPanel({
             >
               Line items
             </h3>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onAddLineItem}
-              disabled={addingLineItem}
-              className="h-7 text-xs"
-            >
-              <Plus className="w-3 h-3 mr-1" />
-              Add row
-            </Button>
+            <div className="flex items-center gap-2">
+              {/* Chunk 3 Delivery F — Re-generate button. Shown whenever the
+                  user still has their one-shot (generationCount < 2). Opens
+                  the confirmation dialog rather than generating directly. */}
+              {canRegenerate && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onRequestRegenerate}
+                  className="h-7 text-xs"
+                  style={{
+                    color: "#b45309",
+                    borderColor: "#fcd34d",
+                    backgroundColor: "#fffbeb",
+                  }}
+                >
+                  <RefreshCw className="w-3 h-3 mr-1" />
+                  Re-generate
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onAddLineItem}
+                disabled={addingLineItem}
+                className="h-7 text-xs"
+              >
+                <Plus className="w-3 h-3 mr-1" />
+                Add row
+              </Button>
+            </div>
           </div>
+          {/* Chunk 3 Delivery F — amber hint strip below the header when a
+              re-generation is still available. Deliberately plain language
+              so the user knows this is their last shot before the dialog. */}
+          {canRegenerate && (
+            <div
+              className="px-4 py-2 text-[11px] leading-snug flex items-start gap-1.5"
+              style={{
+                backgroundColor: "#fffbeb",
+                color: "#b45309",
+                borderBottom: `1px solid ${brand.border}`,
+              }}
+            >
+              <AlertCircle
+                className="w-3 h-3 mt-[2px] flex-shrink-0"
+              />
+              <span>
+                You have one re-generation left. It will wipe every line
+                item — including manual edits — and the quote will be
+                locked afterwards.
+              </span>
+            </div>
+          )}
           <LineItemsTable
             rows={lineItems}
             catalogItems={catalogItems}

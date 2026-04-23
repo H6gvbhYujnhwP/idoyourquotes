@@ -178,6 +178,11 @@ export const quotes = pgTable("quotes", {
   comprehensiveConfig: json("comprehensive_config").$type<ComprehensiveConfig>(),
   userPrompt: text("user_prompt"),
   processingInstructions: text("processing_instructions"),
+  // Chunk 3 Delivery F — one-shot re-generate gating.
+  // 0 = never generated, 1 = generated once, 2 = re-generated (locked).
+  // The server refuses generateDraft calls when this reaches 2.
+  // See generateDraft mutation in routers.ts for the transition rules.
+  generationCount: integer("generation_count").default(0).notNull(),
 });
 
 export type Quote = typeof quotes.$inferSelect;
