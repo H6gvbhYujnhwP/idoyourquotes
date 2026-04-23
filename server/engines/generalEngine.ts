@@ -601,9 +601,12 @@ An item being listed without a price does NOT justify dropping it. An item being
 
 The ONLY reasons to legitimately skip an item found in the evidence are:
 - It is an email signature, confidentiality notice, footer, or social pleasantry (not quotable content)
-- It is a prorated catch-up line paired with a full-month line for the same service (see IT invoice rules if applicable)
+- It is a prorated catch-up line for a MONTH-TO-MONTH (no annual / multi-year commitment) service, paired with a full-month line for the exact same service in the same invoice — combine them. This rule does NOT apply to annual-commitment SKUs (see next rule).
 - It is ad-spend-to-platform passed through with no agency markup (see website/marketing rules if applicable)
 - It is clearly historical / informational (e.g. "last year we spent £X on Y")
+
+ANNUAL-COMMITMENT SKUs — emit every prorated line as its own quote line:
+When a SKU is marked as an annual or multi-year commitment (indicators include: "NCE Annual", "NCE 1-Year", "Annual Commitment", "12-month term", "36-month term", "Annual Term", "yearly contract", or explicit per-cycle dates spanning ~1 month with a repeating anniversary day), each prorated line represents a SEPARATE commitment cycle with its own anniversary / renewal date. These are NOT catch-up charges — users onboarded at different dates sit on different commitment cycles, and collapsing them hides the renewal schedule from the end customer. Emit one quote line per prorated block, each carrying the commitment period or anniversary date in the description (e.g. "Microsoft 365 Business Standard — Annual Commitment (anniversary ~22nd) — 1 seat, cycle 23 Jan – 22 Feb"). Do NOT roll quantities from different commitment cycles into one line even when the SKU name is identical.
 
 Every other discrete item in the evidence MUST appear in materials[], even if it needs an estimated price.
 
@@ -806,6 +809,9 @@ EXCLUDE from the inventory:
 - Historical references with no forward-looking relevance ("last year we spent £X on Y")
 - Section headings or labels that are not themselves billable items
 - Exact duplicates within the same evidence input (list once)
+
+ANNUAL-COMMITMENT SKUs — treat each prorated line as a DISTINCT inventory item:
+An "exact duplicate" is when the SAME SKU appears verbatim on the same document with no distinguishing context. It is NOT a duplicate when the same SKU appears multiple times with different commitment periods, anniversary dates, or prorated cycle dates — those are SEPARATE commitment cycles that must each be enumerated. Annual-commitment indicators include "NCE Annual", "NCE 1-Year", "Annual Commitment", "12-month term", "36-month term", "Annual Term", and per-cycle date ranges like "[23/01/2026 - 22/02/2026]" repeated with different dates. In these cases, list each prorated/commitment block as its own inventory item with the commitment period in the label or excerpt (e.g. "Microsoft 365 Business Standard — cycle 23 Jan – 22 Feb, 1 seat"). For month-to-month services that happen to show a prorated catch-up next to a full-month line for the same service, list the combined item once — these ARE duplicates.
 
 Each evidence block is tagged with [INPUT_ID: N]. Record which inputs each item came from.
 
