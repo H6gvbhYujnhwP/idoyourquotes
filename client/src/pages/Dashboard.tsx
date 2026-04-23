@@ -79,6 +79,7 @@ interface QuoteData {
   status: string;
   total: string | null;
   monthlyTotal?: string | null;
+  annualTotal?: string | null;
   description?: string | null;
   createdAt: Date | string;
   updatedAt?: Date | string;
@@ -653,6 +654,30 @@ export default function Dashboard() {
                 const monthlyTotal = parseFloat(
                   (quote.monthlyTotal as string) || "0"
                 );
+                const annualTotal = parseFloat(
+                  (quote.annualTotal as string) || "0"
+                );
+
+                // Totals display priority:
+                //   - If one-off total > 0, show it as primary (with monthly/annual as small lines below).
+                //   - Else if monthly > 0, show monthly as primary (£X.XX/mo).
+                //   - Else if annual > 0, show annual as primary (£X.XX/yr).
+                //   - Else fall back to £0.00.
+                // This prevents a pure-recurring quote (e.g. a managed service)
+                // from misleadingly showing "£0.00" at a glance.
+                type TotalLine = { value: number; suffix: string };
+                const lines: TotalLine[] = [];
+                if (total > 0) lines.push({ value: total, suffix: "" });
+                if (monthlyTotal > 0) lines.push({ value: monthlyTotal, suffix: "/mo" });
+                if (annualTotal > 0) lines.push({ value: annualTotal, suffix: "/yr" });
+                const primary: TotalLine = lines[0] ?? { value: 0, suffix: "" };
+                const secondaryLines = lines.slice(1);
+                const formatGBP = (v: number) =>
+                  v.toLocaleString("en-GB", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  });
+
                 const clientDisplay =
                   quote.clientName || quote.reference || `Quote #${quote.id}`;
                 const descriptionPreview =
@@ -736,25 +761,17 @@ export default function Dashboard() {
                           color: "var(--brand-text-primary)",
                         }}
                       >
-                        £
-                        {total.toLocaleString("en-GB", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
+                        £{formatGBP(primary.value)}{primary.suffix}
                       </div>
-                      {monthlyTotal > 0 && (
+                      {secondaryLines.map((line, idx) => (
                         <div
+                          key={idx}
                           className="text-[11px] mt-0.5"
                           style={{ color: "var(--brand-text-tertiary)" }}
                         >
-                          + £
-                          {monthlyTotal.toLocaleString("en-GB", {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
-                          /mo
+                          + £{formatGBP(line.value)}{line.suffix}
                         </div>
-                      )}
+                      ))}
                     </td>
 
                     {/* Updated */}
