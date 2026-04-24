@@ -99,6 +99,96 @@ async function assertAIAccess(userId: number): Promise<void> {
   }
 }
 
+/**
+ * Chunk 3 Delivery I — deterministic VAT clause for AI-written terms.
+ *
+ * The AI's terms-generation prompt writes numbered clauses freehand,
+ * which occasionally produces semantically wrong wording ("VAT is
+ * included in all these prices" for an Ex-VAT app). This helper:
+ *
+ *   1. splits the AI-written terms into numbered clauses
+ *   2. drops any clause that mentions VAT
+ *   3. appends a canonical VAT clause derived from the quote's taxRate
+ *   4. re-numbers the kept clauses in sequence
+ *
+ * Non-VAT-registered orgs (taxRate === 0 or null) get an explicit
+ * "No VAT is applicable." clause so customers aren't left wondering.
+ *
+ * Only called when the user has NOT set their own defaultTerms in
+ * Settings — if they have, their verbatim text is preserved as-is
+ * on the assumption they've handled VAT themselves.
+ *
+ * Returns the original input untouched when terms is null / empty
+ * (nothing to strip or renumber), or when the input doesn't look
+ * like numbered clauses at all (we only append).
+ */
+function applyCanonicalVatClause(
+  terms: string | null | undefined,
+  taxRate: string | number | null | undefined,
+): string | null {
+  // Build the canonical clause body first — same regardless of input.
+  const rate = taxRate == null ? 0 : parseFloat(String(taxRate)) || 0;
+  const canonicalBody = rate > 0
+    ? `All prices are exclusive of VAT. VAT will be charged at the prevailing rate of ${rate}%.`
+    : `No VAT is applicable.`;
+
+  // If there are no existing terms, the canonical clause stands alone
+  // as clause 1. Matches the format the AI normally produces (numbered).
+  const trimmed = (terms || "").trim();
+  if (!trimmed) {
+    return `1. ${canonicalBody}`;
+  }
+
+  // Split on numbered-clause boundaries. A clause marker looks like
+  // "1. " or "1) " — but only at the START of the string, or AFTER a
+  // full stop / line break / end-of-previous-clause. We must NOT match
+  // inside phrases like "net 30 days" or "£1,000 for cover". This is
+  // why the regex anchors to (start-of-string | \. | \n) followed by
+  // optional whitespace and then the digit.
+  const clausePattern = /(?:^|[.\n])\s*(\d+)\s*[.)\-]\s+/g;
+  const bodies: string[] = [];
+  let lastIdx = 0;
+  let m: RegExpExecArray | null;
+  let firstMatchIdx = -1;
+  while ((m = clausePattern.exec(trimmed)) !== null) {
+    // The marker starts at the digit, not at the sentence terminator
+    // we anchored to. We need the digit's actual position so the
+    // preceding clause body keeps its trailing full stop.
+    const markerStart = m.index + m[0].indexOf(m[1]);
+    if (firstMatchIdx === -1) {
+      firstMatchIdx = markerStart;
+    } else {
+      // Body of the previous clause: everything between the previous
+      // marker's end and the current marker's start.
+      bodies.push(trimmed.slice(lastIdx, markerStart).trim());
+    }
+    // Next body starts after the "N. " or "N) " marker.
+    lastIdx = m.index + m[0].length;
+  }
+  if (firstMatchIdx === -1) {
+    // No numbered clauses detected — the AI wrote prose. Append on a
+    // new line as a bolt-on sentence, preserving the original wording.
+    return `${trimmed}\n\n${canonicalBody}`;
+  }
+  // Capture the tail after the last marker.
+  if (lastIdx < trimmed.length) {
+    bodies.push(trimmed.slice(lastIdx).trim());
+  }
+  // If there was leading prose before clause 1, preserve it verbatim
+  // as a pre-amble (un-numbered).
+  const preamble = firstMatchIdx > 0 ? trimmed.slice(0, firstMatchIdx).trim() : "";
+
+  // Drop any body that mentions VAT (whole-word, case-insensitive).
+  // Word-boundary match avoids false positives on "PRIVATE", "HVAC", etc.
+  const vatMentionsPattern = /\bVAT\b/i;
+  const kept = bodies.filter((b) => b.length > 0 && !vatMentionsPattern.test(b));
+
+  // Append the canonical VAT clause and renumber from 1.
+  kept.push(canonicalBody);
+  const renumbered = kept.map((b, i) => `${i + 1}. ${b}`).join(" ");
+  return preamble ? `${preamble}\n\n${renumbered}` : renumbered;
+}
+
 export const appRouter = router({
   system: systemRouter,
   
@@ -4459,7 +4549,7 @@ ${lineItemInstructions}
   "assumptions": ["string array of assumptions made - be thorough"],
   "exclusions": ["string array of what is NOT included - MUST include ALL standard exclusions from COMPANY DEFAULTS plus any project-specific exclusions"],
   "riskNotes": "string - internal notes about risks or concerns (not shown to client)",
-  "terms": "string - payment terms, warranty, and conditions. If the company has provided DEFAULT TERMS, reproduce them verbatim. Otherwise build from COMPANY DEFAULTS: include quote validity period, insurance limits, day work rates, working hours, return visit rate, payment terms, VAT status. Write as numbered clauses."
+  "terms": "string - payment terms, warranty, and conditions. If the company has provided DEFAULT TERMS, reproduce them verbatim. Otherwise build from COMPANY DEFAULTS: include quote validity period, insurance limits, day work rates, working hours, return visit rate, payment terms. Write as numbered clauses. Do NOT write a VAT clause — the system appends a deterministic VAT clause based on the organisation's VAT registration status."
 }
 
 CRITICAL RULES:
@@ -4489,7 +4579,7 @@ You MUST respond with valid JSON in this exact format:
   "lineItems": [],
   "assumptions": ["string array of assumptions made"],
   "exclusions": ["string array of what is NOT included - MUST include ALL standard exclusions from company defaults plus any project-specific exclusions"],
-  "terms": "string - payment terms and conditions. If the company has provided DEFAULT TERMS, reproduce them verbatim. Otherwise use the company defaults if provided: include quote validity period, payment terms, insurance limits, day work rates, return visit rates, working hours. Write as numbered clauses.",
+  "terms": "string - payment terms and conditions. If the company has provided DEFAULT TERMS, reproduce them verbatim. Otherwise use the company defaults if provided: include quote validity period, payment terms, insurance limits, day work rates, return visit rates, working hours. Write as numbered clauses. Do NOT write a VAT clause — the system appends a deterministic VAT clause based on the organisation's VAT registration status.",
   "riskNotes": "string - internal notes about risks or concerns",
   "symbolMappings": { "symbol": { "meaning": "string", "confirmed": false } }
 }
@@ -4510,7 +4600,8 @@ IMPORTANT for exclusions:
 - Add any additional project-specific exclusions on top.
 
 IMPORTANT for terms:
-- Build the terms from company defaults: include validity period, insurance limits, day work rates, working hours, return visit rate, payment terms, and VAT status.
+- Build the terms from company defaults: include validity period, insurance limits, day work rates, working hours, return visit rate, payment terms.
+- Do NOT include a VAT clause in the terms — the system appends a deterministic VAT clause based on the organisation's VAT registration status.
 
 Extract all client details mentioned. Note any assumptions you are making and things that are explicitly excluded.
 
@@ -4557,7 +4648,25 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
 
           // Option C terms guardrail: org defaultTerms always wins.
           // AI-generated terms are only used as a fallback for users who have not set defaultTerms.
-          const resolvedTerms = orgDefaults?.defaultTerms || draft.terms || null;
+          //
+          // Chunk 3 Delivery I — VAT clause is deterministic. When the
+          // AI wrote the terms (no org defaultTerms), we strip any
+          // VAT-mentioning clause the model produced and append a
+          // canonical one derived from quote.taxRate. This prevents the
+          // "VAT is included" drift the AI occasionally produces when
+          // rewriting the clause freehand, and guarantees the wording
+          // matches the VAT-registered / not-VAT-registered state.
+          //
+          // When the user has their own defaultTerms set in Settings,
+          // we trust them verbatim — if they've written terms, they've
+          // handled their own VAT wording. No strip, no append.
+          const rawTerms = orgDefaults?.defaultTerms || draft.terms || null;
+          const resolvedTerms = orgDefaults?.defaultTerms
+            ? rawTerms
+            : applyCanonicalVatClause(
+                rawTerms,
+                (quote as any)?.taxRate ?? null,
+              );
           if (resolvedTerms) {
             quoteUpdateData.terms = resolvedTerms;
           }
