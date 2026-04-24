@@ -87,6 +87,7 @@ import AddToCatalogueDialog, {
   type AddToCatalogueSeed,
 } from "@/components/AddToCatalogueDialog";
 import PreGeneratePDFModal from "@/components/PreGeneratePDFModal";
+import SoloUpgradeModal from "@/components/SoloUpgradeModal";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import { brand } from "@/lib/brandTheme";
 
@@ -269,6 +270,27 @@ export default function QuoteWorkspace() {
     [catalogItemsRaw],
   );
 
+  // Phase 4A Delivery 5 — subscription tier read, drives the Solo upgrade
+  // modal intercept on the Generate PDF button. Silently permissive if the
+  // query is still loading or errors: the upgrade modal is a soft sell, not
+  // a security gate, and we never want it to block the PDF button.
+  const { data: subscriptionStatus } = trpc.subscription.status.useQuery(
+    undefined,
+    {
+      staleTime: 60_000,
+      // Never retry aggressively — if Stripe/DB is flaky, we just act like
+      // the user is on Pro+ and let the PDF flow run as normal.
+      retry: false,
+    },
+  );
+  const currentTier = (subscriptionStatus as any)?.tier as
+    | "trial"
+    | "solo"
+    | "pro"
+    | "team"
+    | undefined;
+  const isSoftGatedTier = currentTier === "solo" || currentTier === "trial";
+
   // ── Derived ──
   const isComprehensive = (quote as any)?.quoteMode === "comprehensive";
   const tradePreset = ((quote as any)?.tradePreset as string | null) || null;
@@ -312,6 +334,11 @@ export default function QuoteWorkspace() {
   // On confirm inside the modal, we fall through to the original PDF
   // generation path (missing-costs guard first, then doGeneratePDF).
   const [showPrePDFModal, setShowPrePDFModal] = useState(false);
+  // Phase 4A Delivery 5 — Solo upgrade modal. Fires BEFORE the review
+  // modal when the user is on a soft-gated tier (solo / trial). From the
+  // upgrade modal the user can choose to route to /pricing, or fall
+  // through to the existing PDF flow via "Download basic PDF".
+  const [showSoloUpgradeModal, setShowSoloUpgradeModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // ── Controlled field state ──
@@ -872,7 +899,28 @@ export default function QuoteWorkspace() {
   // the review so the user can't accidentally edit their terms, hit
   // Generate, then get stopped by a £0 row and lose their mental
   // context of where they were.
+  //
+  // Phase 4A Delivery 5 — additional gate: if the user is on a soft-
+  // gated tier (solo / trial), open the Solo upgrade modal first. That
+  // modal's "Download basic PDF" action then falls through to the
+  // review modal so Solo users keep their current PDF output. Pro+
+  // users bypass the upgrade modal entirely.
   const handleGeneratePDFClick = () => {
+    if (isSoftGatedTier) {
+      setShowSoloUpgradeModal(true);
+      return;
+    }
+    setShowPrePDFModal(true);
+  };
+
+  // Phase 4A Delivery 5 — Solo upgrade modal handlers.
+  const handleSoloUpgradeCTA = () => {
+    setShowSoloUpgradeModal(false);
+    setLocation("/pricing");
+  };
+  const handleSoloUpgradeContinueBasic = () => {
+    setShowSoloUpgradeModal(false);
+    // Fall through to the existing PDF flow — same path Pro+ users take.
     setShowPrePDFModal(true);
   };
 
@@ -1200,6 +1248,17 @@ export default function QuoteWorkspace() {
           (fullQuote as any)?.tenderContext?.exclusions ?? null
         }
         onConfirm={handlePrePDFConfirmed}
+      />
+
+      {/* Phase 4A Delivery 5 — Solo upgrade modal. Fires when a soft-
+          gated tier (solo / trial) user clicks Generate PDF. Its
+          "Download basic PDF" action falls through to the review
+          modal above, preserving Solo users' existing PDF access. */}
+      <SoloUpgradeModal
+        open={showSoloUpgradeModal}
+        onDismiss={() => setShowSoloUpgradeModal(false)}
+        onUpgrade={handleSoloUpgradeCTA}
+        onContinueWithBasic={handleSoloUpgradeContinueBasic}
       />
     </div>
   );
