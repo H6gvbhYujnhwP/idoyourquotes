@@ -205,11 +205,12 @@ NEGATIVE LIST — CATEGORIES WHERE SUBSTITUTION IS WRONG (client-specific — qu
 HOW TO SUBSTITUTE (only when substitutable: true AND a semantic catalog match exists on NAME + DESCRIPTION + UNIT + PRICING TYPE):
 1. Use the catalog item's EXACT "name" as the materials "item" field.
 2. Use the catalog item's EXACT "unit". Do NOT change the unit to fit evidence. If the catalog unit is "User" and the evidence is billed per "Month" (or per "Server", or per "Site"), the item DOES NOT MATCH — apply PASSTHROUGH instead.
-3. Use the catalog item's EXACT "defaultRate" as unitPrice. Set estimated: false. Never invent a different price to fit the evidence.
+3. Use the catalog item's EXACT "defaultRate" as unitPrice. Never invent a different price to fit the evidence. Set "estimated": true WHEN the substitution is a cross-vendor swap (evidence names a different product/vendor — e.g. LastPass → Keeper, 1Password → Keeper, Webroot DNS → Cisco Umbrella). Set "estimated": false ONLY when the evidence names the catalog item by name (or a very close variant — e.g. "Silver IT Support" in evidence matches catalog "Silver IT Support — Unlimited Remote"). When in doubt, prefer estimated: true — the chip lets the user confirm the rate, silent commitment does not.
 4. Copy quantity from the evidence, converting only when the unit conversion is exact and unambiguous (e.g. evidence "14 users" + catalog unit "User" → quantity 14). When in doubt, passthrough.
 5. Start the "description" with "Replaces existing [evidenced product name]" followed by " || " then the catalog description. Example: "Replaces existing LastPass subscription || Enterprise password manager per user || Secure encrypted vault..."
 6. Emit: passthrough: false, evidenceCategory: <category>, substitutable: true.
 7. Silent substitution is a bug. Every substituted item MUST show "Replaces existing [original product]" in the description so the user can review and revert in the QDS.
+8. The "Replaces existing" prefix in the description is NOT a substitute for the estimated flag. Cross-vendor swaps need BOTH — the prefix for context, the estimated flag for a visual cue on the line item itself. Do not skip the estimated flag because the description already notes the substitution.
 
 PASSTHROUGH FALLBACK — when evidenceCategory IS substitutable AND NO catalog item semantically fits:
 1. Set passthrough: true.
@@ -619,6 +620,29 @@ CATALOG MATCHING RULES:
 - If no catalog item matches, create a new line item with an estimated UK market price. Set "estimated" to true on that material. NEVER return null for unitPrice — always provide either a catalog price or a reasonable estimate. NEVER drop the item just because it's outside the catalog — an uncatalogued item is an estimate candidate, not a skip candidate.
 - For estimated prices, use realistic UK market rates for the specific trade and item type. Be specific: "Ubiquiti U6 Pro WAP" not "networking equipment"; "VoIP Desk Phone" not "phone setup".
 - ALL prices must be EXCLUSIVE of VAT (ex VAT). Never include VAT in any unitPrice. VAT is calculated separately by the system after quote generation.
+
+WHEN TO SET "estimated": true ON A CATALOG-MATCHED ROW (CRITICAL — prevents silent commitment to guessed services):
+The "estimated" flag drives a visual "Estimate" chip and an "Add to catalogue" button on the row in the user's workspace, giving the user a clear signal to review the rate before sending. It is NOT only for rows where no catalog match was found. Apply these three rules to every catalog-matched row:
+
+1. DIRECT-NAME MATCH (estimated: false) — The evidence names the catalog item by its name or a very close variant. The user has explicitly asked for THIS item. Examples:
+   - Evidence "Silver IT Support for all 25 users" → catalog "Silver IT Support — Unlimited Remote" → estimated: false (direct match)
+   - Evidence "ESET Endpoint Protection" → catalog "ESET Endpoint Protection" → estimated: false (direct match)
+   - Evidence "Keeper Password Manager" → catalog "Keeper Password Manager" → estimated: false (direct match)
+
+2. CROSS-VENDOR SUBSTITUTION (estimated: true) — The evidence names a DIFFERENT product/vendor in the same commodity category, and you are substituting the user's catalog equivalent. Examples:
+   - Evidence "1Password Business" → catalog "Keeper Password Manager" → estimated: true (substitution, not a direct match)
+   - Evidence "LastPass subscription" → catalog "Keeper Password Manager" → estimated: true (substitution)
+   - Evidence "Bitdefender GravityZone" → catalog "ESET Endpoint Protection" → estimated: true (substitution)
+   Note: this is the same case covered in HOW TO SUBSTITUTE above. The "Replaces existing" description prefix does NOT replace the estimated flag — both are required.
+
+3. CONCEPT-LEVEL INFERENCE (estimated: true) — The evidence describes a service concept at a general level and you picked the closest catalog row. The user did NOT name a specific product. Examples:
+   - Evidence "typical monthly IT running costs" or "take over our IT" → any managed-support catalog row → estimated: true (user didn't pick the tier)
+   - Evidence "on-site training for new starters" → any engineer/labour catalog row → estimated: true (training is not the same as engineering labour; the rate is a guess)
+   - Evidence "someone on call during the day" → any helpdesk/support tier → estimated: true (tier not specified)
+   - Evidence "antivirus for everything" → any endpoint-security row → estimated: true (no product named)
+   Rule of thumb: if you cannot point to specific words in the evidence that name the catalog item, the row is inferred, and estimated: true applies.
+
+WHEN IN DOUBT, PREFER estimated: true. The chip and Add-to-catalogue button cost the user one glance to confirm the rate is right. Silent commitment to a guessed rate is a quoting error.
 
 MATERIALS vs LABOUR:
 - "materials" in this system means ALL billable line items — physical products, services, deliverables, and time-based work that should appear as priced lines on the quote.
