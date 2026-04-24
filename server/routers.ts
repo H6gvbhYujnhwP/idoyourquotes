@@ -340,6 +340,142 @@ export const appRouter = router({
         }
         return { success: true };
       }),
+
+    // ============ PHASE 4A — PROPOSAL BRANDING ============
+    // The three endpoints below are the storage side of the Settings
+    // "Proposal Branding" tab. They hold raw "brand evidence" — a website
+    // URL and up to 3 PDF brochures — that a later delivery's extraction
+    // pipeline will feed into AI-styled Contract/Tender and Project
+    // proposals. This delivery is shell-only: saves persist, nothing
+    // consumes them yet. Existing auth endpoints are unchanged.
+    updateBrandSettings: protectedProcedure
+      .input(z.object({
+        companyWebsite: z.string().max(512).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const org = await getUserPrimaryOrg(ctx.user.id);
+        if (!org) throw new Error("Organization not found");
+
+        // Normalise the website URL: trim, prepend https:// if the user
+        // forgot a scheme. Empty string is treated as "clear the field".
+        let companyWebsite: string | undefined = undefined;
+        if (input.companyWebsite !== undefined) {
+          const trimmed = input.companyWebsite.trim();
+          if (trimmed === "") {
+            companyWebsite = "";
+          } else if (/^https?:\/\//i.test(trimmed)) {
+            companyWebsite = trimmed;
+          } else {
+            companyWebsite = `https://${trimmed}`;
+          }
+        }
+
+        const updated = await updateOrganization(org.id, {
+          ...(companyWebsite !== undefined ? { companyWebsite } : {}),
+        } as any);
+        return updated || org;
+      }),
+
+    uploadBrandBrochure: protectedProcedure
+      .input(z.object({
+        filename: z.string(),
+        contentType: z.string(),
+        base64Data: z.string(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (!isR2Configured()) {
+          throw new Error("File storage is not configured");
+        }
+        if (input.contentType !== "application/pdf") {
+          throw new Error("Brochures must be PDF files");
+        }
+
+        const org = await getUserPrimaryOrg(ctx.user.id);
+        if (!org) throw new Error("Organization not found");
+
+        // Enforce max 3 brochures at the server (client disables the
+        // upload button too, but server is authoritative).
+        const existing = ((org as any).brandBrochures as Array<{
+          key: string;
+          url: string;
+          filename: string;
+          uploadedAt: string;
+        }> | null) || [];
+        if (existing.length >= 3) {
+          throw new Error("Maximum of 3 brochures. Remove one before uploading another.");
+        }
+
+        // Size guard — 10 MB per PDF is plenty for marketing material
+        // and prevents blob-upload abuse.
+        const buffer = Buffer.from(input.base64Data, "base64");
+        if (buffer.length > 10 * 1024 * 1024) {
+          throw new Error("Brochure must be less than 10MB");
+        }
+
+        // Org-scoped folder keeps brochures discoverable per tenant in R2.
+        const folder = `orgs/${org.slug}/brand-brochures`;
+        const { key, url } = await uploadToR2(
+          buffer,
+          input.filename,
+          input.contentType,
+          folder
+        );
+
+        const updatedList = [
+          ...existing,
+          {
+            key,
+            url,
+            filename: input.filename,
+            uploadedAt: new Date().toISOString(),
+          },
+        ];
+
+        await updateOrganization(org.id, {
+          brandBrochures: updatedList,
+        } as any);
+
+        return { brochures: updatedList };
+      }),
+
+    deleteBrandBrochure: protectedProcedure
+      .input(z.object({
+        key: z.string(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const org = await getUserPrimaryOrg(ctx.user.id);
+        if (!org) throw new Error("Organization not found");
+
+        const existing = ((org as any).brandBrochures as Array<{
+          key: string;
+          url: string;
+          filename: string;
+          uploadedAt: string;
+        }> | null) || [];
+
+        const target = existing.find(b => b.key === input.key);
+        if (!target) {
+          // Already gone — idempotent: just return the current state
+          return { brochures: existing };
+        }
+
+        // Best-effort R2 delete. If it fails, DB still gets cleaned —
+        // orphan files in R2 are benign and preferable to a UI-stuck state.
+        if (isR2Configured()) {
+          try {
+            await deleteFromR2(input.key);
+          } catch (err) {
+            console.warn("[deleteBrandBrochure] R2 delete failed:", err);
+          }
+        }
+
+        const updatedList = existing.filter(b => b.key !== input.key);
+        await updateOrganization(org.id, {
+          brandBrochures: updatedList,
+        } as any);
+
+        return { brochures: updatedList };
+      }),
   }),
 
   // ============ QUOTES ============

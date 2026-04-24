@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase, Shield, Clock, PoundSterling, CreditCard, Users, Crown, AlertTriangle, Trash2, Mail, UserPlus, Check, ArrowRight, XCircle, RotateCcw, Download } from "lucide-react";
+import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase, Shield, Clock, PoundSterling, CreditCard, Users, Crown, AlertTriangle, Trash2, Mail, UserPlus, Check, ArrowRight, XCircle, RotateCcw, Download, Palette, Globe } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog,
@@ -54,7 +54,23 @@ export default function Settings() {
   const [surfaceTreatment, setSurfaceTreatment] = useState("");
   const [returnVisitRate, setReturnVisitRate] = useState("");
   const [paymentTerms, setPaymentTerms] = useState("");
-  
+
+  // Phase 4A — Proposal Branding tab state.
+  // companyWebsite and brandBrochures are org-scoped; they're persisted via
+  // the dedicated auth.updateBrandSettings / uploadBrandBrochure /
+  // deleteBrandBrochure mutations, separate from the main Save button on
+  // the Profile tab. No AI extraction consumes these yet — this delivery
+  // is shell-only.
+  const [companyWebsite, setCompanyWebsite] = useState("");
+  type BrandBrochure = {
+    key: string;
+    url: string;
+    filename: string;
+    uploadedAt: string;
+  };
+  const [brandBrochures, setBrandBrochures] = useState<BrandBrochure[]>([]);
+  const brochureInputRef = useRef<HTMLInputElement>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch organization profile for trade defaults
@@ -100,6 +116,9 @@ export default function Settings() {
       if (org.defaultSurfaceTreatment) setSurfaceTreatment(org.defaultSurfaceTreatment);
       if (org.defaultReturnVisitRate) setReturnVisitRate(org.defaultReturnVisitRate);
       if (org.defaultPaymentTerms) setPaymentTerms(org.defaultPaymentTerms);
+      // Phase 4A — brand evidence
+      setCompanyWebsite(org.companyWebsite || "");
+      setBrandBrochures(Array.isArray(org.brandBrochures) ? org.brandBrochures : []);
     }
   }, [orgProfile]);
 
@@ -124,6 +143,39 @@ export default function Settings() {
     },
     onError: (error) => {
       toast.error(error.message || "Failed to upload logo");
+    },
+  });
+
+  // Phase 4A — Proposal Branding mutations.
+  const updateBrandSettings = trpc.auth.updateBrandSettings.useMutation({
+    onSuccess: () => {
+      utils.auth.orgProfile.invalidate();
+      toast.success("Brand settings saved");
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to save brand settings");
+    },
+  });
+
+  const uploadBrandBrochure = trpc.auth.uploadBrandBrochure.useMutation({
+    onSuccess: (data) => {
+      setBrandBrochures(data.brochures);
+      utils.auth.orgProfile.invalidate();
+      toast.success("Brochure uploaded");
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to upload brochure");
+    },
+  });
+
+  const deleteBrandBrochure = trpc.auth.deleteBrandBrochure.useMutation({
+    onSuccess: (data) => {
+      setBrandBrochures(data.brochures);
+      utils.auth.orgProfile.invalidate();
+      toast.success("Brochure removed");
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to remove brochure");
     },
   });
 
@@ -196,6 +248,48 @@ export default function Settings() {
     toast.success("Logo removed");
   };
 
+  // Phase 4A — Proposal Branding handlers.
+  const handleSaveBrandSettings = () => {
+    updateBrandSettings.mutate({
+      companyWebsite: companyWebsite,
+    });
+  };
+
+  const handleBrochureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Clear the input so re-selecting the same file still fires change
+    if (e.target) e.target.value = "";
+    if (!file) return;
+
+    if (file.type !== "application/pdf") {
+      toast.error("Brochures must be PDF files");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Brochure must be less than 10MB");
+      return;
+    }
+    if (brandBrochures.length >= 3) {
+      toast.error("Maximum of 3 brochures. Remove one to add another.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = (reader.result as string).split(",")[1];
+      uploadBrandBrochure.mutate({
+        filename: file.name,
+        contentType: file.type,
+        base64Data: base64,
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveBrochure = (key: string) => {
+    deleteBrandBrochure.mutate({ key });
+  };
+
   // Tab state from URL params
   const [location, setLocation] = useLocation();
   const urlParams = new URLSearchParams(window.location.search);
@@ -220,6 +314,7 @@ export default function Settings() {
       <div className="flex gap-1 border-b">
         {[
           { id: 'profile', label: 'Profile', icon: User },
+          { id: 'branding', label: 'Proposal Branding', icon: Palette },
           { id: 'billing', label: 'Billing', icon: CreditCard },
           { id: 'team', label: 'Team', icon: Users },
         ].map(tab => (
@@ -243,6 +338,193 @@ export default function Settings() {
 
       {/* Team Tab */}
       {activeTab === 'team' && <TeamTab />}
+
+      {/* Proposal Branding Tab — Phase 4A.
+          Shell only: website URL + 3 PDF brochure uploads persist, no
+          AI extraction consumes them yet. Visible to all tiers so users
+          can prepare brand evidence before upgrading; the branded-output
+          gate lands at PDF-export time in a later delivery. */}
+      {activeTab === 'branding' && (
+      <>
+      {/* Intro */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Palette className="h-5 w-5" />
+            Proposal Branding
+          </CardTitle>
+          <CardDescription>
+            Your logo, website, and brochures tell us what your brand looks
+            like. Add any combination of the three — we'll use them to
+            style Contract / Tender and Project proposals to match your
+            company.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+
+      {/* Logo preview — edit surface stays on the Profile tab to keep
+          a single source of truth. */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ImageIcon className="h-5 w-5" />
+            Your Logo
+          </CardTitle>
+          <CardDescription>
+            Managed on the Profile tab so it stays in one place.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-6">
+            <div className="w-40 h-24 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted/50 overflow-hidden">
+              {companyLogo ? (
+                <img
+                  src={companyLogo}
+                  alt="Company Logo"
+                  className="max-w-full max-h-full object-contain p-2"
+                />
+              ) : (
+                <div className="text-center text-muted-foreground text-sm">
+                  <ImageIcon className="h-8 w-8 mx-auto mb-1 opacity-50" />
+                  No logo
+                </div>
+              )}
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => switchTab('profile')}
+            >
+              Manage logo on Profile
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Company Website */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Globe className="h-5 w-5" />
+            Company Website
+          </CardTitle>
+          <CardDescription>
+            We'll use your website's style — colours, tone, imagery — as a
+            reference when building branded proposals.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="companyWebsite">Website URL</Label>
+            <Input
+              id="companyWebsite"
+              type="url"
+              placeholder="https://your-company.co.uk"
+              value={companyWebsite}
+              onChange={(e) => setCompanyWebsite(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Don't worry about the https:// — we'll add it if you leave it off.
+            </p>
+          </div>
+          <div className="flex justify-end">
+            <Button
+              onClick={handleSaveBrandSettings}
+              disabled={updateBrandSettings.isPending}
+            >
+              {updateBrandSettings.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-2 h-4 w-4" />
+              )}
+              Save Website
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Brochures & Flyers */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            Brochures &amp; Flyers
+          </CardTitle>
+          <CardDescription>
+            Upload up to 3 PDF brochures or flyers. Anything that shows off
+            your brand — product sheets, capability decks, case-study packs.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {brandBrochures.length === 0 ? (
+            <div className="border-2 border-dashed rounded-lg p-6 text-center text-muted-foreground">
+              <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">No brochures uploaded yet.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {brandBrochures.map((b) => (
+                <div
+                  key={b.key}
+                  className="flex items-center justify-between gap-3 p-3 rounded-lg border bg-muted/30"
+                >
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">
+                        {b.filename}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Uploaded {new Date(b.uploadedAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleRemoveBrochure(b.key)}
+                    disabled={deleteBrandBrochure.isPending}
+                    title="Remove brochure"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center gap-3">
+            <input
+              ref={brochureInputRef}
+              type="file"
+              accept="application/pdf"
+              onChange={handleBrochureUpload}
+              className="hidden"
+            />
+            <Button
+              variant="outline"
+              onClick={() => brochureInputRef.current?.click()}
+              disabled={
+                uploadBrandBrochure.isPending || brandBrochures.length >= 3
+              }
+            >
+              {uploadBrandBrochure.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="mr-2 h-4 w-4" />
+              )}
+              {brandBrochures.length >= 3
+                ? "Max 3 files — remove one to add another"
+                : "Upload Brochure (PDF)"}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              PDF only. Max 10MB each. {3 - brandBrochures.length} of 3 remaining.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+      </>
+      )}
 
       {/* Profile Tab - existing content */}
       {activeTab === 'profile' && (

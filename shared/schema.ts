@@ -33,6 +33,17 @@ export const organizations = pgTable("organizations", {
   companyLogo: text("company_logo"),
   brandPrimaryColor: varchar("brand_primary_color", { length: 7 }),
   brandSecondaryColor: varchar("brand_secondary_color", { length: 7 }),
+  // Phase 4A — brand evidence. These power the AI-driven branded proposal
+  // renderer (Contract/Tender and Project/Migration templates). The website
+  // URL and uploaded brochures are the raw inputs; colour/tone extraction
+  // lands in a later delivery and will read from here.
+  companyWebsite: varchar("company_website", { length: 512 }),
+  brandBrochures: json("brand_brochures").$type<Array<{
+    key: string;
+    url: string;
+    filename: string;
+    uploadedAt: string;
+  }>>().default([]),
   defaultTerms: text("default_terms"),
   billingEmail: varchar("billing_email", { length: 320 }),
   stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
