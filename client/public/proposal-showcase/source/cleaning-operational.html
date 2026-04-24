@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Commercial Cleaning Services Proposal — Operational</title>
+<style>
+  @page { size: A4; margin: 0; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; font-size: 9.5pt; line-height: 1.65; color: #1a1a2e; background: #fff; max-width: 210mm; margin: 0 auto; }
+
+  /* ── COVER ── */
+  .cover { min-height: 100vh; display: flex; flex-direction: column; page-break-after: always; }
+  .cover-top-bar { background: #1a3a2a; height: 8px; }
+  .cover-main { flex: 1; background: #f5f7f5; display: flex; flex-direction: column; padding: 14mm 18mm; }
+  .cover-header-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; }
+  .logo-box { width: 180px; height: 60px; border: 2px solid #1a3a2a; display: flex; align-items: center; justify-content: center; font-size: 9.5pt; letter-spacing: 0.18em; color: #1a3a2a; text-transform: uppercase; }
+  .cover-doc-type { text-align: right; }
+  .doc-type-label { font-size: 7pt; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: #1a3a2a; background: #c8e6c9; padding: 3px 10px; display: inline-block; margin-bottom: 6px; }
+  .doc-ref { font-size: 8pt; color: #4a6a5a; line-height: 1.9; }
+  .cover-rule { width: 100%; height: 2px; background: #1a3a2a; margin-bottom: 20px; }
+  .cover h1 { font-size: 24pt; font-weight: 800; color: #1a3a2a; line-height: 1.15; letter-spacing: -0.02em; margin-bottom: 8px; text-transform: uppercase; }
+  .cover-sub { font-size: 11pt; color: #4a6a5a; margin-bottom: 28px; font-weight: 400; }
+  /* Scope summary box — FM clipboard style */
+  .scope-box { border: 2px solid #1a3a2a; background: #fff; margin-bottom: 20px; }
+  .scope-box-header { background: #1a3a2a; color: #fff; padding: 7px 14px; font-size: 8pt; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; display: flex; justify-content: space-between; }
+  .scope-box-body { padding: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; }
+  .scope-item { display: flex; gap: 10px; align-items: flex-start; font-size: 8.5pt; }
+  .scope-tick { color: #1a7a3a; font-weight: bold; font-size: 11pt; line-height: 1; margin-top: 1px; }
+  .scope-text { color: #1a3a2a; }
+  .scope-text strong { display: block; font-weight: 700; }
+  .scope-text span { color: #4a6a5a; font-size: 8pt; }
+  /* Client info table */
+  .client-info-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+  .client-info-table td { padding: 6px 10px; border: 1px solid #c8e6c9; font-size: 8.5pt; }
+  .client-info-table td:first-child { background: #1a3a2a; color: #fff; font-weight: 700; font-size: 7.5pt; letter-spacing: 0.08em; text-transform: uppercase; width: 140px; }
+  /* Credential strip */
+  .cred-strip-cover { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; padding-top: 16px; border-top: 1px solid #c8e6c9; }
+  .cred-badge { border: 1px solid #1a3a2a; padding: 3px 9px; font-size: 7.5pt; color: #1a3a2a; font-weight: 600; }
+  .cover-contact-row { background: #1a3a2a; padding: 10mm 18mm; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .cc-label { font-size: 7pt; color: rgba(255,255,255,0.55); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 3px; }
+  .cc-value { font-size: 9pt; color: #fff; }
+  .cover-footer-strip { background: #2d6a4f; padding: 7px 18mm; font-size: 7.5pt; color: rgba(255,255,255,0.75); display: flex; justify-content: space-between; }
+
+  /* ── PAGES ── */
+  .page { padding: 14mm 18mm; page-break-before: always; }
+  .sec-banner { background: #1a3a2a; color: #fff; padding: 9px 14px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
+  .sec-num { font-size: 7.5pt; font-weight: 900; color: #c8e6c9; letter-spacing: 0.15em; }
+  .sec-title { font-size: 12pt; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
+  h3 { font-size: 10pt; font-weight: 700; color: #1a3a2a; text-transform: uppercase; letter-spacing: 0.06em; margin: 18px 0 7px; border-left: 4px solid #4ade80; padding-left: 9px; }
+  p { margin-bottom: 11px; color: #2c3e50; }
+
+  /* Rota matrix */
+  .rota-matrix { width: 100%; border-collapse: collapse; margin: 12px 0; page-break-inside: avoid; font-size: 8.5pt; }
+  .rota-matrix thead tr { background: #1a3a2a; }
+  .rota-matrix thead th { padding: 8px 10px; text-align: left; color: #c8e6c9; font-weight: 700; font-size: 7.5pt; letter-spacing: 0.08em; text-transform: uppercase; border-right: 1px solid rgba(255,255,255,0.1); }
+  .rota-matrix thead th:first-child { width: 200px; }
+  .rota-matrix tbody tr:nth-child(even) { background: #f0f7f0; }
+  .rota-matrix tbody td { padding: 7px 10px; border: 1px solid #d5e8d5; color: #2c3e50; text-align: center; vertical-align: middle; }
+  .rota-matrix tbody td:first-child { text-align: left; font-weight: 600; color: #1a3a2a; }
+  .tick { color: #1a7a3a; font-weight: bold; font-size: 11pt; }
+  .dash { color: #ccc; }
+  .freq-label { font-size: 7.5pt; color: #4a6a5a; font-weight: normal; display: block; }
+
+  /* Spec checklist */
+  .spec-list { margin: 10px 0; }
+  .spec-section { margin-bottom: 14px; }
+  .spec-section-title { font-size: 8.5pt; font-weight: 700; color: #1a3a2a; text-transform: uppercase; letter-spacing: 0.08em; background: #e8f5e9; padding: 5px 10px; margin-bottom: 6px; }
+  .spec-items { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 16px; }
+  .spec-item { display: flex; align-items: flex-start; gap: 7px; font-size: 8.5pt; padding: 3px 0; border-bottom: 1px solid #e8f5e9; }
+  .spec-item .si-tick { color: #1a7a3a; font-weight: bold; min-width: 14px; }
+  .spec-item .si-text { color: #2c3e50; }
+  .spec-item .si-freq { font-size: 7.5pt; color: #4a6a5a; margin-left: auto; white-space: nowrap; }
+
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; page-break-inside: avoid; font-size: 9pt; }
+  thead tr { background: #1a3a2a; }
+  thead th { padding: 8px 12px; text-align: left; color: #c8e6c9; font-weight: 700; font-size: 7.5pt; letter-spacing: 0.08em; text-transform: uppercase; }
+  tbody tr:nth-child(even) { background: #f0f7f0; }
+  tbody td { padding: 7px 12px; border-bottom: 1px solid #d5e8d5; color: #2c3e50; vertical-align: top; }
+  tfoot td { padding: 8px 12px; font-weight: 700; border-top: 2px solid #1a3a2a; }
+  .total-row td { background: #1a3a2a; color: #c8e6c9; font-weight: 700; }
+  .vat-row td { background: #f0f7f0; color: #2d6a4f; font-style: italic; }
+
+  .sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 24px; }
+  .sig-block { border: 2px solid #1a3a2a; padding: 14px; }
+  .sig-label { font-size: 7.5pt; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #1a3a2a; margin-bottom: 8px; }
+  .sig-line { border-bottom: 1px solid #1a3a2a; height: 36px; margin: 8px 0; }
+  .sig-field { font-size: 8pt; color: #4a6a5a; }
+  .page-footer { margin-top: 22px; padding-top: 8px; border-top: 2px solid #1a3a2a; font-size: 7.5pt; color: #4a6a5a; display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="cover-top-bar"></div>
+  <div class="cover-main">
+    <div class="cover-header-row">
+      <div class="logo-box">SPARKSHIRE</div>
+      <div class="cover-doc-type">
+        <div class="doc-type-label">Cleaning Specification &amp; Contract</div>
+        <div class="doc-ref">Ref: Q-2026-0418-OW<br>Date: 18 April 2026<br>Prepared for: Daniel Reeve, Estates Manager<br>Confidential</div>
+      </div>
+    </div>
+    <div class="cover-rule"></div>
+    <h1>Commercial Cleaning<br>Service Proposal</h1>
+    <p class="cover-sub">Operational specification — Oakwell Business Park &nbsp;·&nbsp; Oakwell Business Park, Shirley, Solihull B90 8AG</p>
+
+    <div class="scope-box">
+      <div class="scope-box-header"><span>Scope Summary — Oakwell Business Park</span><span>12,000 sq ft &nbsp;·&nbsp; 3 Floors &nbsp;·&nbsp; Birmingham</span></div>
+      <div class="scope-box-body">
+        <div class="scope-item"><span class="scope-tick">&#10003;</span><div class="scope-text"><strong>Nightly Cleaning</strong><span>Mon–Fri, all 3 floors, 22 visits/month</span></div></div>
+        <div class="scope-item"><span class="scope-tick">&#10003;</span><div class="scope-text"><strong>Weekend Deep-Clean Rotation</strong><span>Fortnightly, full building</span></div></div>
+        <div class="scope-item"><span class="scope-tick">&#10003;</span><div class="scope-text"><strong>Washroom Consumables</strong><span>Managed &amp; replenished every visit</span></div></div>
+        <div class="scope-item"><span class="scope-tick">&#10003;</span><div class="scope-text"><strong>Carpet Extraction</strong><span>Fortnightly rotation</span></div></div>
+        <div class="scope-item"><span class="scope-tick">&#10003;</span><div class="scope-text"><strong>Hard Floor Machine Scrub</strong><span>Fortnightly rotation</span></div></div>
+        <div class="scope-item"><span class="scope-tick">&#10003;</span><div class="scope-text"><strong>Quarterly Quality Inspection</strong><span>Written report to Daniel Reeve, Estates Manager</span></div></div>
+      </div>
+    </div>
+
+    <table class="client-info-table">
+      <tbody>
+        <tr><td>Client</td><td>Oakwell Business Park</td></tr>
+        <tr><td>Named Recipient</td><td>Daniel Reeve, Estates Manager</td></tr>
+        <tr><td>Service Address</td><td>Oakwell Business Park, Shirley, Solihull B90 8AG</td></tr>
+        <tr><td>Provider</td><td>Sparkshire Facilities Ltd</td></tr>
+        <tr><td>Contract Term</td><td>12 months · auto-renew annually</td></tr>
+        <tr><td>Monthly Fee (ex VAT)</td><td>£1,925.67</td></tr>
+      </tbody>
+    </table>
+
+    <div class="cred-strip-cover">
+      <span class="cred-badge">BICSc Accredited</span>
+      <span class="cred-badge">ISO 9001 Certified</span>
+      <span class="cred-badge">Safe Contractor</span>
+      <span class="cred-badge">CHAS Accredited</span>
+      <span class="cred-badge">COSHH Compliant</span>
+      <span class="cred-badge">DBS Checked Operatives</span>
+    </div>
+  </div>
+  <div class="cover-contact-row">
+    <div><div class="cc-label">Phone</div><div class="cc-value">0121 998 4430</div></div>
+    <div><div class="cc-label">Email</div><div class="cc-value">contracts@sparkshire-fm.co.uk</div></div>
+    <div><div class="cc-label">Website</div><div class="cc-value">www.sparkshire-fm.co.uk</div></div>
+  </div>
+  <div class="cover-footer-strip">
+    <span>Sparkshire Facilities Ltd &nbsp;·&nbsp; Unit 6, Wharfside Industrial Estate, Coventry CV1 2NG</span>
+    <span>Confidential &nbsp;·&nbsp; Q-2026-0418-OW</span>
+  </div>
+</div>
+
+<!-- EXECUTIVE SUMMARY + ABOUT -->
+<div class="page">
+  <div class="sec-banner"><span class="sec-num">01</span><span class="sec-title">Executive Summary &amp; Provider Profile</span></div>
+  <p>Oakwell Business Park operates a 12,000 sq ft co-working facility across three floors at Oakwell Business Park, Shirley, Solihull B90 8AG, Birmingham. This document sets out the cleaning specification, service frequencies, quality standards, and commercial terms proposed by Sparkshire Facilities Ltd for a 12-month managed cleaning contract.</p>
+  <p>The quality of a co-working environment is a direct competitive factor. Members choose and renew based on the cleanliness, freshness, and presentation of the space. Sparkshire Facilities Ltd has been delivering commercial cleaning to professional and co-working facilities since 2011. Every operative is directly employed, DBS checked, and BICSc trained. We do not use agency staff.</p>
+  <h3>Provider Credentials</h3>
+  <table>
+    <thead><tr><th>Accreditation</th><th>Issuing Body</th><th>Scope</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>BICSc Accreditation</td><td>British Institute of Cleaning Science</td><td>All cleaning operations</td><td>&#10003; Accredited</td></tr>
+      <tr><td>ISO 9001:2015</td><td>BSI</td><td>Quality Management System</td><td>&#10003; Certified</td></tr>
+      <tr><td>Safe Contractor</td><td>Alcumus</td><td>Health &amp; Safety</td><td>&#10003; Approved</td></tr>
+      <tr><td>CHAS</td><td>CHAS Ltd</td><td>Contractor Health &amp; Safety</td><td>&#10003; Accredited</td></tr>
+      <tr><td>COSHH Compliance</td><td>Internal / HSE</td><td>All chemical products</td><td>&#10003; Compliant</td></tr>
+      <tr><td>DBS Checks</td><td>Disclosure &amp; Barring Service</td><td>All operatives</td><td>&#10003; Current</td></tr>
+    </tbody>
+  </table>
+  <div class="page-footer"><span>Sparkshire Facilities Ltd &nbsp;·&nbsp; Unit 6, Wharfside Industrial Estate, Coventry CV1 2NG</span><span>0121 998 4430 &nbsp;·&nbsp; www.sparkshire-fm.co.uk</span><span>REF: Q-2026-0418-OW &nbsp;·&nbsp; CONFIDENTIAL</span></div>
+</div>
+
+<!-- CLEANING ROTA MATRIX -->
+<div class="page">
+  <div class="sec-banner"><span class="sec-num">02</span><span class="sec-title">Cleaning Rota &amp; Frequency Matrix</span></div>
+  <p>The matrix below defines the cleaning frequency for each area of Oakwell Business Park's facility at Oakwell Business Park, Shirley, Solihull B90 8AG. All nightly visits are conducted after 18:00 Monday to Friday. Deep-clean rotations are conducted on Saturday mornings.</p>
+  <table class="rota-matrix">
+    <thead>
+      <tr>
+        <th>Area / Zone</th>
+        <th>Daily<br><span style="font-weight:normal;font-size:7pt;color:rgba(200,230,200,0.8);">Mon–Fri</span></th>
+        <th>Weekly<br><span style="font-weight:normal;font-size:7pt;color:rgba(200,230,200,0.8);">Friday</span></th>
+        <th>Fortnightly<br><span style="font-weight:normal;font-size:7pt;color:rgba(200,230,200,0.8);">Sat AM</span></th>
+        <th>Monthly<br><span style="font-weight:normal;font-size:7pt;color:rgba(200,230,200,0.8);">Deep</span></th>
+        <th>Quarterly<br><span style="font-weight:normal;font-size:7pt;color:rgba(200,230,200,0.8);">Inspection</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>Reception &amp; entrance lobby</td><td class="tick">&#10003;</td><td class="tick">&#10003;</td><td class="dash">—</td><td class="dash">—</td><td class="tick">&#10003;</td></tr>
+      <tr><td>Ground floor co-working</td><td class="tick">&#10003;</td><td class="tick">&#10003;</td><td class="dash">—</td><td class="dash">—</td><td class="tick">&#10003;</td></tr>
+      <tr><td>First floor co-working</td><td class="tick">&#10003;</td><td class="tick">&#10003;</td><td class="dash">—</td><td class="dash">—</td><td class="tick">&#10003;</td></tr>
+      <tr><td>Second floor co-working</td><td class="tick">&#10003;</td><td class="tick">&#10003;</td><td class="dash">—</td><td class="dash">—</td><td class="tick">&#10003;</td></tr>
+      <tr><td>Private offices (all floors)</td><td class="tick">&#10003;</td><td class="tick">&#10003;</td><td class="dash">—</td><td class="dash">—</td><td class="tick">&#10003;</td></tr>
+      <tr><td>Meeting rooms (all floors)</td><td class="tick">&#10003;</td><td class="tick">&#10003;</td><td class="dash">—</td><td class="dash">—</td><td class="tick">&#10003;</td></tr>
+      <tr><td>Washrooms — ground floor</td><td class="tick">&#10003;</td><td class="tick">&#10003;</td><td class="dash">—</td><td class="tick">&#10003;</td><td class="tick">&#10003;</td></tr>
+      <tr><td>Washrooms — first floor</td><td class="tick">&#10003;</td><td class="tick">&#10003;</td><td class="dash">—</td><td class="tick">&#10003;</td><td class="tick">&#10003;</td></tr>
+      <tr><td>Washrooms — second floor</td><td class="tick">&#10003;</td><td class="tick">&#10003;</td><td class="dash">—</td><td class="tick">&#10003;</td><td class="tick">&#10003;</td></tr>
+      <tr><td>Kitchen / breakout areas</td><td class="tick">&#10003;</td><td class="tick">&#10003;</td><td class="dash">—</td><td class="tick">&#10003;</td><td class="tick">&#10003;</td></tr>
+      <tr><td>Stairwells &amp; corridors</td><td class="tick">&#10003;</td><td class="tick">&#10003;</td><td class="dash">—</td><td class="dash">—</td><td class="tick">&#10003;</td></tr>
+      <tr><td>Carpets (extraction clean)</td><td class="dash">—</td><td class="dash">—</td><td class="tick">&#10003;</td><td class="dash">—</td><td class="tick">&#10003;</td></tr>
+      <tr><td>Hard floors (machine scrub)</td><td class="dash">—</td><td class="dash">—</td><td class="tick">&#10003;</td><td class="dash">—</td><td class="tick">&#10003;</td></tr>
+      <tr><td>Internal glazing &amp; partitions</td><td class="dash">—</td><td class="dash">—</td><td class="tick">&#10003;</td><td class="dash">—</td><td class="tick">&#10003;</td></tr>
+      <tr><td>Washroom consumables</td><td class="tick">&#10003;</td><td class="tick">&#10003;</td><td class="tick">&#10003;</td><td class="tick">&#10003;</td><td class="tick">&#10003;</td></tr>
+    </tbody>
+  </table>
+  <div class="page-footer"><span>Sparkshire Facilities Ltd &nbsp;·&nbsp; Unit 6, Wharfside Industrial Estate, Coventry CV1 2NG</span><span>0121 998 4430 &nbsp;·&nbsp; www.sparkshire-fm.co.uk</span><span>REF: Q-2026-0418-OW &nbsp;·&nbsp; CONFIDENTIAL</span></div>
+</div>
+
+<!-- CLEANING SPECIFICATION CHECKLIST -->
+<div class="page">
+  <div class="sec-banner"><span class="sec-num">03</span><span class="sec-title">Area-by-Area Cleaning Specification</span></div>
+  <div class="spec-list">
+    <div class="spec-section">
+      <div class="spec-section-title">Reception &amp; Common Areas</div>
+      <div class="spec-items">
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Vacuum all carpeted areas</span><span class="si-freq">Daily</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Mop / clean hard floor surfaces</span><span class="si-freq">Daily</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Wipe down reception desk &amp; surfaces</span><span class="si-freq">Daily</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Empty all waste bins &amp; replace liners</span><span class="si-freq">Daily</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Clean entrance glass &amp; doors</span><span class="si-freq">Daily</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Dust all surfaces &amp; ledges</span><span class="si-freq">Weekly</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Carpet extraction clean</span><span class="si-freq">Fortnightly</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Internal glazing &amp; partition clean</span><span class="si-freq">Fortnightly</span></div>
+      </div>
+    </div>
+    <div class="spec-section">
+      <div class="spec-section-title">Co-Working Areas &amp; Offices</div>
+      <div class="spec-items">
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Vacuum all carpeted areas</span><span class="si-freq">Daily</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Wipe down all desks &amp; workstations</span><span class="si-freq">Daily</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Empty all waste bins &amp; replace liners</span><span class="si-freq">Daily</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Clean whiteboards &amp; presentation screens</span><span class="si-freq">Daily</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Dust all surfaces, shelves &amp; equipment</span><span class="si-freq">Weekly</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Carpet extraction clean</span><span class="si-freq">Fortnightly</span></div>
+      </div>
+    </div>
+    <div class="spec-section">
+      <div class="spec-section-title">Washrooms (All Floors)</div>
+      <div class="spec-items">
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Clean &amp; sanitise all WCs and urinals</span><span class="si-freq">Daily</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Clean &amp; sanitise all basins &amp; taps</span><span class="si-freq">Daily</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Replenish soap, paper towels, toilet tissue</span><span class="si-freq">Daily</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Clean mirrors &amp; all glass surfaces</span><span class="si-freq">Daily</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Mop floors with disinfectant solution</span><span class="si-freq">Daily</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Descale all sanitaryware</span><span class="si-freq">Weekly</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Full deep clean — all surfaces</span><span class="si-freq">Monthly</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Grout &amp; tile scrub</span><span class="si-freq">Monthly</span></div>
+      </div>
+    </div>
+    <div class="spec-section">
+      <div class="spec-section-title">Kitchen &amp; Breakout Areas</div>
+      <div class="spec-items">
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Wipe down all worktops &amp; surfaces</span><span class="si-freq">Daily</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Clean sink &amp; taps</span><span class="si-freq">Daily</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Empty bins &amp; replace liners</span><span class="si-freq">Daily</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Mop kitchen floor</span><span class="si-freq">Daily</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Clean exterior of appliances</span><span class="si-freq">Weekly</span></div>
+        <div class="spec-item"><span class="si-tick">&#10003;</span><span class="si-text">Deep clean — all appliances &amp; surfaces</span><span class="si-freq">Monthly</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="page-footer"><span>Sparkshire Facilities Ltd &nbsp;·&nbsp; Unit 6, Wharfside Industrial Estate, Coventry CV1 2NG</span><span>0121 998 4430 &nbsp;·&nbsp; www.sparkshire-fm.co.uk</span><span>REF: Q-2026-0418-OW &nbsp;·&nbsp; CONFIDENTIAL</span></div>
+</div>
+
+<!-- SLA + PRICING -->
+<div class="page">
+  <div class="sec-banner"><span class="sec-num">04</span><span class="sec-title">Service Level Commitments</span></div>
+  <table>
+    <thead><tr><th>Commitment</th><th>Standard</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td>Nightly visit completion</td><td>100% of scheduled visits; operative sign-off log completed each visit</td><td>Visit log (on-site)</td></tr>
+      <tr><td>Operative attendance</td><td>Named operative assigned; cover arranged within 2 hours of absence</td><td>Attendance record</td></tr>
+      <tr><td>Consumables replenishment</td><td>Checked and restocked at every visit; stock level reported monthly</td><td>Consumables log</td></tr>
+      <tr><td>Complaint response</td><td>Acknowledged within 2 hours; resolved within 24 hours</td><td>Complaint register</td></tr>
+      <tr><td>Quality inspection</td><td>Quarterly site inspection; written report to Daniel Reeve, Estates Manager within 5 business days</td><td>Inspection report</td></tr>
+      <tr><td>COSHH compliance</td><td>All products COSHH-assessed; safety data sheets held on site</td><td>COSHH file (on-site)</td></tr>
+      <tr><td>Risk assessment</td><td>Site-specific risk assessment completed prior to commencement; reviewed annually</td><td>RA document</td></tr>
+    </tbody>
+  </table>
+  <div class="sec-banner" style="margin-top:20px;"><span class="sec-num">05</span><span class="sec-title">Pricing Schedule</span></div>
+  <table>
+    <thead><tr><th>Service Line</th><th>Unit</th><th>Qty</th><th>Rate</th><th>Monthly</th></tr></thead>
+    <tbody>
+      <tr><td>Nightly cleaning — Mon–Fri (3 floors, 12,000 sq ft)</td><td>Per visit</td><td>22</td><td>£52.00</td><td>£1,144.00</td></tr>
+      <tr><td>Weekend deep-clean rotation (fortnightly)</td><td>Per visit</td><td>2</td><td>£285.00</td><td>£570.00</td></tr>
+      <tr><td>Washroom consumables management</td><td>Per month</td><td>1</td><td>£180.00</td><td>£180.00</td></tr>
+      <tr><td>Quarterly quality inspection &amp; report</td><td>Per quarter</td><td>4/yr</td><td>£95.00</td><td>£31.67</td></tr>
+    </tbody>
+    <tfoot>
+      <tr><td colspan="4"><strong>Monthly Subtotal (excl. VAT)</strong></td><td><strong>£1,925.67</strong></td></tr>
+      <tr class="vat-row"><td colspan="4">VAT @ 20%</td><td>£385.13</td></tr>
+      <tr class="total-row"><td colspan="4">Monthly Total (inc. VAT)</td><td>£2,310.80</td></tr>
+      <tr><td colspan="4"><strong>Annual Contract Value (excl. VAT)</strong></td><td><strong>£23,108.00</strong></td></tr>
+    </tfoot>
+  </table>
+  <div class="page-footer"><span>Sparkshire Facilities Ltd &nbsp;·&nbsp; Unit 6, Wharfside Industrial Estate, Coventry CV1 2NG</span><span>0121 998 4430 &nbsp;·&nbsp; www.sparkshire-fm.co.uk</span><span>REF: Q-2026-0418-OW &nbsp;·&nbsp; CONFIDENTIAL</span></div>
+</div>
+
+<!-- TERMS + ACCEPTANCE -->
+<div class="page">
+  <div class="sec-banner"><span class="sec-num">06</span><span class="sec-title">Contract Terms &amp; Acceptance</span></div>
+  <p><strong>Term:</strong> 12 months from commencement date. Auto-renews annually. 60 days' written notice to terminate at renewal.</p>
+  <p><strong>Payment:</strong> Monthly in advance, net 30 days. Late payment interest at 8% above Bank of England base rate.</p>
+  <p><strong>Insurance:</strong> Sparkshire Facilities Ltd maintains public liability insurance of £5,000,000 and employer's liability insurance of £10,000,000. Certificates available on request.</p>
+  <p><strong>Liability:</strong> Capped at 12 months' fees. No indirect or consequential losses. Nothing limits liability for death, personal injury, or fraud.</p>
+  <p><strong>Confidentiality:</strong> Mutual. Survives termination by 3 years.</p>
+  <p><strong>Governing Law:</strong> England and Wales.</p>
+  <p style="margin-top:16px;">By signing below, both parties confirm their agreement to the terms set out in this proposal and the attached cleaning specification.</p>
+  <div class="sig-grid">
+    <div class="sig-block">
+      <div class="sig-label">For and on behalf of Sparkshire Facilities Ltd</div>
+      <div class="sig-line"></div><div class="sig-field">Signature</div>
+      <div class="sig-line"></div><div class="sig-field">Full Name &amp; Title</div>
+      <div class="sig-line"></div><div class="sig-field">Date</div>
+    </div>
+    <div class="sig-block">
+      <div class="sig-label">For and on behalf of Oakwell Business Park</div>
+      <div class="sig-line"></div><div class="sig-field">Signature</div>
+      <div class="sig-line"></div><div class="sig-field">Full Name &amp; Title</div>
+      <div class="sig-line"></div><div class="sig-field">Date</div>
+    </div>
+  </div>
+  <div class="page-footer"><span>Sparkshire Facilities Ltd &nbsp;·&nbsp; Unit 6, Wharfside Industrial Estate, Coventry CV1 2NG</span><span>0121 998 4430 &nbsp;·&nbsp; contracts@sparkshire-fm.co.uk &nbsp;·&nbsp; www.sparkshire-fm.co.uk</span><span>REF: Q-2026-0418-OW &nbsp;·&nbsp; 18 April 2026</span></div>
+</div>
+
+</body>
+</html>

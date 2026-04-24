@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Digital Marketing Retainer Proposal — Bold</title>
+<style>
+  @page { size: A4; margin: 0; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; font-size: 10pt; line-height: 1.7; color: #0a0a0a; background: #fff; max-width: 210mm; margin: 0 auto; }
+
+  .cover { min-height: 100vh; background: #0a0a0a; display: flex; flex-direction: column; page-break-after: always; }
+  .cover-nav { padding: 14mm 16mm 0; display: flex; justify-content: space-between; align-items: flex-start; }
+  .logo-box { width: 180px; height: 60px; border: 2px solid #a855f7; display: flex; align-items: center; justify-content: center; font-size: 10pt; letter-spacing: 0.2em; color: #a855f7; text-transform: uppercase; }
+  .cover-ref { text-align: right; font-size: 7.5pt; color: rgba(255,255,255,0.3); line-height: 1.9; letter-spacing: 0.05em; }
+  .cover-hero { flex: 1; padding: 10mm 16mm 0; display: flex; flex-direction: column; justify-content: center; }
+  .cover-eyebrow { font-size: 8pt; font-weight: 700; letter-spacing: 0.25em; text-transform: uppercase; color: #a855f7; margin-bottom: 14px; }
+  .cover h1 { font-size: 44pt; font-weight: 900; color: #fff; line-height: 0.93; letter-spacing: -0.04em; text-transform: uppercase; margin-bottom: 22px; }
+  .cover h1 .ac { color: #a855f7; }
+  .cover-desc { font-size: 11pt; color: rgba(255,255,255,0.5); max-width: 420px; line-height: 1.6; font-weight: 300; margin-bottom: 28px; }
+  .cover-client-block { border-left: 3px solid #a855f7; padding-left: 14px; }
+  .cb-label { font-size: 7.5pt; color: rgba(255,255,255,0.4); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 3px; }
+  .cb-value { font-size: 10pt; color: #fff; font-weight: 600; }
+  .cover-contact-strip { background: rgba(255,255,255,0.04); border-top: 1px solid rgba(255,255,255,0.08); padding: 8mm 16mm; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .cs-label { font-size: 7pt; color: rgba(255,255,255,0.35); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 3px; }
+  .cs-value { font-size: 8.5pt; color: rgba(255,255,255,0.75); }
+  .cover-stat-strip { background: #a855f7; padding: 8mm 16mm; display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; }
+  .stat-item { padding: 0 14px 0 0; border-right: 1px solid rgba(0,0,0,0.15); }
+  .stat-item:last-child { border-right: none; padding-left: 14px; padding-right: 0; }
+  .stat-num { font-size: 18pt; font-weight: 900; color: #0a0a0a; line-height: 1; letter-spacing: -0.03em; }
+  .stat-label { font-size: 7.5pt; color: rgba(0,0,0,0.55); text-transform: uppercase; letter-spacing: 0.1em; margin-top: 3px; }
+
+  .page { padding: 0 20mm 20px; page-break-before: always; }
+  .sec-div { background: #0a0a0a; color: #fff; padding: 13px 20mm; display: flex; align-items: center; gap: 14px; margin: 0 -20mm; }
+  .div-num { font-size: 8pt; font-weight: 900; color: #a855f7; letter-spacing: 0.15em; min-width: 34px; }
+  .div-title { font-size: 13pt; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
+  .div-line { flex: 1; height: 1px; background: rgba(255,255,255,0.15); }
+  h2 { font-size: 22pt; font-weight: 900; color: #0a0a0a; letter-spacing: -0.03em; line-height: 1.1; text-transform: uppercase; margin: 16px 0 14px; }
+  h3 { font-size: 11pt; font-weight: 800; color: #0a0a0a; text-transform: uppercase; letter-spacing: 0.08em; margin: 20px 0 7px; border-left: 4px solid #a855f7; padding-left: 10px; }
+  p { margin-bottom: 12px; color: #2a2a2a; }
+  .bold-callout { background: #0a0a0a; color: #a855f7; padding: 14px 18px; font-size: 11.5pt; font-weight: 700; line-height: 1.4; margin: 14px 0; }
+  .cred-strip { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+  .cred { background: #0a0a0a; color: #a855f7; padding: 5px 13px; font-size: 7.5pt; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+
+  table { width: 100%; border-collapse: collapse; margin: 13px 0; page-break-inside: avoid; font-size: 9pt; }
+  thead tr { background: #0a0a0a; }
+  thead th { padding: 10px 13px; text-align: left; color: #a855f7; font-weight: 800; font-size: 7.5pt; letter-spacing: 0.12em; text-transform: uppercase; }
+  tbody tr:nth-child(even) { background: #f5f5f5; }
+  tbody td { padding: 8px 13px; border-bottom: 1px solid #e0e0e0; color: #2a2a2a; vertical-align: top; }
+  tfoot td { padding: 10px 13px; font-weight: 800; border-top: 3px solid #0a0a0a; }
+  .total-row td { background: #a855f7; color: #fff; font-weight: 900; font-size: 10pt; }
+  .vat-row td { background: #f5f5f5; color: #555; font-style: italic; }
+
+  .sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 26px; }
+  .sig-block { border-top: 4px solid #0a0a0a; padding-top: 13px; }
+  .sig-label { font-size: 7.5pt; font-weight: 900; letter-spacing: 0.15em; text-transform: uppercase; color: #0a0a0a; margin-bottom: 9px; }
+  .sig-line { border-bottom: 1px solid #0a0a0a; height: 36px; margin: 8px 0; }
+  .sig-field { font-size: 8pt; color: #666; }
+  .page-footer { margin-top: 22px; padding-top: 9px; border-top: 2px solid #0a0a0a; font-size: 7.5pt; color: #666; display: flex; justify-content: space-between; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="cover-nav">
+    <div class="logo-box">PIVOT</div>
+    <div class="cover-ref">Q-2026-0418-HR<br>18 April 2026<br>CONFIDENTIAL</div>
+  </div>
+  <div class="cover-hero">
+    <div class="cover-eyebrow">Digital Marketing Retainer — Proposal</div>
+    <h1>More<br><span class="ac">Pipeline.</span><br>Less Noise.</h1>
+    <p class="cover-desc">A 12-month digital marketing programme for Harwood Retail Group — SEO, content, LinkedIn, PPC. Built around one objective: 30 qualified leads per month. Reported every month. No excuses.</p>
+    <div class="cover-client-block">
+      <div class="cb-label">Prepared for</div>
+      <div class="cb-value">Sarah Harwood, Marketing Director &nbsp;·&nbsp; Harwood Retail Group</div>
+      <div class="cb-label" style="margin-top:6px;">Service address</div>
+      <div class="cb-value">Harwood House, 22 Temple Row, Birmingham B2 5LS</div>
+    </div>
+  </div>
+  <div class="cover-contact-strip">
+    <div><div class="cs-label">Address</div><div class="cs-value">The Custard Factory, Gibb Street, Birmingham B9 4AA</div></div>
+    <div><div class="cs-label">Phone &amp; Email</div><div class="cs-value">0121 227 3090<br>hello@pivotdigital.co.uk</div></div>
+    <div><div class="cs-label">Website</div><div class="cs-value">www.pivotdigital.co.uk</div></div>
+  </div>
+  <div class="cover-stat-strip">
+    <div class="stat-item"><div class="stat-num">30</div><div class="stat-label">Leads/Month Target</div></div>
+    <div class="stat-item"><div class="stat-num">+40%</div><div class="stat-label">Organic Traffic Goal</div></div>
+    <div class="stat-item"><div class="stat-num">5</div><div class="stat-label">Channels Managed</div></div>
+    <div class="stat-item"><div class="stat-num">£3,000</div><div class="stat-label">Monthly Retainer</div></div>
+  </div>
+</div>
+
+<div class="page">
+  <div class="sec-div"><span class="div-num">01</span><span class="div-title">The Objective</span><div class="div-line"></div></div>
+  <h2>30 Qualified Leads. 12 Months. One Team.</h2>
+  <div class="bold-callout">Your buyers are searching. Your competitors are ranking. Your pipeline is inconsistent. We fix all three.</div>
+  <p>Harwood Retail Group is a B2B software company at Harwood House, 22 Temple Row, Birmingham B2 5LS with a product that converts well when it has qualified pipeline. The challenge is generating that pipeline consistently from digital channels. Pivot Digital delivers the integrated digital marketing programme to make that happen: SEO, content, LinkedIn, PPC, and monthly reporting against KPIs agreed upfront.</p>
+  <p>Pivot Digital has been delivering digital marketing for B2B technology companies since 2019. Google Partner. Meta Business Partner. HubSpot Solutions Partner. 30 in-house specialists. No outsourcing. No white-labelling.</p>
+  <div class="cred-strip">
+    <span class="cred">Google Partner</span><span class="cred">Meta Business Partner</span><span class="cred">HubSpot Solutions Partner</span><span class="cred">Semrush Agency Partner</span><span class="cred">LinkedIn Marketing Partner</span>
+  </div>
+  <div class="page-footer"><span>Pivot Digital &nbsp;·&nbsp; The Custard Factory, Gibb Street, Birmingham B9 4AA</span><span>0121 227 3090 &nbsp;·&nbsp; www.pivotdigital.co.uk</span><span>Q-2026-0418-HR &nbsp;·&nbsp; CONFIDENTIAL</span></div>
+</div>
+
+<div class="page">
+  <div class="sec-div"><span class="div-num">02</span><span class="div-title">The Programme</span><div class="div-line"></div></div>
+  <h2>What We Deliver</h2>
+  <h3>&#9654; SEO — Organic Foundation</h3>
+  <p>Monthly technical audit and remediation, on-page optimisation, structured link acquisition. 12-month target: +40% organic traffic, 30+ keywords in top 10.</p>
+  <h3>&#9654; Content Marketing — Content That Converts</h3>
+  <p>4 long-form posts/month (1,500–2,500 words), 2 gated assets/quarter, quarterly strategy review. Written by in-house B2B specialists.</p>
+  <h3>&#9654; LinkedIn &amp; Social — Visibility Where It Counts</h3>
+  <p>12 LinkedIn posts/month, monthly engagement report, LinkedIn Ads managed as part of PPC. Target: +25% follower growth.</p>
+  <h3>&#9654; PPC — Every Pound Working Hard</h3>
+  <p>Full Google Search + LinkedIn Ads management. 12% of monthly ad spend. Strategy, copy, landing page recommendations, bid management. Target: CPL under £85.</p>
+  <h3>&#9654; Monthly Reporting — Total Transparency</h3>
+  <p>Delivered to Sarah Harwood, Marketing Director by the 10th of each following month. Organic traffic, rankings, leads, cost per lead, PPC performance, KPI progress. No hiding from the numbers.</p>
+  <div class="page-footer"><span>Pivot Digital &nbsp;·&nbsp; The Custard Factory, Gibb Street, Birmingham B9 4AA</span><span>0121 227 3090 &nbsp;·&nbsp; www.pivotdigital.co.uk</span><span>Q-2026-0418-HR &nbsp;·&nbsp; CONFIDENTIAL</span></div>
+</div>
+
+<div class="page">
+  <div class="sec-div"><span class="div-num">03</span><span class="div-title">KPIs &amp; Pricing</span><div class="div-line"></div></div>
+  <h2>Hold Us To This</h2>
+  <table>
+    <thead><tr><th>KPI</th><th>12-Month Target</th><th>Tool</th></tr></thead>
+    <tbody>
+      <tr><td>Organic sessions/month</td><td>+40% year-on-year</td><td>Google Analytics 4</td></tr>
+      <tr><td>Target keyword rankings (Top 10)</td><td>30+ keywords</td><td>Semrush</td></tr>
+      <tr><td>Qualified leads/month (all channels)</td><td>30/month (12-month objective)</td><td>CRM</td></tr>
+      <tr><td>Cost per qualified lead (PPC)</td><td>&lt;£85</td><td>Google Ads / LinkedIn Ads</td></tr>
+      <tr><td>LinkedIn follower growth</td><td>+25% year-on-year</td><td>LinkedIn Analytics</td></tr>
+    </tbody>
+  </table>
+  <h2 style="margin-top:20px;">The Investment</h2>
+  <table>
+    <thead><tr><th>Service</th><th>Rate</th><th>Monthly</th></tr></thead>
+    <tbody>
+      <tr><td>SEO — Technical, On-Page &amp; Link Acquisition</td><td>£1,200/month</td><td>£1,200.00</td></tr>
+      <tr><td>Content Marketing (4 posts + quarterly assets)</td><td>£900/month</td><td>£900.00</td></tr>
+      <tr><td>LinkedIn &amp; Social Media Management</td><td>£600/month</td><td>£600.00</td></tr>
+      <tr><td>PPC Management (12% of £2,500 ad spend)</td><td>12% of spend</td><td>£300.00</td></tr>
+      <tr><td>Monthly Reporting</td><td>Included</td><td>£0.00</td></tr>
+    </tbody>
+    <tfoot>
+      <tr><td colspan="2"><strong>Monthly Retainer (excl. VAT)</strong></td><td><strong>£3,000.00</strong></td></tr>
+      <tr class="vat-row"><td colspan="2">VAT @ 20%</td><td>£600.00</td></tr>
+      <tr class="total-row"><td colspan="2">MONTHLY TOTAL (INC. VAT)</td><td>£3,600.00</td></tr>
+      <tr><td colspan="2"><strong>Annual Retainer Value (excl. VAT)</strong></td><td><strong>£36,000.00</strong></td></tr>
+    </tfoot>
+  </table>
+  <div class="page-footer"><span>Pivot Digital &nbsp;·&nbsp; The Custard Factory, Gibb Street, Birmingham B9 4AA</span><span>0121 227 3090 &nbsp;·&nbsp; www.pivotdigital.co.uk</span><span>Q-2026-0418-HR &nbsp;·&nbsp; CONFIDENTIAL</span></div>
+</div>
+
+<div class="page">
+  <div class="sec-div"><span class="div-num">04</span><span class="div-title">Terms &amp; Acceptance</span><div class="div-line"></div></div>
+  <h2>The Terms</h2>
+  <p><strong>Term:</strong> 12 months. Auto-renews annually. 60 days' notice to terminate at renewal.</p>
+  <p><strong>Payment:</strong> Monthly in advance, net 30 days.</p>
+  <p><strong>Data Processing:</strong> DPA executed alongside this contract. All processing within UK/EEA.</p>
+  <p><strong>Liability:</strong> Capped at 12 months' fees. No indirect losses.</p>
+  <p><strong>Confidentiality:</strong> Mutual. 5 years post-termination.</p>
+  <p><strong>Governing Law:</strong> England and Wales.</p>
+  <h2 style="margin-top:20px;">Sign. Start. Build Pipeline.</h2>
+  <div class="sig-grid">
+    <div class="sig-block">
+      <div class="sig-label">For Pivot Digital</div>
+      <div class="sig-line"></div><div class="sig-field">Signature</div>
+      <div class="sig-line"></div><div class="sig-field">Full Name &amp; Title</div>
+      <div class="sig-line"></div><div class="sig-field">Date</div>
+    </div>
+    <div class="sig-block">
+      <div class="sig-label">For Harwood Retail Group</div>
+      <div class="sig-line"></div><div class="sig-field">Signature</div>
+      <div class="sig-line"></div><div class="sig-field">Full Name &amp; Title</div>
+      <div class="sig-line"></div><div class="sig-field">Date</div>
+    </div>
+  </div>
+  <div class="page-footer"><span>Pivot Digital &nbsp;·&nbsp; The Custard Factory, Gibb Street, Birmingham B9 4AA</span><span>0121 227 3090 &nbsp;·&nbsp; hello@pivotdigital.co.uk &nbsp;·&nbsp; www.pivotdigital.co.uk</span><span>Q-2026-0418-HR &nbsp;·&nbsp; 18 April 2026</span></div>
+</div>
+
+</body>
+</html>

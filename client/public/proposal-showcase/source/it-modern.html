@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Managed IT Services Proposal — Modern</title>
+<style>
+  @page { size: A4; margin: 0; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; font-size: 10pt; line-height: 1.7; color: #111827; background: #fff; max-width: 210mm; margin: 0 auto; }
+
+  /* ── COVER ── */
+  .cover { min-height: 100vh; background: #1e1b4b; display: flex; flex-direction: column; page-break-after: always; }
+  .cover-nav { padding: 14mm 16mm 0; display: flex; justify-content: space-between; align-items: flex-start; }
+  .logo-box { width: 180px; height: 60px; border: 1.5px solid rgba(255,255,255,0.3); display: flex; align-items: center; justify-content: center; font-size: 9.5pt; letter-spacing: 0.2em; color: rgba(255,255,255,0.7); text-transform: uppercase; }
+  .cover-ref-block { text-align: right; font-size: 7.5pt; color: rgba(255,255,255,0.4); line-height: 1.9; letter-spacing: 0.06em; }
+  .cover-hero { flex: 1; padding: 12mm 16mm 0; display: flex; flex-direction: column; justify-content: center; }
+  .accent-bar { width: 48px; height: 4px; background: #818cf8; margin-bottom: 20px; }
+  .cover h1 { font-size: 36pt; font-weight: 800; color: #fff; line-height: 1.05; letter-spacing: -0.03em; max-width: 500px; margin-bottom: 16px; }
+  .cover h1 em { color: #818cf8; font-style: normal; }
+  .cover-tagline { font-size: 11.5pt; color: rgba(255,255,255,0.55); font-weight: 300; max-width: 400px; line-height: 1.6; margin-bottom: 28px; }
+  .cover-prepared-for { font-size: 8.5pt; color: rgba(255,255,255,0.5); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; }
+  .cover-client-name { font-size: 13pt; font-weight: 700; color: #818cf8; }
+  .cover-contact-strip { background: rgba(255,255,255,0.06); border-top: 1px solid rgba(255,255,255,0.1); padding: 10mm 16mm; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .contact-label { font-size: 7pt; color: rgba(255,255,255,0.4); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 3px; }
+  .contact-value { font-size: 9pt; color: rgba(255,255,255,0.85); }
+  .cover-stat-strip { background: #818cf8; padding: 10mm 16mm; display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; }
+  .stat-item { padding: 0 16px 0 0; border-right: 1px solid rgba(255,255,255,0.3); }
+  .stat-item:last-child { border-right: none; padding-left: 16px; padding-right: 0; }
+  .stat-num { font-size: 18pt; font-weight: 900; color: #1e1b4b; line-height: 1; }
+  .stat-label { font-size: 7.5pt; color: rgba(30,27,75,0.65); text-transform: uppercase; letter-spacing: 0.1em; margin-top: 3px; }
+
+  /* ── PAGES ── */
+  .page { padding: 14mm 16mm; page-break-before: always; }
+  .eyebrow { font-size: 7.5pt; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: #6366f1; margin-bottom: 6px; }
+  h2 { font-size: 22pt; font-weight: 800; color: #1e1b4b; letter-spacing: -0.025em; line-height: 1.15; margin-bottom: 18px; }
+  h3 { font-size: 11pt; font-weight: 700; color: #1e1b4b; margin: 20px 0 7px; }
+  p { margin-bottom: 12px; color: #374151; }
+  .callout { background: #eef2ff; border-left: 4px solid #818cf8; padding: 13px 17px; margin: 14px 0; border-radius: 0 6px 6px 0; }
+  .callout p { margin: 0; color: #312e81; font-weight: 500; }
+  .cred-strip { display: flex; flex-wrap: wrap; gap: 7px; margin: 12px 0; }
+  .cred { background: #1e1b4b; color: #818cf8; padding: 4px 11px; font-size: 7.5pt; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; border-radius: 2px; }
+
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; page-break-inside: avoid; font-size: 9pt; }
+  thead tr { background: #1e1b4b; }
+  thead th { padding: 9px 13px; text-align: left; color: #818cf8; font-weight: 600; font-size: 7.5pt; letter-spacing: 0.08em; text-transform: uppercase; }
+  tbody tr:nth-child(even) { background: #f5f3ff; }
+  tbody td { padding: 8px 13px; border-bottom: 1px solid #e5e7eb; color: #374151; vertical-align: top; }
+  tfoot td { padding: 9px 13px; font-weight: 700; border-top: 2px solid #1e1b4b; }
+  .total-row td { background: #818cf8; color: #1e1b4b; font-weight: 700; }
+  .vat-row td { background: #eef2ff; color: #4338ca; font-style: italic; }
+
+  .sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 26px; }
+  .sig-block { border-top: 3px solid #818cf8; padding-top: 12px; }
+  .sig-label { font-size: 7.5pt; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #6366f1; margin-bottom: 8px; }
+  .sig-line { border-bottom: 1px solid #d1d5db; height: 36px; margin: 8px 0; }
+  .sig-field { font-size: 8pt; color: #9ca3af; }
+  .page-footer { margin-top: 26px; padding-top: 9px; border-top: 1px solid #e5e7eb; font-size: 7.5pt; color: #9ca3af; display: flex; justify-content: space-between; }
+
+  @media print { .cover { min-height: 297mm; } .page { page-break-before: always; } table { page-break-inside: avoid; } }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="cover-nav">
+    <div class="logo-box">MERIDIAN</div>
+    <div class="cover-ref-block">Ref: Q-2026-0418-AP<br>Date: 18 April 2026<br>Prepared for: Ashworth & Partners<br>Confidential</div>
+  </div>
+  <div class="cover-hero">
+    <div class="accent-bar"></div>
+    <h1>Managed IT &amp;<br><em>Cyber Security</em><br>Proposal</h1>
+    <p class="cover-tagline">A fully managed IT service for Ashworth & Partners — helpdesk, infrastructure, Microsoft 365, and a structured path to Cyber Essentials Plus.</p>
+    <div class="cover-prepared-for">Prepared for</div>
+    <div class="cover-client-name">Helen Ashworth, Managing Partner &nbsp;·&nbsp; Ashworth & Partners</div>
+  </div>
+  <div class="cover-contact-strip">
+    <div><div class="contact-label">Address</div><div class="contact-value">14 Trinity Park, Solihull B37 7UJ</div></div>
+    <div><div class="contact-label">Phone &amp; Email</div><div class="contact-value">0121 446 8820<br>hello@meridian-solutions.co.uk</div></div>
+    <div><div class="contact-label">Website</div><div class="contact-value">www.meridian-solutions.co.uk</div></div>
+  </div>
+  <div class="cover-stat-strip">
+    <div class="stat-item"><div class="stat-num">40</div><div class="stat-label">Users Covered</div></div>
+    <div class="stat-item"><div class="stat-num">15min</div><div class="stat-label">P1 Response SLA</div></div>
+    <div class="stat-item"><div class="stat-num">99.9%</div><div class="stat-label">Uptime Objective</div></div>
+    <div class="stat-item"><div class="stat-num">£67.50</div><div class="stat-label">Per User / Month</div></div>
+  </div>
+</div>
+
+<div class="page">
+  <div class="eyebrow">01 — Executive Summary</div>
+  <h2>Reliable IT. Proven security. Fixed monthly fee.</h2>
+  <div class="callout"><p>This proposal delivers a fully managed IT service for Ashworth & Partners's 40-seat accountancy practice at Livery House, 15 Livery Street, Birmingham B3 2PB — covering helpdesk, infrastructure, Microsoft 365, cyber security, and a Cyber Essentials Plus certification pathway.</p></div>
+  <p>Accountancy practices are a high-value target for cyber criminals. You hold sensitive client financial data, process payments, and operate under GDPR, FCA, and professional indemnity obligations that demand documented, tested IT governance. A reactive IT arrangement — call someone when it breaks — is not adequate for the risk environment you operate in today.</p>
+  <p>Meridian Solutions Ltd has been delivering managed IT services to professional services firms since 2017. We understand your software stack, your compliance obligations, and the operational demands of a busy practice. Our managed service model is built on proactive monitoring, rapid response, and transparent reporting — so your team can focus on clients, not computers.</p>
+  <div class="page-footer"><span>Meridian Solutions Ltd &nbsp;·&nbsp; 14 Trinity Park, Solihull B37 7UJ</span><span>0121 446 8820 &nbsp;·&nbsp; www.meridian-solutions.co.uk</span><span>Q-2026-0418-AP &nbsp;·&nbsp; Confidential</span></div>
+</div>
+
+<div class="page">
+  <div class="eyebrow">02 — About Meridian Solutions Ltd</div>
+  <h2>Meridian Solutions Ltd</h2>
+  <p>Founded 2017. HQ: 14 Trinity Park, Solihull B37 7UJ. 40 users in-house engineers. No subcontractors on client work. Average client tenure: 6 years. Microsoft Solutions Partner. ISO 27001 certified.</p>
+  <div class="cred-strip">
+    <span class="cred">Microsoft Solutions Partner</span>
+    <span class="cred">Cyber Essentials Plus</span>
+    <span class="cred">ISO 27001</span>
+    <span class="cred">ISO 9001</span>
+    <span class="cred">IASME Gold</span>
+    <span class="cred">NCSC Cyber Incident Response</span>
+  </div>
+  <div class="eyebrow" style="margin-top:24px;">03 — Your Needs</div>
+  <h2>What we heard from Helen Ashworth, Managing Partner</h2>
+  <p>Ashworth & Partners is a 40-seat practice at Livery House, 15 Livery Street, Birmingham B3 2PB using Microsoft 365, CCH, and cloud client portals. Current IT support is reactive. No proactive monitoring, no formal patch management, no documented BCP. Cyber insurance renewal is approaching and Cyber Essentials certification has not been achieved.</p>
+  <p><strong>Your three priorities:</strong> (1) Cyber security — protect client data, achieve Cyber Essentials Plus within 12 months. (2) Compliance — documented data processing records, tested incident response. (3) Reliability — proactive monitoring so issues are resolved before they impact your team.</p>
+  <div class="page-footer"><span>Meridian Solutions Ltd &nbsp;·&nbsp; 14 Trinity Park, Solihull B37 7UJ</span><span>0121 446 8820 &nbsp;·&nbsp; www.meridian-solutions.co.uk</span><span>Q-2026-0418-AP &nbsp;·&nbsp; Confidential</span></div>
+</div>
+
+<div class="page">
+  <div class="eyebrow">04 — Proposed Service</div>
+  <h2>What's included</h2>
+  <h3>&#9654; Managed Helpdesk — Unlimited Support</h3>
+  <p>Unlimited support for all 40 users. Mon–Fri 08:00–18:00 + P1 out-of-hours. Named engineers who know your environment. P1 response: 15 minutes (SLA). P2: 2 hours. P3: 4 business hours.</p>
+  <h3>&#9654; Proactive Infrastructure Monitoring</h3>
+  <p>24/7 monitoring of all servers, workstations, and network devices. Automated alerting and remediation. Monthly infrastructure health report to Helen Ashworth, Managing Partner.</p>
+  <h3>&#9654; Microsoft 365 Management</h3>
+  <p>Full M365 administration: user lifecycle, Exchange Online, SharePoint, Teams, Intune, Defender for Business. Quarterly Secure Score review and remediation roadmap.</p>
+  <h3>&#9654; Cyber Security Programme</h3>
+  <p>Managed EDR, email security (anti-phishing, DMARC), DNS filtering, privileged access management, staff security awareness training. 12-month Cyber Essentials Plus certification pathway.</p>
+  <h3>&#9654; Business Continuity &amp; Cloud Backup</h3>
+  <p>Documented BCP/DR plan, tested annually. Cloud backup with 30-day retention, 4-hour RTO. Monthly backup verification reports.</p>
+  <h3>&#9654; Virtual CTO — Quarterly Reviews</h3>
+  <p>Quarterly strategic IT review. Technology roadmap, budget planning, compliance advisory. Written report within 5 business days.</p>
+  <div class="page-footer"><span>Meridian Solutions Ltd &nbsp;·&nbsp; 14 Trinity Park, Solihull B37 7UJ</span><span>0121 446 8820 &nbsp;·&nbsp; www.meridian-solutions.co.uk</span><span>Q-2026-0418-AP &nbsp;·&nbsp; Confidential</span></div>
+</div>
+
+<div class="page">
+  <div class="eyebrow">05 — Service Levels</div>
+  <h2>SLA commitments</h2>
+  <table>
+    <thead><tr><th>Priority</th><th>Definition</th><th>Response</th><th>Resolution Target</th><th>SLA Credit</th></tr></thead>
+    <tbody>
+      <tr><td><strong>P1 Critical</strong></td><td>Complete outage</td><td>15 min (SLA)</td><td>4 hours</td><td>10% monthly fee</td></tr>
+      <tr><td><strong>P2 High</strong></td><td>Major function impaired</td><td>2 hours</td><td>8 business hours</td><td>5% monthly fee</td></tr>
+      <tr><td><strong>P3 Medium</strong></td><td>Single user, workaround available</td><td>4 business hours</td><td>2 business days</td><td>—</td></tr>
+      <tr><td><strong>P4 Low</strong></td><td>Minor, no productivity impact</td><td>1 business day</td><td>5 business days</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <div class="eyebrow" style="margin-top:20px;">06 — Pricing</div>
+  <h2>Investment summary</h2>
+  <table>
+    <thead><tr><th>Service Line</th><th>Qty</th><th>Rate</th><th>Monthly</th></tr></thead>
+    <tbody>
+      <tr><td>Managed Helpdesk &amp; Monitoring (per user)</td><td>40</td><td>£28.00</td><td>£1,120.00</td></tr>
+      <tr><td>Microsoft 365 Business Premium (per user)</td><td>40</td><td>£19.50</td><td>£780.00</td></tr>
+      <tr><td>Managed EDR &amp; Email Security (per user)</td><td>40</td><td>£8.00</td><td>£320.00</td></tr>
+      <tr><td>Cloud Backup (per user, 30-day retention)</td><td>40</td><td>£4.50</td><td>£180.00</td></tr>
+      <tr><td>Virtual CTO — Quarterly Reviews</td><td>4/yr</td><td>£450.00</td><td>£150.00</td></tr>
+      <tr><td>Cyber Essentials Plus Pathway (Year 1)</td><td>1</td><td>£1,800.00</td><td>£150.00</td></tr>
+    </tbody>
+    <tfoot>
+      <tr><td colspan="3"><strong>Monthly Subtotal (excl. VAT)</strong></td><td><strong>£2,700.00</strong></td></tr>
+      <tr class="vat-row"><td colspan="3">VAT @ 20%</td><td>£540.00</td></tr>
+      <tr class="total-row"><td colspan="3">Monthly Total (inc. VAT)</td><td>£3,240.00</td></tr>
+      <tr><td colspan="3"><strong>Annual Value (excl. VAT)</strong></td><td><strong>£32,400.00</strong></td></tr>
+    </tfoot>
+  </table>
+  <div class="page-footer"><span>Meridian Solutions Ltd &nbsp;·&nbsp; 14 Trinity Park, Solihull B37 7UJ</span><span>0121 446 8820 &nbsp;·&nbsp; www.meridian-solutions.co.uk</span><span>Q-2026-0418-AP &nbsp;·&nbsp; Confidential</span></div>
+</div>
+
+<div class="page">
+  <div class="eyebrow">07 — Term &amp; Conditions</div>
+  <h2>Contract terms</h2>
+  <p><strong>Term:</strong> 36 months from countersignature. Auto-renews annually. 90 days' written notice to terminate at renewal.</p>
+  <p><strong>Payment:</strong> Monthly in advance, net 30 days. Late payment interest at 8% above Bank of England base rate.</p>
+  <p><strong>Data Processing:</strong> Meridian Solutions Ltd acts as data processor. DPA executed alongside this contract. All processing within UK/EEA.</p>
+  <p><strong>Liability:</strong> Capped at 12 months' fees. No indirect or consequential losses. Nothing limits liability for death, personal injury, or fraud.</p>
+  <p><strong>Confidentiality:</strong> Mutual. Survives termination by 5 years.</p>
+  <p><strong>Governing Law:</strong> England and Wales.</p>
+  <div class="eyebrow" style="margin-top:24px;">08 — Acceptance</div>
+  <h2>Sign &amp; start</h2>
+  <p>By signing below, both parties agree to be bound by the terms set out in this proposal. This document, once countersigned, constitutes a binding agreement.</p>
+  <div class="sig-grid">
+    <div class="sig-block">
+      <div class="sig-label">For Meridian Solutions Ltd</div>
+      <div class="sig-line"></div><div class="sig-field">Signature</div>
+      <div class="sig-line"></div><div class="sig-field">Full Name &amp; Title</div>
+      <div class="sig-line"></div><div class="sig-field">Date</div>
+    </div>
+    <div class="sig-block">
+      <div class="sig-label">For Ashworth & Partners</div>
+      <div class="sig-line"></div><div class="sig-field">Signature</div>
+      <div class="sig-line"></div><div class="sig-field">Full Name &amp; Title</div>
+      <div class="sig-line"></div><div class="sig-field">Date</div>
+    </div>
+  </div>
+  <div class="page-footer"><span>Meridian Solutions Ltd &nbsp;·&nbsp; 14 Trinity Park, Solihull B37 7UJ</span><span>0121 446 8820 &nbsp;·&nbsp; hello@meridian-solutions.co.uk &nbsp;·&nbsp; www.meridian-solutions.co.uk</span><span>Q-2026-0418-AP &nbsp;·&nbsp; 18 April 2026</span></div>
+</div>
+
+</body>
+</html>
