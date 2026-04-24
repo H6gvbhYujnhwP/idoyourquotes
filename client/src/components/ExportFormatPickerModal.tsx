@@ -1,17 +1,19 @@
 /**
  * ExportFormatPickerModal.tsx
  *
- * Phase 4A — Delivery 6.
+ * Phase 4A — Delivery 6 (initial), Delivery 7 (Contract/Tender live).
  *
  * Shown when a Pro / Team tier user clicks "Generate PDF" on the quote
  * workspace. Presents three export format options as cards:
  *
- *   1. Quick quote       — active. Fires the existing basic PDF flow.
- *   2. Contract / Tender — greyed. Shows a showcase preview thumbnail
- *                           and a "Coming soon" chip. No click handler.
- *                           Wired up in Delivery 7 (branded renderer).
+ *   1. Quick quote         — active. Fires the existing basic PDF flow.
+ *   2. Contract / Tender   — active (Delivery 7). Opens the Brand Choice
+ *                            modal which handles branded proposal gen.
+ *                            Preview thumbnail is sector-matched: IT →
+ *                            IT-Modern, Cleaning → Cleaning-Operational,
+ *                            Marketing → Marketing-Bold.
  *   3. Project / Migration — greyed. "Coming soon". Icon only, no
- *                           preview (template doesn't exist yet).
+ *                            preview (template doesn't exist yet).
  *
  * Solo / Trial users do NOT see this modal — they see the Solo
  * upgrade modal from Delivery 5 instead. Tier routing happens in the
@@ -29,7 +31,10 @@ import {
   Lock,
 } from "lucide-react";
 import { brand } from "@/lib/brandTheme";
-import { PROPOSAL_SHOWCASES } from "@/lib/proposalShowcaseAssets";
+import {
+  PROPOSAL_SHOWCASES,
+  type ProposalShowcaseSector,
+} from "@/lib/proposalShowcaseAssets";
 
 interface ExportFormatPickerModalProps {
   open: boolean;
@@ -37,12 +42,45 @@ interface ExportFormatPickerModalProps {
   onDismiss: () => void;
   /** Fires when the user picks the Quick quote card. */
   onSelectQuickQuote: () => void;
+  /**
+   * Fires when the user picks the Contract/Tender card (Delivery 7).
+   * Parent (QuoteWorkspace) closes this picker and opens the Brand
+   * Choice modal.
+   */
+  onSelectContractTender: () => void;
+  /**
+   * Sector hint used to pick the right preview thumbnail on the
+   * Contract/Tender card. Typically derived from the quote's
+   * tradePreset, falling back to the org's default sector. When
+   * unrecognised we default to IT — the v1 target of the branded
+   * renderer.
+   */
+  sectorHint?: string | null;
+}
+
+/** Map a free-text sector string to one of the three showcase sectors. */
+function resolveShowcaseSector(hint: string | null | undefined): ProposalShowcaseSector {
+  const s = (hint || "").toLowerCase().trim();
+  if (!s) return "it";
+  if (s.includes("clean")) return "cleaning";
+  if (
+    s.includes("market")
+    || s.includes("digital")
+    || s.includes("website")
+    || s.includes("web")
+    || s.includes("seo")
+  ) return "marketing";
+  // IT is the default — it's also the v1 target of the branded renderer
+  // and the sector most users will see when this first lands.
+  return "it";
 }
 
 export default function ExportFormatPickerModal({
   open,
   onDismiss,
   onSelectQuickQuote,
+  onSelectContractTender,
+  sectorHint,
 }: ExportFormatPickerModalProps) {
   // Esc closes. Match the overlay-click-to-close behaviour below. Bound
   // only while open to avoid leaking listeners across the app lifecycle.
@@ -57,10 +95,13 @@ export default function ExportFormatPickerModal({
 
   if (!open) return null;
 
-  // Preview thumbnail for the Contract-Tender card. IT-Modern is the
-  // first sector the branded renderer will target (Delivery 7), so it's
-  // the most accurate preview of what this card will produce first.
-  const contractTenderPreview = PROPOSAL_SHOWCASES.it.assets.thumb;
+  // Sector-matched preview on the Contract/Tender card so the user sees
+  // a representative visual of what they're about to generate — even
+  // though v1 only actually produces the IT-Modern layout. Post-4A adds
+  // the other two sectors' renderers; the thumbnail is already right.
+  const showcaseSector = resolveShowcaseSector(sectorHint);
+  const contractTenderPreview = PROPOSAL_SHOWCASES[showcaseSector].assets.thumb;
+  const showcaseSectorLabel = PROPOSAL_SHOWCASES[showcaseSector].sectorLabel;
 
   return (
     <div
@@ -150,15 +191,16 @@ export default function ExportFormatPickerModal({
               </div>
             </button>
 
-            {/* ── Card 2: Contract / Tender (coming soon) ── */}
-            <div
-              className="rounded-xl overflow-hidden flex flex-col"
+            {/* ── Card 2: Contract / Tender (active — Delivery 7) ── */}
+            <button
+              type="button"
+              onClick={onSelectContractTender}
+              className="text-left rounded-xl overflow-hidden transition-all hover:shadow-md group flex flex-col"
               style={{
-                backgroundColor: brand.slate,
+                backgroundColor: brand.white,
                 border: `1px solid ${brand.border}`,
-                cursor: "not-allowed",
+                boxShadow: brand.shadow,
               }}
-              aria-disabled="true"
             >
               {/* Preview strip */}
               <div
@@ -171,30 +213,29 @@ export default function ExportFormatPickerModal({
               >
                 <img
                   src={contractTenderPreview}
-                  alt="Contract / Tender preview"
-                  className="w-full h-full object-cover object-top"
-                  style={{ opacity: 0.55 }}
+                  alt={`${showcaseSectorLabel} Contract / Tender preview`}
+                  className="w-full h-full object-cover object-top transition-transform group-hover:scale-[1.02]"
                   draggable={false}
                 />
                 <div
                   className="absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase flex items-center gap-1"
                   style={{
-                    backgroundColor: brand.navy,
+                    backgroundColor: brand.teal,
                     color: brand.white,
                   }}
                 >
-                  <Lock className="w-2.5 h-2.5" />
-                  Coming soon
+                  <Sparkles className="w-2.5 h-2.5" />
+                  Pro
                 </div>
               </div>
               <div className="p-5 flex-1 flex flex-col">
                 <div
                   className="w-10 h-10 rounded-lg flex items-center justify-center mb-3"
-                  style={{ backgroundColor: "#f1f5f9" }}
+                  style={{ backgroundColor: brand.tealBg }}
                 >
                   <Sparkles
                     className="w-5 h-5"
-                    style={{ color: brand.navyMuted }}
+                    style={{ color: brand.teal }}
                   />
                 </div>
                 <div
@@ -207,11 +248,19 @@ export default function ExportFormatPickerModal({
                   className="text-xs leading-relaxed flex-1"
                   style={{ color: brand.navyMuted }}
                 >
-                  Design-led proposal with personality, sector-matched
-                  styling, and your brand tone baked in.
+                  Multi-page branded proposal with cover, exec summary,
+                  pricing, and signature. Your logo and brand colours are
+                  applied automatically.
+                </div>
+                <div
+                  className="text-xs font-semibold mt-3 flex items-center gap-1 transition-transform group-hover:translate-x-0.5"
+                  style={{ color: brand.teal }}
+                >
+                  Choose this
+                  <ArrowRight className="w-3.5 h-3.5" />
                 </div>
               </div>
-            </div>
+            </button>
 
             {/* ── Card 3: Project / Migration (coming soon, no preview) ── */}
             <div

@@ -22,6 +22,7 @@ import { createElectricalTakeoff, getElectricalTakeoffsByQuoteId, getElectricalT
 import { createContainmentTakeoff, getContainmentTakeoffsByQuoteId, getContainmentTakeoffById, getContainmentTakeoffByInputId, updateContainmentTakeoff, deleteContainmentTakeoffByInputId, updateInputMimeType } from "./db";
 import { parseSpreadsheet, isSpreadsheet, formatSpreadsheetForAI } from "./services/excelParser";
 import { generateQuoteHTML } from "./pdfGenerator";
+import { generateBrandedProposalHTML } from "./brandedProposalRenderer";
 import { getCatalogSeedForSector } from "./catalogSeeds";
 import { getDemoQuoteForSector } from "./demoQuotes";
 import {
@@ -1357,6 +1358,67 @@ Respond with valid JSON:
           return { html };
         } catch (error) {
           console.error("[generatePDF] Error:", error);
+          throw error;
+        }
+      }),
+
+    // ── Phase 4A — Delivery 7 ──
+    // Additive endpoint for the branded Contract/Tender renderer.
+    // Does NOT touch generatePDF. Solo/Trial tiers rejected at the
+    // gate — the client's SoloUpgradeModal already handles that path,
+    // but we also defend here in case a client bypasses the UI.
+    generateBrandedProposal: protectedProcedure
+      .input(z.object({
+        quoteId: z.number(),
+        brandMode: z.enum(["branded", "template"]),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        console.log("[generateBrandedProposal] quoteId:", input.quoteId, "mode:", input.brandMode, "userId:", ctx.user.id);
+        try {
+          // Resolve quote + org the same way generatePDF does.
+          const org = await getUserPrimaryOrg(ctx.user.id);
+          let quote = null;
+          if (org) {
+            quote = await getQuoteByIdAndOrg(input.quoteId, org.id);
+          }
+          if (!quote) {
+            quote = await getQuoteById(input.quoteId, ctx.user.id);
+          }
+          if (!quote) throw new Error("Quote not found");
+
+          // Tier gate. The branded renderer is a Pro+ feature. Anything
+          // below that (trial, solo) is rejected here. Users never see
+          // this message — the UI gates them at the picker — but the
+          // defence-in-depth guard matters for API callers.
+          const tier = (org as any)?.subscriptionTier as SubscriptionTier | undefined;
+          if (!tier || tier === "trial" || tier === "solo") {
+            throw new Error(
+              "Branded Contract/Tender proposals are a Pro feature. Upgrade to Pro to use this export format."
+            );
+          }
+
+          const lineItems = await getLineItemsByQuoteId(input.quoteId);
+
+          let tenderContext = null;
+          try {
+            tenderContext = await getTenderContextByQuoteId(input.quoteId);
+          } catch {
+            // tender context is optional — the renderer falls back gracefully
+          }
+
+          const html = await generateBrandedProposalHTML({
+            quote,
+            lineItems,
+            user: ctx.user,
+            organization: org,
+            tenderContext,
+            brandMode: input.brandMode,
+          });
+
+          console.log("[generateBrandedProposal] html generated, length:", html.length);
+          return { html };
+        } catch (error) {
+          console.error("[generateBrandedProposal] Error:", error);
           throw error;
         }
       }),

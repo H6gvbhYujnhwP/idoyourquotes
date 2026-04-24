@@ -89,6 +89,7 @@ import AddToCatalogueDialog, {
 import PreGeneratePDFModal from "@/components/PreGeneratePDFModal";
 import SoloUpgradeModal from "@/components/SoloUpgradeModal";
 import ExportFormatPickerModal from "@/components/ExportFormatPickerModal";
+import BrandChoiceModal, { type BrandMode } from "@/components/BrandChoiceModal";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import { brand } from "@/lib/brandTheme";
 
@@ -346,6 +347,11 @@ export default function QuoteWorkspace() {
   // quote is wired today — the other two cards are greyed "Coming soon"
   // until Delivery 7 (branded renderer) and later work land.
   const [showFormatPickerModal, setShowFormatPickerModal] = useState(false);
+  // Phase 4A Delivery 7 — Brand Choice modal. Opens after the user picks
+  // the Contract/Tender card in the format picker. Lets them choose
+  // between "use your branding" (AI-extracted brand tokens) and "use
+  // template defaults" (built-in navy/violet palette).
+  const [showBrandChoiceModal, setShowBrandChoiceModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // ── Controlled field state ──
@@ -414,6 +420,9 @@ export default function QuoteWorkspace() {
     onSuccess: () => void refetch(),
   });
   const generatePDF = trpc.quotes.generatePDF.useMutation();
+  // Phase 4A Delivery 7 — branded Contract/Tender proposal. Separate
+  // endpoint, does not touch generatePDF. Same return shape { html }.
+  const generateBrandedProposal = trpc.quotes.generateBrandedProposal.useMutation();
 
   // ── Mutations — line items ──
   const createLineItem = trpc.lineItems.create.useMutation({
@@ -943,6 +952,71 @@ export default function QuoteWorkspace() {
     setShowPrePDFModal(true);
   };
 
+  // Phase 4A Delivery 7 — Contract/Tender card handler. Closes the
+  // picker and opens the Brand Choice modal. The branded renderer does
+  // NOT run the review-before-PDF (T/E/A) flow — the branded render is
+  // meant to be the "polished sign-and-send" output, and any tender
+  // context is already baked into the saved quote.
+  const handlePickerSelectContractTender = () => {
+    setShowFormatPickerModal(false);
+    setShowBrandChoiceModal(true);
+  };
+
+  // Phase 4A Delivery 7 — "← Back" on the Brand Choice modal returns
+  // the user to the format picker (stage 1).
+  const handleBrandChoiceBack = () => {
+    setShowBrandChoiceModal(false);
+    setShowFormatPickerModal(true);
+  };
+
+  // Phase 4A Delivery 7 — fire the branded proposal mutation and open
+  // the resulting HTML in a print window, same mechanism as the Quick
+  // quote path. No T/E/A review step for branded output.
+  const doGenerateBranded = async (mode: BrandMode) => {
+    try {
+      const result = await generateBrandedProposal.mutateAsync({
+        quoteId,
+        brandMode: mode,
+      });
+      if (!(result as any)?.html) {
+        throw new Error("No HTML content received from server");
+      }
+      const printWindow = window.open("", "_blank");
+      if (!printWindow) {
+        toast.error("Please allow popups to generate the proposal");
+        return;
+      }
+      printWindow.document.write((result as any).html);
+      printWindow.document.close();
+      printWindow.onload = () => {
+        setTimeout(() => printWindow.print(), 250);
+      };
+      // Close the Brand Choice modal once the print window has fired.
+      setShowBrandChoiceModal(false);
+      // Optimistically flip status to pdf_generated. A failed flip does
+      // not block the download — the status-transition validator may
+      // refuse certain current-state transitions and that's OK.
+      const currentStatus = (quote as any)?.status as string | undefined;
+      if (currentStatus && currentStatus !== "pdf_generated") {
+        try {
+          await updateStatus.mutateAsync({
+            id: quoteId,
+            status: "pdf_generated",
+          });
+        } catch (err) {
+          console.warn(
+            "[QuoteWorkspace] pdf_generated status flip failed:",
+            err,
+          );
+        }
+      }
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Branded proposal generation failed",
+      );
+    }
+  };
+
   // Called from inside the review modal once saves have completed.
   // Closes the modal and falls through to the original PDF flow.
   const handlePrePDFConfirmed = () => {
@@ -1290,6 +1364,21 @@ export default function QuoteWorkspace() {
         open={showFormatPickerModal}
         onDismiss={() => setShowFormatPickerModal(false)}
         onSelectQuickQuote={handlePickerSelectQuickQuote}
+        onSelectContractTender={handlePickerSelectContractTender}
+        sectorHint={tradePreset}
+      />
+
+      {/* Phase 4A Delivery 7 — Brand Choice modal. Opens after the user
+          picks the Contract/Tender card in the picker above. Lets them
+          choose between "use your branding" (with inline setup if the
+          org has no brand tokens yet) and "use template defaults". Fires
+          the new generateBrandedProposal mutation on either choice. */}
+      <BrandChoiceModal
+        open={showBrandChoiceModal}
+        onDismiss={() => setShowBrandChoiceModal(false)}
+        onBack={handleBrandChoiceBack}
+        onGenerate={(mode) => void doGenerateBranded(mode)}
+        isGenerating={generateBrandedProposal.isPending}
       />
     </div>
   );
