@@ -46,8 +46,6 @@ export default function Settings() {
   const [insurancePublic, setInsurancePublic] = useState("");
   const [insuranceProfessional, setInsuranceProfessional] = useState("");
   const [dayWorkLabourRate, setDayWorkLabourRate] = useState("");
-  const [dayWorkMaterialMarkup, setDayWorkMaterialMarkup] = useState("");
-  const [dayWorkPlantMarkup, setDayWorkPlantMarkup] = useState("");
   const [defaultVatRate, setDefaultVatRate] = useState("20");
   const [defaultExclusions, setDefaultExclusions] = useState("");
   const [validityDays, setValidityDays] = useState("30");
@@ -93,8 +91,6 @@ export default function Settings() {
       if (org.defaultDayWorkRates) {
         const dw = org.defaultDayWorkRates as any;
         setDayWorkLabourRate(dw.labourRate?.toString() || "");
-        setDayWorkMaterialMarkup(dw.materialMarkup?.toString() || "");
-        setDayWorkPlantMarkup(dw.plantMarkup?.toString() || "");
         setDefaultVatRate(dw.defaultVatRate?.toString() || "20");
       }
       if (org.defaultExclusions) setDefaultExclusions(org.defaultExclusions);
@@ -150,8 +146,6 @@ export default function Settings() {
       } : undefined,
       defaultDayWorkRates: {
         labourRate: dayWorkLabourRate ? parseFloat(dayWorkLabourRate) : undefined,
-        materialMarkup: dayWorkMaterialMarkup ? parseFloat(dayWorkMaterialMarkup) : undefined,
-        plantMarkup: dayWorkPlantMarkup ? parseFloat(dayWorkPlantMarkup) : undefined,
         defaultVatRate: defaultVatRate ? parseFloat(defaultVatRate) : 20,
       },
       defaultExclusions: defaultExclusions || undefined,
@@ -587,11 +581,11 @@ export default function Settings() {
             Work Rates
           </CardTitle>
           <CardDescription>
-            Default rates, markups, and labour costs used across your quotes
+            Default labour rate used across your quotes, and the VAT rate applied to every new quote.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid sm:grid-cols-3 gap-4">
+          <div className="grid sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="dayWorkLabourRate">Labour Rate (£/hr)</Label>
               <Input
@@ -601,26 +595,6 @@ export default function Settings() {
                 placeholder="e.g. 53.50"
                 value={dayWorkLabourRate}
                 onChange={(e) => setDayWorkLabourRate(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="dayWorkMaterialMarkup">Material Markup (%)</Label>
-              <Input
-                id="dayWorkMaterialMarkup"
-                type="number"
-                placeholder="e.g. 32"
-                value={dayWorkMaterialMarkup}
-                onChange={(e) => setDayWorkMaterialMarkup(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="dayWorkPlantMarkup">Plant Markup (%)</Label>
-              <Input
-                id="dayWorkPlantMarkup"
-                type="number"
-                placeholder="e.g. 18"
-                value={dayWorkPlantMarkup}
-                onChange={(e) => setDayWorkPlantMarkup(e.target.value)}
               />
             </div>
             <div className="space-y-2">

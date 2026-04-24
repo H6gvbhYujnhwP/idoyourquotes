@@ -4342,11 +4342,11 @@ VOICE DICTATION PROCESSING:
           }
           if (orgDefaults.dayWorkRates) {
             const dw = orgDefaults.dayWorkRates as any;
-            const dwParts: string[] = [];
-            if (dw.labourRate) dwParts.push(`Labour: £${dw.labourRate}/hr`);
-            if (dw.materialMarkup) dwParts.push(`Material: cost + ${dw.materialMarkup}%`);
-            if (dw.plantMarkup) dwParts.push(`Plant: cost + ${dw.plantMarkup}%`);
-            if (dwParts.length > 0) parts.push(`Work Rates: ${dwParts.join(", ")}`);
+            // Material / plant markup removed from Settings — dormant
+            // keys may remain in the JSON blob for legacy orgs but are
+            // no longer surfaced to the AI. Labour rate and VAT rate
+            // are the only rate-ish values on the page now.
+            if (dw.labourRate) parts.push(`Work Rates: Labour: £${dw.labourRate}/hr`);
           }
           if (orgDefaults.surfaceTreatment) parts.push(`Surface Treatment: ${orgDefaults.surfaceTreatment}`);
           if (orgDefaults.returnVisitRate) parts.push(`Return Visit Rate: ${orgDefaults.returnVisitRate}`);
