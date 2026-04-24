@@ -88,6 +88,7 @@ import AddToCatalogueDialog, {
 } from "@/components/AddToCatalogueDialog";
 import PreGeneratePDFModal from "@/components/PreGeneratePDFModal";
 import SoloUpgradeModal from "@/components/SoloUpgradeModal";
+import ExportFormatPickerModal from "@/components/ExportFormatPickerModal";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import { brand } from "@/lib/brandTheme";
 
@@ -339,6 +340,12 @@ export default function QuoteWorkspace() {
   // upgrade modal the user can choose to route to /pricing, or fall
   // through to the existing PDF flow via "Download basic PDF".
   const [showSoloUpgradeModal, setShowSoloUpgradeModal] = useState(false);
+  // Phase 4A Delivery 6 — Export format picker modal. Fires on Generate
+  // PDF for Pro / Team tiers, giving the user a choice of output format
+  // (Quick quote / Contract-Tender / Project-Migration). Only Quick
+  // quote is wired today — the other two cards are greyed "Coming soon"
+  // until Delivery 7 (branded renderer) and later work land.
+  const [showFormatPickerModal, setShowFormatPickerModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // ── Controlled field state ──
@@ -903,14 +910,18 @@ export default function QuoteWorkspace() {
   // Phase 4A Delivery 5 — additional gate: if the user is on a soft-
   // gated tier (solo / trial), open the Solo upgrade modal first. That
   // modal's "Download basic PDF" action then falls through to the
-  // review modal so Solo users keep their current PDF output. Pro+
-  // users bypass the upgrade modal entirely.
+  // review modal so Solo users keep their current PDF output.
+  //
+  // Phase 4A Delivery 6 — Pro / Team users see the format picker first.
+  // The Quick quote card in that picker then falls through to the
+  // review modal, preserving the original flow exactly. Contract-
+  // Tender and Project-Migration cards are greyed "Coming soon".
   const handleGeneratePDFClick = () => {
     if (isSoftGatedTier) {
       setShowSoloUpgradeModal(true);
       return;
     }
-    setShowPrePDFModal(true);
+    setShowFormatPickerModal(true);
   };
 
   // Phase 4A Delivery 5 — Solo upgrade modal handlers.
@@ -921,6 +932,14 @@ export default function QuoteWorkspace() {
   const handleSoloUpgradeContinueBasic = () => {
     setShowSoloUpgradeModal(false);
     // Fall through to the existing PDF flow — same path Pro+ users take.
+    setShowPrePDFModal(true);
+  };
+
+  // Phase 4A Delivery 6 — format picker handler. Quick quote is the
+  // only active card; it falls straight through to the review-before-
+  // PDF modal, preserving the original PDF flow exactly.
+  const handlePickerSelectQuickQuote = () => {
+    setShowFormatPickerModal(false);
     setShowPrePDFModal(true);
   };
 
@@ -1259,6 +1278,18 @@ export default function QuoteWorkspace() {
         onDismiss={() => setShowSoloUpgradeModal(false)}
         onUpgrade={handleSoloUpgradeCTA}
         onContinueWithBasic={handleSoloUpgradeContinueBasic}
+      />
+
+      {/* Phase 4A Delivery 6 — Export format picker modal. Fires on
+          Generate PDF for Pro / Team tiers. Only the Quick quote card
+          is wired today; that card falls through to the review modal
+          above, preserving the original PDF flow. The Contract-Tender
+          and Project-Migration cards are greyed "Coming soon" until
+          Delivery 7 lands the branded renderer. */}
+      <ExportFormatPickerModal
+        open={showFormatPickerModal}
+        onDismiss={() => setShowFormatPickerModal(false)}
+        onSelectQuickQuote={handlePickerSelectQuickQuote}
       />
     </div>
   );
