@@ -1236,18 +1236,19 @@ function EvidencePanel({
         </div>
 
         <div className="mt-3">
+          {/* Chunk 3 — capped paste textarea. Previously max-h was 240px,
+              which could push the "Add as evidence" button below the
+              viewport on shorter screens (especially when the trial
+              banner is showing). Capped at 96px (~4 lines) so long
+              pastes scroll inside the box itself and the button stays
+              reachable. Keyboard shortcut removed — Wez asked for an
+              explicit button only. */}
           <Textarea
             id="paste-textarea"
-            placeholder="Paste an email, brief, or note here and press ⌘/Ctrl+Enter…"
+            placeholder="Paste an email, brief, or note here…"
             value={pasteText}
             onChange={(e) => setPasteText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                onAddPaste();
-              }
-            }}
-            className="min-h-[72px] max-h-[240px] overflow-y-auto text-sm bg-white"
+            className="min-h-[72px] max-h-[96px] overflow-y-auto text-sm bg-white"
             style={{ borderColor: brand.border }}
           />
           {pasteText.trim().length > 0 && (
