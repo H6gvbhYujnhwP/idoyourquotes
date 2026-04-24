@@ -83,6 +83,9 @@ import {
 import DictationButton from "@/components/DictationButton";
 import CatalogPicker, { type CatalogItemRef } from "@/components/CatalogPicker";
 import MissingCostsModal from "@/components/MissingCostsModal";
+import AddToCatalogueDialog, {
+  type AddToCatalogueSeed,
+} from "@/components/AddToCatalogueDialog";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import { brand } from "@/lib/brandTheme";
 
@@ -97,6 +100,13 @@ interface LineItem {
   total: string | null;
   pricingType: string | null;
   sortOrder: number;
+  // Chunk 3 Delivery B — provenance from the AI draft builder. isEstimated
+  // is the trigger for the amber chip + "Add to catalogue" button on a
+  // row. itemName / costPrice are used to pre-fill the dialog. All three
+  // ride through getFull already (see server/db.ts line items schema).
+  isEstimated?: boolean | null;
+  itemName?: string | null;
+  costPrice?: string | null;
 }
 
 interface QuoteInput {
@@ -239,6 +249,10 @@ export default function QuoteWorkspace() {
     },
   );
   const { data: catalogItemsRaw } = trpc.catalog.list.useQuery();
+  // Chunk 3 Delivery B — refresh the catalogue list (used by the Change▾
+  // picker on every row) the moment a new item saves, so it's pickable
+  // without a page reload.
+  const trpcUtils = trpc.useUtils();
 
   const quote = (fullQuote?.quote ?? null) as Record<string, unknown> | null;
   const inputs = useMemo<QuoteInput[]>(
@@ -286,6 +300,11 @@ export default function QuoteWorkspace() {
   // Chunk 3 Delivery F — controls the "Last chance to re-generate" dialog
   // shown whenever the user is about to burn their one-shot re-generation.
   const [showRegenerateConfirm, setShowRegenerateConfirm] = useState(false);
+  // Chunk 3 Delivery B — dialog state for "Add to catalogue" on AI-estimated
+  // rows. Holds the row the user clicked; when non-null, the dialog is open
+  // and pre-filled from that row.
+  const [addCatalogueSeed, setAddCatalogueSeed] =
+    useState<AddToCatalogueSeed | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // ── Controlled field state ──
@@ -707,6 +726,28 @@ export default function QuoteWorkspace() {
     setShowRegenerateConfirm(true);
   };
 
+  // ── Handler — Request Add to catalogue ──
+  // Chunk 3 Delivery B. Opens the pre-fill dialog for the clicked row.
+  // Pulls the row's name (itemName if set, else first line of description
+  // for legacy rows), plus all the pricing fields the catalogue schema
+  // cares about. The dialog keeps its own local form state so a failed
+  // save (cap reached, duplicate name) never clears typed input.
+  const handleRequestAddToCatalogue = useCallback((row: LineItem) => {
+    const fallbackName = (row.description || "")
+      .split("\n")[0]
+      .trim()
+      .slice(0, 120);
+    const resolvedName = (row.itemName || "").trim() || fallbackName;
+    setAddCatalogueSeed({
+      name: resolvedName,
+      description: row.description,
+      unit: row.unit,
+      rate: row.rate,
+      costPrice: row.costPrice ?? null,
+      pricingType: row.pricingType,
+    });
+  }, []);
+
   const handleConfirmRegenerate = () => {
     setShowRegenerateConfirm(false);
     void handleGenerate();
@@ -1055,6 +1096,7 @@ export default function QuoteWorkspace() {
                 setTitleLocal(v);
                 quoteAutoSave.save({ title: v });
               }}
+              onRequestAddToCatalogue={handleRequestAddToCatalogue}
             />
           )}
         </div>
@@ -1102,6 +1144,21 @@ export default function QuoteWorkspace() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Chunk 3 Delivery B — pre-fill "Add to catalogue" dialog opened from
+          the button on any AI-estimated row. Closes either via Cancel or
+          after a successful save; on success we invalidate catalog.list so
+          the Change▾ picker on every row sees the new entry immediately. */}
+      <AddToCatalogueDialog
+        open={addCatalogueSeed !== null}
+        onOpenChange={(next) => {
+          if (!next) setAddCatalogueSeed(null);
+        }}
+        seed={addCatalogueSeed}
+        onSaved={() => {
+          void trpcUtils.catalog.list.invalidate();
+        }}
+      />
     </div>
   );
 }
@@ -1776,6 +1833,9 @@ interface EditorPanelProps {
   // the light green client card so the workspace chrome stays quiet.
   titleValue: string;
   onUpdateTitle: (v: string) => void;
+  // Chunk 3 Delivery B — opens the "Add to catalogue" dialog pre-filled
+  // from the clicked row. Only invoked for AI-estimated rows.
+  onRequestAddToCatalogue: (row: LineItem) => void;
 }
 
 function EditorPanel({
@@ -1805,12 +1865,21 @@ function EditorPanel({
   isGenerating,
   titleValue,
   onUpdateTitle,
+  onRequestAddToCatalogue,
 }: EditorPanelProps) {
   const lineItemCount = lineItems.length;
   // Chunk 3 Delivery F — show the Re-generate affordance only while the
   // user still has their one-shot. Once generationCount hits 2, the button
   // and hint disappear entirely (quote is locked to manual edits).
   const canRegenerate = generationCount < 2 && !isGenerating;
+  // Chunk 3 Delivery B — feeds the amber banner above the table. The
+  // draft builder sets isEstimated=true when it had to assume a rate;
+  // users get a clear count so they know how many rows still need a
+  // real number.
+  const estimatedCount = useMemo(
+    () => lineItems.filter((li) => li.isEstimated === true).length,
+    [lineItems],
+  );
 
   const totalsSummary = useMemo(() => {
     const parts: string[] = [];
@@ -1992,6 +2061,31 @@ function EditorPanel({
               </span>
             </div>
           )}
+          {/* Chunk 3 Delivery B — amber strip above the line-items table
+              that counts how many rows the AI had to estimate. Hidden when
+              there are no estimates so the workspace stays quiet once
+              the user has moved every row off estimate (by editing rates
+              into catalogue values or replacing the row via Change▾). */}
+          {estimatedCount > 0 && (
+            <div
+              className="px-4 py-2 text-[11px] leading-snug flex items-start gap-1.5"
+              style={{
+                backgroundColor: "#fffbeb",
+                color: "#b45309",
+                borderBottom: `1px solid ${brand.border}`,
+              }}
+              role="status"
+            >
+              <AlertCircle className="w-3 h-3 mt-[2px] flex-shrink-0" />
+              <span>
+                {estimatedCount === 1
+                  ? "1 estimated item"
+                  : `${estimatedCount} estimated items`}{" "}
+                — review the rates, and add any you'll re-use to your
+                catalogue.
+              </span>
+            </div>
+          )}
           <LineItemsTable
             rows={lineItems}
             catalogItems={catalogItems}
@@ -2001,6 +2095,7 @@ function EditorPanel({
             onSave={onSaveLineItem}
             onDelete={onDeleteLineItem}
             onApplyCatalog={onApplyCatalog}
+            onRequestAddToCatalogue={onRequestAddToCatalogue}
           />
         </div>
 
@@ -2059,6 +2154,9 @@ interface LineItemsTableProps {
   ) => void;
   onDelete: (id: number) => void;
   onApplyCatalog: (row: LineItem, cat: CatalogItemRef) => void;
+  // Chunk 3 Delivery B — handed straight through to LineItemRow, which
+  // only surfaces the Add-to-catalogue button on rows where isEstimated.
+  onRequestAddToCatalogue: (row: LineItem) => void;
 }
 
 function LineItemsTable({
@@ -2070,6 +2168,7 @@ function LineItemsTable({
   onSave,
   onDelete,
   onApplyCatalog,
+  onRequestAddToCatalogue,
 }: LineItemsTableProps) {
   if (rows.length === 0) {
     return (
@@ -2115,6 +2214,7 @@ function LineItemsTable({
               onSave={onSave}
               onDelete={() => onDelete(row.id)}
               onApplyCatalog={(cat) => onApplyCatalog(row, cat)}
+              onRequestAddToCatalogue={() => onRequestAddToCatalogue(row)}
             />
           ))}
         </tbody>
@@ -2134,6 +2234,7 @@ function LineItemRow({
   onSave,
   onDelete,
   onApplyCatalog,
+  onRequestAddToCatalogue,
 }: {
   row: LineItem;
   catalogItems: CatalogItemRef[];
@@ -2147,6 +2248,8 @@ function LineItemRow({
   ) => void;
   onDelete: () => void;
   onApplyCatalog: (cat: CatalogItemRef) => void;
+  // Chunk 3 Delivery B — only wired up for AI-estimated rows.
+  onRequestAddToCatalogue: () => void;
 }) {
   const rowTotal = useMemo(() => {
     const q = parseNum(row.quantity);
@@ -2162,6 +2265,11 @@ function LineItemRow({
       : "white";
 
   const uiType = uiTypeFromPricing(row.pricingType);
+  // Chunk 3 Delivery B — the AI draft builder sets isEstimated=true when
+  // it had to pick a rate without hard evidence. Drives the amber chip
+  // and the always-visible "Add to catalogue" button underneath the
+  // description cell.
+  const isEstimated = row.isEstimated === true;
 
   return (
     <tr
@@ -2186,6 +2294,43 @@ function LineItemRow({
           value={row.description || ""}
           onChange={(v) => onSave(row.id, { description: v })}
         />
+        {/* Chunk 3 Delivery B — estimate chip + always-visible
+            "Add to catalogue" button. Only rendered when the AI draft
+            builder flagged this row as estimated. stopPropagation on the
+            button so clicking it doesn't also trigger the row's
+            click-to-activate handler. */}
+        {isEstimated && (
+          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+            <span
+              className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider rounded px-1.5 py-0.5"
+              style={{
+                backgroundColor: "#fffbeb",
+                color: "#b45309",
+                border: "1px solid #fcd34d",
+              }}
+              title="Rate estimated by AI — review or replace with a catalogue item."
+            >
+              <AlertCircle className="w-2.5 h-2.5" />
+              Estimate
+            </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRequestAddToCatalogue();
+              }}
+              className="inline-flex items-center gap-1 text-[10px] font-medium rounded px-1.5 py-0.5 transition-colors hover:bg-teal-50"
+              style={{
+                color: brand.teal,
+                border: `1px solid ${brand.tealBorder}`,
+                backgroundColor: "white",
+              }}
+            >
+              <Plus className="w-2.5 h-2.5" />
+              Add to catalogue
+            </button>
+          </div>
+        )}
       </td>
       <td className="px-2 py-2 text-right">
         <RowCellInput

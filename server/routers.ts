@@ -6,7 +6,7 @@ import { z } from "zod";
 import { invokeLLM } from "./_core/llm";
 import { subscriptionRouter } from "./services/subscriptionRouter";
 import { adminRouter } from "./services/adminRouter";
-import { canCreateQuote, canUseAIFeatures, getUpgradeSuggestion, TIER_CONFIG, type SubscriptionTier } from "./services/stripe";
+import { canCreateQuote, canUseAIFeatures, canAddCatalogItem, getUpgradeSuggestion, TIER_CONFIG, type SubscriptionTier } from "./services/stripe";
 import { sendLimitWarningEmail } from "./services/emailService";
 import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured, getFileBuffer } from "./r2Storage";
 import { analyzePdfWithClaude, analyzePdfWithOpenAI, analyzeImageWithClaude, isClaudeConfigured, invokeClaude } from "./_core/claude";
@@ -3233,6 +3233,86 @@ Rules:
           userId: ctx.user.id,
           orgId: org?.id,
           ...input,
+        });
+      }),
+
+    // ── createFromLineItem ────────────────────────────────────────────────
+    // Chunk 3 Delivery B — "Add to catalogue" button on AI-estimated line
+    // items. Pre-fill dialog in the quote workspace calls this with the
+    // line item's name, description, rate, cost, unit and pricing type
+    // (possibly tweaked by the user before saving).
+    //
+    // Distinct from catalog.create because this path enforces the plan's
+    // catalogue cap and rejects duplicates by name — the existing create
+    // procedure is left untouched to preserve the Catalog page's current
+    // behaviour. Cap / dupe errors are thrown with user-facing messages so
+    // the dialog can surface them inline without clearing typed input.
+    //
+    // Returns the newly-created catalog item so the client can optimistically
+    // update its local list if it wants to (current consumer just invalidates
+    // catalog.list instead).
+    createFromLineItem: protectedProcedure
+      .input(z.object({
+        name: z.string().min(1).max(255),
+        description: z.string().optional(),
+        category: z.string().optional(),
+        unit: z.string().optional(),
+        defaultRate: z.string().optional(),
+        costPrice: z.string().optional(),
+        pricingType: z.enum(['standard', 'monthly', 'optional', 'annual']).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        // Resolve org up-front — cap check and dupe check both need it.
+        // Users without an org can't save to a catalogue at all; bounce
+        // with a friendly message rather than creating an orphan row.
+        const org = await getUserPrimaryOrg(ctx.user.id);
+        if (!org) {
+          throw new Error(
+            "You need to be in an organisation before saving to your catalogue."
+          );
+        }
+
+        // Fetch current catalogue once; re-used for cap check AND dupe
+        // check to keep this to a single round-trip.
+        const existing = await getCatalogItemsByOrgId(org.id);
+
+        // Plan cap — delegates to the shared helper so the message stays
+        // consistent with the rest of the app. canAddCatalogItem treats
+        // maxCatalogItems === -1 as unlimited and null as the 100 default.
+        const capCheck = canAddCatalogItem(
+          { maxCatalogItems: org.maxCatalogItems ?? null },
+          existing.length
+        );
+        if (!capCheck.allowed) {
+          throw new Error(
+            capCheck.reason || "Your plan's catalogue cap has been reached."
+          );
+        }
+
+        // Dupe-by-name (case-insensitive, trimmed) — mirrors the
+        // seedFromSectorTemplate dedupe behaviour so users never silently
+        // double-up when they click Add from two different quotes.
+        const trimmedName = input.name.trim();
+        const lowered = trimmedName.toLowerCase();
+        const clash = existing.find(
+          (i) => (i.name || "").trim().toLowerCase() === lowered
+        );
+        if (clash) {
+          throw new Error(
+            `An item called "${trimmedName}" is already in your catalogue.`
+          );
+        }
+
+        return createCatalogItem({
+          userId: ctx.user.id,
+          orgId: org.id,
+          name: trimmedName,
+          description: input.description,
+          category: input.category,
+          unit: input.unit,
+          defaultRate: input.defaultRate,
+          costPrice: input.costPrice,
+          pricingType: input.pricingType,
         });
       }),
 
