@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase, Shield, Clock, PoundSterling, CreditCard, Users, Crown, AlertTriangle, Trash2, Mail, UserPlus, Check, ArrowRight, XCircle, RotateCcw, Download, Palette, Globe } from "lucide-react";
+import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase, Shield, Clock, PoundSterling, CreditCard, Users, Crown, AlertTriangle, Trash2, Mail, UserPlus, Check, ArrowRight, XCircle, RotateCcw, Download, Palette, Globe, CheckCircle2, AlertCircle } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog,
@@ -70,6 +70,10 @@ export default function Settings() {
   };
   const [brandBrochures, setBrandBrochures] = useState<BrandBrochure[]>([]);
   const brochureInputRef = useRef<HTMLInputElement>(null);
+  // Status pill — read through orgProfile on each invalidation.
+  type ExtractionStatus = "idle" | "pending" | "ready" | "failed";
+  const [extractionStatus, setExtractionStatus] = useState<ExtractionStatus>("idle");
+  const [extractionError, setExtractionError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -119,6 +123,13 @@ export default function Settings() {
       // Phase 4A — brand evidence
       setCompanyWebsite(org.companyWebsite || "");
       setBrandBrochures(Array.isArray(org.brandBrochures) ? org.brandBrochures : []);
+      // Phase 4A — extraction status pill
+      const rawStatus = (org.brandExtractionStatus || "idle") as string;
+      const allowed: ExtractionStatus[] = ["idle", "pending", "ready", "failed"];
+      setExtractionStatus(
+        (allowed.includes(rawStatus as ExtractionStatus) ? rawStatus : "idle") as ExtractionStatus,
+      );
+      setExtractionError(org.brandExtractionError || null);
     }
   }, [orgProfile]);
 
@@ -300,6 +311,17 @@ export default function Settings() {
     window.history.replaceState(null, '', `/settings?tab=${tab}`);
   };
 
+  // Phase 4A — while extraction is pending, re-invalidate orgProfile every
+  // 5s so the status pill flips to ready/failed without the user refreshing.
+  useEffect(() => {
+    if (activeTab !== "branding") return;
+    if (extractionStatus !== "pending") return;
+    const interval = setInterval(() => {
+      utils.auth.orgProfile.invalidate();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [activeTab, extractionStatus, utils]);
+
   return (
     <div className="space-y-6 max-w-3xl">
       {/* Header */}
@@ -349,17 +371,85 @@ export default function Settings() {
       {/* Intro */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Palette className="h-5 w-5" />
-            Proposal Branding
-          </CardTitle>
-          <CardDescription>
-            Your logo, website, and brochures tell us what your brand looks
-            like. Add any combination of the three — we'll use them to
-            style Contract / Tender and Project proposals to match your
-            company.
-          </CardDescription>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <CardTitle className="flex items-center gap-2">
+                <Palette className="h-5 w-5" />
+                Proposal Branding
+              </CardTitle>
+              <CardDescription className="mt-1.5">
+                Your logo, website, and brochures tell us what your brand looks
+                like. Add any combination of the three — we'll use them to
+                style Contract / Tender and Project proposals to match your
+                company.
+              </CardDescription>
+            </div>
+            {/* Extraction status pill — reflects the background job that
+                turns raw evidence into brand tokens (primary/secondary
+                colours, font feel, tone). Polls every 5s while pending. */}
+            <div className="shrink-0">
+              {extractionStatus === "idle" && (
+                <span
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border"
+                  style={{
+                    background: "var(--muted, #f4f4f5)",
+                    color: "var(--muted-foreground, #71717a)",
+                    borderColor: "transparent",
+                  }}
+                  title="No evidence supplied yet, or extraction hasn't run."
+                >
+                  No evidence yet
+                </span>
+              )}
+              {extractionStatus === "pending" && (
+                <span
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
+                  style={{
+                    background: "#fef3c7",
+                    color: "#92400e",
+                  }}
+                  title="AI is reading your evidence now."
+                >
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Extracting…
+                </span>
+              )}
+              {extractionStatus === "ready" && (
+                <span
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
+                  style={{
+                    background: "#dcfce7",
+                    color: "#14532d",
+                  }}
+                  title="Brand tokens extracted and ready to use."
+                >
+                  <CheckCircle2 className="h-3 w-3" />
+                  Ready
+                </span>
+              )}
+              {extractionStatus === "failed" && (
+                <span
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
+                  style={{
+                    background: "#fee2e2",
+                    color: "#991b1b",
+                  }}
+                  title={extractionError || "Extraction failed."}
+                >
+                  <AlertCircle className="h-3 w-3" />
+                  Extraction failed
+                </span>
+              )}
+            </div>
+          </div>
         </CardHeader>
+        {extractionStatus === "failed" && extractionError && (
+          <CardContent className="pt-0">
+            <p className="text-xs text-destructive">
+              {extractionError} Try saving your evidence again.
+            </p>
+          </CardContent>
+        )}
       </Card>
 
       {/* Logo preview — edit surface stays on the Profile tab to keep

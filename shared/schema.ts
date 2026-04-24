@@ -44,6 +44,19 @@ export const organizations = pgTable("organizations", {
     filename: string;
     uploadedAt: string;
   }>>().default([]),
+  // Phase 4A — AI-extracted brand tokens. Populated by the background
+  // brand-extraction pipeline from the raw evidence above (logo + website +
+  // brochures). Distinct from the logo-pixel-extracted
+  // brand_primary_color / brand_secondary_color, which stay in place and
+  // keep their fast rough pass. The renderer will prefer these extracted
+  // tokens when present.
+  brandExtractedPrimaryColor: varchar("brand_extracted_primary_color", { length: 7 }),
+  brandExtractedSecondaryColor: varchar("brand_extracted_secondary_color", { length: 7 }),
+  brandExtractedFontFeel: varchar("brand_extracted_font_feel", { length: 20 }),
+  brandExtractedTone: text("brand_extracted_tone"),
+  brandExtractionStatus: varchar("brand_extraction_status", { length: 20 }).default("idle"),
+  brandExtractionError: text("brand_extraction_error"),
+  brandExtractedAt: timestamp("brand_extracted_at"),
   defaultTerms: text("default_terms"),
   billingEmail: varchar("billing_email", { length: 320 }),
   stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),

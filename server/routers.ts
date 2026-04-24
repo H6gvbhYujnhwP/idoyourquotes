@@ -13,6 +13,7 @@ import { analyzePdfWithClaude, analyzePdfWithOpenAI, analyzeImageWithClaude, isC
 import { isOpenAIConfigured } from "./_core/openai";
 import { extractUrls, scrapeUrls, formatScrapedContentForAI } from "./_core/webScraper";
 import { extractBrandColors } from "./services/colorExtractor";
+import { triggerBrandExtraction } from "./services/brandExtraction";
 import { parseWordDocument, isWordDocument } from "./services/wordParser";
 import { performElectricalTakeoff, applyUserAnswers, formatTakeoffForQuoteContext, SYMBOL_STYLES, SYMBOL_DESCRIPTIONS, extractWithPdfJs, extractPdfLineColours, classifyElectricalPDF, extractWithPdfParse } from "./services/electricalTakeoff";
 import { performContainmentTakeoff, calculateCableSummary, generateContainmentSvgOverlay, isContainmentDrawing, formatContainmentForQuoteContext, TRAY_SIZE_COLOURS, WHOLESALER_LENGTH_METRES } from "./services/containmentTakeoff";
@@ -324,6 +325,9 @@ export const appRouter = router({
             brandSecondaryColor: brandColors.secondaryColor,
           });
           console.log('[uploadLogo] Updated org', org.id, 'with brand colors');
+          // Phase 4A — kick off AI-driven brand extraction over the full
+          // evidence set (logo + website + brochures). Fire-and-forget.
+          triggerBrandExtraction(org.id);
         }
 
         return { url, key, user, brandColors };
@@ -373,6 +377,8 @@ export const appRouter = router({
         const updated = await updateOrganization(org.id, {
           ...(companyWebsite !== undefined ? { companyWebsite } : {}),
         } as any);
+        // Phase 4A — kick off AI-driven brand extraction. Fire-and-forget.
+        triggerBrandExtraction(org.id);
         return updated || org;
       }),
 
@@ -435,6 +441,9 @@ export const appRouter = router({
           brandBrochures: updatedList,
         } as any);
 
+        // Phase 4A — kick off AI-driven brand extraction. Fire-and-forget.
+        triggerBrandExtraction(org.id);
+
         return { brochures: updatedList };
       }),
 
@@ -473,6 +482,9 @@ export const appRouter = router({
         await updateOrganization(org.id, {
           brandBrochures: updatedList,
         } as any);
+
+        // Phase 4A — re-extract over remaining evidence. Fire-and-forget.
+        triggerBrandExtraction(org.id);
 
         return { brochures: updatedList };
       }),
