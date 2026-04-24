@@ -86,6 +86,7 @@ import MissingCostsModal from "@/components/MissingCostsModal";
 import AddToCatalogueDialog, {
   type AddToCatalogueSeed,
 } from "@/components/AddToCatalogueDialog";
+import PreGeneratePDFModal from "@/components/PreGeneratePDFModal";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import { brand } from "@/lib/brandTheme";
 
@@ -305,6 +306,12 @@ export default function QuoteWorkspace() {
   // and pre-filled from that row.
   const [addCatalogueSeed, setAddCatalogueSeed] =
     useState<AddToCatalogueSeed | null>(null);
+  // Chunk 3 Delivery H — controls the "Review before PDF" modal that
+  // gates the Generate PDF action. When true, the modal shows the AI's
+  // Terms / Exclusions / Assumptions for the user to eyeball and edit.
+  // On confirm inside the modal, we fall through to the original PDF
+  // generation path (missing-costs guard first, then doGeneratePDF).
+  const [showPrePDFModal, setShowPrePDFModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // ── Controlled field state ──
@@ -858,7 +865,21 @@ export default function QuoteWorkspace() {
   };
 
   // ── Handlers — PDF ──
+  // Chunk 3 Delivery H — the Generate PDF button no longer generates
+  // immediately. It first opens the review modal; only after the user
+  // confirms in the modal do we run the missing-costs guard and then
+  // actually generate. The missing-costs guard is intentionally AFTER
+  // the review so the user can't accidentally edit their terms, hit
+  // Generate, then get stopped by a £0 row and lose their mental
+  // context of where they were.
   const handleGeneratePDFClick = () => {
+    setShowPrePDFModal(true);
+  };
+
+  // Called from inside the review modal once saves have completed.
+  // Closes the modal and falls through to the original PDF flow.
+  const handlePrePDFConfirmed = () => {
+    setShowPrePDFModal(false);
     const missingCount = lineItems.filter(
       (li) => parseNum(li.rate) === 0,
     ).length;
@@ -1158,6 +1179,27 @@ export default function QuoteWorkspace() {
         onSaved={() => {
           void trpcUtils.catalog.list.invalidate();
         }}
+      />
+
+      {/* Chunk 3 Delivery H — review-before-PDF modal. Sits between the
+          Generate PDF button and the actual PDF generator, giving the
+          user a last look at the Terms / Exclusions / Assumptions the
+          AI produced. Passes the current saved values from fullQuote so
+          the modal always reflects what's on disk (not stale local
+          drafts), which matters if the user has had the workspace open
+          for a while and regenerated / edited the quote in between. */}
+      <PreGeneratePDFModal
+        open={showPrePDFModal}
+        onOpenChange={setShowPrePDFModal}
+        quoteId={quoteId}
+        initialTerms={(quote as any)?.terms ?? null}
+        initialAssumptions={
+          (fullQuote as any)?.tenderContext?.assumptions ?? null
+        }
+        initialExclusions={
+          (fullQuote as any)?.tenderContext?.exclusions ?? null
+        }
+        onConfirm={handlePrePDFConfirmed}
       />
     </div>
   );
