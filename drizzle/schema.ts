@@ -71,6 +71,31 @@ export const organizations = pgTable("organizations", {
   defaultSurfaceTreatment: varchar("default_surface_treatment", { length: 255 }),
   defaultReturnVisitRate: varchar("default_return_visit_rate", { length: 255 }),
   defaultPaymentTerms: text("default_payment_terms"),
+  // Phase 4A — Brand evidence (migration 0016_add_brand_evidence). The
+  // organizations table is the canonical home for brand evidence; both
+  // logo-pixel extraction and AI extraction write here. Columns were
+  // applied to the live DB but never re-introspected into this file,
+  // so until Delivery 11 (25 Apr 2026) Drizzle silently dropped every
+  // write to them — saves looked successful client-side but never
+  // landed. See conversation log around Delivery 11 for the diagnosis.
+  companyWebsite: varchar("company_website", { length: 512 }),
+  brandBrochures: json("brand_brochures").$type<Array<{
+    key: string;
+    url: string;
+    filename: string;
+    uploadedAt: string;
+  }>>().default([]),
+  // Phase 4A — AI brand-extraction tokens (migration 0017_add_brand_extraction).
+  // Populated by server/services/brandExtraction.ts after a save event on
+  // logo / website / brochure. Distinct from brandPrimaryColor /
+  // brandSecondaryColor above, which are the older logo-pixel pass.
+  brandExtractedPrimaryColor: varchar("brand_extracted_primary_color", { length: 7 }),
+  brandExtractedSecondaryColor: varchar("brand_extracted_secondary_color", { length: 7 }),
+  brandExtractedFontFeel: varchar("brand_extracted_font_feel", { length: 20 }),
+  brandExtractedTone: text("brand_extracted_tone"),
+  brandExtractionStatus: varchar("brand_extraction_status", { length: 20 }).default("idle"),
+  brandExtractionError: text("brand_extraction_error"),
+  brandExtractedAt: timestamp("brand_extracted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
