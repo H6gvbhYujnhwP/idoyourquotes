@@ -205,7 +205,7 @@ export const DESIGN_TEMPLATES: Record<DesignTemplate, DesignTemplateInfo> = {
       "Methodical and operational. Checklist boxes, scope summaries, accreditation badges. Best when methodology matters.",
     thumb: "/proposal-showcase/cleaning-operational-thumb.webp",
     hero: "/proposal-showcase/cleaning-operational-hero.webp",
-    available: false,
+    available: true,
   },
   bold: {
     key: "bold",

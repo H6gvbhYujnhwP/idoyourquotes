@@ -775,19 +775,18 @@ function renderCss(brand: ResolvedBrand, coverImageUrl: string | null): string {
 // ── Main entry point ─────────────────────────────────────────────────
 
 import { renderModernTemplate } from "./templates/modernTemplate";
+import { renderStructuredTemplate } from "./templates/structuredTemplate";
 
 export async function generateBrandedProposalHTML(
   data: BrandedProposalData,
 ): Promise<string> {
-  // Phase 4A Delivery 17/18 — design template dispatcher.
+  // Phase 4A Delivery 17/18/19 — design template dispatcher.
   //
-  // The 'modern' template (D18) is the only one with a built renderer.
-  // It produces the typography-led cover with stat strip — the quality
-  // bar Wez has been chasing since D12. Structured + Bold are reserved
-  // keys in the picker UIs but disabled with "Coming soon" badges; if
-  // somehow a request reaches here with one of those values we fall
-  // through to the legacy renderer below (effectively a graceful
-  // degradation path until D19 / D20 land).
+  // Modern (D18) + Structured (D19) have built renderers. Bold remains
+  // a reserved key in the picker UIs but is disabled with "Coming
+  // soon"; if a request reaches here with `bold` we fall through to
+  // the legacy renderer below as a graceful degradation path until
+  // D20 lands.
   //
   // Backward-compat: when `template` is absent on `data` we treat it
   // as 'modern' so any caller that wasn't updated still gets the new
@@ -796,14 +795,16 @@ export async function generateBrandedProposalHTML(
   if (template === "modern") {
     return renderModernTemplate(data);
   }
+  if (template === "structured") {
+    return renderStructuredTemplate(data);
+  }
 
-  // ── Legacy renderer (Structured / Bold fall through here) ─────────
+  // ── Legacy renderer (Bold falls through here) ─────────────────────
   // The code below is the pre-D18 renderer — kept in place as a safety
-  // net for non-Modern templates and for any caller that hasn't been
-  // updated to the new dispatcher contract. D19 / D20 will add real
-  // Structured / Bold renderers and the dispatcher will route to them
-  // explicitly; at that point this fall-through becomes dead code and
-  // can be removed.
+  // net for the Bold template (D20 not yet shipped) and for any caller
+  // that hasn't been updated to the new dispatcher contract. Once D20
+  // lands the dispatcher will route Bold explicitly and this fall-
+  // through becomes dead code that can be removed.
 
   const { quote, lineItems, user, organization, tenderContext, brandMode } = data;
 
