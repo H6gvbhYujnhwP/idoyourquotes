@@ -277,6 +277,27 @@ function renderCover(args: {
     ? `${escapeHtml(contactName)} &nbsp;·&nbsp; ${escapeHtml(clientName)}`
     : escapeHtml(clientName);
 
+  // Phase 4A Delivery 9 — build the contact strip from only the cells
+  // that have actual data. Previously every cell rendered with an "—"
+  // placeholder, which looked unfinished for orgs with sparse profiles
+  // (e.g. only an email set, no address / phone / website). Now: each
+  // cell is conditional, and the wrapping strip is omitted entirely if
+  // the org has no contact data at all — the cover-hero's flex:1 fills
+  // the remaining space cleanly without a half-empty bottom band.
+  const contactCells: string[] = [];
+  if (companyAddress && companyAddress.trim()) {
+    contactCells.push(`<div><div class="contact-label">Address</div><div class="contact-value">${escapeHtml(companyAddress)}</div></div>`);
+  }
+  if (contactValue) {
+    contactCells.push(`<div><div class="contact-label">Phone &amp; Email</div><div class="contact-value">${contactValue}</div></div>`);
+  }
+  if (websiteDisplay) {
+    contactCells.push(`<div><div class="contact-label">Website</div><div class="contact-value">${websiteDisplay}</div></div>`);
+  }
+  const contactStripHtml = contactCells.length > 0
+    ? `\n  <div class="cover-contact-strip">${contactCells.join("")}</div>`
+    : "";
+
   return `
 <div class="cover">
   <div class="cover-nav">
@@ -289,12 +310,7 @@ function renderCover(args: {
     <p class="cover-tagline">A formal proposal from ${escapeHtml(companyName)} — scope of work, pricing, terms, and acceptance in a single document.</p>
     <div class="cover-prepared-for">Prepared for</div>
     <div class="cover-client-name">${preparedForLine}</div>
-  </div>
-  <div class="cover-contact-strip">
-    <div><div class="contact-label">Address</div><div class="contact-value">${escapeHtml(companyAddress || "—")}</div></div>
-    <div><div class="contact-label">Phone &amp; Email</div><div class="contact-value">${contactValue || "—"}</div></div>
-    <div><div class="contact-label">Website</div><div class="contact-value">${websiteDisplay || "—"}</div></div>
-  </div>
+  </div>${contactStripHtml}
 </div>`;
 }
 
@@ -558,15 +574,30 @@ function renderCss(brand: ResolvedBrand): string {
 
   .cover { min-height: 100vh; background: var(--brand-primary); display: flex; flex-direction: column; page-break-after: always; color: var(--brand-on-primary); }
   .cover-nav { padding: 14mm 16mm 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
-  .logo-box { min-width: 140px; min-height: 48px; max-width: 200px; border: 1.5px solid rgba(255,255,255,0.3); padding: 8px 14px; display: flex; align-items: center; justify-content: center; font-size: 9.5pt; letter-spacing: 0.2em; color: rgba(255,255,255,0.85); text-transform: uppercase; font-weight: 700; }
+  /* Phase 4A Delivery 9 — white panel behind logo so any logo (light,
+     dark, or multi-colour) renders against a known contrast surface.
+     Wordmark fallback text flips to dark slate so it stays legible on
+     the white panel. Subtle radius keeps the panel feeling like a
+     polished badge rather than a raw rectangle. */
+  .logo-box { min-width: 140px; min-height: 48px; max-width: 200px; background: #ffffff; border: 1px solid rgba(0,0,0,0.08); border-radius: 6px; padding: 8px 14px; display: flex; align-items: center; justify-content: center; font-size: 9.5pt; letter-spacing: 0.2em; color: #1f2937; text-transform: uppercase; font-weight: 700; }
   .cover-ref-block { text-align: right; font-size: 7.5pt; color: rgba(255,255,255,0.55); line-height: 1.9; letter-spacing: 0.06em; }
   .cover-hero { flex: 1; padding: 12mm 16mm; display: flex; flex-direction: column; justify-content: center; }
   .accent-bar { width: 48px; height: 4px; background: var(--brand-secondary); margin-bottom: 20px; }
   .cover h1 { font-size: 32pt; font-weight: 800; color: #fff; line-height: 1.08; letter-spacing: -0.025em; max-width: 500px; margin-bottom: 16px; }
   .cover-tagline { font-size: 11.5pt; color: rgba(255,255,255,0.7); font-weight: 300; max-width: 440px; line-height: 1.6; margin-bottom: 28px; }
   .cover-prepared-for { font-size: 8.5pt; color: rgba(255,255,255,0.5); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; }
-  .cover-client-name { font-size: 13pt; font-weight: 700; color: var(--brand-secondary); }
-  .cover-contact-strip { background: rgba(255,255,255,0.06); border-top: 1px solid rgba(255,255,255,0.12); padding: 10mm 16mm; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  /* Phase 4A Delivery 9 — was var(--brand-secondary), but on covers
+     where primary and secondary brand colours are both dark (e.g. navy
+     primary + medium-blue secondary) the contrast against the cover
+     bg failed. Switched to var(--brand-on-primary) so the prepared-for
+     line stays legible regardless of the org's brand palette. The
+     accent-bar above the title still carries brand-secondary so colour
+     identity is preserved on the cover. */
+  .cover-client-name { font-size: 13pt; font-weight: 700; color: var(--brand-on-primary); }
+  /* Phase 4A Delivery 9 — auto-fit columns so the strip lays out
+     cleanly when the org has only 1 or 2 contact fields populated.
+     With 3 fields it behaves identically to the previous repeat(3, 1fr). */
+  .cover-contact-strip { background: rgba(255,255,255,0.06); border-top: 1px solid rgba(255,255,255,0.12); padding: 10mm 16mm; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; }
   .contact-label { font-size: 7pt; color: rgba(255,255,255,0.45); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 3px; }
   .contact-value { font-size: 9pt; color: rgba(255,255,255,0.9); word-wrap: break-word; }
 
