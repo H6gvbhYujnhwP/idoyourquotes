@@ -34,13 +34,11 @@
 
 import { openai, isOpenAIConfigured } from "../_core/openai";
 import { getUserPrimaryOrg, updateOrganization, getOrganizationById } from "../db";
-// Phase 4A Delivery 17 — coverImageGeneration chainpoint retired. The
-// AI-generated cover image (D12–D16) is no longer read by any template.
-// The Modern template (D18) and the future Structured / Bold templates
-// use a typography-led cover with a stat strip — no AI image. Schema
-// columns (cover_image_url, cover_image_status, cover_image_error,
-// cover_image_prompt, cover_image_generated_at) stay in place as orphans
-// for now; column drop is a future cleanup, not blocking.
+// Phase 4A Delivery 17 / 21 — coverImageGeneration chainpoint retired
+// (D17) and the supporting database columns dropped (D21). The AI
+// cover image experiment (D12–D16) is fully removed: no chainpoint,
+// no module, no schema. All three live design templates (Modern,
+// Structured, Bold) render typography-led covers — no AI image.
 import { extractColoursFromWebsite } from "./cssColorExtraction";
 
 // ── Tuning ──────────────────────────────────────────────────────────────
@@ -191,12 +189,10 @@ async function runExtraction(orgId: number): Promise<void> {
     `[brandExtraction] org ${orgId} ready — primary=${primaryColor}, secondary=${secondaryColor}, feel=${fontFeel}, tone=${tone ? "set" : "null"}`,
   );
 
-  // Phase 4A Delivery 17 — cover image generation chainpoint removed.
-  // The Modern template (and future Structured / Bold templates) render
-  // the cover from typography + brand colours + stat strip, with no AI
-  // background image. The chainpoint that fired triggerCoverImageGeneration
-  // here was retired as part of the same delivery. Schema columns are
-  // left in place as orphans (column drop is a future cleanup).
+  // Phase 4A Delivery 17 / 21 — cover image generation chainpoint
+  // removed (D17) and schema columns dropped (D21). Modern, Structured,
+  // and Bold all render covers from typography + brand colours + stat
+  // strip with no AI background image. Nothing to chain here.
 }
 
 // ─────────────────────────────────────────────────────────────────────────

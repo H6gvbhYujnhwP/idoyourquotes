@@ -180,7 +180,7 @@ export function isDark(hex: string): boolean {
  * Phase 4A Delivery 12 — return a hex colour as a comma-separated RGB
  * triple suitable for use inside `rgba(...)` via a CSS variable. Lets
  * us define a single `--brand-primary-rgb: 0, 0, 99` and then use
- * `rgba(var(--brand-primary-rgb), 0.78)` for the cover-image overlay
+ * `rgba(var(--brand-primary-rgb), 0.78)` for translucent overlays
  * without hardcoding the colour at the call site.
  */
 export function hexToRgbTriple(hex: string): string {
@@ -254,11 +254,7 @@ export function resolveBrand(
 // URL is a /api/file/ proxy URL it won't load in the print dialog
 // (no cookies), so we swap it for a 1-hour signed URL here. On failure
 // we fall through to null — the caller decides what to do (e.g. fall
-// back to the wordmark for logos, or omit the cover image and use the
-// flat-colour cover). We never block the render.
-//
-// As of Delivery 12, this is also used for cover_image_url. Same shape,
-// same rules.
+// back to the wordmark for logos). We never block the render.
 
 export async function resolveLogoUrl(raw: string | null | undefined): Promise<string | null> {
   if (!raw) return null;
@@ -278,7 +274,6 @@ function renderCover(args: {
   brand: ResolvedBrand;
   companyName: string;
   logoUrl: string | null;
-  coverImageUrl: string | null;
   websiteUrl: string | null;
   companyAddress: string | null;
   companyPhone: string | null;
@@ -293,7 +288,6 @@ function renderCover(args: {
     brand,
     companyName,
     logoUrl,
-    coverImageUrl,
     websiteUrl,
     companyAddress,
     companyPhone,
@@ -345,39 +339,20 @@ function renderCover(args: {
     ? `\n  <div class="cover-contact-strip">${contactCells.join("")}</div>`
     : "";
 
-  // Phase 4A Delivery 12 — when an AI-generated cover image is present,
-  // emit it as a CSS multi-layer background: a brand-primary tint at
-  // 78% opacity sitting on top of the image. The tint preserves brand
-  // identity and ensures text contrast regardless of how dark/light the
-  // image came back. When no image is present (most orgs at first, or
-  // generation failure), the cover keeps its existing flat brand-primary
-  // look — same as pre-Delivery-12. We never block the render.
-  //
-  // Why a linear-gradient with two identical colour stops rather than
-  // an opacity'd overlay element? Two reasons:
-  // Phase 4A Delivery 15 — image goes full-bleed with no brand-tint
-  // overlay. The previous 78%-opacity layer was obliterating the
-  // generated image (D12 + D14 produced "still looks rubbish" in
-  // Wez's words). The new prompt constrains Gemini to keep the left
-  // half of the canvas quiet for text, so the cover-hero text reads
-  // legibly directly on the image. A subtle left-side gradient on
-  // .cover-hero (added via the .has-bg modifier) acts as a safety
-  // net for text contrast in case the model doesn't honour the
-  // composition rule perfectly. If the image is missing for any
-  // reason the .cover element falls back to a flat brand-primary
-  // background — see the .cover CSS rule.
-  const coverStyle = coverImageUrl
-    ? ` style="background-image: url('${escapeHtml(coverImageUrl)}'); background-size: cover; background-position: center;"`
-    : "";
-  const heroClass = coverImageUrl ? "cover-hero has-bg" : "cover-hero";
+  // Phase 4A Delivery 21 — AI cover image pipeline (D12–D16) was
+  // abandoned and the supporting columns dropped. The legacy cover
+  // now always renders flat — brand-primary background, accent-bar,
+  // typography. All three live design templates (Modern / Structured
+  // / Bold) handle their own covers; this legacy path is only ever
+  // reached as a defensive backstop.
 
   return `
-<div class="cover"${coverStyle}>
+<div class="cover">
   <div class="cover-nav">
     <div class="logo-box">${logoContent}</div>
     <div class="cover-ref-block">Ref: ${escapeHtml(reference)}<br>Date: ${escapeHtml(dateStr)}<br>Prepared for: ${escapeHtml(clientName)}<br>Confidential</div>
   </div>
-  <div class="${heroClass}">
+  <div class="cover-hero">
     <div class="accent-bar"></div>
     <h1>${escapeHtml(title)}</h1>
     <p class="cover-tagline">A formal proposal from ${escapeHtml(companyName)} — scope of work, pricing, terms, and acceptance in a single document.</p>
@@ -627,24 +602,16 @@ function renderTerms(args: {
 // via CSS custom properties so the generated HTML stays small and the
 // theming stays consistent across pages.
 
-function renderCss(brand: ResolvedBrand, coverImageUrl: string | null): string {
+function renderCss(brand: ResolvedBrand): string {
   const headingTextColor = "#111827";
   const bodyTextColor = "#374151";
   const mutedTextColor = "#6b7280";
   const hairlineColor = "#e5e7eb";
 
-  // Phase 4A Delivery 15 — page-band image custom property. When the
-  // org has a generated geometric graphic, every section page gets a
-  // 6mm decorative top band derived from a horizontal slice of that
-  // image (background-size: 200% auto + position: top right anchors
-  // it on the visually-active upper-right of the source). When the
-  // image is absent, the band falls back to a subtle brand-primary →
-  // brand-secondary horizontal gradient so the design rhythm survives
-  // even without AI generation. Either way, every page gets a thin
-  // coloured top stripe — improves the design baseline.
-  const pageBandImage = coverImageUrl
-    ? `url('${coverImageUrl.replace(/'/g, "\\'")}')`
-    : `linear-gradient(90deg, var(--brand-primary), var(--brand-secondary))`;
+  // Phase 4A Delivery 21 — page-band uses a flat brand-primary →
+  // brand-secondary gradient. The previous variant pulled a horizontal
+  // slice of the AI-generated cover image into the band; with the
+  // cover-image pipeline retired the gradient is the sole rendering.
 
   return `
   :root {
@@ -654,9 +621,9 @@ function renderCss(brand: ResolvedBrand, coverImageUrl: string | null): string {
     --brand-tint: ${brand.tint};
     --brand-tint-alt: ${brand.tintAlt};
     --brand-on-primary: ${brand.onPrimaryText};
-    --page-band-image: ${pageBandImage};
-    --page-band-size: ${coverImageUrl ? "200% auto" : "100% 100%"};
-    --page-band-position: ${coverImageUrl ? "top right" : "center"};
+    --page-band-image: linear-gradient(90deg, var(--brand-primary), var(--brand-secondary));
+    --page-band-size: 100% 100%;
+    --page-band-position: center;
   }
   @page { size: A4; margin: 0; }
   /* Phase 4A Delivery 10 — Chrome strips background colours from print
@@ -848,14 +815,6 @@ export async function generateBrandedProposalHTML(
     || null;
   const logoUrl = await resolveLogoUrl(rawLogo);
 
-  // Phase 4A Delivery 12 — resolve the AI-generated cover hero image.
-  // Stored as /api/file/<key> on the org (if generation has run); we
-  // sign for 1h so it loads in the print window. Null/failure means
-  // the cover falls back to the flat brand-primary look — same as
-  // pre-Delivery-12 behaviour. Never blocks the render.
-  const rawCoverImage = ((organization as any)?.coverImageUrl as string | null) || null;
-  const coverImageUrl = await resolveLogoUrl(rawCoverImage);
-
   const reference = (quote as any).reference || `Q-${(quote as any).id}`;
   const clientName = (quote as any).clientName || "Client";
   const contactName = (quote as any).contactName || null;
@@ -877,7 +836,6 @@ export async function generateBrandedProposalHTML(
     brand,
     companyName,
     logoUrl,
-    coverImageUrl,
     websiteUrl: companyWebsite,
     companyAddress,
     companyPhone,
@@ -913,7 +871,7 @@ export async function generateBrandedProposalHTML(
     pageFooter,
   });
 
-  const css = renderCss(brand, coverImageUrl);
+  const css = renderCss(brand);
 
   return `<!DOCTYPE html>
 <html lang="en">

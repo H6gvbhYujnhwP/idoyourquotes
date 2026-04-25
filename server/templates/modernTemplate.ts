@@ -13,10 +13,10 @@
  *      monthly) are more visually striking AND more useful to the reader
  *      than abstract decoration. Toggle via organizations.coverStatStripEnabled.
  *
- *   2. **No AI cover image** — coverImageUrl is not read. The brand
- *      extraction chainpoint that triggered Gemini was removed in the
- *      same delivery (server/services/brandExtraction.ts). Schema
- *      columns stay in place as orphans for future cleanup.
+ *   2. **No AI cover image** — the brand extraction chainpoint that
+ *      triggered Gemini was removed in the same delivery (see
+ *      server/services/brandExtraction.ts). The supporting schema
+ *      columns were dropped in Delivery 21.
  *
  *   3. **Page bands use a simple gradient** — the previous renderer
  *      pulled a horizontal slice from the AI image as a 6mm decorative
