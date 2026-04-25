@@ -56,20 +56,11 @@ export default function Settings() {
   const [paymentTerms, setPaymentTerms] = useState("");
 
   // Phase 4A — Proposal Branding tab state.
-  // companyWebsite and brandBrochures are org-scoped; they're persisted via
-  // the dedicated auth.updateBrandSettings / uploadBrandBrochure /
-  // deleteBrandBrochure mutations, separate from the main Save button on
-  // the Profile tab. No AI extraction consumes these yet — this delivery
-  // is shell-only.
+  // companyWebsite is org-scoped; persisted via the dedicated
+  // auth.updateBrandSettings mutation, separate from the main Save button
+  // on the Profile tab. Brochure input was retired in Delivery 13 — brand
+  // evidence is now logo + website only.
   const [companyWebsite, setCompanyWebsite] = useState("");
-  type BrandBrochure = {
-    key: string;
-    url: string;
-    filename: string;
-    uploadedAt: string;
-  };
-  const [brandBrochures, setBrandBrochures] = useState<BrandBrochure[]>([]);
-  const brochureInputRef = useRef<HTMLInputElement>(null);
   // Status pill — read through orgProfile on each invalidation.
   type ExtractionStatus = "idle" | "pending" | "ready" | "failed";
   const [extractionStatus, setExtractionStatus] = useState<ExtractionStatus>("idle");
@@ -122,7 +113,6 @@ export default function Settings() {
       if (org.defaultPaymentTerms) setPaymentTerms(org.defaultPaymentTerms);
       // Phase 4A — brand evidence
       setCompanyWebsite(org.companyWebsite || "");
-      setBrandBrochures(Array.isArray(org.brandBrochures) ? org.brandBrochures : []);
       // Phase 4A — extraction status pill
       const rawStatus = (org.brandExtractionStatus || "idle") as string;
       const allowed: ExtractionStatus[] = ["idle", "pending", "ready", "failed"];
@@ -165,28 +155,6 @@ export default function Settings() {
     },
     onError: (error) => {
       toast.error(error.message || "Failed to save brand settings");
-    },
-  });
-
-  const uploadBrandBrochure = trpc.auth.uploadBrandBrochure.useMutation({
-    onSuccess: (data) => {
-      setBrandBrochures(data.brochures);
-      utils.auth.orgProfile.invalidate();
-      toast.success("Brochure uploaded");
-    },
-    onError: (error) => {
-      toast.error(error.message || "Failed to upload brochure");
-    },
-  });
-
-  const deleteBrandBrochure = trpc.auth.deleteBrandBrochure.useMutation({
-    onSuccess: (data) => {
-      setBrandBrochures(data.brochures);
-      utils.auth.orgProfile.invalidate();
-      toast.success("Brochure removed");
-    },
-    onError: (error) => {
-      toast.error(error.message || "Failed to remove brochure");
     },
   });
 
@@ -266,41 +234,6 @@ export default function Settings() {
     });
   };
 
-  const handleBrochureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    // Clear the input so re-selecting the same file still fires change
-    if (e.target) e.target.value = "";
-    if (!file) return;
-
-    if (file.type !== "application/pdf") {
-      toast.error("Brochures must be PDF files");
-      return;
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error("Brochure must be less than 10MB");
-      return;
-    }
-    if (brandBrochures.length >= 3) {
-      toast.error("Maximum of 3 brochures. Remove one to add another.");
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = (reader.result as string).split(",")[1];
-      uploadBrandBrochure.mutate({
-        filename: file.name,
-        contentType: file.type,
-        base64Data: base64,
-      });
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleRemoveBrochure = (key: string) => {
-    deleteBrandBrochure.mutate({ key });
-  };
-
   // Tab state from URL params
   const [location, setLocation] = useLocation();
   const urlParams = new URLSearchParams(window.location.search);
@@ -362,10 +295,11 @@ export default function Settings() {
       {activeTab === 'team' && <TeamTab />}
 
       {/* Proposal Branding Tab — Phase 4A.
-          Shell only: website URL + 3 PDF brochure uploads persist, no
-          AI extraction consumes them yet. Visible to all tiers so users
-          can prepare brand evidence before upgrading; the branded-output
-          gate lands at PDF-export time in a later delivery. */}
+          Holds the website URL alongside the existing logo upload (Profile
+          tab) — these two pieces are the brand evidence the AI extraction
+          pipeline consumes. Visible to all tiers so users can prepare
+          brand evidence before upgrading; the branded-output gate lands
+          at PDF-export time. */}
       {activeTab === 'branding' && (
       <>
       {/* Intro */}
@@ -378,10 +312,9 @@ export default function Settings() {
                 Proposal Branding
               </CardTitle>
               <CardDescription className="mt-1.5">
-                Your logo, website, and brochures tell us what your brand looks
-                like. Add any combination of the three — we'll use them to
-                style Contract / Tender and Project proposals to match your
-                company.
+                Your logo and website tell us what your brand looks like.
+                Add either or both — we'll use them to style Contract /
+                Tender and Project proposals to match your company.
               </CardDescription>
             </div>
             {/* Extraction status pill — reflects the background job that
@@ -529,87 +462,6 @@ export default function Settings() {
               )}
               Save Website
             </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Brochures & Flyers */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            Brochures &amp; Flyers
-          </CardTitle>
-          <CardDescription>
-            Upload up to 3 PDF brochures or flyers. Anything that shows off
-            your brand — product sheets, capability decks, case-study packs.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {brandBrochures.length === 0 ? (
-            <div className="border-2 border-dashed rounded-lg p-6 text-center text-muted-foreground">
-              <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">No brochures uploaded yet.</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {brandBrochures.map((b) => (
-                <div
-                  key={b.key}
-                  className="flex items-center justify-between gap-3 p-3 rounded-lg border bg-muted/30"
-                >
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate">
-                        {b.filename}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Uploaded {new Date(b.uploadedAt).toLocaleDateString()}
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleRemoveBrochure(b.key)}
-                    disabled={deleteBrandBrochure.isPending}
-                    title="Remove brochure"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="flex items-center gap-3">
-            <input
-              ref={brochureInputRef}
-              type="file"
-              accept="application/pdf"
-              onChange={handleBrochureUpload}
-              className="hidden"
-            />
-            <Button
-              variant="outline"
-              onClick={() => brochureInputRef.current?.click()}
-              disabled={
-                uploadBrandBrochure.isPending || brandBrochures.length >= 3
-              }
-            >
-              {uploadBrandBrochure.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Upload className="mr-2 h-4 w-4" />
-              )}
-              {brandBrochures.length >= 3
-                ? "Max 3 files — remove one to add another"
-                : "Upload Brochure (PDF)"}
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              PDF only. Max 10MB each. {3 - brandBrochures.length} of 3 remaining.
-            </p>
           </div>
         </CardContent>
       </Card>

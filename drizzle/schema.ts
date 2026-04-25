@@ -79,16 +79,12 @@ export const organizations = pgTable("organizations", {
   // write to them — saves looked successful client-side but never
   // landed. See conversation log around Delivery 11 for the diagnosis.
   companyWebsite: varchar("company_website", { length: 512 }),
-  brandBrochures: json("brand_brochures").$type<Array<{
-    key: string;
-    url: string;
-    filename: string;
-    uploadedAt: string;
-  }>>().default([]),
   // Phase 4A — AI brand-extraction tokens (migration 0017_add_brand_extraction).
   // Populated by server/services/brandExtraction.ts after a save event on
-  // logo / website / brochure. Distinct from brandPrimaryColor /
-  // brandSecondaryColor above, which are the older logo-pixel pass.
+  // logo / website. Distinct from brandPrimaryColor / brandSecondaryColor
+  // above, which are the older logo-pixel pass. The brochure-upload feature
+  // was retired in Delivery 13 (migration 0019) — extraction now reads only
+  // logo + website.
   brandExtractedPrimaryColor: varchar("brand_extracted_primary_color", { length: 7 }),
   brandExtractedSecondaryColor: varchar("brand_extracted_secondary_color", { length: 7 }),
   brandExtractedFontFeel: varchar("brand_extracted_font_feel", { length: 20 }),

@@ -327,7 +327,7 @@ export const appRouter = router({
           });
           console.log('[uploadLogo] Updated org', org.id, 'with brand colors');
           // Phase 4A — kick off AI-driven brand extraction over the full
-          // evidence set (logo + website + brochures). Fire-and-forget.
+          // evidence set (logo + website). Fire-and-forget.
           triggerBrandExtraction(org.id);
         }
 
@@ -347,12 +347,13 @@ export const appRouter = router({
       }),
 
     // ============ PHASE 4A — PROPOSAL BRANDING ============
-    // The three endpoints below are the storage side of the Settings
-    // "Proposal Branding" tab. They hold raw "brand evidence" — a website
-    // URL and up to 3 PDF brochures — that a later delivery's extraction
-    // pipeline will feed into AI-styled Contract/Tender and Project
-    // proposals. This delivery is shell-only: saves persist, nothing
-    // consumes them yet. Existing auth endpoints are unchanged.
+    // The endpoint below is the storage side of the Settings "Proposal
+    // Branding" tab. It holds the website URL — the raw "brand evidence"
+    // that the extraction pipeline feeds into AI-styled Contract/Tender
+    // and Project proposals (alongside the logo, which is stored via
+    // uploadLogo above). The PDF brochure-upload feature was retired in
+    // Delivery 13; the colour pipeline is moving to deterministic
+    // logo-pixel + CSS extraction and no longer needs PDF text input.
     updateBrandSettings: protectedProcedure
       .input(z.object({
         companyWebsite: z.string().max(512).optional(),
@@ -381,113 +382,6 @@ export const appRouter = router({
         // Phase 4A — kick off AI-driven brand extraction. Fire-and-forget.
         triggerBrandExtraction(org.id);
         return updated || org;
-      }),
-
-    uploadBrandBrochure: protectedProcedure
-      .input(z.object({
-        filename: z.string(),
-        contentType: z.string(),
-        base64Data: z.string(),
-      }))
-      .mutation(async ({ ctx, input }) => {
-        if (!isR2Configured()) {
-          throw new Error("File storage is not configured");
-        }
-        if (input.contentType !== "application/pdf") {
-          throw new Error("Brochures must be PDF files");
-        }
-
-        const org = await getUserPrimaryOrg(ctx.user.id);
-        if (!org) throw new Error("Organization not found");
-
-        // Enforce max 3 brochures at the server (client disables the
-        // upload button too, but server is authoritative).
-        const existing = ((org as any).brandBrochures as Array<{
-          key: string;
-          url: string;
-          filename: string;
-          uploadedAt: string;
-        }> | null) || [];
-        if (existing.length >= 3) {
-          throw new Error("Maximum of 3 brochures. Remove one before uploading another.");
-        }
-
-        // Size guard — 10 MB per PDF is plenty for marketing material
-        // and prevents blob-upload abuse.
-        const buffer = Buffer.from(input.base64Data, "base64");
-        if (buffer.length > 10 * 1024 * 1024) {
-          throw new Error("Brochure must be less than 10MB");
-        }
-
-        // Org-scoped folder keeps brochures discoverable per tenant in R2.
-        const folder = `orgs/${org.slug}/brand-brochures`;
-        const { key, url } = await uploadToR2(
-          buffer,
-          input.filename,
-          input.contentType,
-          folder
-        );
-
-        const updatedList = [
-          ...existing,
-          {
-            key,
-            url,
-            filename: input.filename,
-            uploadedAt: new Date().toISOString(),
-          },
-        ];
-
-        await updateOrganization(org.id, {
-          brandBrochures: updatedList,
-        } as any);
-
-        // Phase 4A — kick off AI-driven brand extraction. Fire-and-forget.
-        triggerBrandExtraction(org.id);
-
-        return { brochures: updatedList };
-      }),
-
-    deleteBrandBrochure: protectedProcedure
-      .input(z.object({
-        key: z.string(),
-      }))
-      .mutation(async ({ ctx, input }) => {
-        const org = await getUserPrimaryOrg(ctx.user.id);
-        if (!org) throw new Error("Organization not found");
-
-        const existing = ((org as any).brandBrochures as Array<{
-          key: string;
-          url: string;
-          filename: string;
-          uploadedAt: string;
-        }> | null) || [];
-
-        const target = existing.find(b => b.key === input.key);
-        if (!target) {
-          // Already gone — idempotent: just return the current state
-          return { brochures: existing };
-        }
-
-        // Best-effort R2 delete. If it fails, DB still gets cleaned —
-        // orphan files in R2 are benign and preferable to a UI-stuck state.
-        if (isR2Configured()) {
-          try {
-            await deleteFromR2(input.key);
-          } catch (err) {
-            console.warn("[deleteBrandBrochure] R2 delete failed:", err);
-          }
-        }
-
-        const updatedList = existing.filter(b => b.key !== input.key);
-        await updateOrganization(org.id, {
-          brandBrochures: updatedList,
-        } as any);
-
-        // Phase 4A — re-extract over remaining evidence. Fire-and-forget.
-        triggerBrandExtraction(org.id);
-
-        return { brochures: updatedList };
       }),
   }),
 

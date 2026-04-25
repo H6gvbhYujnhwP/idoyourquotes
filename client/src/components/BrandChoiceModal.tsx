@@ -1,7 +1,7 @@
 /**
  * BrandChoiceModal.tsx
  *
- * Phase 4A — Delivery 7.
+ * Phase 4A — Delivery 7. Brochure-upload UI removed in Delivery 13.
  *
  * Opens after the user picks the Contract/Tender card in the export-format
  * picker. Lets them choose how the branded proposal is styled:
@@ -13,7 +13,6 @@
  *     is still running), the card swaps to an INLINE SETUP form:
  *       - logo drag-drop (or click-to-browse)
  *       - website URL input
- *       - brochures uploader under a collapsed "Advanced" toggle
  *       - Save & Generate button that fires pending uploads, saves the
  *         website, then runs the branded proposal mutation
  *
@@ -36,11 +35,7 @@ import {
   ArrowRight,
   Upload,
   Globe,
-  ChevronDown,
-  ChevronUp,
   Loader2,
-  FileText,
-  Trash2,
   Sparkles,
   Palette,
 } from "lucide-react";
@@ -127,9 +122,7 @@ export default function BrandChoiceModal({
   // ── Inline setup state ─────────────────────────────────────────
 
   const [websiteUrl, setWebsiteUrl] = useState("");
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const brochureInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
   // Seed the website field from the org whenever it loads / refreshes —
@@ -146,7 +139,6 @@ export default function BrandChoiceModal({
   useEffect(() => {
     if (!open) {
       setWebsiteSeeded(false);
-      setShowAdvanced(false);
       setIsDragging(false);
     }
   }, [open]);
@@ -169,26 +161,6 @@ export default function BrandChoiceModal({
     },
     onError: (err) => {
       toast.error(err.message || "Failed to save brand settings");
-    },
-  });
-
-  const uploadBrochure = trpc.auth.uploadBrandBrochure.useMutation({
-    onSuccess: () => {
-      utils.auth.orgProfile.invalidate();
-      toast.success("Brochure uploaded");
-    },
-    onError: (err) => {
-      toast.error(err.message || "Failed to upload brochure");
-    },
-  });
-
-  const deleteBrochure = trpc.auth.deleteBrandBrochure.useMutation({
-    onSuccess: () => {
-      utils.auth.orgProfile.invalidate();
-      toast.success("Brochure removed");
-    },
-    onError: (err) => {
-      toast.error(err.message || "Failed to remove brochure");
     },
   });
 
@@ -242,35 +214,6 @@ export default function BrandChoiceModal({
     if (file) handleLogoFile(file);
   };
 
-  const handleBrochureChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (e.target) e.target.value = "";
-    if (!file) return;
-    if (file.type !== "application/pdf") {
-      toast.error("Brochures must be PDF files");
-      return;
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error("Brochure must be less than 10MB");
-      return;
-    }
-    const brochures = ((orgProfile as any)?.brandBrochures as any[]) || [];
-    if (brochures.length >= 3) {
-      toast.error("Maximum of 3 brochures");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = (reader.result as string).split(",")[1];
-      uploadBrochure.mutate({
-        filename: file.name,
-        contentType: file.type,
-        base64Data: base64,
-      });
-    };
-    reader.readAsDataURL(file);
-  };
-
   const handleSaveAndGenerate = async () => {
     // Save the website URL first (if the user typed one) so it feeds the
     // next extraction run. Fire-and-forget for the save — the renderer
@@ -292,11 +235,7 @@ export default function BrandChoiceModal({
 
   const busy =
     uploadLogo.isPending
-    || updateBrandSettings.isPending
-    || uploadBrochure.isPending
-    || deleteBrochure.isPending;
-
-  const brochures = ((orgProfile as any)?.brandBrochures as any[]) || [];
+    || updateBrandSettings.isPending;
 
   const cardBranded = tokens.ready ? (
     // Tokens ready — compact preview + Generate button.
@@ -500,92 +439,6 @@ export default function BrandChoiceModal({
           className="text-sm h-9"
         />
       </div>
-
-      {/* Advanced — brochures */}
-      <button
-        type="button"
-        onClick={() => setShowAdvanced((s) => !s)}
-        className="text-[11px] font-semibold uppercase tracking-wide flex items-center gap-1 mb-1.5"
-        style={{ color: brand.navyMuted }}
-      >
-        {showAdvanced ? (
-          <ChevronUp className="w-3 h-3" />
-        ) : (
-          <ChevronDown className="w-3 h-3" />
-        )}
-        Advanced — add brochures
-      </button>
-      {showAdvanced && (
-        <div className="mb-3">
-          <p
-            className="text-[11px] leading-relaxed mb-2"
-            style={{ color: brand.navyMuted }}
-          >
-            PDF brochures help us match your tone more precisely. Optional.
-          </p>
-          {brochures.length > 0 && (
-            <div className="space-y-1.5 mb-2">
-              {brochures.map((b: any) => (
-                <div
-                  key={b.key}
-                  className="flex items-center gap-2 px-2 py-1.5 rounded text-xs"
-                  style={{
-                    backgroundColor: brand.slate,
-                    border: `1px solid ${brand.border}`,
-                  }}
-                >
-                  <FileText
-                    className="w-3.5 h-3.5 flex-shrink-0"
-                    style={{ color: brand.navyMuted }}
-                  />
-                  <span
-                    className="flex-1 truncate"
-                    style={{ color: brand.navy }}
-                  >
-                    {b.filename}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => deleteBrochure.mutate({ key: b.key })}
-                    disabled={deleteBrochure.isPending}
-                    className="p-0.5 rounded hover:bg-white"
-                    aria-label="Remove brochure"
-                  >
-                    <Trash2
-                      className="w-3 h-3"
-                      style={{ color: brand.navyMuted }}
-                    />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          {brochures.length < 3 && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => brochureInputRef.current?.click()}
-              disabled={uploadBrochure.isPending}
-              className="text-xs w-full h-8"
-            >
-              {uploadBrochure.isPending ? (
-                <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />
-              ) : (
-                <Upload className="w-3 h-3 mr-1.5" />
-              )}
-              Add brochure ({brochures.length}/3)
-            </Button>
-          )}
-          <input
-            ref={brochureInputRef}
-            type="file"
-            accept="application/pdf"
-            onChange={handleBrochureChange}
-            className="hidden"
-          />
-        </div>
-      )}
 
       <div className="mt-auto">
         <Button

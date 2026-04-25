@@ -34,22 +34,18 @@ export const organizations = pgTable("organizations", {
   brandPrimaryColor: varchar("brand_primary_color", { length: 7 }),
   brandSecondaryColor: varchar("brand_secondary_color", { length: 7 }),
   // Phase 4A — brand evidence. These power the AI-driven branded proposal
-  // renderer (Contract/Tender and Project/Migration templates). The website
-  // URL and uploaded brochures are the raw inputs; colour/tone extraction
-  // lands in a later delivery and will read from here.
+  // renderer (Contract/Tender and Project/Migration templates). Logo and
+  // website URL are the only raw inputs; colour/tone extraction lands in
+  // a later delivery and will read from here. The brochure-upload feature
+  // was retired in Delivery 13 (column dropped via migration 0019) — the
+  // colour pipeline is moving to deterministic logo-pixel + CSS extraction
+  // and no longer needs PDF text input.
   companyWebsite: varchar("company_website", { length: 512 }),
-  brandBrochures: json("brand_brochures").$type<Array<{
-    key: string;
-    url: string;
-    filename: string;
-    uploadedAt: string;
-  }>>().default([]),
   // Phase 4A — AI-extracted brand tokens. Populated by the background
-  // brand-extraction pipeline from the raw evidence above (logo + website +
-  // brochures). Distinct from the logo-pixel-extracted
-  // brand_primary_color / brand_secondary_color, which stay in place and
-  // keep their fast rough pass. The renderer will prefer these extracted
-  // tokens when present.
+  // brand-extraction pipeline from the raw evidence above (logo + website).
+  // Distinct from the logo-pixel-extracted brand_primary_color /
+  // brand_secondary_color, which stay in place and keep their fast rough
+  // pass. The renderer will prefer these extracted tokens when present.
   brandExtractedPrimaryColor: varchar("brand_extracted_primary_color", { length: 7 }),
   brandExtractedSecondaryColor: varchar("brand_extracted_secondary_color", { length: 7 }),
   brandExtractedFontFeel: varchar("brand_extracted_font_feel", { length: 20 }),

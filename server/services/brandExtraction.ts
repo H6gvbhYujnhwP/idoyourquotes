@@ -1,10 +1,10 @@
 /**
  * Brand Extraction Pipeline — Phase 4A Delivery 2
+ * (Brochure input retired in Delivery 13.)
  *
- * Takes an organization's "brand evidence" (logo URL + company website URL +
- * up to 3 PDF brochures) and turns it into structured brand tokens
- * (primary/secondary colours, font feel, tone) that the branded proposal
- * renderer can consume.
+ * Takes an organization's "brand evidence" (logo URL + company website URL)
+ * and turns it into structured brand tokens (primary/secondary colours,
+ * font feel, tone) that the branded proposal renderer can consume.
  *
  * Design rules:
  * - Fire-and-forget from mutation handlers: triggerBrandExtraction(orgId)
@@ -20,33 +20,16 @@
 
 import { openai, isOpenAIConfigured } from "../_core/openai";
 import { getUserPrimaryOrg, updateOrganization, getOrganizationById } from "../db";
-import { getFileBuffer } from "../r2Storage";
 import { triggerCoverImageGeneration } from "./coverImageGeneration";
-import { createRequire } from "module";
-
-// pdf-parse v2 is ESM-with-CJS entry — mirror the pattern in _core/claude.ts.
-const require = createRequire(import.meta.url);
-const { PDFParse } = require("pdf-parse") as {
-  PDFParse: new (opts: { data: Buffer | Uint8Array }) => any;
-};
 
 // ── Tuning ──────────────────────────────────────────────────────────────
 const COOLDOWN_MS = 60_000;
 const WEBSITE_FETCH_TIMEOUT_MS = 8_000;
 const WEBSITE_MAX_BYTES = 300_000; // truncate HTML after this to keep prompt size sane
-const BROCHURE_PAGES_PER_FILE = 3;
-const BROCHURE_MAX_CHARS_PER_FILE = 6_000;
 const OPENAI_MODEL = "gpt-4o";
 // Browser-ish UA — many marketing sites 403 plain scripted fetches.
 const WEBSITE_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-
-type BrandBrochure = {
-  key: string;
-  url: string;
-  filename: string;
-  uploadedAt: string;
-};
 
 type ExtractionResult = {
   primaryColor: string | null;
@@ -96,8 +79,7 @@ async function runExtraction(orgId: number): Promise<void> {
 
   const logo = (org as any).companyLogo as string | null;
   const website = (org as any).companyWebsite as string | null;
-  const brochures = (((org as any).brandBrochures as BrandBrochure[] | null) || []);
-  const hasEvidence = !!(logo || website || brochures.length > 0);
+  const hasEvidence = !!(logo || website);
 
   if (!hasEvidence) {
     // No evidence — reset cleanly. Don't mark failed.
@@ -131,19 +113,6 @@ async function runExtraction(orgId: number): Promise<void> {
     websiteNote = fetched.note;
   }
 
-  const brochureExcerpts: Array<{ filename: string; text: string }> = [];
-  for (const b of brochures) {
-    try {
-      const text = await extractBrochureText(b);
-      if (text) brochureExcerpts.push({ filename: b.filename, text });
-    } catch (err: any) {
-      console.warn(
-        `[brandExtraction] brochure ${b.filename} text extraction failed:`,
-        err?.message,
-      );
-    }
-  }
-
   // ── Ask GPT-4o for structured tokens ─────────────────────────────────
   let result: ExtractionResult;
   try {
@@ -152,7 +121,6 @@ async function runExtraction(orgId: number): Promise<void> {
       websiteUrl: website,
       websiteSnippet,
       websiteNote,
-      brochureExcerpts,
     });
   } catch (err: any) {
     console.error(`[brandExtraction] OpenAI call failed for org ${orgId}:`, err?.message);
@@ -234,44 +202,6 @@ async function fetchWebsite(url: string): Promise<{ body: string; note: string }
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Brochure text extraction — first N pages via pdf-parse v2.
-// ─────────────────────────────────────────────────────────────────────────
-async function extractBrochureText(b: BrandBrochure): Promise<string> {
-  // Brochures live in R2 under the key format used by uploadBrandBrochure.
-  // The stored `url` is the /api/file/<key> proxy URL, so we pull by key.
-  const buffer = await getFileBuffer(b.key);
-  const parser = new PDFParse({ data: buffer });
-  try {
-    const parsed = await parser.getText();
-    const rawText: string = parsed?.text || "";
-    // Strip the page-separator noise pdf-parse v2 injects.
-    const stripped = rawText
-      .replace(/--\s*\d+\s+of\s+\d+\s*--/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-    if (!stripped) return "";
-
-    // Rough "first N pages" cut: pdf-parse returns whole-document text in
-    // one blob post-strip, so fall back to a char budget that's roughly
-    // equivalent to 3 dense pages.
-    const cap = Math.min(stripped.length, BROCHURE_MAX_CHARS_PER_FILE);
-    // Include the page count hint so the AI understands we've sampled.
-    const totalPages = parsed?.total || 1;
-    const sampledNote =
-      totalPages > BROCHURE_PAGES_PER_FILE
-        ? ` [sampled text from a ${totalPages}-page document]`
-        : "";
-    return stripped.slice(0, cap) + sampledNote;
-  } finally {
-    try {
-      await parser.destroy();
-    } catch {
-      /* noop */
-    }
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────
 // GPT-4o structured prompt. Asks for JSON only; we parse defensively.
 // ─────────────────────────────────────────────────────────────────────────
 async function callOpenAI(input: {
@@ -279,13 +209,12 @@ async function callOpenAI(input: {
   websiteUrl: string | null;
   websiteSnippet: string;
   websiteNote: string;
-  brochureExcerpts: Array<{ filename: string; text: string }>;
 }): Promise<ExtractionResult> {
   const evidenceParts: string[] = [];
 
   if (input.hasLogo) {
     evidenceParts.push(
-      "The company has uploaded a logo (not shown in this prompt). Infer colour palette from the website and brochures below, and assume the logo is consistent.",
+      "The company has uploaded a logo (not shown in this prompt). Infer colour palette from the website below, and assume the logo is consistent.",
     );
   }
 
@@ -301,18 +230,12 @@ async function callOpenAI(input: {
     }
   }
 
-  input.brochureExcerpts.forEach((b, i) => {
-    evidenceParts.push(
-      `--- BROCHURE ${i + 1}: ${b.filename} ---\n${b.text}\n--- END BROCHURE ${i + 1} ---`,
-    );
-  });
-
   const evidenceBlock =
     evidenceParts.length > 0
       ? evidenceParts.join("\n\n")
       : "No evidence provided.";
 
-  const systemPrompt = `You are a brand analyst. Given raw evidence about a small UK business — a logo, a company website's HTML, and up to three marketing brochures — extract structured brand tokens suitable for styling branded proposal documents.
+  const systemPrompt = `You are a brand analyst. Given raw evidence about a small UK business — a logo and a company website's HTML — extract structured brand tokens suitable for styling branded proposal documents.
 
 You must return a single JSON object with exactly these keys:
 {
