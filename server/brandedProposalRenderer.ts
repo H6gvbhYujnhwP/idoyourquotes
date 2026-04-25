@@ -153,6 +153,23 @@ function isDark(hex: string): boolean {
   return lum < 0.55;
 }
 
+/**
+ * Phase 4A Delivery 12 — return a hex colour as a comma-separated RGB
+ * triple suitable for use inside `rgba(...)` via a CSS variable. Lets
+ * us define a single `--brand-primary-rgb: 0, 0, 99` and then use
+ * `rgba(var(--brand-primary-rgb), 0.78)` for the cover-image overlay
+ * without hardcoding the colour at the call site.
+ */
+function hexToRgbTriple(hex: string): string {
+  const h = hex.replace("#", "");
+  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  if ([r, g, b].some((n) => Number.isNaN(n))) return "0, 0, 0";
+  return `${r}, ${g}, ${b}`;
+}
+
 // ── Brand resolution ─────────────────────────────────────────────────
 
 /**
@@ -208,12 +225,17 @@ function resolveBrand(
   };
 }
 
-// ── Logo resolution ──────────────────────────────────────────────────
+// ── Print-asset URL resolution ───────────────────────────────────────
 //
-// Mirrors the pattern used by the locked pdfGenerator — if the stored
-// logo is a /api/file/ proxy URL it won't load in the print dialog
+// Mirrors the pattern used by the locked pdfGenerator — if a stored
+// URL is a /api/file/ proxy URL it won't load in the print dialog
 // (no cookies), so we swap it for a 1-hour signed URL here. On failure
-// we fall through to the wordmark — we never block the render.
+// we fall through to null — the caller decides what to do (e.g. fall
+// back to the wordmark for logos, or omit the cover image and use the
+// flat-colour cover). We never block the render.
+//
+// As of Delivery 12, this is also used for cover_image_url. Same shape,
+// same rules.
 
 async function resolveLogoUrl(raw: string | null | undefined): Promise<string | null> {
   if (!raw) return null;
@@ -222,7 +244,7 @@ async function resolveLogoUrl(raw: string | null | undefined): Promise<string | 
   try {
     return await getPresignedUrl(key, 3600);
   } catch (err) {
-    console.warn("[brandedProposalRenderer] failed to sign logo URL, falling back to wordmark:", err);
+    console.warn("[brandedProposalRenderer] failed to sign asset URL, falling back:", err);
     return null;
   }
 }
@@ -233,6 +255,7 @@ function renderCover(args: {
   brand: ResolvedBrand;
   companyName: string;
   logoUrl: string | null;
+  coverImageUrl: string | null;
   websiteUrl: string | null;
   companyAddress: string | null;
   companyPhone: string | null;
@@ -247,6 +270,7 @@ function renderCover(args: {
     brand,
     companyName,
     logoUrl,
+    coverImageUrl,
     websiteUrl,
     companyAddress,
     companyPhone,
@@ -298,8 +322,27 @@ function renderCover(args: {
     ? `\n  <div class="cover-contact-strip">${contactCells.join("")}</div>`
     : "";
 
+  // Phase 4A Delivery 12 — when an AI-generated cover image is present,
+  // emit it as a CSS multi-layer background: a brand-primary tint at
+  // 78% opacity sitting on top of the image. The tint preserves brand
+  // identity and ensures text contrast regardless of how dark/light the
+  // image came back. When no image is present (most orgs at first, or
+  // generation failure), the cover keeps its existing flat brand-primary
+  // look — same as pre-Delivery-12. We never block the render.
+  //
+  // Why a linear-gradient with two identical colour stops rather than
+  // an opacity'd overlay element? Two reasons:
+  //  1. Inline style stays attached to the existing .cover element with
+  //     no extra DOM, so all the existing flex/padding rules just work.
+  //  2. background-image accepts a list of layers; the gradient sits ON
+  //     TOP of the image (CSS layer order is reversed: first listed is
+  //     topmost). Single declaration, no blend modes, no positioning.
+  const coverStyle = coverImageUrl
+    ? ` style="background-image: linear-gradient(rgba(var(--brand-primary-rgb), 0.78), rgba(var(--brand-primary-rgb), 0.78)), url('${escapeHtml(coverImageUrl)}'); background-size: cover; background-position: center;"`
+    : "";
+
   return `
-<div class="cover">
+<div class="cover"${coverStyle}>
   <div class="cover-nav">
     <div class="logo-box">${logoContent}</div>
     <div class="cover-ref-block">Ref: ${escapeHtml(reference)}<br>Date: ${escapeHtml(dateStr)}<br>Prepared for: ${escapeHtml(clientName)}<br>Confidential</div>
@@ -563,6 +606,7 @@ function renderCss(brand: ResolvedBrand): string {
   return `
   :root {
     --brand-primary: ${brand.primary};
+    --brand-primary-rgb: ${hexToRgbTriple(brand.primary)};
     --brand-secondary: ${brand.secondary};
     --brand-tint: ${brand.tint};
     --brand-tint-alt: ${brand.tintAlt};
@@ -693,6 +737,14 @@ export async function generateBrandedProposalHTML(
     || null;
   const logoUrl = await resolveLogoUrl(rawLogo);
 
+  // Phase 4A Delivery 12 — resolve the AI-generated cover hero image.
+  // Stored as /api/file/<key> on the org (if generation has run); we
+  // sign for 1h so it loads in the print window. Null/failure means
+  // the cover falls back to the flat brand-primary look — same as
+  // pre-Delivery-12 behaviour. Never blocks the render.
+  const rawCoverImage = ((organization as any)?.coverImageUrl as string | null) || null;
+  const coverImageUrl = await resolveLogoUrl(rawCoverImage);
+
   const reference = (quote as any).reference || `Q-${(quote as any).id}`;
   const clientName = (quote as any).clientName || "Client";
   const contactName = (quote as any).contactName || null;
@@ -714,6 +766,7 @@ export async function generateBrandedProposalHTML(
     brand,
     companyName,
     logoUrl,
+    coverImageUrl,
     websiteUrl: companyWebsite,
     companyAddress,
     companyPhone,

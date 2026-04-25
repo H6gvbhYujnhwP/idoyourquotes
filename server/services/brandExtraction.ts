@@ -21,6 +21,7 @@
 import { openai, isOpenAIConfigured } from "../_core/openai";
 import { getUserPrimaryOrg, updateOrganization, getOrganizationById } from "../db";
 import { getFileBuffer } from "../r2Storage";
+import { triggerCoverImageGeneration } from "./coverImageGeneration";
 import { createRequire } from "module";
 
 // pdf-parse v2 is ESM-with-CJS entry — mirror the pattern in _core/claude.ts.
@@ -176,6 +177,12 @@ async function runExtraction(orgId: number): Promise<void> {
   console.log(
     `[brandExtraction] org ${orgId} ready — primary=${result.primaryColor}, feel=${result.fontFeel}`,
   );
+
+  // Phase 4A Delivery 12 — chain into cover-image generation. Same
+  // fire-and-forget pattern; coverImageGeneration has its own status,
+  // cooldown, and error gates so a failure there cannot affect this
+  // function's outcome or the user-facing brand-extraction status.
+  triggerCoverImageGeneration(orgId);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
