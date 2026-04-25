@@ -34,7 +34,13 @@
 
 import { openai, isOpenAIConfigured } from "../_core/openai";
 import { getUserPrimaryOrg, updateOrganization, getOrganizationById } from "../db";
-import { triggerCoverImageGeneration } from "./coverImageGeneration";
+// Phase 4A Delivery 17 — coverImageGeneration chainpoint retired. The
+// AI-generated cover image (D12–D16) is no longer read by any template.
+// The Modern template (D18) and the future Structured / Bold templates
+// use a typography-led cover with a stat strip — no AI image. Schema
+// columns (cover_image_url, cover_image_status, cover_image_error,
+// cover_image_prompt, cover_image_generated_at) stay in place as orphans
+// for now; column drop is a future cleanup, not blocking.
 import { extractColoursFromWebsite } from "./cssColorExtraction";
 
 // ── Tuning ──────────────────────────────────────────────────────────────
@@ -185,11 +191,12 @@ async function runExtraction(orgId: number): Promise<void> {
     `[brandExtraction] org ${orgId} ready — primary=${primaryColor}, secondary=${secondaryColor}, feel=${fontFeel}, tone=${tone ? "set" : "null"}`,
   );
 
-  // Phase 4A Delivery 12 — chain into cover-image generation. Same
-  // fire-and-forget pattern; coverImageGeneration has its own status,
-  // cooldown, and error gates so a failure there cannot affect this
-  // function's outcome or the user-facing brand-extraction status.
-  triggerCoverImageGeneration(orgId);
+  // Phase 4A Delivery 17 — cover image generation chainpoint removed.
+  // The Modern template (and future Structured / Bold templates) render
+  // the cover from typography + brand colours + stat strip, with no AI
+  // background image. The chainpoint that fired triggerCoverImageGeneration
+  // here was retired as part of the same delivery. Schema columns are
+  // left in place as orphans (column drop is a future cleanup).
 }
 
 // ─────────────────────────────────────────────────────────────────────────

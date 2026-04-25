@@ -18,6 +18,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { getVisibleTradeSectorOptions } from "@/lib/tradeSectors";
+import { DESIGN_TEMPLATES, DESIGN_TEMPLATE_ORDER, type DesignTemplate } from "@/lib/proposalShowcaseAssets";
 import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -65,6 +66,11 @@ export default function Settings() {
   type ExtractionStatus = "idle" | "pending" | "ready" | "failed";
   const [extractionStatus, setExtractionStatus] = useState<ExtractionStatus>("idle");
   const [extractionError, setExtractionError] = useState<string | null>(null);
+
+  // Phase 4A Delivery 17 — proposal design template + cover stat strip
+  // toggle. Both org-scoped, both persisted via updateBrandSettings.
+  const [proposalTemplate, setProposalTemplate] = useState<"modern" | "structured" | "bold">("modern");
+  const [coverStatStripEnabled, setCoverStatStripEnabled] = useState(true);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -120,6 +126,15 @@ export default function Settings() {
         (allowed.includes(rawStatus as ExtractionStatus) ? rawStatus : "idle") as ExtractionStatus,
       );
       setExtractionError(org.brandExtractionError || null);
+      // Phase 4A Delivery 17 — proposal design template + stat strip toggle
+      const rawTemplate = ((org as any).proposalTemplate || "modern") as string;
+      if (rawTemplate === "modern" || rawTemplate === "structured" || rawTemplate === "bold") {
+        setProposalTemplate(rawTemplate);
+      } else {
+        setProposalTemplate("modern");
+      }
+      const rawStatStrip = (org as any).coverStatStripEnabled;
+      setCoverStatStripEnabled(rawStatStrip !== false); // default true
     }
   }, [orgProfile]);
 
@@ -232,6 +247,21 @@ export default function Settings() {
     updateBrandSettings.mutate({
       companyWebsite: companyWebsite,
     });
+  };
+
+  // Phase 4A Delivery 17 — proposal design template + stat strip toggle.
+  // Saved via the same updateBrandSettings mutation (server accepts all
+  // three fields as optional). Trigger on each click rather than waiting
+  // for a global Save — the picker is a discrete choice so persisting it
+  // immediately matches user expectation.
+  const handleSelectTemplate = (template: "modern" | "structured" | "bold") => {
+    setProposalTemplate(template);
+    updateBrandSettings.mutate({ proposalTemplate: template });
+  };
+
+  const handleToggleStatStrip = (enabled: boolean) => {
+    setCoverStatStripEnabled(enabled);
+    updateBrandSettings.mutate({ coverStatStripEnabled: enabled });
   };
 
   // Tab state from URL params
@@ -462,6 +492,115 @@ export default function Settings() {
               )}
               Save Website
             </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Phase 4A Delivery 17 — Proposal design picker.
+          Compact 3-button row, one per design template (Modern / Structured
+          / Bold). Modern is the only one shipped (D18); Structured and Bold
+          show as disabled with a "Coming soon" badge until D19 / D20 land.
+          Saved immediately on click via updateBrandSettings — no global
+          Save button needed for the picker. */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            Proposal design
+          </CardTitle>
+          <CardDescription>
+            Pick the visual mood for your branded proposals. Your brand
+            colours apply to all three — only the design language differs.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {DESIGN_TEMPLATE_ORDER.map((key) => {
+              const t = DESIGN_TEMPLATES[key];
+              const isSelected = proposalTemplate === key;
+              const disabled = !t.available || updateBrandSettings.isPending;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => {
+                    if (!t.available) return;
+                    handleSelectTemplate(key as DesignTemplate);
+                  }}
+                  disabled={disabled}
+                  className={`relative text-left rounded-lg border-2 p-3 transition-all ${
+                    isSelected
+                      ? "border-primary bg-primary/5"
+                      : "border-border bg-card"
+                  } ${
+                    !t.available
+                      ? "opacity-50 cursor-not-allowed"
+                      : "hover:border-primary/60 cursor-pointer"
+                  }`}
+                  aria-pressed={isSelected}
+                >
+                  <div className="aspect-[4/5] mb-2 overflow-hidden rounded-md bg-muted">
+                    <img
+                      src={t.thumb}
+                      alt={`${t.label} template preview`}
+                      className="w-full h-full object-cover object-top"
+                      loading="lazy"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-semibold text-sm">{t.label}</div>
+                    {!t.available && (
+                      <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">
+                        Coming soon
+                      </span>
+                    )}
+                    {isSelected && t.available && (
+                      <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                    )}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground mt-1 leading-snug">
+                    {t.description}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Cover stat strip toggle — Delivery 18.
+              The lavender bar across the bottom of the cover with
+              big bold numbers (Users / SLA / Uptime / Per User Month).
+              Optional — turn off if your data doesn't lend itself or if
+              the look isn't right for your brand. */}
+          <Separator />
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <Label htmlFor="statStripToggle" className="font-semibold">
+                Show stat strip on cover
+              </Label>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Adds a coloured bar across the bottom of the cover showing
+                key numbers from the quote (users covered, response SLA,
+                uptime, per-user monthly fee). Cells with no data are hidden
+                automatically.
+              </p>
+            </div>
+            <button
+              id="statStripToggle"
+              type="button"
+              role="switch"
+              aria-checked={coverStatStripEnabled}
+              onClick={() => handleToggleStatStrip(!coverStatStripEnabled)}
+              disabled={updateBrandSettings.isPending}
+              className={`shrink-0 inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                coverStatStripEnabled ? "bg-primary" : "bg-muted"
+              } ${updateBrandSettings.isPending ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+            >
+              <span
+                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                  coverStatStripEnabled ? "translate-x-5" : "translate-x-0.5"
+                }`}
+              />
+            </button>
           </div>
         </CardContent>
       </Card>

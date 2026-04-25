@@ -357,6 +357,12 @@ export const appRouter = router({
     updateBrandSettings: protectedProcedure
       .input(z.object({
         companyWebsite: z.string().max(512).optional(),
+        // Phase 4A Delivery 17 — proposal design template + cover stat
+        // strip toggle. Both are org-level settings persisted alongside
+        // the website URL so a single Save button on the Branding tab
+        // covers everything that affects branded-proposal output.
+        proposalTemplate: z.enum(["modern", "structured", "bold"]).optional(),
+        coverStatStripEnabled: z.boolean().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const org = await getUserPrimaryOrg(ctx.user.id);
@@ -378,9 +384,15 @@ export const appRouter = router({
 
         const updated = await updateOrganization(org.id, {
           ...(companyWebsite !== undefined ? { companyWebsite } : {}),
+          ...(input.proposalTemplate !== undefined ? { proposalTemplate: input.proposalTemplate } : {}),
+          ...(input.coverStatStripEnabled !== undefined ? { coverStatStripEnabled: input.coverStatStripEnabled } : {}),
         } as any);
         // Phase 4A — kick off AI-driven brand extraction. Fire-and-forget.
-        triggerBrandExtraction(org.id);
+        // Only fires when the website URL changed — design template /
+        // stat strip toggles don't need re-extraction.
+        if (companyWebsite !== undefined) {
+          triggerBrandExtraction(org.id);
+        }
         return updated || org;
       }),
   }),
@@ -1265,9 +1277,15 @@ Respond with valid JSON:
       .input(z.object({
         quoteId: z.number(),
         brandMode: z.enum(["branded", "template"]),
+        // Phase 4A Delivery 17 — per-quote design template override.
+        // Optional; when omitted the server resolves the effective
+        // template from quote.proposalTemplate ?? org.proposalTemplate
+        // ?? 'modern'. The override is also persisted onto the quote
+        // when supplied so future regenerations remember the choice.
+        proposalTemplate: z.enum(["modern", "structured", "bold"]).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        console.log("[generateBrandedProposal] quoteId:", input.quoteId, "mode:", input.brandMode, "userId:", ctx.user.id);
+        console.log("[generateBrandedProposal] quoteId:", input.quoteId, "mode:", input.brandMode, "template:", input.proposalTemplate || "(default)", "userId:", ctx.user.id);
         try {
           // Resolve quote + org the same way generatePDF does.
           const org = await getUserPrimaryOrg(ctx.user.id);
@@ -1300,6 +1318,32 @@ Respond with valid JSON:
             // tender context is optional — the renderer falls back gracefully
           }
 
+          // Phase 4A Delivery 17 — resolve effective template via the
+          // three-step fallback chain: explicit per-call override →
+          // stored per-quote override → org default → 'modern' last
+          // resort. Persist the chosen value back onto the quote when
+          // the user explicitly picked something (so re-generating the
+          // PDF later remembers their choice).
+          const orgTemplate = (org as any)?.proposalTemplate as string | undefined;
+          const quoteTemplate = (quote as any)?.proposalTemplate as string | undefined;
+          const effectiveTemplate: "modern" | "structured" | "bold" =
+            input.proposalTemplate
+              ?? (quoteTemplate === "modern" || quoteTemplate === "structured" || quoteTemplate === "bold" ? quoteTemplate : undefined)
+              ?? (orgTemplate === "modern" || orgTemplate === "structured" || orgTemplate === "bold" ? orgTemplate : undefined)
+              ?? "modern";
+
+          // Persist the per-quote override only when explicitly supplied.
+          // Don't write the resolved-from-org default back onto the quote
+          // — keep "use org default" semantics intact (NULL on the quote).
+          if (input.proposalTemplate && input.proposalTemplate !== quoteTemplate) {
+            try {
+              await updateQuote(input.quoteId, ctx.user.id, { proposalTemplate: input.proposalTemplate } as any);
+            } catch (err) {
+              console.warn("[generateBrandedProposal] Failed to persist per-quote template override:", err);
+              // Non-fatal — the render still proceeds with the chosen template.
+            }
+          }
+
           const html = await generateBrandedProposalHTML({
             quote,
             lineItems,
@@ -1307,9 +1351,10 @@ Respond with valid JSON:
             organization: org,
             tenderContext,
             brandMode: input.brandMode,
+            template: effectiveTemplate,
           });
 
-          console.log("[generateBrandedProposal] html generated, length:", html.length);
+          console.log("[generateBrandedProposal] html generated, length:", html.length, "template:", effectiveTemplate);
           return { html };
         } catch (error) {
           console.error("[generateBrandedProposal] Error:", error);

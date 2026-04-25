@@ -102,6 +102,14 @@ export const organizations = pgTable("organizations", {
   coverImageError: text("cover_image_error"),
   coverImagePrompt: text("cover_image_prompt"),
   coverImageGeneratedAt: timestamp("cover_image_generated_at"),
+  // Phase 4A Delivery 17 — proposal design template + cover stat strip
+  // toggle (migration 0020_add_proposal_template). User-selectable design
+  // template for branded proposals: 'modern' | 'structured' | 'bold'.
+  // Mirrors shared/schema.ts exactly per the dual-schema rule. Stored as
+  // text so a fourth template can be added later without an enum
+  // migration; server-side validates against the known values.
+  proposalTemplate: text("proposal_template").default("modern").notNull(),
+  coverStatStripEnabled: boolean("cover_stat_strip_enabled").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -214,6 +222,11 @@ export const quotes = pgTable("quotes", {
   // The server refuses generateDraft calls when this reaches 2.
   // See generateDraft mutation in routers.ts for the transition rules.
   generationCount: integer("generation_count").default(0).notNull(),
+  // Phase 4A Delivery 17 — per-quote design template override. NULL means
+  // "use the org default" (organizations.proposalTemplate). Set via
+  // BrandChoiceModal at branded-PDF generation time. Mirrors
+  // shared/schema.ts exactly per the dual-schema rule.
+  proposalTemplate: text("proposal_template"),
 });
 
 export type Quote = typeof quotes.$inferSelect;

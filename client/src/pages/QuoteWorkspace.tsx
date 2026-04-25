@@ -90,6 +90,7 @@ import PreGeneratePDFModal from "@/components/PreGeneratePDFModal";
 import SoloUpgradeModal from "@/components/SoloUpgradeModal";
 import ExportFormatPickerModal from "@/components/ExportFormatPickerModal";
 import BrandChoiceModal, { type BrandMode } from "@/components/BrandChoiceModal";
+import { type DesignTemplate } from "@/lib/proposalShowcaseAssets";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import { brand } from "@/lib/brandTheme";
 
@@ -972,11 +973,16 @@ export default function QuoteWorkspace() {
   // Phase 4A Delivery 7 — fire the branded proposal mutation and open
   // the resulting HTML in a print window, same mechanism as the Quick
   // quote path. No T/E/A review step for branded output.
-  const doGenerateBranded = async (mode: BrandMode) => {
+  // Phase 4A Delivery 17 — accepts the design template chosen in the
+  // BrandChoiceModal and passes it through to the server, which
+  // resolves the effective template (override → quote → org → 'modern')
+  // and persists per-quote overrides for re-generations.
+  const doGenerateBranded = async (mode: BrandMode, template: DesignTemplate) => {
     try {
       const result = await generateBrandedProposal.mutateAsync({
         quoteId,
         brandMode: mode,
+        proposalTemplate: template,
       });
       if (!(result as any)?.html) {
         throw new Error("No HTML content received from server");
@@ -1377,7 +1383,7 @@ export default function QuoteWorkspace() {
         open={showBrandChoiceModal}
         onDismiss={() => setShowBrandChoiceModal(false)}
         onBack={handleBrandChoiceBack}
-        onGenerate={(mode) => void doGenerateBranded(mode)}
+        onGenerate={(mode, template) => void doGenerateBranded(mode, template)}
         isGenerating={generateBrandedProposal.isPending}
       />
     </div>

@@ -1,284 +1,136 @@
-// Phase 4A — Delivery 7.
-//
-// Branded Contract/Tender proposal renderer.
-//
-// A SEPARATE, additive pipeline from server/pdfGenerator.ts. The locked
-// quote PDF generator is untouched. This module produces a design-led,
-// multi-page HTML proposal derived from the Manus IT-Modern template.
-//
-// v1 scope:
-//   - IT sector only (dogfood-first; the brief's explicit decision).
-//   - 4 pages: Cover → Executive Summary → Pricing → Terms + Signature.
-//     Pages from the full Manus template that require data the quote
-//     doesn't yet capture (stat strip, credentials strip, deep service
-//     prose, SLA table) are omitted until those fields land post-4A.
-//   - No AI calls during render — deterministic HTML only.
-//   - Brand mode "branded": prefer AI-extracted brand tokens, fall back
-//     to logo-pixel extraction, fall back to template defaults (navy /
-//     violet). Never blocks — a fresh org with nothing set up still gets
-//     a sensible render.
-//   - Brand mode "template": force template defaults regardless of what
-//     the org has.
-//
-// Called from the new server/routers.ts quotes.generateBrandedProposal
-// endpoint. Returns an HTML string; the client opens it in a print
-// window the same way the existing generatePDF path does.
-
-import { Quote, QuoteLineItem, User, Organization } from "../drizzle/schema";
-import { getPresignedUrl } from "./r2Storage";
-
-// ── Data contract ────────────────────────────────────────────────────
-
-export type BrandMode = "branded" | "template";
-
-// Phase 4A Delivery 17 — design template choice. Distinct from BrandMode:
-// BrandMode controls colour palette ("use the org's brand" vs "use the
-// template's built-in palette"), DesignTemplate controls visual mood
-// ("Modern restraint" vs "Structured operational" vs "Bold editorial").
-// Modern is the only renderer shipped in Delivery 18; Structured / Bold
-// fall through to the legacy renderer below until D19 / D20 land. The
-// picker UIs (Settings + BrandChoiceModal) disable un-built options
-// with a "Coming soon" badge so users can't pick something that won't
-// render — but the dispatch is still safe if they somehow reach here.
-export type DesignTemplate = "modern" | "structured" | "bold";
-
-export interface BrandedProposalData {
-  quote: Quote;
-  lineItems: QuoteLineItem[];
-  user: User;
-  organization?: Organization | null;
-  tenderContext?: {
-    assumptions?: Array<{ text: string; confirmed: boolean }> | null;
-    exclusions?: Array<{ text: string; confirmed: boolean }> | null;
-    notes?: string | null;
-    [key: string]: any;
-  } | null;
-  brandMode: BrandMode;
-  /**
-   * Phase 4A Delivery 17 — effective design template, resolved upstream
-   * by the generateBrandedProposal mutation via the fallback chain
-   * (per-call override → quote.proposalTemplate → org.proposalTemplate
-   * → 'modern'). Optional for backward compatibility with any caller
-   * that didn't get updated; treated as 'modern' when absent.
-   */
-  template?: DesignTemplate;
-}
-
-// ── Template default palette (IT-Modern) ─────────────────────────────
-//
-// The "template" brand mode uses these unconditionally. The "branded"
-// mode uses these as the last-resort fallback when the org has no brand
-// tokens at all.
-//
-// Phase 4A Delivery 17 — exported so modernTemplate.ts can reuse the
-// same fallback values. Same constants, same palette, same fallback
-// behaviour across all design templates.
-
-export const TEMPLATE_DEFAULT_PRIMARY = "#1e1b4b";   // deep indigo — chrome
-export const TEMPLATE_DEFAULT_SECONDARY = "#818cf8"; // violet — accent
-export const TEMPLATE_DEFAULT_TINT = "#eef2ff";      // pale violet — callout bg
-export const TEMPLATE_DEFAULT_TINT_ALT = "#f5f3ff";  // pale violet — table zebra
-
-export interface ResolvedBrand {
-  primary: string;
-  secondary: string;
-  tint: string;      // lightest bg tint derived from primary
-  tintAlt: string;   // alternate light tint for table zebra
-  onPrimaryText: string; // text colour that sits on top of primary bg
-  usingTemplate: boolean; // true when we fell all the way through
-}
-
-// ── Utilities ────────────────────────────────────────────────────────
-
-export function escapeHtml(text: string | null | undefined): string {
-  if (text == null) return "";
-  return String(text)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-export function formatCurrency(value: string | number | null | undefined): string {
-  const num = typeof value === "number" ? value : parseFloat(String(value || "0"));
-  return new Intl.NumberFormat("en-GB", {
-    style: "currency",
-    currency: "GBP",
-  }).format(Number.isFinite(num) ? num : 0);
-}
-
-export function formatQuantity(value: string | number | null | undefined): string {
-  const num = typeof value === "number" ? value : parseFloat(String(value || "1"));
-  if (!Number.isFinite(num)) return "1";
-  return num % 1 === 0 ? num.toFixed(0) : num.toFixed(2);
-}
-
-export function formatDate(d: Date | string | null | undefined): string {
-  if (!d) return "";
-  try {
-    return new Date(d).toLocaleDateString("en-GB", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
-  } catch {
-    return "";
-  }
-}
-
-/** Plain-text conversion for fields stored with our list-separator syntax. */
-export function plainLineItemText(text: string | null | undefined): string {
-  if (!text) return "";
-  // Collapse both bullet (`||`) and numbered (`##`) separators into commas —
-  // the branded table cells don't need inline list markup.
-  return String(text)
-    .split(/\s*(?:\|\||##)\s*/)
-    .filter(Boolean)
-    .join(". ");
-}
-
-/** Validate a hex colour (#rgb or #rrggbb) and return it or undefined. */
-export function validHex(v: unknown): string | undefined {
-  if (typeof v !== "string") return undefined;
-  const s = v.trim();
-  if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(s)) return s;
-  return undefined;
-}
-
 /**
- * Hex-to-rgb then back to a darker variant. Used to cheaply derive a
- * "chrome" colour that sits well against text on primary backgrounds.
- * Returns the input if parsing fails (safe fallback).
- */
-export function lighten(hex: string, amount: number): string {
-  const h = hex.replace("#", "");
-  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
-  const r = parseInt(full.slice(0, 2), 16);
-  const g = parseInt(full.slice(2, 4), 16);
-  const b = parseInt(full.slice(4, 6), 16);
-  if ([r, g, b].some((n) => Number.isNaN(n))) return hex;
-  const mix = (c: number) => Math.round(c + (255 - c) * amount);
-  const toHex = (n: number) => n.toString(16).padStart(2, "0");
-  return `#${toHex(mix(r))}${toHex(mix(g))}${toHex(mix(b))}`;
-}
-
-/** Rough luminance check — returns true if colour is dark enough that
- * white text should go on top. Used for the primary/accent bars. */
-export function isDark(hex: string): boolean {
-  const h = hex.replace("#", "");
-  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
-  const r = parseInt(full.slice(0, 2), 16) || 0;
-  const g = parseInt(full.slice(2, 4), 16) || 0;
-  const b = parseInt(full.slice(4, 6), 16) || 0;
-  // Perceived luminance, Rec. 709-ish.
-  const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-  return lum < 0.55;
-}
-
-/**
- * Phase 4A Delivery 12 — return a hex colour as a comma-separated RGB
- * triple suitable for use inside `rgba(...)` via a CSS variable. Lets
- * us define a single `--brand-primary-rgb: 0, 0, 99` and then use
- * `rgba(var(--brand-primary-rgb), 0.78)` for the cover-image overlay
- * without hardcoding the colour at the call site.
- */
-export function hexToRgbTriple(hex: string): string {
-  const h = hex.replace("#", "");
-  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
-  const r = parseInt(full.slice(0, 2), 16);
-  const g = parseInt(full.slice(2, 4), 16);
-  const b = parseInt(full.slice(4, 6), 16);
-  if ([r, g, b].some((n) => Number.isNaN(n))) return "0, 0, 0";
-  return `${r}, ${g}, ${b}`;
-}
-
-// ── Brand resolution ─────────────────────────────────────────────────
-
-/**
- * Resolve the brand palette with the layered fallback chain:
- *   brandExtracted* → brandPrimary/Secondary (logo pixels) → template.
+ * Phase 4A Delivery 18 — Modern proposal template renderer.
  *
- * In "template" mode, returns template defaults unconditionally.
+ * The "Modern" design template, sector-agnostic. Adapted from Manus's
+ * IT-Modern showcase HTML (client/public/proposal-showcase/source/it-modern.html)
+ * with these changes vs the legacy renderer:
+ *
+ *   1. **Stat strip on the cover** — the missing visual hook that the
+ *      Manus original carried but the legacy renderer dropped in favour
+ *      of an AI-generated background image (D12–D16). Three sessions of
+ *      Gemini iteration confirmed the AI image couldn't carry the cover
+ *      design. Concrete numbers (users covered / SLA / uptime / per-user
+ *      monthly) are more visually striking AND more useful to the reader
+ *      than abstract decoration. Toggle via organizations.coverStatStripEnabled.
+ *
+ *   2. **No AI cover image** — coverImageUrl is not read. The brand
+ *      extraction chainpoint that triggered Gemini was removed in the
+ *      same delivery (server/services/brandExtraction.ts). Schema
+ *      columns stay in place as orphans for future cleanup.
+ *
+ *   3. **Page bands use a simple gradient** — the previous renderer
+ *      pulled a horizontal slice from the AI image as a 6mm decorative
+ *      top band on every page. With no image, page bands are a clean
+ *      brand-secondary → brand-primary linear gradient. Same design
+ *      rhythm, no AI dependency.
+ *
+ *   4. **Stat strip data** — derived as follows:
+ *        - Users covered: sum of `quantity` from line items whose unit
+ *          is "User" / "Users" / "Per User" or whose description contains
+ *          "per user". When zero matches, the cell is omitted (strip
+ *          drops to 3-up).
+ *        - P1 Response SLA: hardcoded "15 min" (universal MSP standard).
+ *        - Uptime Objective: hardcoded "99.9%" (universal MSP standard).
+ *        - Per User / Month: monthlyTotal / usersCovered, rounded to
+ *          nearest pound. Omitted when either value is zero or missing.
+ *      The strip survives gracefully at 4 / 3 / 2 cells; if everything
+ *      misses we omit the strip entirely (the toggle setting also
+ *      respected — a user who turned it off never sees it regardless).
+ *
+ * Helper functions and types are imported from the parent
+ * brandedProposalRenderer to keep one source of truth for colour
+ * resolution, R2 URL signing, escaping, formatting, and totals
+ * arithmetic. This module focuses on layout, content, and the new
+ * stat strip — nothing else.
  */
-export function resolveBrand(
-  organization: Organization | null | undefined,
-  mode: BrandMode,
-): ResolvedBrand {
-  if (mode === "template") {
-    return {
-      primary: TEMPLATE_DEFAULT_PRIMARY,
-      secondary: TEMPLATE_DEFAULT_SECONDARY,
-      tint: TEMPLATE_DEFAULT_TINT,
-      tintAlt: TEMPLATE_DEFAULT_TINT_ALT,
-      onPrimaryText: "#ffffff",
-      usingTemplate: true,
-    };
-  }
 
-  const org = (organization ?? {}) as any;
+import type { Quote, QuoteLineItem, Organization } from "../../drizzle/schema";
+import {
+  type BrandedProposalData,
+  type ResolvedBrand,
+  escapeHtml,
+  formatCurrency,
+  formatQuantity,
+  formatDate,
+  plainLineItemText,
+  hexToRgbTriple,
+  resolveBrand,
+  resolveLogoUrl,
+  sumDecimal,
+} from "../brandedProposalRenderer";
 
-  const extractedPrimary = validHex(org.brandExtractedPrimaryColor);
-  const extractedSecondary = validHex(org.brandExtractedSecondaryColor);
-  const logoPrimary = validHex(org.brandPrimaryColor);
-  const logoSecondary = validHex(org.brandSecondaryColor);
+// ── Stat strip ──────────────────────────────────────────────────────
 
-  const primary =
-    extractedPrimary || logoPrimary || TEMPLATE_DEFAULT_PRIMARY;
-  const secondary =
-    extractedSecondary || logoSecondary || TEMPLATE_DEFAULT_SECONDARY;
-
-  const usingTemplate =
-    primary === TEMPLATE_DEFAULT_PRIMARY &&
-    secondary === TEMPLATE_DEFAULT_SECONDARY;
-
-  // Derive light tints from the secondary so the callout and zebra
-  // rows feel cohesive with the brand — even when the user supplies
-  // an unusual palette.
-  const tint = lighten(secondary, 0.88);
-  const tintAlt = lighten(secondary, 0.93);
-
-  return {
-    primary,
-    secondary,
-    tint,
-    tintAlt,
-    onPrimaryText: isDark(primary) ? "#ffffff" : "#111827",
-    usingTemplate,
-  };
+interface StatCell {
+  num: string;   // the big bold number ("40", "£67", "99.9%")
+  label: string; // small uppercase label ("Users Covered", etc.)
 }
 
-// ── Print-asset URL resolution ───────────────────────────────────────
-//
-// Mirrors the pattern used by the locked pdfGenerator — if a stored
-// URL is a /api/file/ proxy URL it won't load in the print dialog
-// (no cookies), so we swap it for a 1-hour signed URL here. On failure
-// we fall through to null — the caller decides what to do (e.g. fall
-// back to the wordmark for logos, or omit the cover image and use the
-// flat-colour cover). We never block the render.
-//
-// As of Delivery 12, this is also used for cover_image_url. Same shape,
-// same rules.
+/**
+ * Compute the four stat cells for the cover. Returns whatever cells
+ * have data to render — caller decides whether to omit the strip
+ * entirely (e.g. when stat strip is toggled off, or when the strip
+ * comes back empty).
+ */
+function computeStatCells(quote: Quote, lineItems: QuoteLineItem[]): StatCell[] {
+  const cells: StatCell[] = [];
 
-export async function resolveLogoUrl(raw: string | null | undefined): Promise<string | null> {
-  if (!raw) return null;
-  if (!raw.startsWith("/api/file/")) return raw;
-  const key = raw.slice("/api/file/".length);
-  try {
-    return await getPresignedUrl(key, 3600);
-  } catch (err) {
-    console.warn("[brandedProposalRenderer] failed to sign asset URL, falling back:", err);
-    return null;
+  // 1. Users covered — derive from line items where the unit / description
+  //    smells like "per user". Tolerant of common variations ("User",
+  //    "Users", "User/Month", description containing "per user").
+  let userCount = 0;
+  for (const li of lineItems) {
+    const unit = String((li as any).unit || "").trim().toLowerCase();
+    const desc = plainLineItemText((li as any).description as any).toLowerCase();
+    const isPerUser =
+      unit === "user"
+      || unit === "users"
+      || unit.startsWith("user/")
+      || unit.startsWith("user ")
+      || /\bper\s+user\b/.test(desc);
+    if (isPerUser) {
+      const qty = parseFloat(String((li as any).quantity || "0"));
+      if (Number.isFinite(qty) && qty > 0) {
+        // Multiple per-user lines for the same user count is the common
+        // shape (e.g. "Helpdesk per user × 40", "M365 per user × 40",
+        // "EDR per user × 40"). Take the MAX rather than the SUM —
+        // they're parallel charges against the same user population,
+        // not separate users.
+        userCount = Math.max(userCount, Math.round(qty));
+      }
+    }
   }
+  if (userCount > 0) {
+    cells.push({ num: String(userCount), label: "Users Covered" });
+  }
+
+  // 2. P1 Response SLA — hardcoded universal default. Future delivery
+  //    may make this an org-level configurable.
+  cells.push({ num: "15 min", label: "P1 Response SLA" });
+
+  // 3. Uptime Objective — hardcoded universal default.
+  cells.push({ num: "99.9%", label: "Uptime Objective" });
+
+  // 4. Per User / Month — derive from monthlyTotal / userCount. Omit
+  //    when either is zero. Round to nearest pound for the cover (the
+  //    pricing page carries the precise figure).
+  const monthlyTotal = parseFloat(String((quote as any).monthlyTotal || "0"));
+  if (Number.isFinite(monthlyTotal) && monthlyTotal > 0 && userCount > 0) {
+    const perUser = Math.round(monthlyTotal / userCount);
+    if (Number.isFinite(perUser) && perUser > 0) {
+      cells.push({ num: `£${perUser}`, label: "Per User / Month" });
+    }
+  }
+
+  return cells;
 }
 
-// ── Page: Cover ──────────────────────────────────────────────────────
+// ── Cover ────────────────────────────────────────────────────────────
 
 function renderCover(args: {
   brand: ResolvedBrand;
   companyName: string;
   logoUrl: string | null;
-  coverImageUrl: string | null;
   websiteUrl: string | null;
   companyAddress: string | null;
   companyPhone: string | null;
@@ -288,12 +140,11 @@ function renderCover(args: {
   clientName: string;
   contactName: string | null;
   title: string;
+  statCells: StatCell[];
 }): string {
   const {
-    brand,
     companyName,
     logoUrl,
-    coverImageUrl,
     websiteUrl,
     companyAddress,
     companyPhone,
@@ -303,10 +154,12 @@ function renderCover(args: {
     clientName,
     contactName,
     title,
+    statCells,
   } = args;
 
-  // Wordmark fallback — uppercase, letter-spaced, truncated to keep the
-  // logo-box proportions sensible even on long names.
+  // Wordmark fallback — the Manus template uses an uppercase letter-
+  // spaced text block when no logo is uploaded. Truncate long names
+  // to keep the badge proportions sensible.
   const wordmarkText = companyName.length > 16
     ? companyName.slice(0, 16).toUpperCase()
     : companyName.toUpperCase();
@@ -324,13 +177,9 @@ function renderCover(args: {
     ? `${escapeHtml(contactName)} &nbsp;·&nbsp; ${escapeHtml(clientName)}`
     : escapeHtml(clientName);
 
-  // Phase 4A Delivery 9 — build the contact strip from only the cells
-  // that have actual data. Previously every cell rendered with an "—"
-  // placeholder, which looked unfinished for orgs with sparse profiles
-  // (e.g. only an email set, no address / phone / website). Now: each
-  // cell is conditional, and the wrapping strip is omitted entirely if
-  // the org has no contact data at all — the cover-hero's flex:1 fills
-  // the remaining space cleanly without a half-empty bottom band.
+  // Build contact strip from cells that actually have data. Same
+  // pattern as Delivery 9 — auto-fit so 1, 2, or 3 populated cells
+  // all lay out cleanly without an "—" placeholder filler.
   const contactCells: string[] = [];
   if (companyAddress && companyAddress.trim()) {
     contactCells.push(`<div><div class="contact-label">Address</div><div class="contact-value">${escapeHtml(companyAddress)}</div></div>`);
@@ -345,45 +194,31 @@ function renderCover(args: {
     ? `\n  <div class="cover-contact-strip">${contactCells.join("")}</div>`
     : "";
 
-  // Phase 4A Delivery 12 — when an AI-generated cover image is present,
-  // emit it as a CSS multi-layer background: a brand-primary tint at
-  // 78% opacity sitting on top of the image. The tint preserves brand
-  // identity and ensures text contrast regardless of how dark/light the
-  // image came back. When no image is present (most orgs at first, or
-  // generation failure), the cover keeps its existing flat brand-primary
-  // look — same as pre-Delivery-12. We never block the render.
-  //
-  // Why a linear-gradient with two identical colour stops rather than
-  // an opacity'd overlay element? Two reasons:
-  // Phase 4A Delivery 15 — image goes full-bleed with no brand-tint
-  // overlay. The previous 78%-opacity layer was obliterating the
-  // generated image (D12 + D14 produced "still looks rubbish" in
-  // Wez's words). The new prompt constrains Gemini to keep the left
-  // half of the canvas quiet for text, so the cover-hero text reads
-  // legibly directly on the image. A subtle left-side gradient on
-  // .cover-hero (added via the .has-bg modifier) acts as a safety
-  // net for text contrast in case the model doesn't honour the
-  // composition rule perfectly. If the image is missing for any
-  // reason the .cover element falls back to a flat brand-primary
-  // background — see the .cover CSS rule.
-  const coverStyle = coverImageUrl
-    ? ` style="background-image: url('${escapeHtml(coverImageUrl)}'); background-size: cover; background-position: center;"`
+  // Stat strip — only render when caller passed cells in (caller
+  // already honoured the org's coverStatStripEnabled toggle and the
+  // empty-strip fallback). 2/3/4 cells all render via the same grid.
+  const statStripHtml = statCells.length > 0
+    ? `\n  <div class="cover-stat-strip" style="grid-template-columns: repeat(${statCells.length}, 1fr);">${
+        statCells.map((c, idx) => {
+          const cls = idx === statCells.length - 1 ? "stat-item stat-item-last" : "stat-item";
+          return `<div class="${cls}"><div class="stat-num">${escapeHtml(c.num)}</div><div class="stat-label">${escapeHtml(c.label)}</div></div>`;
+        }).join("")
+      }</div>`
     : "";
-  const heroClass = coverImageUrl ? "cover-hero has-bg" : "cover-hero";
 
   return `
-<div class="cover"${coverStyle}>
+<div class="cover">
   <div class="cover-nav">
     <div class="logo-box">${logoContent}</div>
     <div class="cover-ref-block">Ref: ${escapeHtml(reference)}<br>Date: ${escapeHtml(dateStr)}<br>Prepared for: ${escapeHtml(clientName)}<br>Confidential</div>
   </div>
-  <div class="${heroClass}">
+  <div class="cover-hero">
     <div class="accent-bar"></div>
     <h1>${escapeHtml(title)}</h1>
     <p class="cover-tagline">A formal proposal from ${escapeHtml(companyName)} — scope of work, pricing, terms, and acceptance in a single document.</p>
     <div class="cover-prepared-for">Prepared for</div>
     <div class="cover-client-name">${preparedForLine}</div>
-  </div>${contactStripHtml}
+  </div>${contactStripHtml}${statStripHtml}
 </div>`;
 }
 
@@ -399,9 +234,6 @@ function renderExecSummary(args: {
 }): string {
   const { companyName, clientName, title, description, notes, pageFooter } = args;
 
-  // Prefer tenderContext.notes (the richer scope text) for the callout,
-  // fall back to the quote's own description. If neither is present we
-  // synthesise a one-liner from the quote title so the page isn't empty.
   const calloutText = (notes && notes.trim())
     || (description && description.trim())
     || `This proposal sets out the scope, pricing, and terms for ${title} on behalf of ${clientName}.`;
@@ -419,13 +251,6 @@ function renderExecSummary(args: {
 
 // ── Page: Pricing ────────────────────────────────────────────────────
 
-export function sumDecimal(values: Array<string | number | null | undefined>): number {
-  return values.reduce<number>((acc, v) => {
-    const n = typeof v === "number" ? v : parseFloat(String(v || "0"));
-    return acc + (Number.isFinite(n) ? n : 0);
-  }, 0);
-}
-
 function renderPricing(args: {
   quote: Quote;
   lineItems: QuoteLineItem[];
@@ -433,8 +258,6 @@ function renderPricing(args: {
 }): string {
   const { quote, lineItems, pageFooter } = args;
 
-  // Partition by pricing type so one-off and recurring appear in separate
-  // tables. Mirrors the logic in the locked generator without importing it.
   const oneOff = lineItems.filter((li) => {
     const pt = (li as any).pricingType || "one_off";
     return pt !== "monthly" && pt !== "annual";
@@ -473,9 +296,6 @@ function renderPricing(args: {
     </table>`;
   };
 
-  // Totals. We prefer the stored aggregates on the quote where they exist
-  // (they've been computed by the existing quote engine) and fall back to
-  // summing the line items directly when they don't.
   const nonOptionalOneOff = oneOff.filter((li) => !(li as any).isOptional);
   const oneOffSubtotal = sumDecimal(nonOptionalOneOff.map((li) => (li as any).total));
   const monthlySubtotal = parseFloat(String((quote as any).monthlyTotal || "0"))
@@ -492,9 +312,6 @@ function renderPricing(args: {
   const monthlyTable = renderTable("Recurring — monthly", monthly, "Monthly subtotal (excl. VAT)", monthlySubtotal);
   const annualTable = renderTable("Recurring — annual", annual, "Annual subtotal (excl. VAT)", annualSubtotal);
 
-  // Only show the grand-total block if there's anything to total. If
-  // nothing's priced, we still render the page with an empty tables
-  // notice so the client can see the pricing was intentionally blank.
   const hasAny = oneOff.length + monthly.length + annual.length > 0;
   const emptyNotice = hasAny
     ? ""
@@ -554,8 +371,6 @@ function renderTerms(args: {
   const assumptions = (tenderContext?.assumptions || []).filter((a) => a && a.text && a.text.trim());
   const exclusions = (tenderContext?.exclusions || []).filter((e) => e && e.text && e.text.trim());
 
-  // Fall back to the org-level default exclusions when the quote-specific
-  // tender context hasn't collected any.
   const orgDefaultExclusions = (organization as any)?.defaultExclusions as string | null | undefined;
 
   const assumptionsHtml = assumptions.length > 0
@@ -566,8 +381,6 @@ function renderTerms(args: {
   if (exclusions.length > 0) {
     exclusionsHtml = `<ul class="term-list">${exclusions.map((e) => `<li>${escapeHtml(e.text)}</li>`).join("")}</ul>`;
   } else if (orgDefaultExclusions && orgDefaultExclusions.trim()) {
-    // Split the org default exclusions text on newlines / semicolons /
-    // bullets so it renders as a list even when stored as a blob.
     const parts = orgDefaultExclusions
       .split(/[\n;•·]+/)
       .map((s) => s.trim())
@@ -622,29 +435,12 @@ function renderTerms(args: {
 }
 
 // ── CSS ──────────────────────────────────────────────────────────────
-//
-// Palette values are interpolated once and then referenced throughout
-// via CSS custom properties so the generated HTML stays small and the
-// theming stays consistent across pages.
 
-function renderCss(brand: ResolvedBrand, coverImageUrl: string | null): string {
+function renderCss(brand: ResolvedBrand): string {
   const headingTextColor = "#111827";
   const bodyTextColor = "#374151";
   const mutedTextColor = "#6b7280";
   const hairlineColor = "#e5e7eb";
-
-  // Phase 4A Delivery 15 — page-band image custom property. When the
-  // org has a generated geometric graphic, every section page gets a
-  // 6mm decorative top band derived from a horizontal slice of that
-  // image (background-size: 200% auto + position: top right anchors
-  // it on the visually-active upper-right of the source). When the
-  // image is absent, the band falls back to a subtle brand-primary →
-  // brand-secondary horizontal gradient so the design rhythm survives
-  // even without AI generation. Either way, every page gets a thin
-  // coloured top stripe — improves the design baseline.
-  const pageBandImage = coverImageUrl
-    ? `url('${coverImageUrl.replace(/'/g, "\\'")}')`
-    : `linear-gradient(90deg, var(--brand-primary), var(--brand-secondary))`;
 
   return `
   :root {
@@ -654,68 +450,51 @@ function renderCss(brand: ResolvedBrand, coverImageUrl: string | null): string {
     --brand-tint: ${brand.tint};
     --brand-tint-alt: ${brand.tintAlt};
     --brand-on-primary: ${brand.onPrimaryText};
-    --page-band-image: ${pageBandImage};
-    --page-band-size: ${coverImageUrl ? "200% auto" : "100% 100%"};
-    --page-band-position: ${coverImageUrl ? "top right" : "center"};
   }
   @page { size: A4; margin: 0; }
   /* Phase 4A Delivery 10 — Chrome strips background colours from print
-     output by default ("save toner" mode). That made the PDF look
-     completely different from the preview tab — the dark cover
-     collapsed to white, all the brand colour panels disappeared.
-     -webkit-print-color-adjust:exact + print-color-adjust:exact tells
-     Chrome (and any other Blink-based engine) to render backgrounds
-     in PDF exactly as they appear on screen. Set on the universal
-     selector so every element honours it regardless of where it sits
-     in the DOM. Applies to all renderer outputs (Contract/Tender
-     today, Project/Migration when it lands). */
+     output by default. -webkit-print-color-adjust:exact tells Chrome
+     to render backgrounds in PDF exactly as on screen. */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; font-size: 10pt; line-height: 1.7; color: ${bodyTextColor}; background: #fff; max-width: 210mm; margin: 0 auto; }
 
+  /* ── COVER ─────────────────────────────────────────────────────── */
   .cover { min-height: 100vh; background: var(--brand-primary); display: flex; flex-direction: column; page-break-after: always; color: var(--brand-on-primary); }
   .cover-nav { padding: 14mm 16mm 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
-  /* Phase 4A Delivery 9 — white panel behind logo so any logo (light,
-     dark, or multi-colour) renders against a known contrast surface.
-     Wordmark fallback text flips to dark slate so it stays legible on
-     the white panel. Subtle radius keeps the panel feeling like a
-     polished badge rather than a raw rectangle. */
+  /* Phase 4A Delivery 9 — white panel behind logo so any logo
+     renders against a known contrast surface. */
   .logo-box { min-width: 140px; min-height: 48px; max-width: 200px; background: #ffffff; border: 1px solid rgba(0,0,0,0.08); border-radius: 6px; padding: 8px 14px; display: flex; align-items: center; justify-content: center; font-size: 9.5pt; letter-spacing: 0.2em; color: #1f2937; text-transform: uppercase; font-weight: 700; }
   .cover-ref-block { text-align: right; font-size: 7.5pt; color: rgba(255,255,255,0.55); line-height: 1.9; letter-spacing: 0.06em; }
   .cover-hero { flex: 1; padding: 12mm 16mm; display: flex; flex-direction: column; justify-content: center; }
-  /* Phase 4A Delivery 15 — subtle left-side dark gradient applied
-     only when the cover has a background image. Acts as a contrast
-     safety-net for the title/tagline text in case Gemini does not
-     keep the lower-left zone perfectly quiet. Fades to transparent
-     by 60% of the width so the geometric design dominates the
-     right side of the cover. */
-  .cover-hero.has-bg { background: linear-gradient(to right, rgba(0,0,0,0.18) 0%, rgba(0,0,0,0.10) 30%, rgba(0,0,0,0) 60%); }
   .accent-bar { width: 48px; height: 4px; background: var(--brand-secondary); margin-bottom: 20px; }
   .cover h1 { font-size: 32pt; font-weight: 800; color: #fff; line-height: 1.08; letter-spacing: -0.025em; max-width: 500px; margin-bottom: 16px; }
   .cover-tagline { font-size: 11.5pt; color: rgba(255,255,255,0.7); font-weight: 300; max-width: 440px; line-height: 1.6; margin-bottom: 28px; }
   .cover-prepared-for { font-size: 8.5pt; color: rgba(255,255,255,0.5); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; }
-  /* Phase 4A Delivery 9 — was var(--brand-secondary), but on covers
-     where primary and secondary brand colours are both dark (e.g. navy
-     primary + medium-blue secondary) the contrast against the cover
-     bg failed. Switched to var(--brand-on-primary) so the prepared-for
-     line stays legible regardless of the org's brand palette. The
-     accent-bar above the title still carries brand-secondary so colour
-     identity is preserved on the cover. */
   .cover-client-name { font-size: 13pt; font-weight: 700; color: var(--brand-on-primary); }
-  /* Phase 4A Delivery 9 — auto-fit columns so the strip lays out
-     cleanly when the org has only 1 or 2 contact fields populated.
-     With 3 fields it behaves identically to the previous repeat(3, 1fr). */
   .cover-contact-strip { background: rgba(255,255,255,0.06); border-top: 1px solid rgba(255,255,255,0.12); padding: 10mm 16mm; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; }
   .contact-label { font-size: 7pt; color: rgba(255,255,255,0.45); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 3px; }
   .contact-value { font-size: 9pt; color: rgba(255,255,255,0.9); word-wrap: break-word; }
 
-  /* Phase 4A Delivery 15 — every section page gets a 6mm decorative
-     top band. When --page-band-image is a url(...) (Gemini graphic
-     present) it shows a horizontal slice of the cover graphic,
-     anchoring brand cohesion across the document. When it falls
-     back to a linear-gradient, every page still gets a thin coloured
-     top stripe — design rhythm survives without AI generation. The
-     band is positioned absolutely so the existing 14mm top padding
-     of .page is unchanged; section content layout is unaffected. */
+  /* ── COVER STAT STRIP — Delivery 18 ────────────────────────────── */
+  /* The visual hook the Manus IT-Modern template has carried since
+     day one. Lavender (brand-secondary) bar across the bottom of the
+     cover with 2-4 big bold numbers. The grid-template-columns is
+     set inline so a 2/3/4 cell strip lays out evenly without
+     hardcoding a 4-up template that breaks for sparse data. */
+  .cover-stat-strip { background: var(--brand-secondary); padding: 10mm 16mm; display: grid; gap: 0; }
+  .stat-item { padding: 0 16px 0 0; border-right: 1px solid rgba(255,255,255,0.3); }
+  .stat-item-last { border-right: none; padding-left: 16px; padding-right: 0; }
+  /* First cell has no left padding; last cell has no right border —
+     middle cells inherit standard spacing. */
+  .stat-item:first-child { padding-left: 0; }
+  .stat-num { font-size: 18pt; font-weight: 900; color: var(--brand-primary); line-height: 1; letter-spacing: -0.02em; }
+  .stat-label { font-size: 7.5pt; color: rgba(0,0,0,0.55); text-transform: uppercase; letter-spacing: 0.1em; margin-top: 3px; }
+
+  /* ── PAGES ─────────────────────────────────────────────────────── */
+  /* Phase 4A Delivery 18 — every section page gets a 4mm decorative
+     top stripe in a brand-secondary → brand-primary linear gradient.
+     Replaces the previous AI-image-derived band. Same design rhythm,
+     no AI dependency. */
   .page { padding: 14mm 16mm; page-break-before: always; color: ${bodyTextColor}; position: relative; }
   .page::before {
     content: '';
@@ -723,11 +502,8 @@ function renderCss(brand: ResolvedBrand, coverImageUrl: string | null): string {
     top: 0;
     left: 0;
     right: 0;
-    height: 6mm;
-    background-image: var(--page-band-image);
-    background-size: var(--page-band-size);
-    background-position: var(--page-band-position);
-    background-repeat: no-repeat;
+    height: 4mm;
+    background: linear-gradient(90deg, var(--brand-secondary), var(--brand-primary));
   }
   .eyebrow { font-size: 7.5pt; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--brand-secondary); margin-bottom: 6px; }
   h2 { font-size: 22pt; font-weight: 800; color: var(--brand-primary); letter-spacing: -0.025em; line-height: 1.15; margin-bottom: 18px; }
@@ -774,44 +550,14 @@ function renderCss(brand: ResolvedBrand, coverImageUrl: string | null): string {
 
 // ── Main entry point ─────────────────────────────────────────────────
 
-import { renderModernTemplate } from "./templates/modernTemplate";
-
-export async function generateBrandedProposalHTML(
+export async function renderModernTemplate(
   data: BrandedProposalData,
 ): Promise<string> {
-  // Phase 4A Delivery 17/18 — design template dispatcher.
-  //
-  // The 'modern' template (D18) is the only one with a built renderer.
-  // It produces the typography-led cover with stat strip — the quality
-  // bar Wez has been chasing since D12. Structured + Bold are reserved
-  // keys in the picker UIs but disabled with "Coming soon" badges; if
-  // somehow a request reaches here with one of those values we fall
-  // through to the legacy renderer below (effectively a graceful
-  // degradation path until D19 / D20 land).
-  //
-  // Backward-compat: when `template` is absent on `data` we treat it
-  // as 'modern' so any caller that wasn't updated still gets the new
-  // renderer.
-  const template = data.template ?? "modern";
-  if (template === "modern") {
-    return renderModernTemplate(data);
-  }
-
-  // ── Legacy renderer (Structured / Bold fall through here) ─────────
-  // The code below is the pre-D18 renderer — kept in place as a safety
-  // net for non-Modern templates and for any caller that hasn't been
-  // updated to the new dispatcher contract. D19 / D20 will add real
-  // Structured / Bold renderers and the dispatcher will route to them
-  // explicitly; at that point this fall-through becomes dead code and
-  // can be removed.
-
   const { quote, lineItems, user, organization, tenderContext, brandMode } = data;
 
   const brand = resolveBrand(organization, brandMode);
 
-  // Company identity — prefer org, fall back to user. Both can be null
-  // in edge cases (e.g. a newly signed-up org with no profile yet) so
-  // we always have a string to interpolate.
+  // Company identity — prefer org, fall back to user.
   const companyName =
     (organization as any)?.companyName
     || (user as any)?.companyName
@@ -838,14 +584,6 @@ export async function generateBrandedProposalHTML(
     || null;
   const logoUrl = await resolveLogoUrl(rawLogo);
 
-  // Phase 4A Delivery 12 — resolve the AI-generated cover hero image.
-  // Stored as /api/file/<key> on the org (if generation has run); we
-  // sign for 1h so it loads in the print window. Null/failure means
-  // the cover falls back to the flat brand-primary look — same as
-  // pre-Delivery-12 behaviour. Never blocks the render.
-  const rawCoverImage = ((organization as any)?.coverImageUrl as string | null) || null;
-  const coverImageUrl = await resolveLogoUrl(rawCoverImage);
-
   const reference = (quote as any).reference || `Q-${(quote as any).id}`;
   const clientName = (quote as any).clientName || "Client";
   const contactName = (quote as any).contactName || null;
@@ -854,8 +592,16 @@ export async function generateBrandedProposalHTML(
   const notes = tenderContext?.notes || null;
   const dateStr = formatDate((quote as any).createdAt) || formatDate(new Date());
 
-  // Shared page footer — the Manus template repeats supplier contact +
-  // reference on every page; we mirror that for document feel.
+  // Stat strip — gated by org toggle. Default true; users can flip
+  // off via Settings → Proposal Branding. When off OR when nothing
+  // computes, the strip is omitted entirely (the cover-hero's flex:1
+  // fills the remaining space cleanly without a gap).
+  const statStripEnabled = (organization as any)?.coverStatStripEnabled !== false;
+  const statCells = statStripEnabled
+    ? computeStatCells(quote, lineItems)
+    : [];
+
+  // Shared page footer.
   const footerParts = [
     escapeHtml(companyName) + (companyAddress ? ` &nbsp;·&nbsp; ${escapeHtml(companyAddress)}` : ""),
     [companyPhone, companyEmail].filter(Boolean).map(escapeHtml).join(" &nbsp;·&nbsp; ") || "&nbsp;",
@@ -867,7 +613,6 @@ export async function generateBrandedProposalHTML(
     brand,
     companyName,
     logoUrl,
-    coverImageUrl,
     websiteUrl: companyWebsite,
     companyAddress,
     companyPhone,
@@ -877,6 +622,7 @@ export async function generateBrandedProposalHTML(
     clientName,
     contactName,
     title,
+    statCells,
   });
 
   const execHtml = renderExecSummary({
@@ -903,7 +649,7 @@ export async function generateBrandedProposalHTML(
     pageFooter,
   });
 
-  const css = renderCss(brand, coverImageUrl);
+  const css = renderCss(brand);
 
   return `<!DOCTYPE html>
 <html lang="en">

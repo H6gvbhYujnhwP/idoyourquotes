@@ -64,6 +64,13 @@ export const organizations = pgTable("organizations", {
   coverImageError: text("cover_image_error"),
   coverImagePrompt: text("cover_image_prompt"),
   coverImageGeneratedAt: timestamp("cover_image_generated_at"),
+  // Phase 4A Delivery 17 — proposal design template + cover stat strip
+  // toggle (migration 0020_add_proposal_template). User-selectable design
+  // template for branded proposals: 'modern' | 'structured' | 'bold'.
+  // Stored as text so a fourth template can be added later without an
+  // enum migration; server-side validates against the known values.
+  proposalTemplate: text("proposal_template").default("modern").notNull(),
+  coverStatStripEnabled: boolean("cover_stat_strip_enabled").default(true).notNull(),
   defaultTerms: text("default_terms"),
   billingEmail: varchar("billing_email", { length: 320 }),
   stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
@@ -212,6 +219,10 @@ export const quotes = pgTable("quotes", {
   comprehensiveConfig: json("comprehensive_config").$type<ComprehensiveConfig>(),
   userPrompt: text("user_prompt"),
   processingInstructions: text("processing_instructions"),
+  // Phase 4A Delivery 17 — per-quote design template override. NULL means
+  // "use the org default" (organizations.proposalTemplate). Set via
+  // BrandChoiceModal at branded-PDF generation time.
+  proposalTemplate: text("proposal_template"),
 });
 
 export type Quote = typeof quotes.$inferSelect;

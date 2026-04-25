@@ -38,6 +38,7 @@ import {
   Loader2,
   Sparkles,
   Palette,
+  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { brand } from "@/lib/brandTheme";
 import { trpc } from "@/lib/trpc";
+import {
+  DESIGN_TEMPLATES,
+  DESIGN_TEMPLATE_ORDER,
+  resolveDesignTemplate,
+  type DesignTemplate,
+} from "@/lib/proposalShowcaseAssets";
 
 export type BrandMode = "branded" | "template";
 
@@ -57,8 +64,12 @@ interface BrandChoiceModalProps {
   /**
    * Fired once the user has committed to a brand mode and any inline
    * setup has been saved. The parent runs the generation mutation.
+   *
+   * Phase 4A Delivery 17 — second arg `template` is the chosen design
+   * template (Modern / Structured / Bold). Defaults to the org's
+   * persisted choice; the modal lets the user override per-quote.
    */
-  onGenerate: (mode: BrandMode) => void;
+  onGenerate: (mode: BrandMode, template: DesignTemplate) => void;
   /** True while the parent mutation is in flight. Disables both buttons. */
   isGenerating?: boolean;
 }
@@ -118,6 +129,30 @@ export default function BrandChoiceModal({
   const utils = trpc.useUtils();
 
   const tokens = useMemo(() => readBrandTokens(orgProfile), [orgProfile]);
+
+  // Phase 4A Delivery 17 — local design-template state, seeded from
+  // the org's persisted default. Lets the user override for this one
+  // quote without changing their org default. The selection is passed
+  // up to the parent on generate; persistence to the quote happens
+  // server-side inside generateBrandedProposal.
+  const orgDefaultTemplate: DesignTemplate = useMemo(
+    () => resolveDesignTemplate((orgProfile as any)?.proposalTemplate),
+    [orgProfile],
+  );
+  const [selectedTemplate, setSelectedTemplate] = useState<DesignTemplate>("modern");
+  const [templateSeeded, setTemplateSeeded] = useState(false);
+  useEffect(() => {
+    if (!templateSeeded && orgProfile) {
+      setSelectedTemplate(orgDefaultTemplate);
+      setTemplateSeeded(true);
+    }
+  }, [orgProfile, orgDefaultTemplate, templateSeeded]);
+  // Reset on close so re-opening for a different quote re-reads the
+  // current org default (handles the case where the user changed it
+  // in Settings between modal opens).
+  useEffect(() => {
+    if (!open) setTemplateSeeded(false);
+  }, [open]);
 
   // ── Inline setup state ─────────────────────────────────────────
 
@@ -228,7 +263,7 @@ export default function BrandChoiceModal({
         // failed save shouldn't block the user from getting their doc.
       }
     }
-    onGenerate("branded");
+    onGenerate("branded", selectedTemplate);
   };
 
   // ── Card A body variants ───────────────────────────────────────
@@ -309,7 +344,7 @@ export default function BrandChoiceModal({
 
       <div className="mt-auto">
         <Button
-          onClick={() => onGenerate("branded")}
+          onClick={() => onGenerate("branded", selectedTemplate)}
           disabled={isGenerating}
           className="w-full text-sm text-white"
           style={{
@@ -529,8 +564,66 @@ export default function BrandChoiceModal({
           </p>
         </div>
 
+        {/* Phase 4A Delivery 17 — design template picker row.
+            Compact 3-button strip above the existing Branded/Template
+            cards. Seeded from the org's default in Settings; lets the
+            user override per-quote. Modern is shipped (D18); Structured
+            and Bold are visible but disabled with a "Coming soon" badge
+            until D19 / D20 land. */}
+        <div className="px-8 pb-2">
+          <Label className="text-xs font-semibold mb-2 block" style={{ color: brand.navyMuted }}>
+            Design template
+            {selectedTemplate !== orgDefaultTemplate && (
+              <span className="font-normal ml-1.5 text-[10px]" style={{ color: brand.navyMuted }}>
+                (overriding your default for this quote)
+              </span>
+            )}
+          </Label>
+          <div className="grid grid-cols-3 gap-2">
+            {DESIGN_TEMPLATE_ORDER.map((key) => {
+              const t = DESIGN_TEMPLATES[key];
+              const isSelected = selectedTemplate === key;
+              const disabled = !t.available || isGenerating;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => {
+                    if (!t.available) return;
+                    setSelectedTemplate(key as DesignTemplate);
+                  }}
+                  disabled={disabled}
+                  className={`relative text-left rounded-lg border-2 px-3 py-2 transition-all ${
+                    !t.available
+                      ? "opacity-50 cursor-not-allowed"
+                      : "cursor-pointer"
+                  }`}
+                  style={{
+                    borderColor: isSelected ? brand.tealBorder : brand.border,
+                    backgroundColor: isSelected ? brand.tealBg : brand.white,
+                  }}
+                  aria-pressed={isSelected}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs font-bold" style={{ color: brand.navy }}>
+                      {t.label}
+                    </div>
+                    {!t.available ? (
+                      <span className="text-[8px] font-bold uppercase tracking-wider px-1 py-0.5 rounded bg-amber-100 text-amber-800">
+                        Soon
+                      </span>
+                    ) : isSelected ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0" style={{ color: brand.tealBorder }} />
+                    ) : null}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Cards */}
-        <div className="px-8 pb-8">
+        <div className="px-8 pb-8 pt-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Card A — branded */}
             <div
@@ -605,7 +698,7 @@ export default function BrandChoiceModal({
 
               <div className="mt-auto">
                 <Button
-                  onClick={() => onGenerate("template")}
+                  onClick={() => onGenerate("template", selectedTemplate)}
                   disabled={isGenerating}
                   variant="outline"
                   className="w-full text-sm"
