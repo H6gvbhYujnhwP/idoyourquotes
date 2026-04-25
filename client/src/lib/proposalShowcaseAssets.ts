@@ -97,3 +97,55 @@ export function getProposalShowcaseAsset(
 ): string {
   return PROPOSAL_SHOWCASES[sector].assets[size];
 }
+
+/**
+ * Phase 4A Delivery 8 — sector→showcase mapping.
+ *
+ * Maps a user's defaultTradeSector key (as stored on the users table) to
+ * the showcase variant that ships as their default design template. Used
+ * by the Solo upgrade modal to pick which showcase card to flag as "yours"
+ * and reorder the showcase strip so their sector appears first.
+ *
+ * Returns null for sectors that don't yet have a default showcase
+ * (currently `pest_control`, `custom`, and any legacy non-GTM sector).
+ * Callers should treat null as "no default — show all three as
+ * alternative designs in the existing order".
+ *
+ * The four GTM sectors are:
+ *  - it_services         → Modern
+ *  - commercial_cleaning → Operational
+ *  - website_marketing   → Bold
+ *  - pest_control        → null (no showcase asset yet)
+ */
+export function getDefaultShowcaseForSector(
+  sector: string | null | undefined,
+): ProposalShowcaseSector | null {
+  switch (sector) {
+    case "it_services":
+      return "it";
+    case "commercial_cleaning":
+      return "cleaning";
+    case "website_marketing":
+      return "marketing";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Phase 4A Delivery 8 — return the showcase order with the user's
+ * default first, others after in their existing relative order. If the
+ * user has no mapped default (Pest Control, Custom, or unmapped),
+ * returns the existing canonical order unchanged.
+ *
+ * This is the order the Solo upgrade modal walks when rendering the
+ * three thumbnail cards.
+ */
+export function getOrderedShowcasesForSector(
+  sector: string | null | undefined,
+): readonly ProposalShowcaseSector[] {
+  const defaultKey = getDefaultShowcaseForSector(sector);
+  if (!defaultKey) return PROPOSAL_SHOWCASE_ORDER;
+  const others = PROPOSAL_SHOWCASE_ORDER.filter((k) => k !== defaultKey);
+  return [defaultKey, ...others];
+}

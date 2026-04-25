@@ -1,12 +1,21 @@
 /**
  * SoloUpgradeModal.tsx
  *
- * Phase 4A — Delivery 5.
+ * Phase 4A — Delivery 5 (initial), Delivery 8 (sector-aware reframing).
  *
  * Shown when a Solo or Trial tier user clicks "Generate PDF" on the
- * quote workspace. Presents the three proposal showcase thumbnails
- * (IT-Modern, Cleaning-Operational, Marketing-Bold) as a preview of
- * what upgrading to Pro unlocks.
+ * quote workspace. Presents the proposal showcase thumbnails as a
+ * preview of what upgrading to Pro unlocks.
+ *
+ * Delivery 8 — these are reframed as DESIGN templates rather than
+ * SECTOR templates. The user's sector still determines which template
+ * is their default (Modern for IT, Operational for Cleaning, Bold for
+ * Marketing) and that card surfaces a "Default for [sector]" pip;
+ * the other two cards drop their sector label entirely and are
+ * presented as design alternatives by their personality name. This
+ * removes the confusion of, say, an IT MSP being shown a
+ * "COMMERCIAL CLEANING" template card. Pest Control and unmapped
+ * sectors fall through with no default pip and the existing order.
  *
  * Actions:
  *   - Primary: "Upgrade to Pro" → routes to /pricing
@@ -22,9 +31,11 @@ import { useEffect } from "react";
 import { X, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { brand } from "@/lib/brandTheme";
+import { useAuth } from "@/_core/hooks/useAuth";
 import {
   PROPOSAL_SHOWCASES,
-  PROPOSAL_SHOWCASE_ORDER,
+  getDefaultShowcaseForSector,
+  getOrderedShowcasesForSector,
 } from "@/lib/proposalShowcaseAssets";
 
 interface SoloUpgradeModalProps {
@@ -53,6 +64,22 @@ export default function SoloUpgradeModal({
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [open, onDismiss]);
+
+  // Read the user's sector to pick which card is "yours" and reorder
+  // the strip. Loosely typed because defaultTradeSector lives outside
+  // the strict User shape — same pattern as Dashboard / Catalog.
+  const { user } = useAuth();
+  const userSector =
+    ((user as unknown as { defaultTradeSector?: string | null })
+      ?.defaultTradeSector as string | null | undefined) ?? null;
+  const defaultShowcaseKey = getDefaultShowcaseForSector(userSector);
+  const orderedShowcases = getOrderedShowcasesForSector(userSector);
+  // Sector label for the pip — pulled from the showcase variant rather
+  // than re-deriving from TRADE_SECTOR_OPTIONS so the pip text stays
+  // consistent with what the rest of the showcase system says.
+  const defaultSectorLabel = defaultShowcaseKey
+    ? PROPOSAL_SHOWCASES[defaultShowcaseKey].sectorLabel
+    : null;
 
   if (!open) return null;
 
@@ -104,20 +131,24 @@ export default function SoloUpgradeModal({
             className="text-sm mt-2 leading-relaxed"
             style={{ color: brand.navyMuted }}
           >
-            Pro unlocks personality-led proposal templates built for your
-            sector. Your logo, your brand colours, your website tone — baked
-            in automatically from the brand evidence you've already set up.
+            Pro unlocks personality-led proposal templates with your logo,
+            your colours, and your tone — baked in automatically from the
+            brand evidence you've already set up.
           </p>
         </div>
 
-        {/* Showcase thumbnails */}
+        {/* Showcase thumbnails — Delivery 8: ordered so the user's
+            default sits first, with a "Default for [sector]" pip on
+            that card only. Other cards lose their sector label and
+            present as design alternatives by personality name. */}
         <div
           className="px-8 py-6"
           style={{ backgroundColor: brand.slate }}
         >
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {PROPOSAL_SHOWCASE_ORDER.map((sectorKey) => {
+            {orderedShowcases.map((sectorKey) => {
               const variant = PROPOSAL_SHOWCASES[sectorKey];
+              const isDefault = sectorKey === defaultShowcaseKey;
               return (
                 <figure
                   key={variant.key}
@@ -133,21 +164,33 @@ export default function SoloUpgradeModal({
                   >
                     <img
                       src={variant.assets.thumb}
-                      alt={`${variant.sectorLabel} proposal — ${variant.personality} template`}
+                      alt={`${variant.personality} proposal template`}
                       className="w-full h-full object-cover object-top"
                       loading="eager"
                       draggable={false}
                     />
                   </div>
                   <figcaption className="mt-2.5">
+                    {/* Pip slot — only the user's default card surfaces
+                        a "Default for [sector]" pip. The other cards
+                        drop the sector label entirely so an IT user
+                        isn't shown a card labelled "COMMERCIAL CLEANING".
+                        Slight asymmetry in figcaption height is by
+                        design and reinforces "this one's yours". */}
+                    {isDefault && defaultSectorLabel && (
+                      <div
+                        className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase"
+                        style={{
+                          backgroundColor: brand.tealBg,
+                          color: brand.teal,
+                          border: `1px solid ${brand.tealBorder}`,
+                        }}
+                      >
+                        Default for {defaultSectorLabel}
+                      </div>
+                    )}
                     <div
-                      className="text-[11px] font-semibold tracking-wide uppercase"
-                      style={{ color: brand.navyMuted }}
-                    >
-                      {variant.sectorLabel}
-                    </div>
-                    <div
-                      className="text-xs mt-0.5 leading-snug"
+                      className="text-xs mt-1 leading-snug font-medium"
                       style={{ color: brand.navy }}
                     >
                       {variant.personality} template
