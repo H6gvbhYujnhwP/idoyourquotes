@@ -214,7 +214,7 @@ export const DESIGN_TEMPLATES: Record<DesignTemplate, DesignTemplateInfo> = {
       "High-impact and editorial. Brutalist typography, vivid accent colour, statement scale. Best when you want to stand out.",
     thumb: "/proposal-showcase/marketing-bold-thumb.webp",
     hero: "/proposal-showcase/marketing-bold-hero.webp",
-    available: false,
+    available: true,
   },
 };
 

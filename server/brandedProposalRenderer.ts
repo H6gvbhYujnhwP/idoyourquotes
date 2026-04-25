@@ -776,20 +776,24 @@ function renderCss(brand: ResolvedBrand, coverImageUrl: string | null): string {
 
 import { renderModernTemplate } from "./templates/modernTemplate";
 import { renderStructuredTemplate } from "./templates/structuredTemplate";
+import { renderBoldTemplate } from "./templates/boldTemplate";
 
 export async function generateBrandedProposalHTML(
   data: BrandedProposalData,
 ): Promise<string> {
-  // Phase 4A Delivery 17/18/19 — design template dispatcher.
+  // Phase 4A Delivery 17/18/19/20 — design template dispatcher.
   //
-  // Modern (D18) + Structured (D19) have built renderers. Bold remains
-  // a reserved key in the picker UIs but is disabled with "Coming
-  // soon"; if a request reaches here with `bold` we fall through to
-  // the legacy renderer below as a graceful degradation path until
-  // D20 lands.
+  // All three design templates now have built renderers: Modern (D18,
+  // typography-led with stat strip), Structured (D19, operational with
+  // scope-box on cover), and Bold (D20, brutalist editorial with
+  // accent-band stat strip). The legacy fall-through below is now
+  // dead code in normal operation but is kept in place as a defensive
+  // backstop — if a future template key is somehow added to the picker
+  // without a matching renderer, the fall-through still produces a
+  // valid proposal rather than a hard failure.
   //
   // Backward-compat: when `template` is absent on `data` we treat it
-  // as 'modern' so any caller that wasn't updated still gets the new
+  // as 'modern' so any caller that wasn't updated still gets a proper
   // renderer.
   const template = data.template ?? "modern";
   if (template === "modern") {
@@ -798,13 +802,18 @@ export async function generateBrandedProposalHTML(
   if (template === "structured") {
     return renderStructuredTemplate(data);
   }
+  if (template === "bold") {
+    return renderBoldTemplate(data);
+  }
 
-  // ── Legacy renderer (Bold falls through here) ─────────────────────
-  // The code below is the pre-D18 renderer — kept in place as a safety
-  // net for the Bold template (D20 not yet shipped) and for any caller
-  // that hasn't been updated to the new dispatcher contract. Once D20
-  // lands the dispatcher will route Bold explicitly and this fall-
-  // through becomes dead code that can be removed.
+  // ── Legacy renderer (defensive backstop) ──────────────────────────
+  // The code below is the pre-D18 renderer — kept in place as a
+  // defensive backstop. With Modern, Structured, and Bold all wired
+  // above, no in-product template key falls through here in normal
+  // operation. The block survives only to keep the function
+  // well-defined if a future template key is added to the picker
+  // without a matching renderer (or if a stale client somehow sends
+  // an unknown value).
 
   const { quote, lineItems, user, organization, tenderContext, brandMode } = data;
 
