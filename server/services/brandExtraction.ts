@@ -1,10 +1,22 @@
 /**
  * Brand Extraction Pipeline — Phase 4A Delivery 2
- * (Brochure input retired in Delivery 13.)
+ * (Brochure input retired in Delivery 13.
+ *  Colour extraction switched to deterministic CSS scrape in Delivery 14.)
  *
  * Takes an organization's "brand evidence" (logo URL + company website URL)
  * and turns it into structured brand tokens (primary/secondary colours,
  * font feel, tone) that the branded proposal renderer can consume.
+ *
+ * Two-stage pipeline:
+ *   1. Colours (primary, secondary) — deterministic CSS extraction from
+ *      the website's HTML and linked stylesheets. See cssColorExtraction.ts.
+ *      No AI, no per-call cost, ~50ms.
+ *   2. Tone & font-feel — GPT-4o on a trimmed website snippet. Subjective
+ *      interpretation is GPT's strength; colour extraction was its weakness
+ *      (the noise:signal ratio of WordPress/Webflow markup drowned the
+ *      signal under the prompt's "push toward null rather than fabricate"
+ *      rule). Splitting the responsibilities fixes the NULL-token issue
+ *      that blocked Phase 4C-1.
  *
  * Design rules:
  * - Fire-and-forget from mutation handlers: triggerBrandExtraction(orgId)
@@ -15,12 +27,15 @@
  * - Store a clear `brandExtractionError` on failure; no auto-retry loop.
  * - Distinct from colorExtractor.ts (logo-pixel extraction), which keeps
  *   writing to brand_primary_color / brand_secondary_color. This pipeline
- *   writes to the brand_extracted_* columns added in migration 0017.
+ *   writes to the brand_extracted_* columns added in migration 0017. The
+ *   renderer reads brand_extracted_* first, falling back to the logo-pixel
+ *   values when the website-derived values are null.
  */
 
 import { openai, isOpenAIConfigured } from "../_core/openai";
 import { getUserPrimaryOrg, updateOrganization, getOrganizationById } from "../db";
 import { triggerCoverImageGeneration } from "./coverImageGeneration";
+import { extractColoursFromWebsite } from "./cssColorExtraction";
 
 // ── Tuning ──────────────────────────────────────────────────────────────
 const COOLDOWN_MS = 60_000;
@@ -30,13 +45,6 @@ const OPENAI_MODEL = "gpt-4o";
 // Browser-ish UA — many marketing sites 403 plain scripted fetches.
 const WEBSITE_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-
-type ExtractionResult = {
-  primaryColor: string | null;
-  secondaryColor: string | null;
-  fontFeel: string | null;
-  tone: string | null;
-};
 
 /**
  * Public entry point — call this from mutation handlers after the DB
@@ -90,21 +98,13 @@ async function runExtraction(orgId: number): Promise<void> {
     return;
   }
 
-  if (!isOpenAIConfigured()) {
-    await updateOrganization(orgId, {
-      brandExtractionStatus: "failed",
-      brandExtractionError: "AI extraction is not configured on this server.",
-    } as any);
-    return;
-  }
-
   // ── Mark pending ─────────────────────────────────────────────────────
   await updateOrganization(orgId, {
     brandExtractionStatus: "pending",
     brandExtractionError: null,
   } as any);
 
-  // ── Gather evidence ──────────────────────────────────────────────────
+  // ── Stage 1: Fetch website ──────────────────────────────────────────
   let websiteSnippet = "";
   let websiteNote = "";
   if (website) {
@@ -113,37 +113,76 @@ async function runExtraction(orgId: number): Promise<void> {
     websiteNote = fetched.note;
   }
 
-  // ── Ask GPT-4o for structured tokens ─────────────────────────────────
-  let result: ExtractionResult;
-  try {
-    result = await callOpenAI({
-      hasLogo: !!logo,
-      websiteUrl: website,
-      websiteSnippet,
-      websiteNote,
-    });
-  } catch (err: any) {
-    console.error(`[brandExtraction] OpenAI call failed for org ${orgId}:`, err?.message);
-    await updateOrganization(orgId, {
-      brandExtractionStatus: "failed",
-      brandExtractionError: friendlyError(err),
-    } as any);
-    return;
+  // ── Stage 2: Deterministic colour extraction from CSS ───────────────
+  // No AI, no per-call cost. Returns nulls cleanly when the website
+  // has no extractable colour signal — renderer's fallback chain
+  // (extracted → logo-pixel → template default) handles that case.
+  let primaryColor: string | null = null;
+  let secondaryColor: string | null = null;
+  if (websiteSnippet && website) {
+    try {
+      const cssResult = await extractColoursFromWebsite(
+        websiteSnippet,
+        website,
+      );
+      primaryColor = cssResult.primary;
+      secondaryColor = cssResult.secondary;
+      if (cssResult.sources.length > 0) {
+        console.log(
+          `[brandExtraction] org ${orgId} CSS colours from [${cssResult.sources.join(", ")}]: primary=${primaryColor}, secondary=${secondaryColor}`,
+        );
+      }
+    } catch (err: any) {
+      // Best-effort — log and continue with nulls. The renderer falls
+      // back to the logo-pixel pass when these are null, so a CSS
+      // extraction failure cannot break a proposal.
+      console.warn(
+        `[brandExtraction] CSS colour extraction failed for org ${orgId}:`,
+        err?.message,
+      );
+    }
+  }
+
+  // ── Stage 3: GPT-4o for tone + font-feel only ───────────────────────
+  // GPT is now narrowly scoped to subjective interpretation — its
+  // strength. Colours are out of its hands entirely. If the call fails
+  // or OpenAI is unavailable, tone/feel stay null and the renderer
+  // uses defaults; we never mark the whole extraction as failed for a
+  // tone failure since colours may already have succeeded.
+  let fontFeel: string | null = null;
+  let tone: string | null = null;
+  if (isOpenAIConfigured() && (websiteSnippet || logo)) {
+    try {
+      const toneResult = await callOpenAIForToneAndFeel({
+        hasLogo: !!logo,
+        websiteUrl: website,
+        websiteSnippet,
+        websiteNote,
+      });
+      fontFeel = toneResult.fontFeel;
+      tone = toneResult.tone;
+    } catch (err: any) {
+      console.error(
+        `[brandExtraction] OpenAI tone/feel call failed for org ${orgId}:`,
+        err?.message,
+      );
+      // Continue to persist whatever colours we managed to extract.
+    }
   }
 
   // ── Persist ──────────────────────────────────────────────────────────
   await updateOrganization(orgId, {
-    brandExtractedPrimaryColor: result.primaryColor,
-    brandExtractedSecondaryColor: result.secondaryColor,
-    brandExtractedFontFeel: result.fontFeel,
-    brandExtractedTone: result.tone,
+    brandExtractedPrimaryColor: primaryColor,
+    brandExtractedSecondaryColor: secondaryColor,
+    brandExtractedFontFeel: fontFeel,
+    brandExtractedTone: tone,
     brandExtractionStatus: "ready",
     brandExtractionError: null,
     brandExtractedAt: new Date(),
   } as any);
 
   console.log(
-    `[brandExtraction] org ${orgId} ready — primary=${result.primaryColor}, feel=${result.fontFeel}`,
+    `[brandExtraction] org ${orgId} ready — primary=${primaryColor}, secondary=${secondaryColor}, feel=${fontFeel}, tone=${tone ? "set" : "null"}`,
   );
 
   // Phase 4A Delivery 12 — chain into cover-image generation. Same
@@ -202,19 +241,24 @@ async function fetchWebsite(url: string): Promise<{ body: string; note: string }
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// GPT-4o structured prompt. Asks for JSON only; we parse defensively.
+// GPT-4o structured prompt — tone + font-feel only (Delivery 14).
+// Colour extraction was moved to cssColorExtraction.ts which returns
+// reliable colours from the website's CSS rather than asking the LLM
+// to guess from raw HTML. GPT here is only doing what it's good at:
+// subjective interpretation of brand voice and typographic personality.
+// Asks for JSON only; we parse defensively.
 // ─────────────────────────────────────────────────────────────────────────
-async function callOpenAI(input: {
+async function callOpenAIForToneAndFeel(input: {
   hasLogo: boolean;
   websiteUrl: string | null;
   websiteSnippet: string;
   websiteNote: string;
-}): Promise<ExtractionResult> {
+}): Promise<{ fontFeel: string | null; tone: string | null }> {
   const evidenceParts: string[] = [];
 
   if (input.hasLogo) {
     evidenceParts.push(
-      "The company has uploaded a logo (not shown in this prompt). Infer colour palette from the website below, and assume the logo is consistent.",
+      "The company has uploaded a logo (not shown in this prompt). Assume the typography on the website is consistent with the logo's overall feel.",
     );
   }
 
@@ -235,24 +279,21 @@ async function callOpenAI(input: {
       ? evidenceParts.join("\n\n")
       : "No evidence provided.";
 
-  const systemPrompt = `You are a brand analyst. Given raw evidence about a small UK business — a logo and a company website's HTML — extract structured brand tokens suitable for styling branded proposal documents.
+  const systemPrompt = `You are a brand analyst. Given raw evidence about a small UK business — a logo and a company website's HTML — describe the brand's typographic personality and voice. You are ONLY responsible for these two qualitative judgements; colour extraction is handled by a separate deterministic pipeline.
 
 You must return a single JSON object with exactly these keys:
 {
-  "primaryColor": "#rrggbb",       // main brand colour, lowercase hex; null if you cannot infer with any confidence
-  "secondaryColor": "#rrggbb",     // supporting colour; null if you cannot infer
   "fontFeel": "serif" | "sans" | "display" | "mixed",  // typographic personality suggested by the brand; null if unclear
   "tone": "short paragraph"        // 1–3 sentences describing the brand voice in plain English (e.g. "Warm and personal, with understated confidence. Prioritises clarity over jargon.")
 }
 
 Rules:
 - Output only the JSON object, no commentary, no Markdown fences.
-- Hex colours must be 7 characters with a leading # (e.g. "#1a3a5c"). Do not output named colours.
-- Prefer colours that are actually present on the website over inferences from text.
-- If you have only the URL and no fetched content, still do your best to infer from the URL's likely sector and tone, but lower confidence should push fields toward null rather than fabricated values.
-- Tone should be specific and useful for a proposal writer — avoid generic adjectives like "professional" on its own.`;
+- "fontFeel" should reflect the dominant typographic personality you can infer from the page's headings and body copy, not the literal CSS font stack. If the page is plain HTML with no visible typographic character, return null.
+- "tone" should be specific and useful for a proposal writer — avoid generic adjectives like "professional" on its own. Lean on what the actual copy says about how the brand speaks.
+- If the website body is absent or extremely thin, push fields toward null rather than fabricating.`;
 
-  const userPrompt = `Extract the brand tokens for this company:\n\n${evidenceBlock}`;
+  const userPrompt = `Describe the brand's tone and typographic feel:\n\n${evidenceBlock}`;
 
   const response = await openai.chat.completions.create({
     model: OPENAI_MODEL,
@@ -262,7 +303,7 @@ Rules:
     ],
     response_format: { type: "json_object" },
     temperature: 0.2,
-    max_tokens: 400,
+    max_tokens: 300,
   });
 
   const raw = response.choices[0]?.message?.content?.trim() || "";
@@ -276,21 +317,12 @@ Rules:
   }
 
   return {
-    primaryColor: normaliseHex(parsed?.primaryColor),
-    secondaryColor: normaliseHex(parsed?.secondaryColor),
     fontFeel: normaliseFontFeel(parsed?.fontFeel),
     tone: normaliseTone(parsed?.tone),
   };
 }
 
 // ── Defensive parsing helpers ────────────────────────────────────────────
-function normaliseHex(v: unknown): string | null {
-  if (typeof v !== "string") return null;
-  const trimmed = v.trim().toLowerCase();
-  if (!/^#[0-9a-f]{6}$/.test(trimmed)) return null;
-  return trimmed;
-}
-
 function normaliseFontFeel(v: unknown): string | null {
   if (typeof v !== "string") return null;
   const t = v.trim().toLowerCase();
@@ -306,20 +338,6 @@ function normaliseTone(v: unknown): string | null {
   if (!t) return null;
   // Cap length so we never blow up a DB row or a later prompt.
   return t.length > 500 ? t.slice(0, 497) + "…" : t;
-}
-
-function friendlyError(err: any): string {
-  const msg = (err?.message || "").toString();
-  if (msg.includes("rate limit") || msg.includes("429")) {
-    return "AI rate limit reached. Try again in a minute.";
-  }
-  if (msg.includes("invalid") && msg.includes("api key")) {
-    return "AI API key is invalid or missing.";
-  }
-  if (msg.includes("timeout") || msg.includes("timed out")) {
-    return "Extraction timed out. Try again.";
-  }
-  return msg.length > 200 ? msg.slice(0, 200) + "…" : msg || "Extraction failed.";
 }
 
 /**
