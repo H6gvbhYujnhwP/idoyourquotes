@@ -332,14 +332,21 @@ function renderCover(args: {
   //
   // Why a linear-gradient with two identical colour stops rather than
   // an opacity'd overlay element? Two reasons:
-  //  1. Inline style stays attached to the existing .cover element with
-  //     no extra DOM, so all the existing flex/padding rules just work.
-  //  2. background-image accepts a list of layers; the gradient sits ON
-  //     TOP of the image (CSS layer order is reversed: first listed is
-  //     topmost). Single declaration, no blend modes, no positioning.
+  // Phase 4A Delivery 15 — image goes full-bleed with no brand-tint
+  // overlay. The previous 78%-opacity layer was obliterating the
+  // generated image (D12 + D14 produced "still looks rubbish" in
+  // Wez's words). The new prompt constrains Gemini to keep the left
+  // half of the canvas quiet for text, so the cover-hero text reads
+  // legibly directly on the image. A subtle left-side gradient on
+  // .cover-hero (added via the .has-bg modifier) acts as a safety
+  // net for text contrast in case the model doesn't honour the
+  // composition rule perfectly. If the image is missing for any
+  // reason the .cover element falls back to a flat brand-primary
+  // background — see the .cover CSS rule.
   const coverStyle = coverImageUrl
-    ? ` style="background-image: linear-gradient(rgba(var(--brand-primary-rgb), 0.78), rgba(var(--brand-primary-rgb), 0.78)), url('${escapeHtml(coverImageUrl)}'); background-size: cover; background-position: center;"`
+    ? ` style="background-image: url('${escapeHtml(coverImageUrl)}'); background-size: cover; background-position: center;"`
     : "";
+  const heroClass = coverImageUrl ? "cover-hero has-bg" : "cover-hero";
 
   return `
 <div class="cover"${coverStyle}>
@@ -347,7 +354,7 @@ function renderCover(args: {
     <div class="logo-box">${logoContent}</div>
     <div class="cover-ref-block">Ref: ${escapeHtml(reference)}<br>Date: ${escapeHtml(dateStr)}<br>Prepared for: ${escapeHtml(clientName)}<br>Confidential</div>
   </div>
-  <div class="cover-hero">
+  <div class="${heroClass}">
     <div class="accent-bar"></div>
     <h1>${escapeHtml(title)}</h1>
     <p class="cover-tagline">A formal proposal from ${escapeHtml(companyName)} — scope of work, pricing, terms, and acceptance in a single document.</p>
@@ -597,11 +604,24 @@ function renderTerms(args: {
 // via CSS custom properties so the generated HTML stays small and the
 // theming stays consistent across pages.
 
-function renderCss(brand: ResolvedBrand): string {
+function renderCss(brand: ResolvedBrand, coverImageUrl: string | null): string {
   const headingTextColor = "#111827";
   const bodyTextColor = "#374151";
   const mutedTextColor = "#6b7280";
   const hairlineColor = "#e5e7eb";
+
+  // Phase 4A Delivery 15 — page-band image custom property. When the
+  // org has a generated geometric graphic, every section page gets a
+  // 6mm decorative top band derived from a horizontal slice of that
+  // image (background-size: 200% auto + position: top right anchors
+  // it on the visually-active upper-right of the source). When the
+  // image is absent, the band falls back to a subtle brand-primary →
+  // brand-secondary horizontal gradient so the design rhythm survives
+  // even without AI generation. Either way, every page gets a thin
+  // coloured top stripe — improves the design baseline.
+  const pageBandImage = coverImageUrl
+    ? `url('${coverImageUrl.replace(/'/g, "\\'")}')`
+    : `linear-gradient(90deg, var(--brand-primary), var(--brand-secondary))`;
 
   return `
   :root {
@@ -611,6 +631,9 @@ function renderCss(brand: ResolvedBrand): string {
     --brand-tint: ${brand.tint};
     --brand-tint-alt: ${brand.tintAlt};
     --brand-on-primary: ${brand.onPrimaryText};
+    --page-band-image: ${pageBandImage};
+    --page-band-size: ${coverImageUrl ? "200% auto" : "100% 100%"};
+    --page-band-position: ${coverImageUrl ? "top right" : "center"};
   }
   @page { size: A4; margin: 0; }
   /* Phase 4A Delivery 10 — Chrome strips background colours from print
@@ -636,6 +659,13 @@ function renderCss(brand: ResolvedBrand): string {
   .logo-box { min-width: 140px; min-height: 48px; max-width: 200px; background: #ffffff; border: 1px solid rgba(0,0,0,0.08); border-radius: 6px; padding: 8px 14px; display: flex; align-items: center; justify-content: center; font-size: 9.5pt; letter-spacing: 0.2em; color: #1f2937; text-transform: uppercase; font-weight: 700; }
   .cover-ref-block { text-align: right; font-size: 7.5pt; color: rgba(255,255,255,0.55); line-height: 1.9; letter-spacing: 0.06em; }
   .cover-hero { flex: 1; padding: 12mm 16mm; display: flex; flex-direction: column; justify-content: center; }
+  /* Phase 4A Delivery 15 — subtle left-side dark gradient applied
+     only when the cover has a background image. Acts as a contrast
+     safety-net for the title/tagline text in case Gemini does not
+     keep the lower-left zone perfectly quiet. Fades to transparent
+     by 60% of the width so the geometric design dominates the
+     right side of the cover. */
+  .cover-hero.has-bg { background: linear-gradient(to right, rgba(0,0,0,0.18) 0%, rgba(0,0,0,0.10) 30%, rgba(0,0,0,0) 60%); }
   .accent-bar { width: 48px; height: 4px; background: var(--brand-secondary); margin-bottom: 20px; }
   .cover h1 { font-size: 32pt; font-weight: 800; color: #fff; line-height: 1.08; letter-spacing: -0.025em; max-width: 500px; margin-bottom: 16px; }
   .cover-tagline { font-size: 11.5pt; color: rgba(255,255,255,0.7); font-weight: 300; max-width: 440px; line-height: 1.6; margin-bottom: 28px; }
@@ -655,7 +685,27 @@ function renderCss(brand: ResolvedBrand): string {
   .contact-label { font-size: 7pt; color: rgba(255,255,255,0.45); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 3px; }
   .contact-value { font-size: 9pt; color: rgba(255,255,255,0.9); word-wrap: break-word; }
 
-  .page { padding: 14mm 16mm; page-break-before: always; color: ${bodyTextColor}; }
+  /* Phase 4A Delivery 15 — every section page gets a 6mm decorative
+     top band. When --page-band-image is a url(...) (Gemini graphic
+     present) it shows a horizontal slice of the cover graphic,
+     anchoring brand cohesion across the document. When it falls
+     back to a linear-gradient, every page still gets a thin coloured
+     top stripe — design rhythm survives without AI generation. The
+     band is positioned absolutely so the existing 14mm top padding
+     of .page is unchanged; section content layout is unaffected. */
+  .page { padding: 14mm 16mm; page-break-before: always; color: ${bodyTextColor}; position: relative; }
+  .page::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 6mm;
+    background-image: var(--page-band-image);
+    background-size: var(--page-band-size);
+    background-position: var(--page-band-position);
+    background-repeat: no-repeat;
+  }
   .eyebrow { font-size: 7.5pt; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--brand-secondary); margin-bottom: 6px; }
   h2 { font-size: 22pt; font-weight: 800; color: var(--brand-primary); letter-spacing: -0.025em; line-height: 1.15; margin-bottom: 18px; }
   h3 { font-size: 11pt; font-weight: 700; color: var(--brand-primary); margin: 20px 0 7px; }
@@ -802,7 +852,7 @@ export async function generateBrandedProposalHTML(
     pageFooter,
   });
 
-  const css = renderCss(brand);
+  const css = renderCss(brand, coverImageUrl);
 
   return `<!DOCTYPE html>
 <html lang="en">

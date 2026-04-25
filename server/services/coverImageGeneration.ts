@@ -185,61 +185,65 @@ function buildPrompt(input: {
   tone: string | null;
   fontFeel: string | null;
 }): string {
-  const sectorContext = getSectorContext(input.sector);
+  // Phase 4A Delivery 15 — geometric decoration prompt.
+  //
+  // The previous prompt aimed for "atmospheric backdrop" and Gemini
+  // produced exactly that — soft volumetric photographic-feel images
+  // that disappeared under a 78% brand-tint overlay. The renderer's
+  // overlay is gone in D15, and so is the photographic ask. Now we
+  // ask for flat vector geometric decoration the renderer can place
+  // directly on the cover and as section bands across the document.
+  //
+  // The constraint stack matters more than the creative direction:
+  //   - Two-tone only (primary + a lighter variant of primary). Removes
+  //     the model's tendency to introduce contrasting accents that
+  //     don't belong to the brand.
+  //   - Sparse composition, 8–12 shapes max. Memphis influence at
+  //     low density, not high.
+  //   - Left half quiet — the renderer's text zone sits there. If the
+  //     model honours this we don't need an overlay for legibility.
+  //   - Flat vector style. No photography, no atmospheric haze, no
+  //     metallic sheen, no 3D effects. The image needs to read as
+  //     "graphic design" not "stock photography".
 
-  const colourGuidance = input.primary
-    ? `Build the image around ${input.primary} as the dominant tone${
-        input.secondary ? ` with subtle ${input.secondary} accents` : ""
-      }. Mid-to-dark tonal range — darker overall is better since the image will be overlaid with a ${input.primary}-tinted 78% opacity layer.`
-    : `Use a sophisticated mid-to-dark monochrome palette. Darker overall is better since the image will be overlaid with a brand-tinted 78% opacity layer.`;
+  const primary = input.primary || "#1e293b";
 
-  const toneNote = input.tone
-    ? `Brand voice (use to inform mood, not literal content): ${input.tone}`
-    : "";
+  const colourGuidance = `
+COLOUR PALETTE — STRICTLY TWO TONES:
+- Background: ${primary} (the dominant brand colour, fills the canvas)
+- Shapes: a noticeably lighter tonal variation of ${primary} — same hue family, increased lightness by roughly 25-40%. Soft, calm, not bright. Think the relationship between a deep teal and a pale teal, or a deep navy and a sky blue.
+- ABSOLUTELY NO other colours. No white, no black, no contrasting accents, no rainbow colours. Two tones only.`;
 
-  return `Generate a sophisticated abstract background image for a corporate proposal cover.
+  return `Generate an elegant abstract decorative graphic for a corporate proposal.
 
 REQUIREMENTS:
 - Aspect: 3:4 portrait
-- Style: minimalist, premium corporate aesthetic — the kind of image you'd see on the cover of a high-end consulting firm proposal (think McKinsey, Deloitte, BCG). Quiet, confident, considered.
-- Subject: ABSTRACT only — geometric forms, atmospheric gradients, light particles, soft volumetric textures. Absolutely no people, no objects, no text, no logos, no recognisable brand marks.
-- Colour treatment: ${colourGuidance}
-- Composition: this image is a BACKDROP, not a focal piece. The lower-left to centre area should be relatively quiet because text overlays will sit there. Visual interest can be in the upper-right or upper edges. Avoid sharp focal points anywhere in the lower half.
-- Mood: confident, premium, considered. The image should make a £20k+ contract feel earned.
+- Style: minimalist geometric decoration. Memphis-design influence (playful shape arrangement) tempered by Linear/Pitch SaaS sophistication (premium restraint). The result should feel like a confident page from a designer's brand identity manual — quietly elegant, considered, premium. NOT photographic, NOT atmospheric, NOT 3D — flat vector-style fills with hard clean edges throughout.
+${colourGuidance}
 
-CONTEXT (use for tonal flavour, not literal depiction):
-Company: ${input.companyName}
-Industry feel: ${sectorContext}
-${toneNote}
+SHAPE VOCABULARY — use a thoughtful mix of these:
+- Circles of varying sizes (some large, occupying ~15-20% of the canvas; some small, ~3-5%; perfect geometric circles, no soft edges)
+- One or two flowing wavy lines of consistent stroke weight (sweeping organic curves, hand-drawn feel but clean)
+- Arcs and partial circles (semi-circles, three-quarter circles peeking from edges)
+- Small scattered dots (groupings of 5-10 tiny dots as accent texture)
 
-GOOD REFERENCE STYLES:
-- Soft volumetric light through abstract architectural forms
-- Layered geometric depth with subtle gradient transitions
-- Atmospheric haze with hints of structure and direction
-- Minimal flowing curves with subtle metallic sheen
-- Long-exposure light trails on a dark canvas
+COMPOSITION RULES — these are non-negotiable:
+- Total shapes: between 8 and 12. NOT MORE. Sparse and intentional, never crowded.
+- The LEFT HALF of the canvas must be relatively empty. A single large faint shape can sit there but no detailed clusters. The renderer places title text in this zone.
+- Visual interest concentrated in the UPPER-RIGHT and LOWER-RIGHT quadrants.
+- One sweeping wavy line MAY cross the canvas as a unifying gesture. If used, only one.
+- Shapes can overlap subtly but not stack densely — each shape should remain readable as its own element.
+
+MOOD: confident, premium, elegant, considered. Think a McKinsey proposal cover designed by someone who studied Bauhaus and modern Scandinavian design.
 
 DO NOT:
-- Include any text, words, letters, numbers, logos, or symbols
-- Include people, faces, hands, or body parts
-- Include literal industry depictions (no servers for IT, no mops for cleaning, etc.)
-- Use bright primary colours that would clash with a dark brand overlay
-- Create a dense, busy composition — this needs to recede behind text`;
-}
-
-function getSectorContext(sector: string | null): string {
-  switch (sector) {
-    case "it_services":
-      return "IT services / managed service provider. Suggest connectivity, infrastructure, and quiet reliability through abstract geometric or networked forms. Calm precision, not chaos.";
-    case "commercial_cleaning":
-      return "Commercial cleaning / facilities management. Suggest clarity, freshness, and order through clean abstract textures and soft luminous spaces.";
-    case "website_marketing":
-      return "Website and digital marketing. Suggest momentum, energy, and creativity through dynamic gradient flows and rhythmic geometric patterns.";
-    case "pest_control":
-      return "Pest control. Suggest protection, careful diligence, and natural balance through subtle organic abstract forms.";
-    default:
-      return "Premium professional services. Convey assurance through geometric abstraction and atmospheric depth.";
-  }
+- Include any text, letters, numbers, logos, or symbols
+- Include people, faces, hands, body parts, or any literal objects
+- Include literal industry depictions (no servers, no buildings, no tools, no anything literal)
+- Use any third colour, gradient, photographic texture, or 3D effect
+- Use atmospheric haze, soft glows, light particles, or metallic sheen
+- Place focal shapes in the lower-left or centre-left — those zones are reserved for text overlay
+- Create a dense, busy, or chaotic composition — restraint is the brief`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
