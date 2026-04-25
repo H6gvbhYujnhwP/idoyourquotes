@@ -569,7 +569,17 @@ function renderCss(brand: ResolvedBrand): string {
     --brand-on-primary: ${brand.onPrimaryText};
   }
   @page { size: A4; margin: 0; }
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  /* Phase 4A Delivery 10 — Chrome strips background colours from print
+     output by default ("save toner" mode). That made the PDF look
+     completely different from the preview tab — the dark cover
+     collapsed to white, all the brand colour panels disappeared.
+     -webkit-print-color-adjust:exact + print-color-adjust:exact tells
+     Chrome (and any other Blink-based engine) to render backgrounds
+     in PDF exactly as they appear on screen. Set on the universal
+     selector so every element honours it regardless of where it sits
+     in the DOM. Applies to all renderer outputs (Contract/Tender
+     today, Project/Migration when it lands). */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; font-size: 10pt; line-height: 1.7; color: ${bodyTextColor}; background: #fff; max-width: 210mm; margin: 0 auto; }
 
   .cover { min-height: 100vh; background: var(--brand-primary); display: flex; flex-direction: column; page-break-after: always; color: var(--brand-on-primary); }
