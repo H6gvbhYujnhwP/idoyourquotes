@@ -355,11 +355,21 @@ function renderTerms(args: {
 }): string {
   const { quote, organization, tenderContext, companyName, clientName, pageFooter } = args;
 
+  // Phase 4A Delivery 24 — branded-renderer cascade chain.
+  //   quote.X → organizations.brandedX → organizations.defaultX → fallback
+  // Per-quote overrides (quote.X) win when set; otherwise the branded-
+  // mode default takes over; otherwise we fall through to the legacy
+  // default* (which was the only source pre-D24, so existing orgs that
+  // set those in Settings continue to see them in branded output until
+  // they explicitly fork by ticking save-as-default in the review gate).
   const terms = (quote as any).terms
+    || (organization as any)?.brandedTerms
     || (organization as any)?.defaultTerms
     || "Standard UK commercial terms apply. Full terms are available on request.";
 
-  const paymentTerms = (organization as any)?.defaultPaymentTerms
+  const paymentTerms = (quote as any).paymentTerms
+    || (organization as any)?.brandedPaymentTerms
+    || (organization as any)?.defaultPaymentTerms
     || "Monthly invoicing, payable within 30 days of invoice date.";
 
   const validUntilRaw = (quote as any).validUntil;
@@ -372,7 +382,10 @@ function renderTerms(args: {
   const assumptions = (tenderContext?.assumptions || []).filter((a) => a && a.text && a.text.trim());
   const exclusions = (tenderContext?.exclusions || []).filter((e) => e && e.text && e.text.trim());
 
-  const orgDefaultExclusions = (organization as any)?.defaultExclusions as string | null | undefined;
+  // Exclusions cascade applies only when tenderContext.exclusions is empty.
+  const orgExclusionsBlob =
+    ((organization as any)?.brandedExclusions as string | null | undefined)
+    || ((organization as any)?.defaultExclusions as string | null | undefined);
 
   const assumptionsHtml = assumptions.length > 0
     ? `<ul class="term-list">${assumptions.map((a) => `<li>${escapeHtml(a.text)}</li>`).join("")}</ul>`
@@ -381,20 +394,28 @@ function renderTerms(args: {
   let exclusionsHtml: string;
   if (exclusions.length > 0) {
     exclusionsHtml = `<ul class="term-list">${exclusions.map((e) => `<li>${escapeHtml(e.text)}</li>`).join("")}</ul>`;
-  } else if (orgDefaultExclusions && orgDefaultExclusions.trim()) {
-    const parts = orgDefaultExclusions
+  } else if (orgExclusionsBlob && orgExclusionsBlob.trim()) {
+    const parts = orgExclusionsBlob
       .split(/[\n;•·]+/)
       .map((s) => s.trim())
       .filter(Boolean);
     exclusionsHtml = parts.length > 1
       ? `<ul class="term-list">${parts.map((p) => `<li>${escapeHtml(p)}</li>`).join("")}</ul>`
-      : `<p>${escapeHtml(orgDefaultExclusions)}</p>`;
+      : `<p>${escapeHtml(orgExclusionsBlob)}</p>`;
   } else {
     exclusionsHtml = `<p class="term-muted">None explicitly recorded.</p>`;
   }
 
-  const signatoryName = (organization as any)?.defaultSignatoryName || "";
-  const signatoryPosition = (organization as any)?.defaultSignatoryPosition || "";
+  const signatoryName =
+    (quote as any).signatoryName
+    || (organization as any)?.brandedSignatoryName
+    || (organization as any)?.defaultSignatoryName
+    || "";
+  const signatoryPosition =
+    (quote as any).signatoryPosition
+    || (organization as any)?.brandedSignatoryPosition
+    || (organization as any)?.defaultSignatoryPosition
+    || "";
   const supplierSigLabel = signatoryName && signatoryPosition
     ? `${escapeHtml(signatoryName)}, ${escapeHtml(signatoryPosition)}`
     : signatoryName

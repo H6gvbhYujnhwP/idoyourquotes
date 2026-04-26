@@ -102,6 +102,18 @@ export const organizations = pgTable("organizations", {
   defaultSurfaceTreatment: varchar("default_surface_treatment", { length: 255 }),
   defaultReturnVisitRate: varchar("default_return_visit_rate", { length: 255 }),
   defaultPaymentTerms: text("default_payment_terms"),
+  // Phase 4A Delivery 24 — branded-mode defaults (migration
+  // 0022_add_quote_overrides_and_branded_defaults). Save-as-default
+  // inside the branded review gate writes here so it doesn't bleed
+  // into Quick Quote mode. Renderer cascade is:
+  //   quote.X → organizations.brandedX → organizations.defaultX → fallback
+  // so existing orgs that already have default* set continue to see
+  // them in branded output until they explicitly fork.
+  brandedTerms: text("branded_terms"),
+  brandedExclusions: text("branded_exclusions"),
+  brandedPaymentTerms: text("branded_payment_terms"),
+  brandedSignatoryName: varchar("branded_signatory_name", { length: 255 }),
+  brandedSignatoryPosition: varchar("branded_signatory_position", { length: 255 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -192,6 +204,13 @@ export const quotes = pgTable("quotes", {
   description: text("description"),
   terms: text("terms"),
   validUntil: timestamp("valid_until"),
+  // Phase 4A Delivery 24 — per-quote overrides for fields that the
+  // branded renderer would otherwise pull from organizations.brandedX
+  // (and then organizations.defaultX) for. Lets the user override on a
+  // per-quote basis from the review-before-generate gate.
+  paymentTerms: text("payment_terms"),
+  signatoryName: varchar("signatory_name", { length: 255 }),
+  signatoryPosition: varchar("signatory_position", { length: 255 }),
   subtotal: decimal("subtotal", { precision: 12, scale: 2 }).default("0.00"),
   taxRate: decimal("tax_rate", { precision: 5, scale: 2 }).default("0.00"),
   taxAmount: decimal("tax_amount", { precision: 12, scale: 2 }).default("0.00"),

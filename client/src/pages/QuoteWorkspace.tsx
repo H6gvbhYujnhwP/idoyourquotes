@@ -86,7 +86,7 @@ import MissingCostsModal from "@/components/MissingCostsModal";
 import AddToCatalogueDialog, {
   type AddToCatalogueSeed,
 } from "@/components/AddToCatalogueDialog";
-import PreGeneratePDFModal from "@/components/PreGeneratePDFModal";
+import ReviewBeforeGenerateModal from "@/components/ReviewBeforeGenerateModal";
 import SoloUpgradeModal from "@/components/SoloUpgradeModal";
 import ExportFormatPickerModal from "@/components/ExportFormatPickerModal";
 import BrandChoiceModal, { type BrandMode } from "@/components/BrandChoiceModal";
@@ -353,6 +353,16 @@ export default function QuoteWorkspace() {
   // between "use your branding" (AI-extracted brand tokens) and "use
   // template defaults" (built-in navy/violet palette).
   const [showBrandChoiceModal, setShowBrandChoiceModal] = useState(false);
+  // Phase 4A Delivery 24 — Branded review gate. After the user commits
+  // their branding + template choice in BrandChoiceModal, we intercept
+  // the generate call, stash the chosen options, and open the
+  // ReviewBeforeGenerateModal in "branded" mode. The actual mutation
+  // fires from handleBrandedReviewConfirmed once the review modal is
+  // confirmed (and any per-section saves have resolved).
+  const [showBrandedReviewModal, setShowBrandedReviewModal] = useState(false);
+  const [pendingBrandChoice, setPendingBrandChoice] = useState<
+    { mode: BrandMode; template: DesignTemplate } | null
+  >(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // ── Controlled field state ──
@@ -424,6 +434,11 @@ export default function QuoteWorkspace() {
   // Phase 4A Delivery 7 — branded Contract/Tender proposal. Separate
   // endpoint, does not touch generatePDF. Same return shape { html }.
   const generateBrandedProposal = trpc.quotes.generateBrandedProposal.useMutation();
+  // Phase 4A Delivery 24 — org profile is read here so the
+  // ReviewBeforeGenerateModal can show what the renderer would produce
+  // (cascade-resolved values) when per-quote fields are blank. Cached
+  // by tRPC so other components reading the same query share it.
+  const { data: orgProfile } = trpc.auth.orgProfile.useQuery();
 
   // ── Mutations — line items ──
   const createLineItem = trpc.lineItems.create.useMutation({
@@ -970,13 +985,42 @@ export default function QuoteWorkspace() {
     setShowFormatPickerModal(true);
   };
 
+  // Phase 4A Delivery 24 — when the user clicks "Generate proposal" in
+  // BrandChoiceModal, we don't fire the mutation immediately. We stash
+  // the chosen brand mode + template, close the brand modal, and open
+  // the ReviewBeforeGenerateModal in "branded" mode. The actual
+  // mutation fires from handleBrandedReviewConfirmed once the review
+  // gate is confirmed. Mirrors the Quick Quote flow where
+  // PreGeneratePDFModal sat between the Generate-PDF button and the
+  // actual generator.
+  const handleBrandChoiceCommitted = (
+    mode: BrandMode,
+    template: DesignTemplate,
+  ) => {
+    setPendingBrandChoice({ mode, template });
+    setShowBrandChoiceModal(false);
+    setShowBrandedReviewModal(true);
+  };
+
+  const handleBrandedReviewConfirmed = () => {
+    setShowBrandedReviewModal(false);
+    if (!pendingBrandChoice) return;
+    const { mode, template } = pendingBrandChoice;
+    setPendingBrandChoice(null);
+    void doGenerateBranded(mode, template);
+  };
+
   // Phase 4A Delivery 7 — fire the branded proposal mutation and open
   // the resulting HTML in a print window, same mechanism as the Quick
-  // quote path. No T/E/A review step for branded output.
+  // quote path.
   // Phase 4A Delivery 17 — accepts the design template chosen in the
   // BrandChoiceModal and passes it through to the server, which
   // resolves the effective template (override → quote → org → 'modern')
   // and persists per-quote overrides for re-generations.
+  // Phase 4A Delivery 24 — invocation moved behind the
+  // ReviewBeforeGenerateModal gate; called from
+  // handleBrandedReviewConfirmed rather than directly from
+  // BrandChoiceModal.
   const doGenerateBranded = async (mode: BrandMode, template: DesignTemplate) => {
     try {
       const result = await generateBrandedProposal.mutateAsync({
@@ -1334,11 +1378,16 @@ export default function QuoteWorkspace() {
           AI produced. Passes the current saved values from fullQuote so
           the modal always reflects what's on disk (not stale local
           drafts), which matters if the user has had the workspace open
-          for a while and regenerated / edited the quote in between. */}
-      <PreGeneratePDFModal
+          for a while and regenerated / edited the quote in between.
+          Phase 4A Delivery 24 — extended into a mode-aware
+          ReviewBeforeGenerateModal. Quick Quote mode renders the same
+          three sections (Terms / Exclusions / Assumptions) plus the
+          new save-as-default checkboxes on Terms and Exclusions. */}
+      <ReviewBeforeGenerateModal
         open={showPrePDFModal}
         onOpenChange={setShowPrePDFModal}
         quoteId={quoteId}
+        mode="quick"
         initialTerms={(quote as any)?.terms ?? null}
         initialAssumptions={
           (fullQuote as any)?.tenderContext?.assumptions ?? null
@@ -1346,7 +1395,61 @@ export default function QuoteWorkspace() {
         initialExclusions={
           (fullQuote as any)?.tenderContext?.exclusions ?? null
         }
+        orgDefaults={{
+          defaultTerms: (orgProfile as any)?.defaultTerms ?? null,
+          defaultExclusions: (orgProfile as any)?.defaultExclusions ?? null,
+        }}
         onConfirm={handlePrePDFConfirmed}
+      />
+
+      {/* Phase 4A Delivery 24 — Branded review gate. Same component as
+          the Quick Quote review above, but in "branded" mode it shows
+          all eight sections that go on a Contract/Tender PDF (notes,
+          terms, exclusions, assumptions, validUntil, paymentTerms,
+          signatoryName, signatoryPosition). Save-as-default ticks
+          write to organizations.brandedX so they don't bleed into
+          Quick Quote defaults. */}
+      <ReviewBeforeGenerateModal
+        open={showBrandedReviewModal}
+        onOpenChange={(open) => {
+          setShowBrandedReviewModal(open);
+          if (!open) setPendingBrandChoice(null);
+        }}
+        quoteId={quoteId}
+        mode="branded"
+        initialTerms={(quote as any)?.terms ?? null}
+        initialAssumptions={
+          (fullQuote as any)?.tenderContext?.assumptions ?? null
+        }
+        initialExclusions={
+          (fullQuote as any)?.tenderContext?.exclusions ?? null
+        }
+        initialNotes={(fullQuote as any)?.tenderContext?.notes ?? null}
+        initialValidUntil={(quote as any)?.validUntil ?? null}
+        initialPaymentTerms={(quote as any)?.paymentTerms ?? null}
+        initialSignatoryName={(quote as any)?.signatoryName ?? null}
+        initialSignatoryPosition={
+          (quote as any)?.signatoryPosition ?? null
+        }
+        orgDefaults={{
+          defaultTerms: (orgProfile as any)?.defaultTerms ?? null,
+          defaultExclusions: (orgProfile as any)?.defaultExclusions ?? null,
+          defaultPaymentTerms:
+            (orgProfile as any)?.defaultPaymentTerms ?? null,
+          defaultSignatoryName:
+            (orgProfile as any)?.defaultSignatoryName ?? null,
+          defaultSignatoryPosition:
+            (orgProfile as any)?.defaultSignatoryPosition ?? null,
+          brandedTerms: (orgProfile as any)?.brandedTerms ?? null,
+          brandedExclusions: (orgProfile as any)?.brandedExclusions ?? null,
+          brandedPaymentTerms:
+            (orgProfile as any)?.brandedPaymentTerms ?? null,
+          brandedSignatoryName:
+            (orgProfile as any)?.brandedSignatoryName ?? null,
+          brandedSignatoryPosition:
+            (orgProfile as any)?.brandedSignatoryPosition ?? null,
+        }}
+        onConfirm={handleBrandedReviewConfirmed}
       />
 
       {/* Phase 4A Delivery 5 — Solo upgrade modal. Fires when a soft-
@@ -1377,13 +1480,15 @@ export default function QuoteWorkspace() {
       {/* Phase 4A Delivery 7 — Brand Choice modal. Opens after the user
           picks the Contract/Tender card in the picker above. Lets them
           choose between "use your branding" (with inline setup if the
-          org has no brand tokens yet) and "use template defaults". Fires
-          the new generateBrandedProposal mutation on either choice. */}
+          org has no brand tokens yet) and "use template defaults".
+          Phase 4A Delivery 24 — onGenerate now routes through the
+          ReviewBeforeGenerateModal gate (handleBrandChoiceCommitted)
+          rather than firing the mutation directly. */}
       <BrandChoiceModal
         open={showBrandChoiceModal}
         onDismiss={() => setShowBrandChoiceModal(false)}
         onBack={handleBrandChoiceBack}
-        onGenerate={(mode, template) => void doGenerateBranded(mode, template)}
+        onGenerate={handleBrandChoiceCommitted}
         isGenerating={generateBrandedProposal.isPending}
       />
     </div>

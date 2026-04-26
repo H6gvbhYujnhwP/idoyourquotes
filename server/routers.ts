@@ -237,6 +237,15 @@ export const appRouter = router({
         defaultSurfaceTreatment: z.string().optional(),
         defaultReturnVisitRate: z.string().optional(),
         defaultPaymentTerms: z.string().optional(),
+        // Phase 4A Delivery 24 — branded-mode defaults. Set when the user
+        // ticks "save as my default" inside the branded review gate. Kept
+        // separate from the (Quick-Quote) default* family so save-as-
+        // default in one mode doesn't overwrite the other mode's defaults.
+        brandedTerms: z.string().nullable().optional(),
+        brandedExclusions: z.string().nullable().optional(),
+        brandedPaymentTerms: z.string().nullable().optional(),
+        brandedSignatoryName: z.string().nullable().optional(),
+        brandedSignatoryPosition: z.string().nullable().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         // Save basic profile fields to user table (legacy compatibility)
@@ -245,6 +254,8 @@ export const appRouter = router({
           defaultInsuranceLimits, defaultDayWorkRates, defaultExclusions,
           defaultValidityDays, defaultSignatoryName, defaultSignatoryPosition,
           defaultSurfaceTreatment, defaultReturnVisitRate, defaultPaymentTerms,
+          brandedTerms, brandedExclusions, brandedPaymentTerms,
+          brandedSignatoryName, brandedSignatoryPosition,
           ...userFields 
         } = input;
 
@@ -277,6 +288,12 @@ export const appRouter = router({
           if (defaultSurfaceTreatment !== undefined) orgUpdate.defaultSurfaceTreatment = defaultSurfaceTreatment;
           if (defaultReturnVisitRate !== undefined) orgUpdate.defaultReturnVisitRate = defaultReturnVisitRate;
           if (defaultPaymentTerms !== undefined) orgUpdate.defaultPaymentTerms = defaultPaymentTerms;
+          // Phase 4A Delivery 24 — branded-mode defaults
+          if (brandedTerms !== undefined) orgUpdate.brandedTerms = brandedTerms;
+          if (brandedExclusions !== undefined) orgUpdate.brandedExclusions = brandedExclusions;
+          if (brandedPaymentTerms !== undefined) orgUpdate.brandedPaymentTerms = brandedPaymentTerms;
+          if (brandedSignatoryName !== undefined) orgUpdate.brandedSignatoryName = brandedSignatoryName;
+          if (brandedSignatoryPosition !== undefined) orgUpdate.brandedSignatoryPosition = brandedSignatoryPosition;
 
           if (Object.keys(orgUpdate).length > 0) {
             await updateOrganization(org.id, orgUpdate as any);
@@ -567,6 +584,13 @@ export const appRouter = router({
         description: z.string().optional(),
         terms: z.string().optional(),
         validUntil: z.date().optional(),
+        // Phase 4A Delivery 24 — per-quote overrides for branded-renderer
+        // fields. Each is a nullable optional so the modal can clear an
+        // override (sets back to NULL → cascade falls through to org
+        // brandedX → defaultX → hardcoded fallback).
+        paymentTerms: z.string().nullable().optional(),
+        signatoryName: z.string().nullable().optional(),
+        signatoryPosition: z.string().nullable().optional(),
         taxRate: z.string().optional(),
         userPrompt: z.string().nullable().optional(),
         processingInstructions: z.string().nullable().optional(),
