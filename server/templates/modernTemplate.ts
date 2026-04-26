@@ -57,6 +57,7 @@ import {
   resolveBrand,
   resolveLogoUrl,
   sumDecimal,
+  readableTextOn,
 } from "../brandedProposalRenderer";
 
 // ── Stat strip ──────────────────────────────────────────────────────
@@ -442,6 +443,18 @@ function renderCss(brand: ResolvedBrand): string {
   const mutedTextColor = "#6b7280";
   const hairlineColor = "#e5e7eb";
 
+  // Phase 4A Delivery 23 — stat-num text colour is contrast-checked
+  // against the stat-strip's accent fill. The intended look is
+  // brand-primary on brand-secondary (a brand-on-brand statement),
+  // and that's what's used whenever the two colours have at least
+  // 4.5:1 contrast. When they stack too closely (e.g. Sweetbyte's
+  // dark-navy primary on dark-navy secondary), readableTextOn flips
+  // to white or black so the numbers stay readable. Stat-label keeps
+  // its rgba black-with-alpha — small text against a coloured fill
+  // sits in a different visual register and the slight bleed reads
+  // as supporting metadata rather than primary content.
+  const statNumColor = readableTextOn(brand.secondary, brand.primary);
+
   return `
   :root {
     --brand-primary: ${brand.primary};
@@ -487,7 +500,7 @@ function renderCss(brand: ResolvedBrand): string {
   /* First cell has no left padding; last cell has no right border —
      middle cells inherit standard spacing. */
   .stat-item:first-child { padding-left: 0; }
-  .stat-num { font-size: 18pt; font-weight: 900; color: var(--brand-primary); line-height: 1; letter-spacing: -0.02em; }
+  .stat-num { font-size: 18pt; font-weight: 900; color: ${statNumColor}; line-height: 1; letter-spacing: -0.02em; }
   .stat-label { font-size: 7.5pt; color: rgba(0,0,0,0.55); text-transform: uppercase; letter-spacing: 0.1em; margin-top: 3px; }
 
   /* ── PAGES ─────────────────────────────────────────────────────── */

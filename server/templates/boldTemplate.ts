@@ -60,6 +60,7 @@ import {
   resolveBrand,
   resolveLogoUrl,
   sumDecimal,
+  accentForDarkBg,
 } from "../brandedProposalRenderer";
 
 // ── Stat strip ───────────────────────────────────────────────────────
@@ -520,10 +521,20 @@ function renderCss(brand: ResolvedBrand): string {
   const hairline = "#e0e0e0";
   const zebraTint = "#f5f5f5";
 
+  // Phase 4A Delivery 23 — accent is filtered through accentForDarkBg
+  // so dark brand secondaries (e.g. Sweetbyte's #1154a0) get lifted
+  // into a readable variant of themselves before being interpolated
+  // into the CSS. Bright brand accents pass through unchanged. This
+  // protects every Bold use of --brand-secondary at once: text on
+  // black (eyebrow, H1 accent word, bold-callout), filled bands with
+  // black numbers on top (stat-strip, total-row), and decorative
+  // borders.
+  const safeAccent = accentForDarkBg(brand.secondary, inkBlack);
+
   return `
   :root {
-    --brand-secondary: ${brand.secondary};
-    --brand-secondary-rgb: ${hexToRgbTriple(brand.secondary)};
+    --brand-secondary: ${safeAccent};
+    --brand-secondary-rgb: ${hexToRgbTriple(safeAccent)};
     /* Fixed editorial chrome — Bold's identity is black + accent. */
     --bold-ink: ${inkBlack};
     --bold-body: ${inkBody};

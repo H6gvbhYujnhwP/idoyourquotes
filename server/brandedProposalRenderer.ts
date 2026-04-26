@@ -193,6 +193,163 @@ export function hexToRgbTriple(hex: string): string {
   return `${r}, ${g}, ${b}`;
 }
 
+// ── Contrast-aware colour helpers (Phase 4A Delivery 23) ────────────
+//
+// User-supplied brand colours can fail readability in template chrome
+// that the renderer can't pre-compute around. Two failure modes seen
+// in the wild:
+//
+//   1. Bold template puts the user's accent (brand-secondary) AS TEXT
+//      on a fixed near-black chrome (#0a0a0a). When the user's
+//      secondary is itself dark (e.g. Sweetbyte's #1154a0), accent
+//      text on black is unreadable.
+//   2. Bold template ALSO fills its stat-strip band with the user's
+//      accent and puts black numbers on top — so a dark accent
+//      simultaneously fails black-on-fill contrast.
+//   3. Modern template puts user's primary as text on user's secondary
+//      fill (the brand-on-brand stat strip). Two dark brand colours
+//      stacked = unreadable.
+//
+// The helpers below give the templates two tools:
+//   - accentForDarkBg(hex)        → safe accent for use on near-black
+//   - readableTextOn(bg, preferred) → preferred text colour if it
+//                                     passes contrast, else flip to
+//                                     white or black
+
+/**
+ * WCAG 2.1 relative luminance of a hex colour. Returns a number in
+ * [0, 1] where 0 is pure black and 1 is pure white.
+ */
+export function relativeLuminance(hex: string): number {
+  const h = hex.replace("#", "");
+  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const toLin = (c: number) => {
+    const v = c / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  };
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  if ([r, g, b].some((n) => Number.isNaN(n))) return 0;
+  return 0.2126 * toLin(r) + 0.7152 * toLin(g) + 0.0722 * toLin(b);
+}
+
+/**
+ * WCAG 2.1 contrast ratio between two colours. Returns a number ≥ 1.
+ * 4.5+ passes AA for normal text; 3.0+ for large text.
+ */
+export function contrastRatio(a: string, b: string): number {
+  const la = relativeLuminance(a);
+  const lb = relativeLuminance(b);
+  const [hi, lo] = la >= lb ? [la, lb] : [lb, la];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/** Hex → HSL with h in [0, 360], s and l in [0, 1]. */
+export function hexToHsl(hex: string): { h: number; s: number; l: number } {
+  const h = hex.replace("#", "");
+  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const r = (parseInt(full.slice(0, 2), 16) || 0) / 255;
+  const g = (parseInt(full.slice(2, 4), 16) || 0) / 255;
+  const b = (parseInt(full.slice(4, 6), 16) || 0) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  let s = 0;
+  let hue = 0;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r:
+        hue = (g - b) / d + (g < b ? 6 : 0);
+        break;
+      case g:
+        hue = (b - r) / d + 2;
+        break;
+      default:
+        hue = (r - g) / d + 4;
+    }
+    hue *= 60;
+  }
+  return { h: hue, s, l };
+}
+
+/** HSL (h ∈ [0,360], s,l ∈ [0,1]) → #rrggbb. */
+export function hslToHex(h: number, s: number, l: number): string {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const hp = ((h % 360) + 360) % 360 / 60;
+  const x = c * (1 - Math.abs((hp % 2) - 1));
+  let [r1, g1, b1] = [0, 0, 0];
+  if (hp < 1) [r1, g1, b1] = [c, x, 0];
+  else if (hp < 2) [r1, g1, b1] = [x, c, 0];
+  else if (hp < 3) [r1, g1, b1] = [0, c, x];
+  else if (hp < 4) [r1, g1, b1] = [0, x, c];
+  else if (hp < 5) [r1, g1, b1] = [x, 0, c];
+  else [r1, g1, b1] = [c, 0, x];
+  const m = l - c / 2;
+  const toByte = (v: number) =>
+    Math.round(Math.max(0, Math.min(1, v + m)) * 255)
+      .toString(16)
+      .padStart(2, "0");
+  return `#${toByte(r1)}${toByte(g1)}${toByte(b1)}`;
+}
+
+/**
+ * Resolve a "safe" accent for use on a dark chrome (defaults to the
+ * Bold template's #0a0a0a). When the input already has ≥ 4.5:1 contrast
+ * against the dark background, returns it unchanged — most healthy
+ * brand accents pass first try (vivid red, hot pink, lime, electric
+ * blue, lavender all sail through).
+ *
+ * When contrast fails, lifts the colour in HSL space — preserves hue
+ * + saturation, pushes lightness up — so the brand identity survives.
+ * Sweetbyte's #1154a0 (dark navy) lifts to a recognisable mid-blue
+ * around #5b9ce0 instead of being replaced wholesale with white.
+ *
+ * Last-resort fallback is white, used only when even an aggressive
+ * lift can't reach the contrast threshold (e.g. a near-black brand
+ * with very low saturation).
+ */
+export function accentForDarkBg(
+  hex: string,
+  darkBg: string = "#0a0a0a",
+): string {
+  if (!validHex(hex)) return "#ffffff";
+  if (contrastRatio(hex, darkBg) >= 4.5) return hex;
+
+  const { h, s } = hexToHsl(hex);
+
+  // First lift — preserve saturation, push lightness to 70%. Works
+  // for most dark-but-saturated brand colours.
+  const lifted = hslToHex(h, s, 0.7);
+  if (contrastRatio(lifted, darkBg) >= 4.5) return lifted;
+
+  // Second lift — boost saturation a bit more and push lightness to
+  // 82%. Catches very dark, low-saturation colours like near-black or
+  // dark gray.
+  const lifted2 = hslToHex(h, Math.max(s, 0.3), 0.82);
+  if (contrastRatio(lifted2, darkBg) >= 4.5) return lifted2;
+
+  return "#ffffff";
+}
+
+/**
+ * Pick whichever of `preferred` or a safe black/white fallback gives
+ * readable contrast against `bg`. Used when a template wants to put
+ * one brand token's text on another brand token's fill (e.g. Modern's
+ * stat strip uses brand-primary text on brand-secondary band, which
+ * fails when both colours are dark). The "preferred" wins whenever
+ * it's readable so brand-on-brand looks survive when the colours
+ * differ enough.
+ */
+export function readableTextOn(bg: string, preferred: string): string {
+  if (validHex(preferred) && contrastRatio(bg, preferred) >= 4.5) {
+    return preferred;
+  }
+  return isDark(bg) ? "#ffffff" : "#0a0a0a";
+}
+
 // ── Brand resolution ─────────────────────────────────────────────────
 
 /**
