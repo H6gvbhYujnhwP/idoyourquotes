@@ -579,6 +579,14 @@ function renderCss(brand: ResolvedBrand): string {
     .cover { min-height: 297mm; }
     .page { page-break-before: always; }
     table { page-break-inside: avoid; }
+    /* Phase 4A Delivery 26 (hotfix) — by default browsers repeat <tfoot>
+       at the bottom of every page when a table spans pages, the same
+       way <thead> repeats at the top. That caused the subtotal row to
+       appear twice on long line-item tables (16+ items in the Headway
+       Essex tender response). Treating tfoot as a regular row group
+       suppresses the auto-repeat — the subtotal still renders at the
+       end of the table because it sits last in source order. */
+    tfoot { display: table-row-group; }
   }`;
 }
 

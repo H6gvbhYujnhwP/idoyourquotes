@@ -644,6 +644,10 @@ function renderCss(brand: ResolvedBrand): string {
     .cover { min-height: 297mm; }
     .page { page-break-before: always; }
     table { page-break-inside: avoid; }
+    /* Phase 4A Delivery 26 (hotfix) — see modernTemplate.ts for why.
+       Suppresses tfoot auto-repeat across page breaks so the subtotal
+       row only appears once at the end of the table. */
+    tfoot { display: table-row-group; }
   }`;
 }
 
