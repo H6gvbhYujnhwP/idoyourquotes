@@ -2,33 +2,42 @@
  * BrandChoiceModal.tsx
  *
  * Phase 4A — Delivery 7. Brochure-upload UI removed in Delivery 13.
+ * Phase 4A — Delivery 17 added the design-template picker (Modern /
+ * Structured / Bold) above the existing branded vs template-defaults
+ * choice.
+ * Phase 4A — Delivery 22 (this delivery): the branded vs
+ * template-defaults choice is removed. The template's built-in palette
+ * was an escape hatch from the original D7 "what if the user has no
+ * logo yet?" problem, but the inline-setup form has handled that case
+ * since shipping. With the inline-setup safety net in place, the
+ * "template defaults" card was just a way to skip applying your own
+ * branding — which is never what a real user wants on a proposal
+ * that goes to a client.
  *
- * Opens after the user picks the Contract/Tender card in the export-format
- * picker. Lets them choose how the branded proposal is styled:
+ * The new layout:
  *
- *   Card A — "Use your branding"
- *     Shows a logo preview + two colour swatches + a Generate button
- *     when the org has brand tokens ready (logo set, colours extracted
- *     or logo-pixel-derived). If the org has nothing yet (or extraction
- *     is still running), the card swaps to an INLINE SETUP form:
- *       - logo drag-drop (or click-to-browse)
- *       - website URL input
- *       - Save & Generate button that fires pending uploads, saves the
- *         website, then runs the branded proposal mutation
+ *   1. Header — "How should it look?" + subtitle.
+ *   2. Branding strip — slim, full-width, informational. Logo +
+ *      Primary swatch + Secondary swatch + "Update in settings →"
+ *      link. Two faces:
+ *        - tokens-ready: shows what we'll apply (no choice to make)
+ *        - tokens-missing: turns into the inline setup form
+ *          (logo drag-drop + website URL) so the user can fix the
+ *          missing evidence without leaving the modal
+ *   3. Template gallery — 3 tiles using the existing showcase
+ *      thumbnails (it-modern-thumb.webp etc.). Tap to pick. Replaces
+ *      the D17 button-strip picker; the thumbnails make the choice
+ *      visual rather than abstract.
+ *   4. Footer CTA — "Generate proposal" (one button, full width).
  *
- *   Card B — "Use template defaults"
- *     Always available. One click. Generates with the template's
- *     built-in navy/violet palette. Good escape hatch for users who
- *     don't want to faff with branding for a one-off quote.
- *
- * A "← Back" link in the header returns to the picker (onBack callback).
- *
- * Both generate paths resolve to the parent via `onGenerate(brandMode)`.
- * The parent (QuoteWorkspace) owns the actual mutation + print window —
- * this modal is a pure chooser / setup form.
+ * Both the parent contract (onGenerate(mode, template)) and the
+ * server endpoint (generateBrandedProposal.brandMode) still accept
+ * "branded" | "template" — only the client-side path is narrowed.
+ * The mode emitted from this modal is always "branded".
  */
 
 import { useEffect, useMemo, useState, useRef } from "react";
+import { useLocation } from "wouter";
 import {
   X,
   ArrowLeft,
@@ -36,9 +45,8 @@ import {
   Upload,
   Globe,
   Loader2,
-  Sparkles,
-  Palette,
   CheckCircle2,
+  ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -53,6 +61,9 @@ import {
   type DesignTemplate,
 } from "@/lib/proposalShowcaseAssets";
 
+// Kept for back-compat with the parent (QuoteWorkspace) and the server
+// endpoint, both of which still accept both values. The modal only
+// ever emits "branded" now.
 export type BrandMode = "branded" | "template";
 
 interface BrandChoiceModalProps {
@@ -64,13 +75,12 @@ interface BrandChoiceModalProps {
   /**
    * Fired once the user has committed to a brand mode and any inline
    * setup has been saved. The parent runs the generation mutation.
-   *
-   * Phase 4A Delivery 17 — second arg `template` is the chosen design
-   * template (Modern / Structured / Bold). Defaults to the org's
-   * persisted choice; the modal lets the user override per-quote.
+   * Phase 4A Delivery 22 — `mode` is always "branded" in current UI,
+   * but the parameter is preserved in the signature so the parent
+   * doesn't need to change.
    */
   onGenerate: (mode: BrandMode, template: DesignTemplate) => void;
-  /** True while the parent mutation is in flight. Disables both buttons. */
+  /** True while the parent mutation is in flight. Disables the CTA. */
   isGenerating?: boolean;
 }
 
@@ -122,11 +132,13 @@ export default function BrandChoiceModal({
   onGenerate,
   isGenerating = false,
 }: BrandChoiceModalProps) {
-  // Read current org state — used to decide which face of Card A to show.
+  // Read current org state — used to decide which face of the branding
+  // strip to show (info vs inline-setup).
   const { data: orgProfile } = trpc.auth.orgProfile.useQuery(undefined, {
     enabled: open,
   });
   const utils = trpc.useUtils();
+  const [, setLocation] = useLocation();
 
   const tokens = useMemo(() => readBrandTokens(orgProfile), [orgProfile]);
 
@@ -249,257 +261,242 @@ export default function BrandChoiceModal({
     if (file) handleLogoFile(file);
   };
 
-  const handleSaveAndGenerate = async () => {
-    // Save the website URL first (if the user typed one) so it feeds the
-    // next extraction run. Fire-and-forget for the save — the renderer
-    // doesn't need it for THIS render, but subsequent renders benefit.
-    const currentWebsite = ((orgProfile as any)?.companyWebsite as string) || "";
-    if (websiteUrl && websiteUrl !== currentWebsite) {
-      try {
-        await updateBrandSettings.mutateAsync({ companyWebsite: websiteUrl });
-      } catch {
-        // Error toast already fired in onError — but we continue to
-        // generation anyway. The website is supplementary evidence; a
-        // failed save shouldn't block the user from getting their doc.
+  const handleOpenBrandSettings = () => {
+    // Close the modal first so the user lands on Settings without an
+    // overlay still mounted on top. The parent's onDismiss handles
+    // any state cleanup it needs to do.
+    onDismiss();
+    setLocation("/settings?tab=branding");
+  };
+
+  const handleGenerate = async () => {
+    // When tokens are missing and the user has typed a website URL
+    // they want to save first, fire the save in the background — same
+    // logic as the pre-D22 inline-setup card. The renderer doesn't
+    // need the website for THIS render but subsequent renders benefit.
+    if (!tokens.ready) {
+      const currentWebsite = ((orgProfile as any)?.companyWebsite as string) || "";
+      if (websiteUrl && websiteUrl !== currentWebsite) {
+        try {
+          await updateBrandSettings.mutateAsync({ companyWebsite: websiteUrl });
+        } catch {
+          // Error toast already fired in onError — but we continue to
+          // generation anyway. The website is supplementary evidence;
+          // a failed save shouldn't block the user from getting their
+          // doc.
+        }
       }
     }
     onGenerate("branded", selectedTemplate);
   };
 
-  // ── Card A body variants ───────────────────────────────────────
+  // ── Derived flags ──────────────────────────────────────────────
 
-  const busy =
-    uploadLogo.isPending
-    || updateBrandSettings.isPending;
+  const settingsBusy = uploadLogo.isPending || updateBrandSettings.isPending;
+  // CTA is disabled while generating, while saving inline-setup
+  // pieces, and when the inline-setup branch is showing but no logo
+  // has been uploaded yet (you can't generate a "branded" output
+  // without at least a logo).
+  const ctaDisabled =
+    isGenerating
+    || settingsBusy
+    || (!tokens.ready && !tokens.logoUrl);
 
-  const cardBranded = tokens.ready ? (
-    // Tokens ready — compact preview + Generate button.
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 mb-2">
-        <div
-          className="w-8 h-8 rounded-lg flex items-center justify-center"
-          style={{ backgroundColor: brand.tealBg }}
-        >
-          <Sparkles className="w-4 h-4" style={{ color: brand.teal }} />
-        </div>
-        <div className="text-sm font-bold" style={{ color: brand.navy }}>
-          Use your branding
-        </div>
-      </div>
-      <p
-        className="text-xs leading-relaxed mb-3"
+  // Selected design template's `available` flag — defensive guard
+  // against the (currently impossible, but possible-in-future) case
+  // where the seeded org-default template doesn't have a built
+  // renderer.
+  const selectedTemplateAvailable =
+    DESIGN_TEMPLATES[selectedTemplate]?.available !== false;
+  const ctaFinalDisabled = ctaDisabled || !selectedTemplateAvailable;
+
+  // ── Branding strip ─────────────────────────────────────────────
+
+  const brandingStripReady = (
+    <div
+      className="rounded-xl px-4 py-3 flex items-center gap-4 flex-wrap"
+      style={{
+        backgroundColor: brand.slate,
+        border: `1px solid ${brand.border}`,
+      }}
+    >
+      <span
+        className="text-[10px] font-bold uppercase tracking-wider"
         style={{ color: brand.navyMuted }}
       >
-        Your logo and brand colours will be applied to the proposal
-        automatically.
-      </p>
+        Your branding
+      </span>
 
+      {/* Logo */}
       <div
-        className="rounded-lg p-4 flex items-center gap-4 mb-3"
-        style={{
-          backgroundColor: brand.slate,
-          border: `1px solid ${brand.border}`,
-        }}
-      >
-        <div
-          className="w-16 h-16 rounded bg-white flex items-center justify-center overflow-hidden flex-shrink-0"
-          style={{ border: `1px solid ${brand.border}` }}
-        >
-          {tokens.logoUrl ? (
-            <img
-              src={tokens.logoUrl}
-              alt="Your logo"
-              className="max-w-full max-h-full object-contain"
-            />
-          ) : (
-            <ImageFallback />
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div
-            className="text-[11px] font-semibold uppercase tracking-wide mb-1.5"
-            style={{ color: brand.navyMuted }}
-          >
-            Brand colours
-          </div>
-          <div className="flex items-center gap-2">
-            {tokens.primary && (
-              <Swatch hex={tokens.primary} label="Primary" />
-            )}
-            {tokens.secondary && (
-              <Swatch hex={tokens.secondary} label="Secondary" />
-            )}
-          </div>
-          {tokens.extracting && (
-            <div
-              className="text-[10px] mt-1.5 flex items-center gap-1"
-              style={{ color: brand.navyMuted }}
-            >
-              <Loader2 className="w-2.5 h-2.5 animate-spin" />
-              Refining brand from your evidence — you can generate now.
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="mt-auto">
-        <Button
-          onClick={() => onGenerate("branded", selectedTemplate)}
-          disabled={isGenerating}
-          className="w-full text-sm text-white"
-          style={{
-            background: "linear-gradient(135deg, #0d9488 0%, #0f766e 100%)",
-          }}
-        >
-          {isGenerating ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Generating…
-            </>
-          ) : (
-            <>
-              Generate with your branding
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </>
-          )}
-        </Button>
-      </div>
-    </div>
-  ) : (
-    // Tokens missing — inline setup form.
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 mb-2">
-        <div
-          className="w-8 h-8 rounded-lg flex items-center justify-center"
-          style={{ backgroundColor: brand.tealBg }}
-        >
-          <Palette className="w-4 h-4" style={{ color: brand.teal }} />
-        </div>
-        <div className="text-sm font-bold" style={{ color: brand.navy }}>
-          Set up your branding
-        </div>
-      </div>
-      <p
-        className="text-xs leading-relaxed mb-3"
-        style={{ color: brand.navyMuted }}
-      >
-        Add your logo and website — we'll apply them automatically. You
-        can refine this later in Settings.
-      </p>
-
-      {/* Logo drop zone */}
-      <div
-        onDrop={handleDrop}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setIsDragging(true);
-        }}
-        onDragLeave={() => setIsDragging(false)}
-        onClick={() => fileInputRef.current?.click()}
-        className="rounded-lg p-3 text-center cursor-pointer transition-colors mb-3"
-        style={{
-          backgroundColor: isDragging ? brand.tealBg : brand.slate,
-          border: `1.5px dashed ${
-            isDragging ? brand.teal : brand.border
-          }`,
-        }}
+        className="w-12 h-9 rounded bg-white flex items-center justify-center overflow-hidden flex-shrink-0"
+        style={{ border: `1px solid ${brand.border}` }}
       >
         {tokens.logoUrl ? (
-          <div className="flex items-center gap-3 justify-center">
-            <img
-              src={tokens.logoUrl}
-              alt="Logo"
-              className="max-h-10 max-w-[90px] object-contain bg-white rounded p-1"
-            />
-            <div
-              className="text-[11px] font-medium"
-              style={{ color: brand.teal }}
-            >
-              Logo uploaded — click to replace
-            </div>
-          </div>
-        ) : uploadLogo.isPending ? (
-          <div
-            className="flex items-center justify-center gap-2 py-2"
-            style={{ color: brand.navyMuted }}
-          >
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span className="text-xs">Uploading…</span>
-          </div>
+          <img
+            src={tokens.logoUrl}
+            alt="Your logo"
+            className="max-w-full max-h-full object-contain"
+          />
         ) : (
-          <div className="py-2">
-            <Upload
-              className="w-5 h-5 mx-auto mb-1"
-              style={{ color: brand.navyMuted }}
-            />
-            <div
-              className="text-xs font-medium"
-              style={{ color: brand.navy }}
-            >
-              Drop logo or click to browse
-            </div>
-            <div
-              className="text-[10px] mt-0.5"
-              style={{ color: brand.navyMuted }}
-            >
-              PNG, JPG, SVG. Max 2MB.
-            </div>
-          </div>
+          <ImageFallback />
         )}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/gif,image/webp"
-          onChange={handleLogoPicker}
-          className="hidden"
-        />
       </div>
 
-      {/* Website input */}
-      <div className="mb-3">
-        <Label
-          htmlFor="brand-website"
-          className="text-[11px] font-semibold uppercase tracking-wide mb-1 flex items-center gap-1"
+      {/* Swatches */}
+      {tokens.primary && (
+        <SwatchInline hex={tokens.primary} label="Primary" />
+      )}
+      {tokens.secondary && (
+        <SwatchInline hex={tokens.secondary} label="Secondary" />
+      )}
+
+      {tokens.extracting && (
+        <span
+          className="text-[10px] flex items-center gap-1"
           style={{ color: brand.navyMuted }}
         >
-          <Globe className="w-3 h-3" />
-          Website URL
-        </Label>
-        <Input
-          id="brand-website"
-          type="url"
-          value={websiteUrl}
-          onChange={(e) => setWebsiteUrl(e.target.value)}
-          placeholder="yourcompany.co.uk"
-          className="text-sm h-9"
-        />
+          <Loader2 className="w-2.5 h-2.5 animate-spin" />
+          Refining…
+        </span>
+      )}
+
+      <button
+        type="button"
+        onClick={handleOpenBrandSettings}
+        disabled={isGenerating}
+        className="ml-auto text-xs font-medium flex items-center gap-1 hover:underline underline-offset-2 disabled:opacity-50"
+        style={{ color: brand.teal }}
+      >
+        Update in settings
+        <ExternalLink className="w-3 h-3" />
+      </button>
+    </div>
+  );
+
+  const brandingStripSetup = (
+    <div
+      className="rounded-xl p-4"
+      style={{
+        backgroundColor: brand.slate,
+        border: `1px solid ${brand.border}`,
+      }}
+    >
+      <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
+        <div
+          className="text-[11px] font-bold uppercase tracking-wider"
+          style={{ color: brand.navyMuted }}
+        >
+          Set up your branding
+        </div>
+        <button
+          type="button"
+          onClick={handleOpenBrandSettings}
+          disabled={isGenerating}
+          className="text-xs font-medium flex items-center gap-1 hover:underline underline-offset-2 disabled:opacity-50"
+          style={{ color: brand.teal }}
+        >
+          Open settings
+          <ExternalLink className="w-3 h-3" />
+        </button>
       </div>
 
-      <div className="mt-auto">
-        <Button
-          onClick={handleSaveAndGenerate}
-          disabled={isGenerating || busy || !tokens.logoUrl}
-          className="w-full text-sm text-white"
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr] gap-3">
+        {/* Logo drop zone */}
+        <div
+          onDrop={handleDrop}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onClick={() => fileInputRef.current?.click()}
+          className="rounded-lg p-3 text-center cursor-pointer transition-colors"
           style={{
-            background: tokens.logoUrl
-              ? "linear-gradient(135deg, #0d9488 0%, #0f766e 100%)"
-              : brand.navyMuted,
+            backgroundColor: isDragging ? brand.tealBg : brand.white,
+            border: `1.5px dashed ${
+              isDragging ? brand.teal : brand.border
+            }`,
           }}
         >
-          {isGenerating ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Generating…
-            </>
-          ) : !tokens.logoUrl ? (
-            "Add a logo to continue"
+          {tokens.logoUrl ? (
+            <div className="flex items-center gap-3 justify-center">
+              <img
+                src={tokens.logoUrl}
+                alt="Logo"
+                className="max-h-10 max-w-[90px] object-contain bg-white rounded p-1"
+              />
+              <div
+                className="text-[11px] font-medium"
+                style={{ color: brand.teal }}
+              >
+                Logo uploaded — click to replace
+              </div>
+            </div>
+          ) : uploadLogo.isPending ? (
+            <div
+              className="flex items-center justify-center gap-2 py-2"
+              style={{ color: brand.navyMuted }}
+            >
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-xs">Uploading…</span>
+            </div>
           ) : (
-            <>
-              Save &amp; Generate
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </>
+            <div className="py-2">
+              <Upload
+                className="w-5 h-5 mx-auto mb-1"
+                style={{ color: brand.navyMuted }}
+              />
+              <div
+                className="text-xs font-medium"
+                style={{ color: brand.navy }}
+              >
+                Drop logo or click to browse
+              </div>
+              <div
+                className="text-[10px] mt-0.5"
+                style={{ color: brand.navyMuted }}
+              >
+                PNG, JPG, GIF, WebP. Max 2MB.
+              </div>
+            </div>
           )}
-        </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            onChange={handleLogoPicker}
+            className="hidden"
+          />
+        </div>
+
+        {/* Website input */}
+        <div>
+          <Label
+            htmlFor="brand-website"
+            className="text-[11px] font-semibold uppercase tracking-wide mb-1 flex items-center gap-1"
+            style={{ color: brand.navyMuted }}
+          >
+            <Globe className="w-3 h-3" />
+            Website URL
+          </Label>
+          <Input
+            id="brand-website"
+            type="url"
+            value={websiteUrl}
+            onChange={(e) => setWebsiteUrl(e.target.value)}
+            placeholder="yourcompany.co.uk"
+            className="text-sm h-9"
+            disabled={isGenerating}
+          />
+          <p
+            className="text-[10px] mt-1.5"
+            style={{ color: brand.navyMuted }}
+          >
+            Optional — improves brand-colour extraction on later
+            generations.
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -559,27 +556,29 @@ export default function BrandChoiceModal({
             className="text-sm mt-2 leading-relaxed"
             style={{ color: brand.navyMuted }}
           >
-            Use your branding, or pick the template's built-in palette for
-            a clean, neutral look.
+            Pick a design template — your branding will be applied
+            automatically.
           </p>
         </div>
 
-        {/* Phase 4A Delivery 17 — design template picker row.
-            Compact 3-button strip above the existing Branded/Template
-            cards. Seeded from the org's default in Settings; lets the
-            user override per-quote. Modern is shipped (D18); Structured
-            and Bold are visible but disabled with a "Coming soon" badge
-            until D19 / D20 land. */}
+        {/* Branding strip — info or inline setup */}
+        <div className="px-8 pb-4">
+          {tokens.ready ? brandingStripReady : brandingStripSetup}
+        </div>
+
+        {/* Template gallery — picker + preview rolled into one */}
         <div className="px-8 pb-2">
-          <Label className="text-xs font-semibold mb-2 block" style={{ color: brand.navyMuted }}>
-            Design template
-            {selectedTemplate !== orgDefaultTemplate && (
-              <span className="font-normal ml-1.5 text-[10px]" style={{ color: brand.navyMuted }}>
-                (overriding your default for this quote)
-              </span>
-            )}
-          </Label>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="flex items-baseline justify-between mb-2 flex-wrap gap-2">
+            <Label className="text-xs font-semibold" style={{ color: brand.navyMuted }}>
+              Choose a design template
+              {selectedTemplate !== orgDefaultTemplate && (
+                <span className="font-normal ml-1.5 text-[10px]" style={{ color: brand.navyMuted }}>
+                  (overriding your default for this quote)
+                </span>
+              )}
+            </Label>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
             {DESIGN_TEMPLATE_ORDER.map((key) => {
               const t = DESIGN_TEMPLATES[key];
               const isSelected = selectedTemplate === key;
@@ -593,135 +592,92 @@ export default function BrandChoiceModal({
                     setSelectedTemplate(key as DesignTemplate);
                   }}
                   disabled={disabled}
-                  className={`relative text-left rounded-lg border-2 px-3 py-2 transition-all ${
+                  className={`relative text-left rounded-xl overflow-hidden transition-all ${
                     !t.available
                       ? "opacity-50 cursor-not-allowed"
                       : "cursor-pointer"
                   }`}
                   style={{
-                    borderColor: isSelected ? brand.tealBorder : brand.border,
-                    backgroundColor: isSelected ? brand.tealBg : brand.white,
+                    border: `2px solid ${
+                      isSelected ? brand.tealBorder : brand.border
+                    }`,
+                    backgroundColor: brand.white,
+                    boxShadow: isSelected ? brand.shadow : "none",
                   }}
                   aria-pressed={isSelected}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="text-xs font-bold" style={{ color: brand.navy }}>
+                  {/* Thumb */}
+                  <div
+                    className="aspect-[3/4] w-full overflow-hidden"
+                    style={{ backgroundColor: brand.slate }}
+                  >
+                    <img
+                      src={t.thumb}
+                      alt={`${t.label} template preview`}
+                      className="w-full h-full object-cover object-top"
+                      loading="lazy"
+                    />
+                  </div>
+
+                  {/* Label row */}
+                  <div className="px-3 py-2 flex items-center justify-between gap-2">
+                    <div
+                      className="text-sm font-bold"
+                      style={{
+                        color: isSelected ? brand.teal : brand.navy,
+                      }}
+                    >
                       {t.label}
                     </div>
                     {!t.available ? (
-                      <span className="text-[8px] font-bold uppercase tracking-wider px-1 py-0.5 rounded bg-amber-100 text-amber-800">
+                      <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">
                         Soon
                       </span>
                     ) : isSelected ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0" style={{ color: brand.tealBorder }} />
+                      <CheckCircle2
+                        className="h-4 w-4 shrink-0"
+                        style={{ color: brand.tealBorder }}
+                      />
                     ) : null}
                   </div>
                 </button>
               );
             })}
           </div>
+          <p
+            className="text-[11px] mt-2.5 leading-relaxed"
+            style={{ color: brand.navyMuted }}
+          >
+            {DESIGN_TEMPLATES[selectedTemplate]?.description}
+          </p>
         </div>
 
-        {/* Cards */}
+        {/* CTA */}
         <div className="px-8 pb-8 pt-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Card A — branded */}
-            <div
-              className="rounded-xl p-5 flex flex-col min-h-[340px]"
-              style={{
-                backgroundColor: brand.white,
-                border: `2px solid ${brand.tealBorder}`,
-                boxShadow: brand.shadow,
-              }}
-            >
-              {cardBranded}
-            </div>
-
-            {/* Card B — template defaults */}
-            <div
-              className="rounded-xl p-5 flex flex-col min-h-[340px]"
-              style={{
-                backgroundColor: brand.white,
-                border: `1px solid ${brand.border}`,
-                boxShadow: brand.shadow,
-              }}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <div
-                  className="w-8 h-8 rounded-lg flex items-center justify-center"
-                  style={{ backgroundColor: "#eef2ff" }}
-                >
-                  <div
-                    className="w-4 h-4 rounded-sm"
-                    style={{
-                      background:
-                        "linear-gradient(135deg, #1e1b4b 0%, #818cf8 100%)",
-                    }}
-                  />
-                </div>
-                <div
-                  className="text-sm font-bold"
-                  style={{ color: brand.navy }}
-                >
-                  Use template defaults
-                </div>
-              </div>
-              <p
-                className="text-xs leading-relaxed mb-3"
-                style={{ color: brand.navyMuted }}
-              >
-                Clean navy &amp; violet template palette. No logo or
-                brand-colour extraction needed — generate in one click.
-              </p>
-
-              {/* Palette preview */}
-              <div
-                className="rounded-lg p-4 flex items-center gap-3 mb-3"
-                style={{
-                  backgroundColor: brand.slate,
-                  border: `1px solid ${brand.border}`,
-                }}
-              >
-                <div className="flex gap-2 flex-1">
-                  <Swatch hex="#1e1b4b" label="Chrome" />
-                  <Swatch hex="#818cf8" label="Accent" />
-                </div>
-                <div
-                  className="text-[11px] leading-tight text-right"
-                  style={{ color: brand.navyMuted }}
-                >
-                  Template
-                  <br />
-                  defaults
-                </div>
-              </div>
-
-              <div className="mt-auto">
-                <Button
-                  onClick={() => onGenerate("template", selectedTemplate)}
-                  disabled={isGenerating}
-                  variant="outline"
-                  className="w-full text-sm"
-                  style={{
-                    borderColor: brand.border,
-                    color: brand.navy,
-                  }}
-                >
-                  {isGenerating ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Generating…
-                    </>
-                  ) : (
-                    <>
-                      Generate with template defaults
-                      <ArrowRight className="w-4 h-4 ml-2" />
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-          </div>
+          <Button
+            onClick={() => void handleGenerate()}
+            disabled={ctaFinalDisabled}
+            className="w-full text-sm text-white"
+            style={{
+              background: ctaFinalDisabled
+                ? brand.navyMuted
+                : "linear-gradient(135deg, #0d9488 0%, #0f766e 100%)",
+            }}
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Generating…
+              </>
+            ) : !tokens.ready && !tokens.logoUrl ? (
+              "Add a logo to continue"
+            ) : (
+              <>
+                Generate proposal
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </>
+            )}
+          </Button>
         </div>
       </div>
     </div>
@@ -730,24 +686,20 @@ export default function BrandChoiceModal({
 
 // ── Small helpers ──────────────────────────────────────────────────
 
-function Swatch({ hex, label }: { hex: string; label: string }) {
+function SwatchInline({ hex, label }: { hex: string; label: string }) {
   return (
     <div className="flex items-center gap-1.5">
       <div
-        className="w-6 h-6 rounded"
+        className="w-4 h-4 rounded"
         style={{
           backgroundColor: hex,
           border: `1px solid ${brand.border}`,
         }}
         title={hex}
       />
-      <div
-        className="text-[10px] leading-tight"
-        style={{ color: brand.navyMuted }}
-      >
-        {label}
-        <br />
-        <span style={{ color: brand.navy, fontWeight: 600 }}>{hex}</span>
+      <div className="text-[11px] leading-tight" style={{ color: brand.navy }}>
+        <span style={{ color: brand.navyMuted }}>{label}</span>
+        <span className="ml-1.5" style={{ fontWeight: 600 }}>{hex}</span>
       </div>
     </div>
   );
@@ -756,15 +708,10 @@ function Swatch({ hex, label }: { hex: string; label: string }) {
 function ImageFallback() {
   return (
     <div
-      className="w-8 h-8 rounded flex items-center justify-center"
-      style={{ backgroundColor: brand.slate }}
+      className="text-[8px] font-bold tracking-wide"
+      style={{ color: brand.navyMuted }}
     >
-      <div
-        className="text-[10px] font-bold tracking-wide"
-        style={{ color: brand.navyMuted }}
-      >
-        LOGO
-      </div>
+      LOGO
     </div>
   );
 }
