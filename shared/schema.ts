@@ -114,6 +114,44 @@ export const organizations = pgTable("organizations", {
   brandedPaymentTerms: text("branded_payment_terms"),
   brandedSignatoryName: varchar("branded_signatory_name", { length: 255 }),
   brandedSignatoryPosition: varchar("branded_signatory_position", { length: 255 }),
+  // Phase 4A Delivery 25 — Project / Migration foundation. Three
+  // already-applied columns (migration_type, hypercare_days,
+  // default_hypercare_days were applied as raw SQL during the design
+  // session before the dual-schema files were updated; they're added
+  // here so the type system and Drizzle ORM see them) plus the 24
+  // org-level default columns (4 profiles × 6 narrative blocks)
+  // introduced by migration 0023_add_migration_columns.sql.
+  //
+  // Per-profile defaults exist so an MSP that primarily does (say)
+  // M365 migrations can save its preferred phasing / risk language
+  // once and have it pre-fill on every subsequent M365 migration
+  // quote, without polluting the defaults for other profiles. Save-
+  // as-default ticks in the Delivery 26 review gate write here.
+  defaultHypercareDays: integer("default_hypercare_days").default(14).notNull(),
+  defaultServerMethodology: text("default_server_methodology"),
+  defaultServerPhases: text("default_server_phases"),
+  defaultServerAssumptions: text("default_server_assumptions"),
+  defaultServerRisks: text("default_server_risks"),
+  defaultServerRollback: text("default_server_rollback"),
+  defaultServerOutOfScope: text("default_server_out_of_scope"),
+  defaultM365Methodology: text("default_m365_methodology"),
+  defaultM365Phases: text("default_m365_phases"),
+  defaultM365Assumptions: text("default_m365_assumptions"),
+  defaultM365Risks: text("default_m365_risks"),
+  defaultM365Rollback: text("default_m365_rollback"),
+  defaultM365OutOfScope: text("default_m365_out_of_scope"),
+  defaultWorkspaceMethodology: text("default_workspace_methodology"),
+  defaultWorkspacePhases: text("default_workspace_phases"),
+  defaultWorkspaceAssumptions: text("default_workspace_assumptions"),
+  defaultWorkspaceRisks: text("default_workspace_risks"),
+  defaultWorkspaceRollback: text("default_workspace_rollback"),
+  defaultWorkspaceOutOfScope: text("default_workspace_out_of_scope"),
+  defaultTenantMethodology: text("default_tenant_methodology"),
+  defaultTenantPhases: text("default_tenant_phases"),
+  defaultTenantAssumptions: text("default_tenant_assumptions"),
+  defaultTenantRisks: text("default_tenant_risks"),
+  defaultTenantRollback: text("default_tenant_rollback"),
+  defaultTenantOutOfScope: text("default_tenant_out_of_scope"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -231,6 +269,36 @@ export const quotes = pgTable("quotes", {
   // "use the org default" (organizations.proposalTemplate). Set via
   // BrandChoiceModal at branded-PDF generation time.
   proposalTemplate: text("proposal_template"),
+  // Phase 4A Delivery 25 — Project / Migration foundation. Two already-
+  // applied columns (migration_type, hypercare_days were applied as raw
+  // SQL during the design session before the schema files were updated;
+  // they're added here so the type system sees them) plus the seven new
+  // columns introduced by migration 0023_add_migration_columns.sql.
+  //
+  // migrationType: user-confirmed migration profile —
+  //   'server' | 'm365' | 'workspace' | 'tenant'. The renderer
+  //   (Delivery 26) gates the migration appendix on this column being
+  //   set; NULL means "no migration in this quote, render as a normal
+  //   branded proposal".
+  // migrationTypeSuggested: AI-inferred guess written by the
+  //   inferMigrationType helper inside generateDraft. Advisory only —
+  //   the renderer never reads this; the Delivery 26 review-gate UI
+  //   reads it to surface a hint ("This looks like an M365 migration").
+  // hypercareDays: per-quote override for the hypercare period
+  //   referenced in the rollback paragraph. Cascade is
+  //   quote.hypercareDays → org.defaultHypercareDays → 14.
+  // The six text columns are the per-quote narrative overrides — when
+  //   non-NULL they win over the org default and the hard-coded
+  //   profile fallback.
+  migrationType: varchar("migration_type", { length: 20 }),
+  migrationTypeSuggested: varchar("migration_type_suggested", { length: 20 }),
+  hypercareDays: integer("hypercare_days"),
+  migrationMethodology: text("migration_methodology"),
+  migrationPhases: text("migration_phases"),
+  migrationAssumptions: text("migration_assumptions"),
+  migrationRisks: text("migration_risks"),
+  migrationRollback: text("migration_rollback"),
+  migrationOutOfScope: text("migration_out_of_scope"),
 });
 
 export type Quote = typeof quotes.$inferSelect;

@@ -13,6 +13,10 @@ import { analyzePdfWithClaude, analyzePdfWithOpenAI, analyzeImageWithClaude, isC
 import { isOpenAIConfigured } from "./_core/openai";
 import { extractUrls, scrapeUrls, formatScrapedContentForAI } from "./_core/webScraper";
 import { extractBrandColors } from "./services/colorExtractor";
+// Phase 4A Delivery 25 — migration-type inference for Project / Migration
+// templates. Hooked inside generateDraft after AI parse; writes
+// quotes.migrationTypeSuggested for the Delivery 26 review-gate hint.
+import { inferMigrationType } from "./services/migrationTypeInference";
 import { triggerBrandExtraction } from "./services/brandExtraction";
 import { parseWordDocument, isWordDocument } from "./services/wordParser";
 import { performElectricalTakeoff, applyUserAnswers, formatTakeoffForQuoteContext, SYMBOL_STYLES, SYMBOL_DESCRIPTIONS, extractWithPdfJs, extractPdfLineColours, classifyElectricalPDF, extractWithPdfParse } from "./services/electricalTakeoff";
@@ -4818,6 +4822,53 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
             // the draft so it persists atomically with the new line items.
             generationCount: nextGenerationCount,
           };
+
+          // ── Phase 4A Delivery 25 — migration-type inference ─────
+          //
+          // After AI parse, before commit: scan the same evidence the
+          // AI just saw plus the AI's own draft outputs (line items,
+          // title, description) for migration signal. Result is
+          // written to migrationTypeSuggested as advisory data — the
+          // user-confirmed migration_type column is only written by
+          // the Delivery 26 review-gate UI when the user explicitly
+          // picks a profile.
+          //
+          // Action-verb gate inside the helper guards against
+          // procurement-quote false positives (e.g. "we need 12 M365
+          // licences" must not flag as an M365 migration). The helper
+          // is pure and synchronous — no I/O, no async — so this hook
+          // adds zero round-trip cost to the generateDraft flow.
+          //
+          // Re-running generateDraft (allowed once per quote) re-runs
+          // the inference and overwrites the previous suggestion.
+          // Consistent with "once at draft" — re-generation counts as
+          // a fresh draft.
+          try {
+            const draftLineItemDescriptions: string[] = Array.isArray(draft.lineItems)
+              ? draft.lineItems
+                  .map((li: any) => (typeof li?.description === "string" ? li.description : ""))
+                  .filter((s: string) => s.length > 0)
+              : [];
+            const inference = inferMigrationType({
+              evidence: processedEvidence.join("\n"),
+              lineItemDescriptions: draftLineItemDescriptions,
+              title: draft.title ?? quote.title ?? null,
+              description: draft.description ?? quote.description ?? null,
+            });
+            // Always write — null is a valid value meaning
+            // "checked, no migration signal".
+            (quoteUpdateData as any).migrationTypeSuggested = inference.guess;
+            console.log(
+              `[generateDraft] Migration inference: guess=${inference.guess ?? "null"}, confidence=${inference.confidence}`,
+            );
+          } catch (inferenceErr) {
+            // Inference is advisory only — never block draft commit
+            // on its failure. Log and proceed.
+            console.warn(
+              "[generateDraft] Migration inference threw (non-fatal):",
+              inferenceErr,
+            );
+          }
 
           // Option C terms guardrail: org defaultTerms always wins.
           // AI-generated terms are only used as a fallback for users who have not set defaultTerms.
