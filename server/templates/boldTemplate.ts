@@ -62,6 +62,7 @@ import {
   sumDecimal,
   accentForDarkBg,
 } from "../brandedProposalRenderer";
+import { renderMigrationAppendix } from "./migrationAppendix";
 
 // ── Stat strip ───────────────────────────────────────────────────────
 
@@ -428,8 +429,15 @@ function renderTerms(args: {
   companyName: string;
   clientName: string;
   pageFooter: string;
+  /**
+   * Phase 4A Delivery 28 — section number Terms should display. Default
+   * 3 preserves pre-D28 behaviour. When the migration appendix renders
+   * ahead of this page it occupies section 03 and Terms shifts to 04.
+   */
+  sectionStart?: number;
 }): string {
   const { quote, organization, tenderContext, companyName, clientName, pageFooter } = args;
+  const termsSecStr = String(args.sectionStart ?? 3).padStart(2, "0");
 
   // Phase 4A Delivery 24 — branded-renderer cascade chain.
   //   quote.X → organizations.brandedX → organizations.defaultX → fallback
@@ -500,7 +508,7 @@ function renderTerms(args: {
 
   return `
 <div class="page">
-  <div class="sec-div"><span class="div-num">03</span><span class="div-title">Terms &amp; Acceptance</span><div class="div-line"></div></div>
+  <div class="sec-div"><span class="div-num">${termsSecStr}</span><span class="div-title">Terms &amp; Acceptance</span><div class="div-line"></div></div>
   <h2>The Terms</h2>
   <p><strong>Validity:</strong> ${escapeHtml(validityLine)}</p>
   <p><strong>Payment:</strong> ${escapeHtml(paymentTerms)}</p>
@@ -765,6 +773,18 @@ export async function renderBoldTemplate(
     pageFooter,
   });
 
+  // Phase 4A Delivery 28 — migration appendix (IT Services + AI-suggested
+  // type only; no UI). Renders as section 03 when present, pushing Terms
+  // to 04.
+  const appendixHtml = renderMigrationAppendix({
+    quote,
+    organization,
+    templateStyle: "bold",
+    sectionNumber: 3,
+    pageFooter,
+  });
+  const termsSectionStart = appendixHtml ? 4 : 3;
+
   const termsHtml = renderTerms({
     quote,
     organization,
@@ -772,6 +792,7 @@ export async function renderBoldTemplate(
     companyName,
     clientName,
     pageFooter,
+    sectionStart: termsSectionStart,
   });
 
   const css = renderCss(brand);
@@ -788,6 +809,7 @@ export async function renderBoldTemplate(
 ${coverHtml}
 ${execHtml}
 ${pricingHtml}
+${appendixHtml}
 ${termsHtml}
 </body>
 </html>`;

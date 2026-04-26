@@ -62,6 +62,7 @@ import {
   resolveLogoUrl,
   sumDecimal,
 } from "../brandedProposalRenderer";
+import { renderMigrationAppendix } from "./migrationAppendix";
 
 // ── Scope items (cover scope-box) ────────────────────────────────────
 
@@ -421,8 +422,15 @@ function renderTerms(args: {
   companyName: string;
   clientName: string;
   pageFooter: string;
+  /**
+   * Phase 4A Delivery 28 — section number Terms should display. Default
+   * 3 preserves pre-D28 behaviour. When the migration appendix renders
+   * ahead of this page it occupies section 03 and Terms shifts to 04.
+   */
+  sectionStart?: number;
 }): string {
   const { quote, organization, tenderContext, companyName, clientName, pageFooter } = args;
+  const termsSecStr = String(args.sectionStart ?? 3).padStart(2, "0");
 
   // Phase 4A Delivery 24 — branded-renderer cascade chain.
   //   quote.X → organizations.brandedX → organizations.defaultX → fallback
@@ -493,7 +501,7 @@ function renderTerms(args: {
 
   return `
 <div class="page">
-  <div class="sec-banner"><span class="sec-num">03</span><span class="sec-title">Contract Terms &amp; Acceptance</span></div>
+  <div class="sec-banner"><span class="sec-num">${termsSecStr}</span><span class="sec-title">Contract Terms &amp; Acceptance</span></div>
   <p><strong>Validity:</strong> ${escapeHtml(validityLine)}</p>
   <p><strong>Payment:</strong> ${escapeHtml(paymentTerms)}</p>
   <p><strong>Scope:</strong> The work covered is as described in the Executive Summary and itemised in the Pricing Schedule. Work outside that scope will be quoted separately and is not included in the pricing above.</p>
@@ -763,6 +771,18 @@ export async function renderStructuredTemplate(
     pageFooter,
   });
 
+  // Phase 4A Delivery 28 — migration appendix (IT Services + AI-suggested
+  // type only; no UI). Renders as section 03 when present, pushing Terms
+  // to 04.
+  const appendixHtml = renderMigrationAppendix({
+    quote,
+    organization,
+    templateStyle: "structured",
+    sectionNumber: 3,
+    pageFooter,
+  });
+  const termsSectionStart = appendixHtml ? 4 : 3;
+
   const termsHtml = renderTerms({
     quote,
     organization,
@@ -770,6 +790,7 @@ export async function renderStructuredTemplate(
     companyName,
     clientName,
     pageFooter,
+    sectionStart: termsSectionStart,
   });
 
   const css = renderCss(brand);
@@ -786,6 +807,7 @@ export async function renderStructuredTemplate(
 ${coverHtml}
 ${execHtml}
 ${pricingHtml}
+${appendixHtml}
 ${termsHtml}
 </body>
 </html>`;

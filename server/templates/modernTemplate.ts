@@ -59,6 +59,7 @@ import {
   sumDecimal,
   readableTextOn,
 } from "../brandedProposalRenderer";
+import { renderMigrationAppendix } from "./migrationAppendix";
 
 // ── Stat strip ──────────────────────────────────────────────────────
 
@@ -352,8 +353,20 @@ function renderTerms(args: {
   companyName: string;
   clientName: string;
   pageFooter: string;
+  /**
+   * Phase 4A Delivery 28 — when the migration appendix renders ahead
+   * of this page, it occupies the next section number and Terms shifts
+   * down by one. Caller passes the number Terms should display.
+   * Default 3 preserves pre-D28 behaviour for any path that doesn't
+   * supply it.
+   */
+  sectionStart?: number;
 }): string {
   const { quote, organization, tenderContext, companyName, clientName, pageFooter } = args;
+  const termsSec = args.sectionStart ?? 3;
+  const acceptanceSec = termsSec + 1;
+  const termsSecStr = String(termsSec).padStart(2, "0");
+  const acceptanceSecStr = String(acceptanceSec).padStart(2, "0");
 
   // Phase 4A Delivery 24 — branded-renderer cascade chain.
   //   quote.X → organizations.brandedX → organizations.defaultX → fallback
@@ -424,7 +437,7 @@ function renderTerms(args: {
 
   return `
 <div class="page">
-  <div class="eyebrow">03 — Terms &amp; Conditions</div>
+  <div class="eyebrow">${termsSecStr} — Terms &amp; Conditions</div>
   <h2>Commercial terms</h2>
   <p><strong>Validity:</strong> ${escapeHtml(validityLine)}</p>
   <p><strong>Payment:</strong> ${escapeHtml(paymentTerms)}</p>
@@ -435,7 +448,7 @@ function renderTerms(args: {
   ${exclusionsHtml}
   ${terms && terms.trim() ? `<h3>Additional terms</h3><p>${escapeHtml(terms)}</p>` : ""}
 
-  <div class="eyebrow" style="margin-top:24px;">04 — Acceptance</div>
+  <div class="eyebrow" style="margin-top:24px;">${acceptanceSecStr} — Acceptance</div>
   <h2>Sign &amp; proceed</h2>
   <p>By signing below, both parties agree to be bound by the terms set out in this proposal. Once countersigned, this document constitutes a binding agreement.</p>
   <div class="sig-grid">
@@ -682,6 +695,21 @@ export async function renderModernTemplate(
     pageFooter,
   });
 
+  // Phase 4A Delivery 28 — migration appendix slots between Pricing
+  // and Terms. The appendix renders only when the AI inference helper
+  // wrote a valid type into quote.migrationTypeSuggested AND the quote
+  // is in the IT Services sector. When it renders, the Terms page
+  // shifts from section 03 to section 04 (and the inline Acceptance
+  // sub-eyebrow shifts from 04 to 05).
+  const appendixHtml = renderMigrationAppendix({
+    quote,
+    organization,
+    templateStyle: "modern",
+    sectionNumber: 3,
+    pageFooter,
+  });
+  const termsSectionStart = appendixHtml ? 4 : 3;
+
   const termsHtml = renderTerms({
     quote,
     organization,
@@ -689,6 +717,7 @@ export async function renderModernTemplate(
     companyName,
     clientName,
     pageFooter,
+    sectionStart: termsSectionStart,
   });
 
   const css = renderCss(brand);
@@ -705,6 +734,7 @@ export async function renderModernTemplate(
 ${coverHtml}
 ${execHtml}
 ${pricingHtml}
+${appendixHtml}
 ${termsHtml}
 </body>
 </html>`;
