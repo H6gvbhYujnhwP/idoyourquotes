@@ -749,6 +749,14 @@ export default function ReviewBeforeGenerateModal({
   // Reset on open. Snapshot of initial values is held for the duration
   // of the open session so the parent's fullQuote refetching mid-review
   // doesn't wipe in-progress edits.
+  //
+  // Phase 4A Delivery 35.1 — `initial` is intentionally NOT in the
+  // deps array. Pre-D35 the parent never refetched mid-session so
+  // having it in deps was a no-op; D35 introduced invalidation after
+  // every save, which made `initial` recompute mid-session and the
+  // useEffect overwrite the user's typed text the moment a save
+  // landed. The comment above describes the intended behaviour
+  // (one-time snapshot on open) — this hook now matches it.
   useEffect(() => {
     if (!open) return;
     setValues({
@@ -805,7 +813,7 @@ export default function ReviewBeforeGenerateModal({
     setInlineError(null);
     setIsSaving(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, initial]);
+  }, [open]);
 
   const updateQuote = trpc.quotes.update.useMutation();
   const upsertTenderContext = trpc.tenderContext.upsert.useMutation();
