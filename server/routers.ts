@@ -17,6 +17,12 @@ import { extractBrandColors } from "./services/colorExtractor";
 // templates. Hooked inside generateDraft after AI parse; writes
 // quotes.migrationTypeSuggested for the Delivery 26 review-gate hint.
 import { inferMigrationType } from "./services/migrationTypeInference";
+// Phase 4A Delivery 30 — sector inference. Writes quote.tradePreset
+// when it's currently NULL, so D28's migration appendix gate, D29's
+// review-modal migration sections, and the IT-gated invoice addendum
+// in generalEngine.ts all start firing on real user-created quotes
+// (the unified-flow create path no longer sets tradePreset upfront).
+import { inferTradePreset } from "./services/tradePresetInference";
 import { triggerBrandExtraction } from "./services/brandExtraction";
 import { parseWordDocument, isWordDocument } from "./services/wordParser";
 import { performElectricalTakeoff, applyUserAnswers, formatTakeoffForQuoteContext, SYMBOL_STYLES, SYMBOL_DESCRIPTIONS, extractWithPdfJs, extractPdfLineColours, classifyElectricalPDF, extractWithPdfParse } from "./services/electricalTakeoff";
@@ -4878,6 +4884,68 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
             console.warn(
               "[generateDraft] Migration inference threw (non-fatal):",
               inferenceErr,
+            );
+          }
+
+          // ── Phase 4A Delivery 30 — sector (tradePreset) inference ──
+          //
+          // The Phase 4 unified flow creates quotes with no upfront
+          // sector chooser, so quote.tradePreset starts NULL. That
+          // silently disables the IT-services invoice addendum, the
+          // D28 migration appendix gate, the D29 review-modal
+          // migration sections, and any other sector-aware downstream
+          // feature. After AI parse we infer the sector from the
+          // same evidence + the AI's own draft outputs and write it
+          // back — but ONLY when the column is currently NULL. Never
+          // overwrite a user-set value, an earlier inference, or a
+          // legacy non-GTM sector. The four valid GTM sectors are
+          // it_services, commercial_cleaning, website_marketing, and
+          // pest_control; the helper returns null for ambiguous or
+          // weak evidence and we leave the column alone in that case.
+          //
+          // Same try/catch idiom as the migration inference above —
+          // advisory only, never blocks the commit.
+          try {
+            const existingPreset = (quote as any)?.tradePreset;
+            if (
+              existingPreset === null
+              || existingPreset === undefined
+              || existingPreset === ""
+            ) {
+              const draftLineItemDescriptions: string[] = Array.isArray(
+                draft.lineItems,
+              )
+                ? draft.lineItems
+                    .map((li: any) =>
+                      typeof li?.description === "string" ? li.description : "",
+                    )
+                    .filter((s: string) => s.length > 0)
+                : [];
+              const sectorInference = inferTradePreset({
+                evidence: processedEvidence.join("\n"),
+                lineItemDescriptions: draftLineItemDescriptions,
+                title: draft.title ?? quote.title ?? null,
+                description: draft.description ?? quote.description ?? null,
+              });
+              if (sectorInference.guess) {
+                (quoteUpdateData as any).tradePreset = sectorInference.guess;
+                console.log(
+                  `[generateDraft] tradePreset inference: guess=${sectorInference.guess}, confidence=${sectorInference.confidence} (was NULL, now writing)`,
+                );
+              } else {
+                console.log(
+                  `[generateDraft] tradePreset inference: guess=null (no confident sector match — column left NULL)`,
+                );
+              }
+            } else {
+              console.log(
+                `[generateDraft] tradePreset inference: skipped (existing value ${JSON.stringify(existingPreset)} preserved)`,
+              );
+            }
+          } catch (sectorInferenceErr) {
+            console.warn(
+              "[generateDraft] tradePreset inference threw (non-fatal):",
+              sectorInferenceErr,
             );
           }
 
