@@ -584,16 +584,25 @@ function renderCss(brand: ResolvedBrand): string {
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; font-size: 10pt; line-height: 1.7; color: ${inkBlack}; background: #fff; max-width: 210mm; margin: 0 auto; }
 
   /* ── COVER ─────────────────────────────────────────────────────── */
+  /* Phase 4A Delivery 32 — the cover-nav becomes a 32mm white strip
+     so the logo and ref block sit on a clean white surface, then the
+     ink-black bleed picks up below the strip and runs to the bottom
+     of the page. The previous Bold cover wrapped the logo in an
+     accent-coloured rectangle and added a secondary white pad behind
+     <img> children — both fought any logo with internal padding of
+     its own. The flipped surface lets the logo render naked on
+     white while the cover's bold uppercase H1 + accent stripe still
+     carry the Bold identity below. */
   .cover { min-height: 100vh; background: ${inkBlack}; display: flex; flex-direction: column; page-break-after: always; }
-  .cover-nav { padding: 14mm 16mm 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
-  /* Logo box uses an accent-colour border — distinct from Modern's
-     white-panel-with-shadow and Structured's brand-primary border. */
-  .logo-box { min-width: 180px; min-height: 60px; max-width: 220px; border: 2px solid var(--brand-secondary); display: flex; align-items: center; justify-content: center; padding: 6px 12px; font-size: 10pt; letter-spacing: 0.2em; color: var(--brand-secondary); text-transform: uppercase; font-weight: 700; background: transparent; }
-  /* When a real <img> logo is present it sits inside the accent box.
-     Image styles are inline on the <img> tag to keep the bordered
-     wordmark fallback's CSS unchanged. */
-  .logo-box img { background: #fff; padding: 4px 8px; border-radius: 2px; }
-  .cover-ref { text-align: right; font-size: 7.5pt; color: rgba(255,255,255,0.3); line-height: 1.9; letter-spacing: 0.05em; }
+  .cover-nav { background: #ffffff; min-height: 32mm; padding: 6mm 16mm; display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+  /* Two faces: a real <img> logo renders naked on the white strip
+     (no card, no border, no padding); the wordmark fallback gets a
+     2px brand-primary outline so it reads as an intentional
+     placeholder rather than orphaned text. */
+  .logo-box { min-height: 48px; max-width: 220px; display: flex; align-items: center; }
+  .logo-box img { max-width: 220px; max-height: 56px; object-fit: contain; }
+  .logo-box span { font-size: 11pt; letter-spacing: 0.2em; color: var(--brand-primary); text-transform: uppercase; font-weight: 700; padding: 6px 12px; border: 2px solid var(--brand-primary); }
+  .cover-ref { text-align: right; font-size: 7.5pt; color: var(--brand-primary); line-height: 1.9; letter-spacing: 0.05em; }
   .cover-hero { flex: 1; padding: 10mm 16mm 0; display: flex; flex-direction: column; justify-content: center; }
   .cover-eyebrow { font-size: 8pt; font-weight: 700; letter-spacing: 0.25em; text-transform: uppercase; color: var(--brand-secondary); margin-bottom: 14px; }
   .cover h1 { font-size: 44pt; font-weight: 900; color: #fff; line-height: 0.93; letter-spacing: -0.04em; text-transform: uppercase; margin-bottom: 22px; word-break: break-word; }

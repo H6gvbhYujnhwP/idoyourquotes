@@ -516,12 +516,27 @@ function renderCss(brand: ResolvedBrand): string {
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; font-size: 10pt; line-height: 1.7; color: ${bodyTextColor}; background: #fff; max-width: 210mm; margin: 0 auto; }
 
   /* ── COVER ─────────────────────────────────────────────────────── */
+  /* Phase 4A Delivery 32 — the cover-nav becomes a 32mm white strip
+     so the logo and ref block sit on a clean white surface, then the
+     brand-primary bleed picks up below the strip and runs to the
+     bottom of the page. The previous design painted the entire cover
+     in brand-primary and gave the logo its own white card (Delivery 9);
+     a white card on a coloured field reads as a sticker against the
+     bleed and fights any logo that already has its own internal
+     padding. The flipped surface — coloured field starts BELOW the
+     logo — is more typical of letterhead / annual-report covers and
+     lets uploaded logos sit on the same neutral surface they were
+     designed against. */
   .cover { min-height: 100vh; background: var(--brand-primary); display: flex; flex-direction: column; page-break-after: always; color: var(--brand-on-primary); }
-  .cover-nav { padding: 14mm 16mm 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
-  /* Phase 4A Delivery 9 — white panel behind logo so any logo
-     renders against a known contrast surface. */
-  .logo-box { min-width: 140px; min-height: 48px; max-width: 200px; background: #ffffff; border: 1px solid rgba(0,0,0,0.08); border-radius: 6px; padding: 8px 14px; display: flex; align-items: center; justify-content: center; font-size: 9.5pt; letter-spacing: 0.2em; color: #1f2937; text-transform: uppercase; font-weight: 700; }
-  .cover-ref-block { text-align: right; font-size: 7.5pt; color: rgba(255,255,255,0.55); line-height: 1.9; letter-spacing: 0.06em; }
+  .cover-nav { background: #ffffff; min-height: 32mm; padding: 6mm 16mm; display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+  /* Two faces: a real <img> logo renders naked on the white strip
+     (no card, no border, no padding); the wordmark fallback gets a
+     thin brand-primary outline so it reads as an intentional
+     placeholder rather than orphaned text. */
+  .logo-box { min-height: 48px; max-width: 220px; display: flex; align-items: center; }
+  .logo-box img { max-width: 220px; max-height: 56px; object-fit: contain; }
+  .logo-box span { font-size: 11pt; letter-spacing: 0.18em; color: var(--brand-primary); text-transform: uppercase; font-weight: 700; padding: 8px 14px; border: 1.5px solid var(--brand-primary); border-radius: 4px; }
+  .cover-ref-block { text-align: right; font-size: 7.5pt; color: var(--brand-primary); line-height: 1.9; letter-spacing: 0.06em; }
   .cover-hero { flex: 1; padding: 12mm 16mm; display: flex; flex-direction: column; justify-content: center; }
   .accent-bar { width: 48px; height: 4px; background: var(--brand-secondary); margin-bottom: 20px; }
   .cover h1 { font-size: 32pt; font-weight: 800; color: #fff; line-height: 1.08; letter-spacing: -0.025em; max-width: 500px; margin-bottom: 16px; }

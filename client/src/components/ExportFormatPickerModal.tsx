@@ -1,40 +1,45 @@
 /**
  * ExportFormatPickerModal.tsx
  *
- * Phase 4A — Delivery 6 (initial), Delivery 7 (Contract/Tender live).
+ * Phase 4A — Delivery 6 (initial), Delivery 7 (Contract/Tender live),
+ * Delivery 32 (this delivery).
  *
  * Shown when a Pro / Team tier user clicks "Generate PDF" on the quote
- * workspace. Presents three export format options as cards:
+ * workspace. Now presents two export format options as cards:
  *
- *   1. Quick quote         — active. Fires the existing basic PDF flow.
- *   2. Contract / Tender   — active (Delivery 7). Opens the Brand Choice
- *                            modal which handles branded proposal gen.
- *                            Preview thumbnail is sector-matched: IT →
- *                            IT-Modern, Cleaning → Cleaning-Operational,
- *                            Marketing → Marketing-Bold.
- *   3. Project / Migration — greyed. "Coming soon". Icon only, no
- *                            preview (template doesn't exist yet).
+ *   1. Quick quote        — active. Fires the existing basic PDF flow.
+ *   2. Contract / Tender  — active. Opens the Brand Choice modal which
+ *                           handles branded proposal generation. The
+ *                           preview thumbnail is now a live inline SVG
+ *                           (CoverPreviewSVG) that reflects the new
+ *                           white-strip-on-top cover layout and shows
+ *                           the user's actual logo + brand-primary the
+ *                           moment they're set on the org.
+ *
+ * Removed in Delivery 32:
+ *   - The Project / Migration "coming soon" tile. The 8-section
+ *     migration appendix that was the original use-case for that tile
+ *     ships inside the Contract / Tender flow today (Deliveries 27–29),
+ *     so a separate format card was redundant. Removing it also lets
+ *     the modal drop from a 3-up to a cleaner 2-up grid.
+ *   - The static showcase thumbnails (it-modern-thumb.webp etc.).
+ *     They're still used by the marketing pages — see
+ *     PROPOSAL_SHOWCASES in client/src/lib/proposalShowcaseAssets.ts.
  *
  * Solo / Trial users do NOT see this modal — they see the Solo
  * upgrade modal from Delivery 5 instead. Tier routing happens in the
  * QuoteWorkspace's handleGeneratePDFClick.
- *
- * Client-side only. No server interaction. No new dependencies.
  */
 import { useEffect } from "react";
 import {
   X,
   FileText,
   Sparkles,
-  Layers,
   ArrowRight,
-  Lock,
 } from "lucide-react";
 import { brand } from "@/lib/brandTheme";
-import {
-  PROPOSAL_SHOWCASES,
-  type ProposalShowcaseSector,
-} from "@/lib/proposalShowcaseAssets";
+import { trpc } from "@/lib/trpc";
+import CoverPreviewSVG from "@/components/CoverPreviewSVG";
 
 interface ExportFormatPickerModalProps {
   open: boolean;
@@ -43,36 +48,24 @@ interface ExportFormatPickerModalProps {
   /** Fires when the user picks the Quick quote card. */
   onSelectQuickQuote: () => void;
   /**
-   * Fires when the user picks the Contract/Tender card (Delivery 7).
+   * Fires when the user picks the Contract/Tender card.
    * Parent (QuoteWorkspace) closes this picker and opens the Brand
    * Choice modal.
    */
   onSelectContractTender: () => void;
   /**
-   * Sector hint used to pick the right preview thumbnail on the
-   * Contract/Tender card. Typically derived from the quote's
-   * tradePreset, falling back to the org's default sector. When
-   * unrecognised we default to IT — the v1 target of the branded
-   * renderer.
+   * Sector hint accepted for backward-compat with QuoteWorkspace's
+   * call site. No longer used internally — the live SVG preview is
+   * driven by org branding rather than by sector. Kept in the
+   * interface to avoid touching the (locked) QuoteWorkspace JSX.
    */
   sectorHint?: string | null;
 }
 
-/** Map a free-text sector string to one of the three showcase sectors. */
-function resolveShowcaseSector(hint: string | null | undefined): ProposalShowcaseSector {
-  const s = (hint || "").toLowerCase().trim();
-  if (!s) return "it";
-  if (s.includes("clean")) return "cleaning";
-  if (
-    s.includes("market")
-    || s.includes("digital")
-    || s.includes("website")
-    || s.includes("web")
-    || s.includes("seo")
-  ) return "marketing";
-  // IT is the default — it's also the v1 target of the branded renderer
-  // and the sector most users will see when this first lands.
-  return "it";
+// ── Hex helper — only used to validate brand colours before passing
+// them to the preview SVG, which has its own internal fallbacks too. ─
+function isValidHex(v: unknown): v is string {
+  return typeof v === "string" && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v);
 }
 
 export default function ExportFormatPickerModal({
@@ -80,7 +73,6 @@ export default function ExportFormatPickerModal({
   onDismiss,
   onSelectQuickQuote,
   onSelectContractTender,
-  sectorHint,
 }: ExportFormatPickerModalProps) {
   // Esc closes. Match the overlay-click-to-close behaviour below. Bound
   // only while open to avoid leaking listeners across the app lifecycle.
@@ -93,15 +85,42 @@ export default function ExportFormatPickerModal({
     return () => window.removeEventListener("keydown", handler);
   }, [open, onDismiss]);
 
-  if (!open) return null;
+  // Pull the org so the Contract/Tender preview can render the user's
+  // actual logo + brand-primary. Same query BrandChoiceModal already
+  // uses, so when both modals are mounted in sequence tRPC dedupes.
+  const { data: orgProfile } = trpc.auth.orgProfile.useQuery(undefined, {
+    enabled: open,
+  });
 
-  // Sector-matched preview on the Contract/Tender card so the user sees
-  // a representative visual of what they're about to generate — even
-  // though v1 only actually produces the IT-Modern layout. Post-4A adds
-  // the other two sectors' renderers; the thumbnail is already right.
-  const showcaseSector = resolveShowcaseSector(sectorHint);
-  const contractTenderPreview = PROPOSAL_SHOWCASES[showcaseSector].assets.thumb;
-  const showcaseSectorLabel = PROPOSAL_SHOWCASES[showcaseSector].sectorLabel;
+  // Resolve the brand tokens the preview needs. Read priority mirrors
+  // the BrandChoiceModal's readBrandTokens helper: web-extracted hex
+  // first (when present), then logo-pixel hex, else null. The preview
+  // component falls back to brand.navy internally if both are missing.
+  const logoUrl =
+    ((orgProfile as { companyLogo?: string | null } | undefined)
+      ?.companyLogo as string | null) || null;
+  const companyName =
+    (orgProfile as { companyName?: string } | undefined)?.companyName || "";
+  const extractedPrimary = (orgProfile as { brandExtractedPrimaryColor?: string | null } | undefined)
+    ?.brandExtractedPrimaryColor;
+  const logoPrimary = (orgProfile as { brandPrimaryColor?: string | null } | undefined)
+    ?.brandPrimaryColor;
+  const previewPrimary = isValidHex(extractedPrimary)
+    ? extractedPrimary
+    : isValidHex(logoPrimary)
+      ? logoPrimary
+      : null;
+  const extractedSecondary = (orgProfile as { brandExtractedSecondaryColor?: string | null } | undefined)
+    ?.brandExtractedSecondaryColor;
+  const logoSecondary = (orgProfile as { brandSecondaryColor?: string | null } | undefined)
+    ?.brandSecondaryColor;
+  const previewSecondary = isValidHex(extractedSecondary)
+    ? extractedSecondary
+    : isValidHex(logoSecondary)
+      ? logoSecondary
+      : null;
+
+  if (!open) return null;
 
   return (
     <div
@@ -113,7 +132,7 @@ export default function ExportFormatPickerModal({
       aria-labelledby="export-format-title"
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl w-[900px] max-w-[94vw] my-6 relative"
+        className="bg-white rounded-2xl shadow-2xl w-[760px] max-w-[94vw] my-6 relative"
         style={{ border: `1px solid ${brand.border}` }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -146,9 +165,10 @@ export default function ExportFormatPickerModal({
           </p>
         </div>
 
-        {/* Cards */}
-        <div className="px-8 pb-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Cards — Delivery 32 dropped the third "coming soon" tile so
+            the layout is now 2-up. */}
+        <div className="px-8 pb-7">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* ── Card 1: Quick quote (active) ── */}
             <button
               type="button"
@@ -191,7 +211,7 @@ export default function ExportFormatPickerModal({
               </div>
             </button>
 
-            {/* ── Card 2: Contract / Tender (active — Delivery 7) ── */}
+            {/* ── Card 2: Contract / Tender (active) ── */}
             <button
               type="button"
               onClick={onSelectContractTender}
@@ -202,7 +222,13 @@ export default function ExportFormatPickerModal({
                 boxShadow: brand.shadow,
               }}
             >
-              {/* Preview strip */}
+              {/* Live preview — shows the new white-strip cover layout
+                  with the user's logo + brand-primary the moment those
+                  are available, or a "Your Logo" placeholder otherwise.
+                  Critically the placeholder must NEVER fall back to
+                  the company name — that's a deliberate departure
+                  from the actual PDF cover's wordmark fallback (see
+                  CoverPreviewSVG.tsx for the full rationale). */}
               <div
                 className="relative w-full overflow-hidden"
                 style={{
@@ -211,11 +237,11 @@ export default function ExportFormatPickerModal({
                   borderBottom: `1px solid ${brand.border}`,
                 }}
               >
-                <img
-                  src={contractTenderPreview}
-                  alt={`${showcaseSectorLabel} Contract / Tender preview`}
-                  className="w-full h-full object-cover object-top transition-transform group-hover:scale-[1.02]"
-                  draggable={false}
+                <CoverPreviewSVG
+                  logoUrl={logoUrl}
+                  companyName={companyName}
+                  primaryColor={previewPrimary}
+                  secondaryColor={previewSecondary}
                 />
                 <div
                   className="absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase flex items-center gap-1"
@@ -249,8 +275,8 @@ export default function ExportFormatPickerModal({
                   style={{ color: brand.navyMuted }}
                 >
                   Multi-page branded proposal with cover, exec summary,
-                  pricing, and signature. Your logo and brand colours are
-                  applied automatically.
+                  pricing, and signature. Your logo and brand colours
+                  are applied automatically.
                 </div>
                 <div
                   className="text-xs font-semibold mt-3 flex items-center gap-1 transition-transform group-hover:translate-x-0.5"
@@ -261,52 +287,6 @@ export default function ExportFormatPickerModal({
                 </div>
               </div>
             </button>
-
-            {/* ── Card 3: Project / Migration (coming soon, no preview) ── */}
-            <div
-              className="rounded-xl p-5 flex flex-col"
-              style={{
-                backgroundColor: brand.slate,
-                border: `1px solid ${brand.border}`,
-                cursor: "not-allowed",
-              }}
-              aria-disabled="true"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div
-                  className="w-10 h-10 rounded-lg flex items-center justify-center"
-                  style={{ backgroundColor: "#f1f5f9" }}
-                >
-                  <Layers
-                    className="w-5 h-5"
-                    style={{ color: brand.navyMuted }}
-                  />
-                </div>
-                <div
-                  className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase flex items-center gap-1"
-                  style={{
-                    backgroundColor: brand.navy,
-                    color: brand.white,
-                  }}
-                >
-                  <Lock className="w-2.5 h-2.5" />
-                  Coming soon
-                </div>
-              </div>
-              <div
-                className="text-sm font-bold mb-1"
-                style={{ color: brand.navy }}
-              >
-                Project / Migration
-              </div>
-              <div
-                className="text-xs leading-relaxed flex-1"
-                style={{ color: brand.navyMuted }}
-              >
-                Multi-phase project proposal with a delivery roadmap,
-                phased pricing, and stage acceptance gates.
-              </div>
-            </div>
           </div>
         </div>
       </div>
