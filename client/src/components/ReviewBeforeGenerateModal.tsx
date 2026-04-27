@@ -1,23 +1,44 @@
 /**
  * ReviewBeforeGenerateModal.tsx
  *
- * Phase 4A — Delivery 24. Replaces PreGeneratePDFModal (Chunk 3
- * Delivery H), broadening it from Quick-Quote-only to a mode-aware
- * gate that also serves the Contract/Tender (branded) flow. A future
- * Project/Migration mode will plug in by extending the section
- * registry — no rewrite required.
+ * Phase 4A — Delivery 24 (initial), Delivery 29 (migration sections),
+ * Delivery 34 (this delivery).
  *
  * What this modal does
  * --------------------
  *   1. Shows the user every field that ends up on the PDF for the
  *      mode they're generating, with inline read-only paragraphs.
  *   2. Lets them toggle Edit on any section to tweak per-quote.
- *   3. Surfaces a "save as my default" checkbox on sections that
- *      have a per-mode default column. Ticking it ALSO writes the
- *      edited value to organizations.{branded,default}X so it pre-
- *      populates the next quote of the same mode. Save-as-default
- *      in Quick mode does NOT bleed into Branded mode and vice
- *      versa — the columns are physically separate.
+ *   3. Surfaces a "save as default" checkbox on sections that have a
+ *      per-mode default column. Ticking it on a per-section Save
+ *      eagerly writes to organizations.{branded,default}X so it pre-
+ *      populates the next quote of the same mode. Save-as-default in
+ *      Quick mode does NOT bleed into Branded mode and vice versa —
+ *      the columns are physically separate.
+ *
+ * Delivery 34 — save & dismissal semantics
+ * ----------------------------------------
+ *   The modal previously dismissed on overlay click and lost any
+ *   in-flight per-section edits, and the save-as-default tick was
+ *   only ever consumed at the modal-level Generate. D34 reworks both:
+ *
+ *     - Outside-click is a no-op. The only ways to close the modal
+ *       are the × button, the bottom Close button, Esc, or Generate.
+ *     - All four close paths first commit any pending per-quote and
+ *       org-default writes — there is no "discard everything" exit.
+ *     - Each editable section now has its own Save and Cancel buttons
+ *       in a footer row alongside a "Save as default" tick. Per-section
+ *       Save eagerly writes to org defaults when the tick is on (one
+ *       updateProfile call per section), then closes the editor.
+ *       Per-section Cancel reverts the textarea to its initial value
+ *       and closes the editor.
+ *     - The "Save as default" tick is now visible the whole time the
+ *       editor is open — not gated on dirty — so the affordance is
+ *       discoverable before any typing happens.
+ *     - Save-as-default coverage extended to all six migration
+ *       sections. The active migration profile is resolved once from
+ *       migrationTypeSuggested and used to pick the matching
+ *       default{Server|M365|Workspace|Tenant}{Section} column.
  *
  * Section list per mode
  * ---------------------
@@ -35,18 +56,24 @@
  *     - Payment terms               (quote.paymentTerms,       default: brandedPaymentTerms)
  *     - Signatory name              (quote.signatoryName,      default: brandedSignatoryName)
  *     - Signatory position          (quote.signatoryPosition,  default: brandedSignatoryPosition)
+ *     - Migration sections (×6)     (quote.migrationX,         default: default{Profile}{Section})
  *
- * Mutation order on confirm
- * -------------------------
+ * Mutation order on confirm / close
+ * ---------------------------------
  *   1. quotes.update           — if any per-quote field is dirty
  *   2. tenderContext.upsert    — if notes/assumptions/exclusions dirty
- *   3. auth.updateProfile — if any save-as-default is ticked
+ *   3. auth.updateProfile      — if any save-as-default is still
+ *                                pending (per-section Save resets the
+ *                                tick after writing eagerly, so this
+ *                                only fires for sections the user
+ *                                ticked but never explicitly Saved
+ *                                before closing).
  *   All three fire in parallel; if any fails, the modal stays open and
  *   surfaces the error inline so edits aren't lost.
  *
- *   onConfirm() is called only after all dirty saves resolve. The
- *   parent triggers the actual PDF / branded-proposal generation from
- *   that callback.
+ *   onConfirm() is called only after Generate-path saves resolve.
+ *   The Close paths (× / bottom Close / Esc) run the same writes but
+ *   skip onConfirm() — the parent stays where it is.
  */
 import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
@@ -62,7 +89,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertCircle, Download, Loader2, Pencil } from "lucide-react";
+import { AlertCircle, Check, Download, Loader2, Pencil } from "lucide-react";
 import { brand } from "@/lib/brandTheme";
 import {
   defaultsFor,
@@ -322,13 +349,20 @@ const SECTION_META: Record<SectionId, SectionMeta> = {
   // shows the actual content the renderer will emit (per-quote override
   // → org default → locked content from shared/migrationDefaults).
   // Editing pre-fills with that same content; saving writes to the
-  // matching quote.migrationX column. No save-as-default tickbox in
-  // D29 — org-level editing belongs in Settings, that's D30.
+  // matching quote.migrationX column.
+  //
+  // Phase 4A Delivery 34 — hasDefaultOption flipped to true on all
+  // six migration sections. The org-default columns already exist
+  // (defaultServer*, defaultM365*, defaultWorkspace*, defaultTenant*
+  // — added in D27) and the active profile is resolved once from
+  // migrationTypeSuggested in migrationOrgKey() below. The handler
+  // chain reuses the same auth.updateProfile mutation as the rest
+  // of the save-as-default sections.
   migrationMethodology: {
     id: "migrationMethodology",
     label: "Migration — methodology",
     emptyPlaceholder: "Click Edit to customise the methodology paragraph for this quote.",
-    hasDefaultOption: false,
+    hasDefaultOption: true,
     multiline: true,
     minHeight: "120px",
   },
@@ -336,7 +370,7 @@ const SECTION_META: Record<SectionId, SectionMeta> = {
     id: "migrationPhases",
     label: "Migration — phases",
     emptyPlaceholder: "Click Edit to customise the project phases for this quote.",
-    hasDefaultOption: false,
+    hasDefaultOption: true,
     multiline: true,
     minHeight: "140px",
   },
@@ -344,7 +378,7 @@ const SECTION_META: Record<SectionId, SectionMeta> = {
     id: "migrationAssumptions",
     label: "Migration — assumptions",
     emptyPlaceholder: "Click Edit to customise the migration assumptions for this quote — one per line.",
-    hasDefaultOption: false,
+    hasDefaultOption: true,
     multiline: true,
     bulletRender: true,
     minHeight: "140px",
@@ -353,7 +387,7 @@ const SECTION_META: Record<SectionId, SectionMeta> = {
     id: "migrationRisks",
     label: "Migration — risks & mitigations",
     emptyPlaceholder: "Click Edit to customise the risk / mitigation pairs for this quote.",
-    hasDefaultOption: false,
+    hasDefaultOption: true,
     multiline: true,
     minHeight: "180px",
   },
@@ -361,7 +395,7 @@ const SECTION_META: Record<SectionId, SectionMeta> = {
     id: "migrationRollback",
     label: "Migration — rollback & hypercare",
     emptyPlaceholder: "Click Edit to customise the rollback narrative for this quote.",
-    hasDefaultOption: false,
+    hasDefaultOption: true,
     multiline: true,
     minHeight: "120px",
   },
@@ -369,7 +403,7 @@ const SECTION_META: Record<SectionId, SectionMeta> = {
     id: "migrationOutOfScope",
     label: "Migration — out of scope",
     emptyPlaceholder: "Click Edit to customise the migration out-of-scope list — one per line.",
-    hasDefaultOption: false,
+    hasDefaultOption: true,
     multiline: true,
     bulletRender: true,
     minHeight: "140px",
@@ -811,7 +845,153 @@ export default function ReviewBeforeGenerateModal({
       values.migrationOutOfScope !== initial.migrationOutOfScope,
   };
 
-  const handleConfirm = async () => {
+  // ── D34 — per-section Save / Cancel + close-with-save ──────────────
+  // The handlers below back the new footer buttons inside each section.
+  // They share the org-default payload builder with handleConfirm so
+  // there's exactly one place that knows the column names — adding a
+  // new save-as-default-capable section means updating that builder
+  // and nothing else.
+
+  /**
+   * Build the org-default update payload for a single section, based
+   * on the active mode and (for migration sections) the inferred
+   * migration profile. Returns `null` when there's nothing to write —
+   * either the section doesn't have a default column, or the migration
+   * profile hasn't been inferred yet.
+   */
+  const buildProfileUpdateForSection = (
+    id: SectionId,
+  ): Record<string, string> | null => {
+    const value = values[id];
+    if (mode === "quick") {
+      if (id === "terms") return { defaultTerms: value };
+      if (id === "exclusions") return { defaultExclusions: value };
+      return null;
+    }
+    // Branded mode.
+    if (id === "terms") return { brandedTerms: value };
+    if (id === "exclusions") return { brandedExclusions: value };
+    if (id === "paymentTerms") return { brandedPaymentTerms: value };
+    if (id === "signatoryName") return { brandedSignatoryName: value };
+    if (id === "signatoryPosition") return { brandedSignatoryPosition: value };
+    // Migration sections — resolved against the active profile. If
+    // the profile is missing, skip silently rather than guess.
+    const block: keyof MigrationProfileDefaults | null =
+      id === "migrationMethodology"
+        ? "methodology"
+        : id === "migrationPhases"
+          ? "phases"
+          : id === "migrationAssumptions"
+            ? "assumptions"
+            : id === "migrationRisks"
+              ? "risks"
+              : id === "migrationRollback"
+                ? "rollback"
+                : id === "migrationOutOfScope"
+                  ? "outOfScope"
+                  : null;
+    if (!block || !migrationProfile) return null;
+    const key = profileDefaultsKey(migrationProfile, block);
+    return { [key as string]: value };
+  };
+
+  /** Revert a single section's editor value to the modal-open snapshot. */
+  const revertSectionValue = (id: SectionId) => {
+    setValues((s) => {
+      const next = { ...s };
+      switch (id) {
+        case "notes":
+          next.notes = initial.notes;
+          break;
+        case "terms":
+          next.terms = initial.terms;
+          break;
+        case "exclusions":
+          next.exclusions =
+            initial.exclusionsList || initial.exclusionsFallback;
+          break;
+        case "assumptions":
+          next.assumptions = initial.assumptionsList;
+          break;
+        case "validUntil":
+          next.validUntil = dateToInputValue(initial.validUntil);
+          break;
+        case "paymentTerms":
+          next.paymentTerms = initial.paymentTerms;
+          break;
+        case "signatoryName":
+          next.signatoryName = initial.signatoryName;
+          break;
+        case "signatoryPosition":
+          next.signatoryPosition = initial.signatoryPosition;
+          break;
+        case "migrationMethodology":
+          next.migrationMethodology = initial.migrationMethodology;
+          break;
+        case "migrationPhases":
+          next.migrationPhases = initial.migrationPhases;
+          break;
+        case "migrationAssumptions":
+          next.migrationAssumptions = initial.migrationAssumptions;
+          break;
+        case "migrationRisks":
+          next.migrationRisks = initial.migrationRisks;
+          break;
+        case "migrationRollback":
+          next.migrationRollback = initial.migrationRollback;
+          break;
+        case "migrationOutOfScope":
+          next.migrationOutOfScope = initial.migrationOutOfScope;
+          break;
+      }
+      return next;
+    });
+  };
+
+  /**
+   * Per-section Save — closes the editor and, if the tick is on,
+   * eagerly persists this one section to org defaults via
+   * auth.updateProfile. The per-quote write still happens at the
+   * modal-level Generate / Close path. On failure the editor stays
+   * open with an inline error so the user can retry.
+   */
+  const handleSectionSave = async (id: SectionId) => {
+    const meta = SECTION_META[id];
+    setInlineError(null);
+    if (saveAsDefault[id] && meta.hasDefaultOption && dirty[id]) {
+      const payload = buildProfileUpdateForSection(id);
+      if (payload) {
+        try {
+          setIsSaving(true);
+          await updateProfile.mutateAsync(payload as any);
+          // Reset the tick so handleConfirm/handleClose don't write
+          // it again on the way out.
+          setSaveAsDefault((s) => ({ ...s, [id]: false }));
+          toast.success("Saved as your default");
+        } catch (err) {
+          const msg =
+            err instanceof Error
+              ? err.message
+              : "Couldn't save default — try again.";
+          setInlineError(msg);
+          setIsSaving(false);
+          return;
+        } finally {
+          setIsSaving(false);
+        }
+      }
+    }
+    setEditing((s) => ({ ...s, [id]: false }));
+  };
+
+  /** Per-section Cancel — revert to the initial value and close. */
+  const handleSectionCancel = (id: SectionId) => {
+    revertSectionValue(id);
+    setSaveAsDefault((s) => ({ ...s, [id]: false }));
+    setEditing((s) => ({ ...s, [id]: false }));
+  };
+
+  const handleConfirm = async (triggerOnConfirm = true) => {
     setInlineError(null);
     setIsSaving(true);
     try {
@@ -902,35 +1082,17 @@ export default function ReviewBeforeGenerateModal({
       }
 
       // ── 3. Save-as-default (auth.updateProfile) ────────
-      // Only ticked sections that are also dirty actually write — no
-      // point persisting a default that's identical to what was
-      // already loaded.
+      // Walk every section in the active mode and ask the shared
+      // builder for its org-default payload. Only ticked + dirty
+      // sections actually contribute. After per-section Save fires
+      // the tick resets to false, so this loop is a catch-all for
+      // sections the user ticked but never explicitly Saved before
+      // reaching the modal exit (Generate or Close).
       const profileUpdate: Record<string, string> = {};
-      if (mode === "quick") {
-        // Quick mode writes to the legacy default* family.
-        if (saveAsDefault.terms && dirty.terms) {
-          profileUpdate.defaultTerms = values.terms;
-        }
-        if (saveAsDefault.exclusions && dirty.exclusions) {
-          profileUpdate.defaultExclusions = values.exclusions;
-        }
-      } else {
-        // Branded mode writes to the branded* family.
-        if (saveAsDefault.terms && dirty.terms) {
-          profileUpdate.brandedTerms = values.terms;
-        }
-        if (saveAsDefault.exclusions && dirty.exclusions) {
-          profileUpdate.brandedExclusions = values.exclusions;
-        }
-        if (saveAsDefault.paymentTerms && dirty.paymentTerms) {
-          profileUpdate.brandedPaymentTerms = values.paymentTerms;
-        }
-        if (saveAsDefault.signatoryName && dirty.signatoryName) {
-          profileUpdate.brandedSignatoryName = values.signatoryName;
-        }
-        if (saveAsDefault.signatoryPosition && dirty.signatoryPosition) {
-          profileUpdate.brandedSignatoryPosition = values.signatoryPosition;
-        }
+      for (const id of sectionIds) {
+        if (!saveAsDefault[id] || !dirty[id]) continue;
+        const payload = buildProfileUpdateForSection(id);
+        if (payload) Object.assign(profileUpdate, payload);
       }
       if (Object.keys(profileUpdate).length > 0) {
         tasks.push(
@@ -940,18 +1102,41 @@ export default function ReviewBeforeGenerateModal({
 
       if (tasks.length > 0) {
         await Promise.all(tasks);
-        toast.success("Review saved — generating…");
+        if (triggerOnConfirm) {
+          toast.success("Review saved — generating…");
+        } else {
+          toast.success("Review saved");
+        }
       }
 
-      onConfirm();
+      if (triggerOnConfirm) onConfirm();
     } catch (err) {
       const message =
         err instanceof Error
           ? err.message
           : "Couldn't save your review. Try again.";
       setInlineError(message);
+      // Surface the error and let the user retry — do NOT close on
+      // the close path either, since closing would lose unsaved work.
+      throw err;
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  /**
+   * D34 close path — runs the same writes as handleConfirm but does
+   * not call onConfirm() (so no PDF generation), then dismisses the
+   * modal. Called by the × icon, the bottom Close button, and the
+   * Esc key. If the writes fail, the modal stays open with the inline
+   * error showing so nothing is silently lost.
+   */
+  const handleClose = async () => {
+    try {
+      await handleConfirm(false);
+      onOpenChange(false);
+    } catch {
+      // handleConfirm already surfaced the inline error.
     }
   };
 
@@ -961,7 +1146,6 @@ export default function ReviewBeforeGenerateModal({
     const value = values[id];
     const isEditing = editing[id];
     const sad = saveAsDefault[id];
-    const sectionDirty = dirty[id];
 
     const onEdit = () => setEditing((s) => ({ ...s, [id]: true }));
     const onChange = (v: string) =>
@@ -1028,22 +1212,50 @@ export default function ReviewBeforeGenerateModal({
           />
         )}
 
-        {/* Save-as-default checkbox — shown only when the section
-            supports it AND the user has actually edited (otherwise
-            the affordance has nothing to persist). */}
-        {meta.hasDefaultOption && sectionDirty && (
-          <label className="flex items-center gap-2 mt-3 text-xs cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={sad}
-              onChange={onToggleDefault}
-              className="rounded"
-              style={{ accentColor: brand.teal }}
-            />
-            <span style={{ color: brand.navyMuted }}>
-              Save as my default for future {mode === "branded" ? "Contract / Tender" : "Quick Quote"} proposals
-            </span>
-          </label>
+        {/* D34 — per-section editor footer. Cancel anchors the left,
+            tick + Save anchor the right. The tick is visible the whole
+            time the editor is open (not gated on dirty) so the
+            affordance is discoverable before any typing happens. The
+            Save button reuses the same teal CTA family the rest of the
+            modal uses for primary actions. */}
+        {isEditing && (
+          <div className="flex items-center justify-between mt-3 gap-3 flex-wrap">
+            <button
+              type="button"
+              onClick={() => handleSectionCancel(id)}
+              disabled={isSaving}
+              className="text-xs px-3 py-1.5 rounded border hover:bg-white"
+              style={{ borderColor: brand.border, color: brand.navyMuted }}
+            >
+              Cancel
+            </button>
+            <div className="flex items-center gap-3">
+              {meta.hasDefaultOption && (
+                <label
+                  className="flex items-center gap-1.5 text-xs cursor-pointer select-none"
+                >
+                  <input
+                    type="checkbox"
+                    checked={sad}
+                    onChange={onToggleDefault}
+                    className="rounded"
+                    style={{ accentColor: brand.teal }}
+                  />
+                  <span style={{ color: brand.navyMuted }}>Save as default</span>
+                </label>
+              )}
+              <button
+                type="button"
+                onClick={() => void handleSectionSave(id)}
+                disabled={isSaving}
+                className="text-xs flex items-center gap-1 px-3 py-1.5 rounded text-white"
+                style={{ backgroundColor: brand.teal }}
+              >
+                <Check className="w-3 h-3" />
+                Save
+              </button>
+            </div>
+          </div>
         )}
 
         {/* Phase 4A Delivery 29 — hypercare-days hint, only on the
@@ -1070,8 +1282,26 @@ export default function ReviewBeforeGenerateModal({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[640px]">
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        // D34 — any close attempt (× icon, Esc, programmatic) is
+        // re-routed through handleClose so any pending edits are
+        // committed before dismissal.
+        if (!v) {
+          void handleClose();
+          return;
+        }
+        onOpenChange(v);
+      }}
+    >
+      <DialogContent
+        className="sm:max-w-[640px]"
+        // D34 — outside-click is a no-op. The user can only dismiss
+        // via × / Esc / Close / Generate, all of which save first.
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle style={{ color: brand.navy }}>
             Review before generating
@@ -1105,10 +1335,10 @@ export default function ReviewBeforeGenerateModal({
           <Button
             type="button"
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            onClick={() => void handleClose()}
             disabled={isSaving}
           >
-            Cancel
+            Close
           </Button>
           <Button
             type="button"
