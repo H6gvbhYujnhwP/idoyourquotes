@@ -58,6 +58,8 @@ import {
   resolveLogoUrl,
   sumDecimal,
   readableTextOn,
+  termsCoverValidity,
+  termsCoverPayment,
 } from "../brandedProposalRenderer";
 import { renderMigrationAppendix } from "./migrationAppendix";
 
@@ -435,12 +437,20 @@ function renderTerms(args: {
       ? escapeHtml(signatoryName)
       : "";
 
+  // Phase 4A Delivery 31 — duplicate-clause suppression. When the
+  // resolved `terms` text already covers a topic, the hardcoded
+  // summary line for that topic is suppressed so the same statement
+  // doesn't appear twice on the page (once as a renderer summary,
+  // once inside the user's "Additional terms" block).
+  const hideValidity = termsCoverValidity(terms);
+  const hidePayment = termsCoverPayment(terms);
+
   return `
 <div class="page">
   <div class="eyebrow">${termsSecStr} — Terms &amp; Conditions</div>
   <h2>Commercial terms</h2>
-  <p><strong>Validity:</strong> ${escapeHtml(validityLine)}</p>
-  <p><strong>Payment:</strong> ${escapeHtml(paymentTerms)}</p>
+  ${hideValidity ? "" : `<p><strong>Validity:</strong> ${escapeHtml(validityLine)}</p>`}
+  ${hidePayment ? "" : `<p><strong>Payment:</strong> ${escapeHtml(paymentTerms)}</p>`}
   <p><strong>Scope:</strong> The work covered is as described in the Executive Summary and itemised in the Pricing section. Work outside that scope will be quoted separately and is not included in the pricing above.</p>
   <h3>Assumptions</h3>
   ${assumptionsHtml}

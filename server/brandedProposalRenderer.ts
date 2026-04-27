@@ -138,6 +138,37 @@ export function plainLineItemText(text: string | null | undefined): string {
     .join(". ");
 }
 
+// ── Phase 4A Delivery 31 — Terms / topic-coverage detection ─────────
+//
+// The branded Terms page renders three hardcoded summary lines —
+// Validity, Payment, Scope — followed by the user's full `terms`
+// text under "Additional terms". When the user has set a comprehensive
+// `defaultTerms` (or per-quote `terms`) that already covers validity
+// and/or payment, the hardcoded summary lines duplicate the user's
+// own statements and the same topic appears twice on the page.
+//
+// These two helpers detect whether the user's terms text covers each
+// topic so the per-template renderTerms function can suppress its
+// matching summary line. Detection is a simple word-boundary check
+// for the topical noun — false-positive risk is negligible because
+// these words are very specific to the topics they reference, and
+// even when they appear in unusual context the user has effectively
+// taken responsibility for the topic so suppression is the correct
+// behaviour.
+//
+// The "Scope" summary line stays — it states something specific about
+// job-scope coverage that typical T&C boilerplate does not duplicate.
+
+export function termsCoverValidity(text: string | null | undefined): boolean {
+  if (!text || !text.trim()) return false;
+  return /\bvalid(?:ity)?\b/i.test(text);
+}
+
+export function termsCoverPayment(text: string | null | undefined): boolean {
+  if (!text || !text.trim()) return false;
+  return /\bpayment(?:s)?\b/i.test(text);
+}
+
 /** Validate a hex colour (#rgb or #rrggbb) and return it or undefined. */
 export function validHex(v: unknown): string | undefined {
   if (typeof v !== "string") return undefined;

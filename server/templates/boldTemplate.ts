@@ -61,6 +61,8 @@ import {
   resolveLogoUrl,
   sumDecimal,
   accentForDarkBg,
+  termsCoverValidity,
+  termsCoverPayment,
 } from "../brandedProposalRenderer";
 import { renderMigrationAppendix } from "./migrationAppendix";
 
@@ -506,12 +508,17 @@ function renderTerms(args: {
       ? escapeHtml(signatoryName)
       : "";
 
+  // Phase 4A Delivery 31 — duplicate-clause suppression. See the
+  // matching block in modernTemplate for rationale.
+  const hideValidity = termsCoverValidity(terms);
+  const hidePayment = termsCoverPayment(terms);
+
   return `
 <div class="page">
   <div class="sec-div"><span class="div-num">${termsSecStr}</span><span class="div-title">Terms &amp; Acceptance</span><div class="div-line"></div></div>
   <h2>The Terms</h2>
-  <p><strong>Validity:</strong> ${escapeHtml(validityLine)}</p>
-  <p><strong>Payment:</strong> ${escapeHtml(paymentTerms)}</p>
+  ${hideValidity ? "" : `<p><strong>Validity:</strong> ${escapeHtml(validityLine)}</p>`}
+  ${hidePayment ? "" : `<p><strong>Payment:</strong> ${escapeHtml(paymentTerms)}</p>`}
   <p><strong>Scope:</strong> The work covered is as described in the Executive Summary and itemised in the Pricing Schedule. Work outside that scope will be quoted separately.</p>
   <h3>Assumptions</h3>
   ${assumptionsHtml}
