@@ -64,6 +64,12 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertCircle, Download, Loader2, Pencil } from "lucide-react";
 import { brand } from "@/lib/brandTheme";
+import {
+  defaultsFor,
+  type MigrationType,
+  type MigrationProfileDefaults,
+  DEFAULT_HYPERCARE_DAYS,
+} from "@shared/migrationDefaults";
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -85,6 +91,36 @@ interface OrgDefaults {
   defaultPaymentTerms?: string | null;
   defaultSignatoryName?: string | null;
   defaultSignatoryPosition?: string | null;
+  // Phase 4A Delivery 29 — per-profile migration defaults. The modal's
+  // three-tier cascade for migration sections reads these as tier 2
+  // (between quote.migrationX at tier 1 and the locked content from
+  // shared/migrationDefaults at tier 3). Editing these globally is a
+  // D30 Settings job; D29 only reads them.
+  defaultHypercareDays?: number | null;
+  defaultServerMethodology?: string | null;
+  defaultServerPhases?: string | null;
+  defaultServerAssumptions?: string | null;
+  defaultServerRisks?: string | null;
+  defaultServerRollback?: string | null;
+  defaultServerOutOfScope?: string | null;
+  defaultM365Methodology?: string | null;
+  defaultM365Phases?: string | null;
+  defaultM365Assumptions?: string | null;
+  defaultM365Risks?: string | null;
+  defaultM365Rollback?: string | null;
+  defaultM365OutOfScope?: string | null;
+  defaultWorkspaceMethodology?: string | null;
+  defaultWorkspacePhases?: string | null;
+  defaultWorkspaceAssumptions?: string | null;
+  defaultWorkspaceRisks?: string | null;
+  defaultWorkspaceRollback?: string | null;
+  defaultWorkspaceOutOfScope?: string | null;
+  defaultTenantMethodology?: string | null;
+  defaultTenantPhases?: string | null;
+  defaultTenantAssumptions?: string | null;
+  defaultTenantRisks?: string | null;
+  defaultTenantRollback?: string | null;
+  defaultTenantOutOfScope?: string | null;
 }
 
 interface ReviewBeforeGenerateModalProps {
@@ -103,6 +139,21 @@ interface ReviewBeforeGenerateModalProps {
   initialPaymentTerms?: string | null;
   initialSignatoryName?: string | null;
   initialSignatoryPosition?: string | null;
+  // Phase 4A Delivery 29 — per-quote migration overrides + the gate
+  // inputs. The 6 migration sections only render in branded mode AND
+  // only when both `tradePreset === 'it_services'` and
+  // `migrationTypeSuggested` is one of the four valid types — same
+  // gate as the renderer (see server/templates/migrationAppendix.ts).
+  // For other quotes the modal looks identical to pre-D29.
+  tradePreset?: string | null;
+  migrationTypeSuggested?: string | null;
+  initialMigrationMethodology?: string | null;
+  initialMigrationPhases?: string | null;
+  initialMigrationAssumptions?: string | null;
+  initialMigrationRisks?: string | null;
+  initialMigrationRollback?: string | null;
+  initialMigrationOutOfScope?: string | null;
+  initialHypercareDays?: number | null;
   // Organization defaults — used for cascade fallback when per-quote
   // values are blank, so the modal shows what the renderer would
   // actually produce.
@@ -170,7 +221,16 @@ type SectionId =
   | "validUntil"
   | "paymentTerms"
   | "signatoryName"
-  | "signatoryPosition";
+  | "signatoryPosition"
+  // Phase 4A Delivery 29 — six migration appendix blocks. Only
+  // appended to BRANDED_SECTIONS when the gate fires (see helper
+  // `appendixBlocksFor` below).
+  | "migrationMethodology"
+  | "migrationPhases"
+  | "migrationAssumptions"
+  | "migrationRisks"
+  | "migrationRollback"
+  | "migrationOutOfScope";
 
 interface SectionMeta {
   id: SectionId;
@@ -258,7 +318,172 @@ const SECTION_META: Record<SectionId, SectionMeta> = {
     hasDefaultOption: true,
     multiline: false,
   },
+  // Phase 4A Delivery 29 — Migration appendix sections. Read-only view
+  // shows the actual content the renderer will emit (per-quote override
+  // → org default → locked content from shared/migrationDefaults).
+  // Editing pre-fills with that same content; saving writes to the
+  // matching quote.migrationX column. No save-as-default tickbox in
+  // D29 — org-level editing belongs in Settings, that's D30.
+  migrationMethodology: {
+    id: "migrationMethodology",
+    label: "Migration — methodology",
+    emptyPlaceholder: "Click Edit to customise the methodology paragraph for this quote.",
+    hasDefaultOption: false,
+    multiline: true,
+    minHeight: "120px",
+  },
+  migrationPhases: {
+    id: "migrationPhases",
+    label: "Migration — phases",
+    emptyPlaceholder: "Click Edit to customise the project phases for this quote.",
+    hasDefaultOption: false,
+    multiline: true,
+    minHeight: "140px",
+  },
+  migrationAssumptions: {
+    id: "migrationAssumptions",
+    label: "Migration — assumptions",
+    emptyPlaceholder: "Click Edit to customise the migration assumptions for this quote — one per line.",
+    hasDefaultOption: false,
+    multiline: true,
+    bulletRender: true,
+    minHeight: "140px",
+  },
+  migrationRisks: {
+    id: "migrationRisks",
+    label: "Migration — risks & mitigations",
+    emptyPlaceholder: "Click Edit to customise the risk / mitigation pairs for this quote.",
+    hasDefaultOption: false,
+    multiline: true,
+    minHeight: "180px",
+  },
+  migrationRollback: {
+    id: "migrationRollback",
+    label: "Migration — rollback & hypercare",
+    emptyPlaceholder: "Click Edit to customise the rollback narrative for this quote.",
+    hasDefaultOption: false,
+    multiline: true,
+    minHeight: "120px",
+  },
+  migrationOutOfScope: {
+    id: "migrationOutOfScope",
+    label: "Migration — out of scope",
+    emptyPlaceholder: "Click Edit to customise the migration out-of-scope list — one per line.",
+    hasDefaultOption: false,
+    multiline: true,
+    bulletRender: true,
+    minHeight: "140px",
+  },
 };
+
+// Phase 4A Delivery 29 — gate helper. Returns the migration block ids
+// in render order when the AI has inferred a migration AND the quote is
+// in the IT Services sector. Empty array otherwise — same gate as the
+// renderer in server/templates/migrationAppendix.ts.
+const MIGRATION_SECTIONS: SectionId[] = [
+  "migrationMethodology",
+  "migrationPhases",
+  "migrationAssumptions",
+  "migrationRisks",
+  "migrationRollback",
+  "migrationOutOfScope",
+];
+
+function normaliseMigrationType(raw: unknown): MigrationType | null {
+  if (typeof raw !== "string") return null;
+  const v = raw.trim().toLowerCase();
+  if (v === "server" || v === "m365" || v === "workspace" || v === "tenant") {
+    return v;
+  }
+  return null;
+}
+
+function appendixBlocksFor(
+  tradePreset: string | null | undefined,
+  migrationTypeSuggested: string | null | undefined,
+): SectionId[] {
+  if (tradePreset !== "it_services") return [];
+  const t = normaliseMigrationType(migrationTypeSuggested);
+  if (!t) return [];
+  return MIGRATION_SECTIONS;
+}
+
+// Maps a migration section id to (a) the per-quote column read for
+// tier 1 of the cascade and (b) the function that returns the right
+// per-profile org column for tier 2. Tier 3 is always the locked
+// content from shared/migrationDefaults via defaultsFor(type).
+const MIGRATION_BLOCK_KEY: Record<
+  Extract<SectionId, `migration${string}`>,
+  keyof MigrationProfileDefaults
+> = {
+  migrationMethodology: "methodology",
+  migrationPhases: "phases",
+  migrationAssumptions: "assumptions",
+  migrationRisks: "risks",
+  migrationRollback: "rollback",
+  migrationOutOfScope: "outOfScope",
+};
+
+function profileDefaultsKey(
+  type: MigrationType,
+  block: keyof MigrationProfileDefaults,
+): keyof OrgDefaults {
+  const profilePart =
+    type === "server"
+      ? "Server"
+      : type === "m365"
+      ? "M365"
+      : type === "workspace"
+      ? "Workspace"
+      : "Tenant";
+  const blockPart =
+    block === "methodology"
+      ? "Methodology"
+      : block === "phases"
+      ? "Phases"
+      : block === "assumptions"
+      ? "Assumptions"
+      : block === "risks"
+      ? "Risks"
+      : block === "rollback"
+      ? "Rollback"
+      : "OutOfScope";
+  return `default${profilePart}${blockPart}` as keyof OrgDefaults;
+}
+
+// Three-tier cascade for migration sections: per-quote override →
+// per-profile org default → locked content. Returns the string the
+// renderer would emit, with the {hypercareDays} token left literal —
+// the read-only and edit views both show it verbatim, with a hint
+// underneath the rollback section explaining the substitution.
+function resolveMigrationBlock(
+  block: keyof MigrationProfileDefaults,
+  type: MigrationType,
+  perQuote: string | null | undefined,
+  orgDefaults: OrgDefaults | undefined,
+): string {
+  if (typeof perQuote === "string" && perQuote.trim()) return perQuote;
+  if (orgDefaults) {
+    const orgVal = orgDefaults[profileDefaultsKey(type, block)] as
+      | string
+      | null
+      | undefined;
+    if (typeof orgVal === "string" && orgVal.trim()) return orgVal;
+  }
+  return defaultsFor(type)[block];
+}
+
+// Friendly label for the inferred migration type — used in the
+// rollback hint and (later) D30 Settings.
+function profileLabel(type: MigrationType): string {
+  return type === "server"
+    ? "Server"
+    : type === "m365"
+    ? "Microsoft 365"
+    : type === "workspace"
+    ? "Google Workspace"
+    : "Tenant";
+}
 
 const QUICK_SECTIONS: SectionId[] = ["terms", "exclusions", "assumptions"];
 const BRANDED_SECTIONS: SectionId[] = [
@@ -287,16 +512,92 @@ export default function ReviewBeforeGenerateModal({
   initialPaymentTerms,
   initialSignatoryName,
   initialSignatoryPosition,
+  tradePreset,
+  migrationTypeSuggested,
+  initialMigrationMethodology,
+  initialMigrationPhases,
+  initialMigrationAssumptions,
+  initialMigrationRisks,
+  initialMigrationRollback,
+  initialMigrationOutOfScope,
+  initialHypercareDays,
   orgDefaults,
   onConfirm,
 }: ReviewBeforeGenerateModalProps) {
-  const sectionIds = mode === "branded" ? BRANDED_SECTIONS : QUICK_SECTIONS;
+  // Phase 4A Delivery 29 — derive migration profile + gated section
+  // list. When the gate fires we append the 6 migration sections to
+  // the branded list. Quick mode is unaffected.
+  const migrationProfile = useMemo(
+    () => normaliseMigrationType(migrationTypeSuggested),
+    [migrationTypeSuggested],
+  );
+  const migrationSectionIds = useMemo(
+    () => appendixBlocksFor(tradePreset, migrationTypeSuggested),
+    [tradePreset, migrationTypeSuggested],
+  );
+
+  const sectionIds =
+    mode === "branded"
+      ? [...BRANDED_SECTIONS, ...migrationSectionIds]
+      : QUICK_SECTIONS;
 
   // Compute initial display values via cascade for each section. This
   // is what the renderer would emit today; the modal shows it as the
   // status quo and the user edits diff against it.
   const initial = useMemo(() => {
     const od = orgDefaults || {};
+    // Phase 4A Delivery 29 — three-tier migration cascade. When no
+    // migration profile is inferred (gate not fired), all six migration
+    // initials are empty strings — they're not rendered anyway, but
+    // keeping the keys present keeps the state objects shape-stable.
+    const mp = migrationProfile;
+    const migration = mp
+      ? {
+          migrationMethodology: resolveMigrationBlock(
+            "methodology",
+            mp,
+            initialMigrationMethodology,
+            od,
+          ),
+          migrationPhases: resolveMigrationBlock(
+            "phases",
+            mp,
+            initialMigrationPhases,
+            od,
+          ),
+          migrationAssumptions: resolveMigrationBlock(
+            "assumptions",
+            mp,
+            initialMigrationAssumptions,
+            od,
+          ),
+          migrationRisks: resolveMigrationBlock(
+            "risks",
+            mp,
+            initialMigrationRisks,
+            od,
+          ),
+          migrationRollback: resolveMigrationBlock(
+            "rollback",
+            mp,
+            initialMigrationRollback,
+            od,
+          ),
+          migrationOutOfScope: resolveMigrationBlock(
+            "outOfScope",
+            mp,
+            initialMigrationOutOfScope,
+            od,
+          ),
+        }
+      : {
+          migrationMethodology: "",
+          migrationPhases: "",
+          migrationAssumptions: "",
+          migrationRisks: "",
+          migrationRollback: "",
+          migrationOutOfScope: "",
+        };
     return {
       notes: initialNotes || "",
       terms: cascade(
@@ -336,6 +637,7 @@ export default function ReviewBeforeGenerateModal({
         mode === "branded" ? od.brandedSignatoryPosition : null,
         od.defaultSignatoryPosition,
       ),
+      ...migration,
     };
   }, [
     mode,
@@ -347,6 +649,13 @@ export default function ReviewBeforeGenerateModal({
     initialPaymentTerms,
     initialSignatoryName,
     initialSignatoryPosition,
+    migrationProfile,
+    initialMigrationMethodology,
+    initialMigrationPhases,
+    initialMigrationAssumptions,
+    initialMigrationRisks,
+    initialMigrationRollback,
+    initialMigrationOutOfScope,
     orgDefaults,
   ]);
 
@@ -360,6 +669,12 @@ export default function ReviewBeforeGenerateModal({
     paymentTerms: "",
     signatoryName: "",
     signatoryPosition: "",
+    migrationMethodology: "",
+    migrationPhases: "",
+    migrationAssumptions: "",
+    migrationRisks: "",
+    migrationRollback: "",
+    migrationOutOfScope: "",
   });
   const [editing, setEditing] = useState<Record<SectionId, boolean>>({
     notes: false,
@@ -370,6 +685,12 @@ export default function ReviewBeforeGenerateModal({
     paymentTerms: false,
     signatoryName: false,
     signatoryPosition: false,
+    migrationMethodology: false,
+    migrationPhases: false,
+    migrationAssumptions: false,
+    migrationRisks: false,
+    migrationRollback: false,
+    migrationOutOfScope: false,
   });
   const [saveAsDefault, setSaveAsDefault] = useState<Record<SectionId, boolean>>({
     notes: false,
@@ -380,6 +701,12 @@ export default function ReviewBeforeGenerateModal({
     paymentTerms: false,
     signatoryName: false,
     signatoryPosition: false,
+    migrationMethodology: false,
+    migrationPhases: false,
+    migrationAssumptions: false,
+    migrationRisks: false,
+    migrationRollback: false,
+    migrationOutOfScope: false,
   });
 
   const [inlineError, setInlineError] = useState<string | null>(null);
@@ -402,6 +729,12 @@ export default function ReviewBeforeGenerateModal({
       paymentTerms: initial.paymentTerms,
       signatoryName: initial.signatoryName,
       signatoryPosition: initial.signatoryPosition,
+      migrationMethodology: initial.migrationMethodology,
+      migrationPhases: initial.migrationPhases,
+      migrationAssumptions: initial.migrationAssumptions,
+      migrationRisks: initial.migrationRisks,
+      migrationRollback: initial.migrationRollback,
+      migrationOutOfScope: initial.migrationOutOfScope,
     });
     setEditing({
       notes: false,
@@ -412,6 +745,12 @@ export default function ReviewBeforeGenerateModal({
       paymentTerms: false,
       signatoryName: false,
       signatoryPosition: false,
+      migrationMethodology: false,
+      migrationPhases: false,
+      migrationAssumptions: false,
+      migrationRisks: false,
+      migrationRollback: false,
+      migrationOutOfScope: false,
     });
     setSaveAsDefault({
       notes: false,
@@ -422,6 +761,12 @@ export default function ReviewBeforeGenerateModal({
       paymentTerms: false,
       signatoryName: false,
       signatoryPosition: false,
+      migrationMethodology: false,
+      migrationPhases: false,
+      migrationAssumptions: false,
+      migrationRisks: false,
+      migrationRollback: false,
+      migrationOutOfScope: false,
     });
     setInlineError(null);
     setIsSaving(false);
@@ -451,6 +796,19 @@ export default function ReviewBeforeGenerateModal({
     signatoryName: values.signatoryName !== initial.signatoryName,
     signatoryPosition:
       values.signatoryPosition !== initial.signatoryPosition,
+    // Phase 4A Delivery 29 — migration sections compare directly
+    // against their resolved cascade values. Dirty means the user has
+    // diverged from what the renderer would otherwise have emitted.
+    migrationMethodology:
+      values.migrationMethodology !== initial.migrationMethodology,
+    migrationPhases: values.migrationPhases !== initial.migrationPhases,
+    migrationAssumptions:
+      values.migrationAssumptions !== initial.migrationAssumptions,
+    migrationRisks: values.migrationRisks !== initial.migrationRisks,
+    migrationRollback:
+      values.migrationRollback !== initial.migrationRollback,
+    migrationOutOfScope:
+      values.migrationOutOfScope !== initial.migrationOutOfScope,
   };
 
   const handleConfirm = async () => {
@@ -479,6 +837,45 @@ export default function ReviewBeforeGenerateModal({
         && dirty.signatoryPosition
       ) {
         quoteUpdate.signatoryPosition = values.signatoryPosition || null;
+      }
+      // Phase 4A Delivery 29 — per-quote migration overrides. Each
+      // dirty section writes its full content (or null when blanked)
+      // to the matching quote.migrationX column. The renderer then
+      // reads tier 1 (per-quote) and falls through to tier 2 (org
+      // default) → tier 3 (locked content) on subsequent generates of
+      // OTHER quotes — these writes are scoped to this quote only.
+      if (
+        sectionIds.includes("migrationMethodology")
+        && dirty.migrationMethodology
+      ) {
+        quoteUpdate.migrationMethodology =
+          values.migrationMethodology || null;
+      }
+      if (sectionIds.includes("migrationPhases") && dirty.migrationPhases) {
+        quoteUpdate.migrationPhases = values.migrationPhases || null;
+      }
+      if (
+        sectionIds.includes("migrationAssumptions")
+        && dirty.migrationAssumptions
+      ) {
+        quoteUpdate.migrationAssumptions =
+          values.migrationAssumptions || null;
+      }
+      if (sectionIds.includes("migrationRisks") && dirty.migrationRisks) {
+        quoteUpdate.migrationRisks = values.migrationRisks || null;
+      }
+      if (
+        sectionIds.includes("migrationRollback")
+        && dirty.migrationRollback
+      ) {
+        quoteUpdate.migrationRollback = values.migrationRollback || null;
+      }
+      if (
+        sectionIds.includes("migrationOutOfScope")
+        && dirty.migrationOutOfScope
+      ) {
+        quoteUpdate.migrationOutOfScope =
+          values.migrationOutOfScope || null;
       }
       if (Object.keys(quoteUpdate).length > 1) {
         tasks.push(updateQuote.mutateAsync(quoteUpdate as any));
@@ -647,6 +1044,26 @@ export default function ReviewBeforeGenerateModal({
               Save as my default for future {mode === "branded" ? "Contract / Tender" : "Quick Quote"} proposals
             </span>
           </label>
+        )}
+
+        {/* Phase 4A Delivery 29 — hypercare-days hint, only on the
+            rollback section. The locked rollback narrative contains a
+            literal {hypercareDays} token which the renderer
+            substitutes; surface that to the user so they don't think
+            it's a typo. */}
+        {id === "migrationRollback" && (
+          <p
+            className="text-[11px] mt-2 italic"
+            style={{ color: brand.navyMuted }}
+          >
+            The {"{hypercareDays}"} placeholder is replaced on the PDF with your hypercare-days setting (
+            {(initialHypercareDays && initialHypercareDays > 0)
+              ? initialHypercareDays
+              : (orgDefaults?.defaultHypercareDays && orgDefaults.defaultHypercareDays > 0)
+                ? orgDefaults.defaultHypercareDays
+                : DEFAULT_HYPERCARE_DAYS}{" "}
+            days).
+          </p>
         )}
       </div>
     );

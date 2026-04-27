@@ -595,6 +595,17 @@ export const appRouter = router({
         paymentTerms: z.string().nullable().optional(),
         signatoryName: z.string().nullable().optional(),
         signatoryPosition: z.string().nullable().optional(),
+        // Phase 4A Delivery 29 — per-quote overrides for the migration
+        // appendix's six narrative blocks. Same nullable-optional pattern
+        // as the D24 fields above. NULL means "fall through to the
+        // cascade" (org default for the inferred profile, then the
+        // locked default content in migrationDefaults.ts).
+        migrationMethodology: z.string().nullable().optional(),
+        migrationPhases: z.string().nullable().optional(),
+        migrationAssumptions: z.string().nullable().optional(),
+        migrationRisks: z.string().nullable().optional(),
+        migrationRollback: z.string().nullable().optional(),
+        migrationOutOfScope: z.string().nullable().optional(),
         taxRate: z.string().optional(),
         userPrompt: z.string().nullable().optional(),
         processingInstructions: z.string().nullable().optional(),

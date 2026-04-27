@@ -1431,6 +1431,30 @@ export default function QuoteWorkspace() {
         initialSignatoryPosition={
           (quote as any)?.signatoryPosition ?? null
         }
+        // Phase 4A Delivery 29 — gate inputs and per-quote migration
+        // overrides. The 6 migration sections only render in the modal
+        // when tradePreset === 'it_services' AND migrationTypeSuggested
+        // is one of the four valid types — same gate as the renderer.
+        // For all other quotes the modal is identical to pre-D29.
+        tradePreset={(quote as any)?.tradePreset ?? null}
+        migrationTypeSuggested={
+          (quote as any)?.migrationTypeSuggested ?? null
+        }
+        initialMigrationMethodology={
+          (quote as any)?.migrationMethodology ?? null
+        }
+        initialMigrationPhases={(quote as any)?.migrationPhases ?? null}
+        initialMigrationAssumptions={
+          (quote as any)?.migrationAssumptions ?? null
+        }
+        initialMigrationRisks={(quote as any)?.migrationRisks ?? null}
+        initialMigrationRollback={
+          (quote as any)?.migrationRollback ?? null
+        }
+        initialMigrationOutOfScope={
+          (quote as any)?.migrationOutOfScope ?? null
+        }
+        initialHypercareDays={(quote as any)?.hypercareDays ?? null}
         orgDefaults={{
           defaultTerms: (orgProfile as any)?.defaultTerms ?? null,
           defaultExclusions: (orgProfile as any)?.defaultExclusions ?? null,
@@ -1448,6 +1472,59 @@ export default function QuoteWorkspace() {
             (orgProfile as any)?.brandedSignatoryName ?? null,
           brandedSignatoryPosition:
             (orgProfile as any)?.brandedSignatoryPosition ?? null,
+          // Phase 4A Delivery 29 — per-profile migration defaults.
+          // Modal reads these as tier 2 of the cascade. D30 will add
+          // Settings UI to edit them; D29 is read-only for these.
+          defaultHypercareDays:
+            (orgProfile as any)?.defaultHypercareDays ?? null,
+          defaultServerMethodology:
+            (orgProfile as any)?.defaultServerMethodology ?? null,
+          defaultServerPhases:
+            (orgProfile as any)?.defaultServerPhases ?? null,
+          defaultServerAssumptions:
+            (orgProfile as any)?.defaultServerAssumptions ?? null,
+          defaultServerRisks:
+            (orgProfile as any)?.defaultServerRisks ?? null,
+          defaultServerRollback:
+            (orgProfile as any)?.defaultServerRollback ?? null,
+          defaultServerOutOfScope:
+            (orgProfile as any)?.defaultServerOutOfScope ?? null,
+          defaultM365Methodology:
+            (orgProfile as any)?.defaultM365Methodology ?? null,
+          defaultM365Phases:
+            (orgProfile as any)?.defaultM365Phases ?? null,
+          defaultM365Assumptions:
+            (orgProfile as any)?.defaultM365Assumptions ?? null,
+          defaultM365Risks:
+            (orgProfile as any)?.defaultM365Risks ?? null,
+          defaultM365Rollback:
+            (orgProfile as any)?.defaultM365Rollback ?? null,
+          defaultM365OutOfScope:
+            (orgProfile as any)?.defaultM365OutOfScope ?? null,
+          defaultWorkspaceMethodology:
+            (orgProfile as any)?.defaultWorkspaceMethodology ?? null,
+          defaultWorkspacePhases:
+            (orgProfile as any)?.defaultWorkspacePhases ?? null,
+          defaultWorkspaceAssumptions:
+            (orgProfile as any)?.defaultWorkspaceAssumptions ?? null,
+          defaultWorkspaceRisks:
+            (orgProfile as any)?.defaultWorkspaceRisks ?? null,
+          defaultWorkspaceRollback:
+            (orgProfile as any)?.defaultWorkspaceRollback ?? null,
+          defaultWorkspaceOutOfScope:
+            (orgProfile as any)?.defaultWorkspaceOutOfScope ?? null,
+          defaultTenantMethodology:
+            (orgProfile as any)?.defaultTenantMethodology ?? null,
+          defaultTenantPhases:
+            (orgProfile as any)?.defaultTenantPhases ?? null,
+          defaultTenantAssumptions:
+            (orgProfile as any)?.defaultTenantAssumptions ?? null,
+          defaultTenantRisks:
+            (orgProfile as any)?.defaultTenantRisks ?? null,
+          defaultTenantRollback:
+            (orgProfile as any)?.defaultTenantRollback ?? null,
+          defaultTenantOutOfScope:
+            (orgProfile as any)?.defaultTenantOutOfScope ?? null,
         }}
         onConfirm={handleBrandedReviewConfirmed}
       />
