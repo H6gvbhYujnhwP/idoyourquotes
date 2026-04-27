@@ -4949,30 +4949,39 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
             );
           }
 
-          // Option C terms guardrail: org defaultTerms always wins.
-          // AI-generated terms are only used as a fallback for users who have not set defaultTerms.
+          // Option C terms guardrail: org saved defaults always win.
+          // AI-generated terms are only used as a fallback for users
+          // who have not set ANY default — neither the legacy
+          // defaultTerms (Quick mode) nor the Phase 4A brandedTerms
+          // (Branded / Contract-Tender mode).
           //
-          // Chunk 3 Delivery I — VAT clause is deterministic. When the
-          // AI wrote the terms (no org defaultTerms), we strip any
-          // VAT-mentioning clause the model produced and append a
-          // canonical one derived from quote.taxRate. This prevents the
-          // "VAT is included" drift the AI occasionally produces when
-          // rewriting the clause freehand, and guarantees the wording
-          // matches the VAT-registered / not-VAT-registered state.
+          // Phase 4A Delivery 35 — when EITHER default is set, the
+          // AI's terms are discarded entirely and quote.terms is left
+          // null. The modal cascades quote.terms → brandedTerms (in
+          // branded mode only) → defaultTerms, so a null per-quote
+          // value lets the right saved default flow through for
+          // whichever mode the user eventually picks. Writing the
+          // default into quote.terms verbatim would freeze it in
+          // place and confuse the cascade if the user later updates
+          // their saved default.
           //
-          // When the user has their own defaultTerms set in Settings,
-          // we trust them verbatim — if they've written terms, they've
-          // handled their own VAT wording. No strip, no append.
-          const rawTerms = orgDefaults?.defaultTerms || draft.terms || null;
-          const resolvedTerms = orgDefaults?.defaultTerms
-            ? rawTerms
-            : applyCanonicalVatClause(
-                rawTerms,
-                (quote as any)?.taxRate ?? null,
-              );
-          if (resolvedTerms) {
-            quoteUpdateData.terms = resolvedTerms;
+          // Chunk 3 Delivery I — VAT clause is deterministic. When
+          // the AI wrote the terms (no saved defaults at all), we
+          // strip any VAT-mentioning clause the model produced and
+          // append a canonical one derived from quote.taxRate.
+          const orgAny = (org as any) || {};
+          const hasSavedTermsDefault = !!(
+            orgAny.defaultTerms || orgAny.brandedTerms
+          );
+          if (!hasSavedTermsDefault && draft.terms) {
+            quoteUpdateData.terms = applyCanonicalVatClause(
+              draft.terms,
+              (quote as any)?.taxRate ?? null,
+            );
           }
+          // When a saved default exists, quote.terms intentionally
+          // stays at whatever it was (typically null on first
+          // generation) — the modal cascade does the rest.
 
           // For comprehensive quotes, populate the comprehensiveConfig with AI-generated data
           if (isComprehensive) {
@@ -5123,13 +5132,32 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
           // Update tender context with assumptions/exclusions
           // Guard: if the user has already saved their own assumptions or exclusions,
           // preserve them — only populate on first generation, never overwrite user edits.
+          //
+          // Phase 4A Delivery 35 — exclusions also respect saved org
+          // defaults. If the user has set defaultExclusions or
+          // brandedExclusions in Settings (via the modal's save-as-
+          // default tick), the AI's draft.exclusions is discarded
+          // and tenderContext.exclusions stays empty. The modal
+          // cascade reads quote-level → brandedExclusions → defaultExclusions,
+          // so an empty per-quote list lets the right saved default
+          // flow through for whichever mode the user eventually
+          // picks. Writing the AI's exclusions into the tender
+          // context would freeze them in place and bury the saved
+          // default behind a per-quote override.
           if (draft.assumptions || draft.exclusions || draft.symbolMappings) {
             const existingContext = await getTenderContextByQuoteId(input.quoteId);
             const hasUserAssumptions = existingContext?.assumptions && Array.isArray(existingContext.assumptions) && (existingContext.assumptions as any[]).length > 0;
             const hasUserExclusions = existingContext?.exclusions && Array.isArray(existingContext.exclusions) && (existingContext.exclusions as any[]).length > 0;
+            const orgAnyForExcl = (org as any) || {};
+            const hasSavedExclusionsDefault = !!(
+              orgAnyForExcl.defaultExclusions || orgAnyForExcl.brandedExclusions
+            );
             await upsertTenderContext(input.quoteId, {
               assumptions: hasUserAssumptions ? undefined : draft.assumptions?.map((text: string) => ({ text, confirmed: false })),
-              exclusions: hasUserExclusions ? undefined : draft.exclusions?.map((text: string) => ({ text, confirmed: false })),
+              exclusions:
+                hasUserExclusions || hasSavedExclusionsDefault
+                  ? undefined
+                  : draft.exclusions?.map((text: string) => ({ text, confirmed: false })),
               symbolMappings: draft.symbolMappings,
             });
           }
@@ -5158,10 +5186,10 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
           await recalculateQuoteTotals(input.quoteId, ctx.user.id);
 
           // Log usage for billing
-          const org = await getUserPrimaryOrg(ctx.user.id);
-          if (org) {
+          const orgForUsageLog = await getUserPrimaryOrg(ctx.user.id);
+          if (orgForUsageLog) {
             await logUsage({
-              orgId: org.id,
+              orgId: orgForUsageLog.id,
               userId: ctx.user.id,
               actionType: "generate_draft",
               creditsUsed: 5, // Draft generation uses more credits

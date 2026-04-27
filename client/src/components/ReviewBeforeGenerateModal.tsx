@@ -811,6 +811,22 @@ export default function ReviewBeforeGenerateModal({
   const upsertTenderContext = trpc.tenderContext.upsert.useMutation();
   const updateProfile = trpc.auth.updateProfile.useMutation();
 
+  // D34.1 — query invalidation. The parent (QuoteWorkspace) caches
+  // both quotes.getFull (the per-quote source of every initialX prop
+  // this modal consumes) and auth.orgProfile (the orgDefaults object).
+  // Without explicit invalidation after a write, the parent keeps
+  // serving stale props back into the modal on re-open and the user's
+  // saved edit appears to vanish even though the database has it.
+  // The pre-D34 modal got away with this because Generate was the
+  // only exit and the PDF mutation that fired immediately afterwards
+  // happened to refetch downstream queries; the new D34 close path
+  // skips that mutation so we have to invalidate explicitly.
+  const utils = trpc.useUtils();
+  const invalidateAfterWrite = () => {
+    void utils.quotes.getFull.invalidate({ id: quoteId });
+    void utils.auth.orgProfile.invalidate();
+  };
+
   // Compute dirty flags. A section is dirty when its current editor
   // value differs from what the modal opened with. Note that the
   // exclusions case needs care: editing an exclusions cascade fallback
@@ -967,6 +983,7 @@ export default function ReviewBeforeGenerateModal({
           // Reset the tick so handleConfirm/handleClose don't write
           // it again on the way out.
           setSaveAsDefault((s) => ({ ...s, [id]: false }));
+          invalidateAfterWrite();
           toast.success("Saved as your default");
         } catch (err) {
           const msg =
@@ -1102,6 +1119,7 @@ export default function ReviewBeforeGenerateModal({
 
       if (tasks.length > 0) {
         await Promise.all(tasks);
+        invalidateAfterWrite();
         if (triggerOnConfirm) {
           toast.success("Review saved — generating…");
         } else {
