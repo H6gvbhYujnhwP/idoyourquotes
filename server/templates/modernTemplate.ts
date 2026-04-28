@@ -65,7 +65,7 @@ import { renderMigrationAppendix } from "./migrationAppendix";
 
 // ── Stat strip ──────────────────────────────────────────────────────
 
-interface StatCell {
+export interface StatCell {
   num: string;   // the big bold number ("40", "£67", "99.9%")
   label: string; // small uppercase label ("Users Covered", etc.)
 }
@@ -76,13 +76,36 @@ interface StatCell {
  * entirely (e.g. when stat strip is toggled off, or when the strip
  * comes back empty).
  */
-function computeStatCells(quote: Quote, lineItems: QuoteLineItem[]): StatCell[] {
+export function computeStatCells(quote: Quote, lineItems: QuoteLineItem[]): StatCell[] {
+  // Phase 4A Delivery 40 — per-quote override always wins. Three states:
+  //   NULL             → fall through to auto-derive (this function's body)
+  //   []               → user explicitly cleared, render no strip
+  //   [{ num, label }] → render these cells verbatim, in order
+  // The override is set from the review-before-generate modal's new
+  // "Cover stat strip" section. We sanitise the array on read so a
+  // malformed override never crashes the renderer.
+  const override = (quote as { coverStatCellsOverride?: unknown }).coverStatCellsOverride;
+  if (Array.isArray(override)) {
+    return override
+      .filter(
+        (c): c is { num: unknown; label: unknown } =>
+          c !== null && typeof c === "object",
+      )
+      .map((c) => ({ num: String(c.num ?? ""), label: String(c.label ?? "") }))
+      .filter((c) => c.num.length > 0 && c.label.length > 0);
+  }
+
   const cells: StatCell[] = [];
 
   // 1. Users covered — derive from line items where the unit / description
   //    smells like "per user". Tolerant of common variations ("User",
   //    "Users", "User/Month", description containing "per user").
+  //    Phase 4A Delivery 40 — also accumulate the monthly £ subtotal of
+  //    those per-user lines so we can gate the "Per User / Month" cell
+  //    below on whether per-user charges actually dominate the monthly
+  //    cost (vs being a small slice alongside flat hosting fees).
   let userCount = 0;
+  let perUserMonthlySubtotal = 0;
   for (const li of lineItems) {
     const unit = String((li as any).unit || "").trim().toLowerCase();
     const desc = plainLineItemText((li as any).description as any).toLowerCase();
@@ -102,6 +125,21 @@ function computeStatCells(quote: Quote, lineItems: QuoteLineItem[]): StatCell[] 
         // not separate users.
         userCount = Math.max(userCount, Math.round(qty));
       }
+      // D40: Only count this line's £ contribution toward the per-user
+      // monthly subtotal when it's a recurring monthly charge. A per-
+      // user one-off shouldn't influence the £/user/month figure.
+      const pricingType = String((li as any).pricingType || "").toLowerCase();
+      const isMonthly =
+        pricingType === "monthly"
+        || /\bmonth\b/.test(unit)
+        || /\b\/\s*month\b/.test(unit)
+        || /\bper\s+month\b/.test(desc);
+      if (isMonthly) {
+        const total = parseFloat(String((li as any).total || "0"));
+        if (Number.isFinite(total) && total > 0) {
+          perUserMonthlySubtotal += total;
+        }
+      }
     }
   }
   if (userCount > 0) {
@@ -115,12 +153,30 @@ function computeStatCells(quote: Quote, lineItems: QuoteLineItem[]): StatCell[] 
   // 3. Uptime Objective — hardcoded universal default.
   cells.push({ num: "99.9%", label: "Uptime Objective" });
 
-  // 4. Per User / Month — derive from monthlyTotal / userCount. Omit
-  //    when either is zero. Round to nearest pound for the cover (the
-  //    pricing page carries the precise figure).
+  // 4. Per User / Month — derive from per-user monthly subtotal divided
+  //    by user count. Omit when:
+  //      - monthlyTotal or userCount is zero / missing, OR
+  //      - per-user lines account for less than 90% of monthlyTotal
+  //        (i.e. the quote is mixed: some per-user, some flat fees,
+  //        and a "£ per user" headline would be misleading because it
+  //        wouldn't scale linearly with user count).
+  //    The 90% threshold tolerates small platform / minimum fees
+  //    riding alongside an MSP-shaped monthly stack while excluding
+  //    quotes where flat hosting / project costs dominate the monthly.
+  //    D40 also switches the divisor source: previously this divided
+  //    monthlyTotal (which mixes per-user and flat) by userCount,
+  //    inflating the figure. Now we divide perUserMonthlySubtotal —
+  //    the slice that actually scales — by userCount.
   const monthlyTotal = parseFloat(String((quote as any).monthlyTotal || "0"));
-  if (Number.isFinite(monthlyTotal) && monthlyTotal > 0 && userCount > 0) {
-    const perUser = Math.round(monthlyTotal / userCount);
+  const PER_USER_COVERAGE_THRESHOLD = 0.9;
+  if (
+    Number.isFinite(monthlyTotal)
+    && monthlyTotal > 0
+    && userCount > 0
+    && perUserMonthlySubtotal > 0
+    && perUserMonthlySubtotal / monthlyTotal >= PER_USER_COVERAGE_THRESHOLD
+  ) {
+    const perUser = Math.round(perUserMonthlySubtotal / userCount);
     if (Number.isFinite(perUser) && perUser > 0) {
       cells.push({ num: `£${perUser}`, label: "Per User / Month" });
     }

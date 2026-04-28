@@ -299,6 +299,16 @@ export const quotes = pgTable("quotes", {
   migrationRisks: text("migration_risks"),
   migrationRollback: text("migration_rollback"),
   migrationOutOfScope: text("migration_out_of_scope"),
+  // Phase 4A Delivery 40 — per-quote override for the branded-proposal
+  // cover stat strip. NULL means "use auto-derived cells" (Modern's
+  // narrowed Users / SLA / Uptime / £-per-user logic, or Bold's
+  // Monthly / Annual / Term / Lines logic). An empty array means
+  // "user explicitly cleared, render no strip". A populated array is
+  // used verbatim by both renderers — same { num, label } shape that
+  // the auto-derive emits. Edited from the review-before-generate modal.
+  coverStatCellsOverride: json("cover_stat_cells_override").$type<
+    Array<{ num: string; label: string }>
+  >(),
 });
 
 export type Quote = typeof quotes.$inferSelect;

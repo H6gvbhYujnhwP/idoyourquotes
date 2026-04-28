@@ -68,7 +68,7 @@ import { renderMigrationAppendix } from "./migrationAppendix";
 
 // ── Stat strip ───────────────────────────────────────────────────────
 
-interface StatCell {
+export interface StatCell {
   num: string;
   label: string;
 }
@@ -79,8 +79,30 @@ interface StatCell {
  * line-count; for a one-off project we get project total / line count
  * (2-up). When nothing computes (e.g. a brand-new draft with no
  * priced items yet) the array is empty and the caller omits the strip.
+ *
+ * Phase 4A Delivery 40 — per-quote override (quote.coverStatCellsOverride)
+ * always wins over the auto-derive logic below. Same three-state contract
+ * as the Modern template: NULL → auto-derive; [] → render no strip;
+ * populated array → use as-is. Both renderers share the override column
+ * so a user who customises on Modern and then switches to Bold sees the
+ * same cells (intentional — the override speaks for "what should be on
+ * the cover", not "what would Modern's auto-derive say").
  */
-function computeStatCells(quote: Quote, lineItems: QuoteLineItem[]): StatCell[] {
+export function computeStatCells(quote: Quote, lineItems: QuoteLineItem[]): StatCell[] {
+  // D40: per-quote override always wins. See header comment above for
+  // the three-state contract. Sanitised on read so a malformed JSON
+  // payload never crashes the renderer.
+  const override = (quote as { coverStatCellsOverride?: unknown }).coverStatCellsOverride;
+  if (Array.isArray(override)) {
+    return override
+      .filter(
+        (c): c is { num: unknown; label: unknown } =>
+          c !== null && typeof c === "object",
+      )
+      .map((c) => ({ num: String(c.num ?? ""), label: String(c.label ?? "") }))
+      .filter((c) => c.num.length > 0 && c.label.length > 0);
+  }
+
   const cells: StatCell[] = [];
 
   const monthlyTotal = parseFloat(String((quote as any).monthlyTotal || "0"));

@@ -26,6 +26,12 @@ import { inferTradePreset } from "./services/tradePresetInference";
 import { triggerBrandExtraction } from "./services/brandExtraction";
 import { parseWordDocument, isWordDocument } from "./services/wordParser";
 import { parseEmailFile, isEmail } from "./services/emailParser";
+// Phase 4A Delivery 40 — preview the auto-derived cover stat strip cells
+// in the review-before-generate modal so the user can see (and edit)
+// what the renderer would otherwise emit. Uses the same compute fns
+// that brandedProposalRenderer routes to per the chosen template.
+import { computeStatCells as computeModernStatCells } from "./templates/modernTemplate";
+import { computeStatCells as computeBoldStatCells } from "./templates/boldTemplate";
 import { performElectricalTakeoff, applyUserAnswers, formatTakeoffForQuoteContext, SYMBOL_STYLES, SYMBOL_DESCRIPTIONS, extractWithPdfJs, extractPdfLineColours, classifyElectricalPDF, extractWithPdfParse } from "./services/electricalTakeoff";
 import { performContainmentTakeoff, calculateCableSummary, generateContainmentSvgOverlay, isContainmentDrawing, formatContainmentForQuoteContext, TRAY_SIZE_COLOURS, WHOLESALER_LENGTH_METRES } from "./services/containmentTakeoff";
 import { generateSvgOverlay } from "./services/takeoffMarkup";
@@ -603,6 +609,19 @@ export const appRouter = router({
         paymentTerms: z.string().nullable().optional(),
         signatoryName: z.string().nullable().optional(),
         signatoryPosition: z.string().nullable().optional(),
+        // Phase 4A Delivery 40 — per-quote override for the branded-
+        // proposal cover stat strip. Same three-state contract as the
+        // schema column: NULL → auto-derive (cleared); [] → render
+        // no strip; populated array → cells used verbatim.
+        coverStatCellsOverride: z
+          .array(
+            z.object({
+              num: z.string(),
+              label: z.string(),
+            }),
+          )
+          .nullable()
+          .optional(),
         // Phase 4A Delivery 29 — per-quote overrides for the migration
         // appendix's six narrative blocks. Same nullable-optional pattern
         // as the D24 fields above. NULL means "fall through to the
@@ -1674,6 +1693,61 @@ IMPORTANT: Address the email greeting using the first name only (e.g. "Hi ${gree
 
         const result = await seedDemoQuoteForSector(org.id, ctx.user.id, sector);
         return result;
+      }),
+
+    // Phase 4A Delivery 40 — return the auto-derived cover stat cells the
+    // selected branded template would emit for this quote, given its current
+    // line items and totals. The review-before-generate modal calls this once
+    // on open so it can pre-fill the editor with whatever cells the renderer
+    // would otherwise produce — letting the user see, edit, or clear them
+    // before the PDF is generated.
+    //
+    // This procedure does NOT consult quote.coverStatCellsOverride. It
+    // always returns the auto-derived cells (the override is the user's
+    // pending decision and is applied at render time only). The modal
+    // separately reads the override via quotes.getFull and decides which
+    // to show.
+    //
+    // Add-only: new procedure, no existing endpoint touched.
+    previewCoverStatCells: protectedProcedure
+      .input(
+        z.object({
+          quoteId: z.number(),
+          // Phase 4A Delivery 40 — accept all three rendered templates,
+          // even though Structured deliberately has no cover stat strip.
+          // For Structured we return an empty array (no preview cells)
+          // — the modal still surfaces the section, just empty, so the
+          // user sees that switching to Structured suppresses the strip.
+          template: z.enum(["modern", "bold", "structured"]),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+
+        // Structured renderer has no stat strip — short-circuit before
+        // bothering with line item lookup.
+        if (input.template === "structured") {
+          return { cells: [] as Array<{ num: string; label: string }> };
+        }
+
+        const lineItems = await getLineItemsByQuoteId(input.quoteId);
+
+        // Strip any persisted override before calling the per-template
+        // compute fn, so it follows the auto-derive path even when the
+        // quote has an override saved. We pass a shallow copy with
+        // coverStatCellsOverride forced to null.
+        const quoteForAutoDerive = {
+          ...quote,
+          coverStatCellsOverride: null,
+        } as typeof quote;
+
+        const cells =
+          input.template === "bold"
+            ? computeBoldStatCells(quoteForAutoDerive as any, lineItems as any)
+            : computeModernStatCells(quoteForAutoDerive as any, lineItems as any);
+
+        return { cells };
       }),
   }),
 

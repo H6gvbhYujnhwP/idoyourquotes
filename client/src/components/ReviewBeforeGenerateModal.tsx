@@ -181,6 +181,16 @@ interface ReviewBeforeGenerateModalProps {
   initialMigrationRollback?: string | null;
   initialMigrationOutOfScope?: string | null;
   initialHypercareDays?: number | null;
+  // Phase 4A Delivery 40 — editable cover stat strip inputs. The modal
+  // pre-fills its editor with the auto-derived cells from the chosen
+  // template's compute fn (server-side preview), or with the saved
+  // override when present. Both props are optional — the modal works
+  // (just hides the section) when they're omitted, e.g. in Quick mode.
+  // Structured renderer has no stat strip — when selectedTemplate is
+  // "structured" the preview query returns empty cells and the section
+  // shows a hint that the override is ignored for that template.
+  selectedTemplate?: "modern" | "bold" | "structured";
+  initialCoverStatCellsOverride?: Array<{ num: string; label: string }> | null;
   // Organization defaults — used for cascade fallback when per-quote
   // values are blank, so the modal shows what the renderer would
   // actually produce.
@@ -202,6 +212,43 @@ function textToList(s: string): AssumptionOrExclusion[] {
     .map((line) => line.trim())
     .filter(Boolean)
     .map((text) => ({ text, confirmed: false }));
+}
+
+// Phase 4A Delivery 40 — cover stat strip cell helpers.
+//
+// Cells are stored on the quote as Array<{ num, label }>. The editor
+// surfaces them as plain text in "Label = Number" form, one per line:
+//
+//   Users Covered = 40
+//   P1 Response SLA = 15 min
+//   Uptime Objective = 99.9%
+//   Per User / Month = £29
+//
+// The "=" separator was chosen over ":" because labels and numbers
+// can both contain colons (e.g. "Day of: Wednesday" as a label is
+// nonsense but "9:00 AM" as a value is plausible). Lines without
+// "=", or with an empty label / number after trimming, are dropped
+// silently — the editor is forgiving so a stray blank line never
+// produces a malformed cell on the cover.
+type CoverStatCell = { num: string; label: string };
+
+function cellsToText(cells: CoverStatCell[] | null | undefined): string {
+  if (!Array.isArray(cells) || cells.length === 0) return "";
+  return cells.map((c) => `${c.label} = ${c.num}`).join("\n");
+}
+
+function textToCells(s: string): CoverStatCell[] {
+  return s
+    .split(/\r?\n/)
+    .map((line): CoverStatCell | null => {
+      const eqIdx = line.indexOf("=");
+      if (eqIdx < 0) return null;
+      const label = line.slice(0, eqIdx).trim();
+      const num = line.slice(eqIdx + 1).trim();
+      if (!label || !num) return null;
+      return { num, label };
+    })
+    .filter((c): c is CoverStatCell => c !== null);
 }
 
 /** Format a Date for the native <input type="date">. */
@@ -249,6 +296,9 @@ type SectionId =
   | "paymentTerms"
   | "signatoryName"
   | "signatoryPosition"
+  // Phase 4A Delivery 40 — editable cover stat strip. Branded mode only;
+  // section is hidden in Quick Quote (which has no cover strip).
+  | "coverStats"
   // Phase 4A Delivery 29 — six migration appendix blocks. Only
   // appended to BRANDED_SECTIONS when the gate fires (see helper
   // `appendixBlocksFor` below).
@@ -344,6 +394,22 @@ const SECTION_META: Record<SectionId, SectionMeta> = {
     emptyPlaceholder: "No position set. Click Edit to add.",
     hasDefaultOption: true,
     multiline: false,
+  },
+  // Phase 4A Delivery 40 — editable cover stat strip. Each non-empty
+  // line is parsed as "Label = Number" (e.g. "Users Covered = 40").
+  // The bullet-render read-only view shows them one per line so the
+  // user can see at a glance what'll appear on the PDF cover. No
+  // save-as-default option — different quotes will have different
+  // stats, so the override is per-quote-only.
+  coverStats: {
+    id: "coverStats",
+    label: "Cover stat strip",
+    emptyPlaceholder:
+      "No stat strip on the cover. Click Edit to add cells (Label = Number, one per line).",
+    hasDefaultOption: false,
+    multiline: true,
+    bulletRender: true,
+    minHeight: "120px",
   },
   // Phase 4A Delivery 29 — Migration appendix sections. Read-only view
   // shows the actual content the renderer will emit (per-quote override
@@ -529,6 +595,8 @@ const BRANDED_SECTIONS: SectionId[] = [
   "paymentTerms",
   "signatoryName",
   "signatoryPosition",
+  // Phase 4A Delivery 40 — editable cover stat strip.
+  "coverStats",
 ];
 
 // ─── Component ────────────────────────────────────────────────────────────
@@ -555,6 +623,9 @@ export default function ReviewBeforeGenerateModal({
   initialMigrationRollback,
   initialMigrationOutOfScope,
   initialHypercareDays,
+  // Phase 4A Delivery 40 — editable cover stat strip inputs.
+  selectedTemplate,
+  initialCoverStatCellsOverride,
   orgDefaults,
   onConfirm,
 }: ReviewBeforeGenerateModalProps) {
@@ -703,6 +774,7 @@ export default function ReviewBeforeGenerateModal({
     paymentTerms: "",
     signatoryName: "",
     signatoryPosition: "",
+    coverStats: "",
     migrationMethodology: "",
     migrationPhases: "",
     migrationAssumptions: "",
@@ -719,6 +791,7 @@ export default function ReviewBeforeGenerateModal({
     paymentTerms: false,
     signatoryName: false,
     signatoryPosition: false,
+    coverStats: false,
     migrationMethodology: false,
     migrationPhases: false,
     migrationAssumptions: false,
@@ -735,6 +808,7 @@ export default function ReviewBeforeGenerateModal({
     paymentTerms: false,
     signatoryName: false,
     signatoryPosition: false,
+    coverStats: false,
     migrationMethodology: false,
     migrationPhases: false,
     migrationAssumptions: false,
@@ -742,6 +816,31 @@ export default function ReviewBeforeGenerateModal({
     migrationRollback: false,
     migrationOutOfScope: false,
   });
+
+  // Phase 4A Delivery 40 — cover stat strip edit-tracking flags.
+  //
+  // The cover-stats section is unusual: the editor pre-fills with the
+  // auto-derived cells (from the preview tRPC query) when the quote
+  // has no override saved, so that the user sees what the renderer
+  // would otherwise produce. That means values.coverStats becomes
+  // non-empty on its own — we can't use the simple `dirty` check
+  // (current vs initial) to decide whether the user has actually
+  // customised, because a freshly populated preview would look dirty
+  // even though it represents the auto-derived state.
+  //
+  // Two flags disambiguate:
+  //   - coverStatsExplicitlyEdited: set when the user types in the
+  //     textarea. Only then do we write coverStatCellsOverride on
+  //     save (with the parsed cells, possibly an empty array if the
+  //     textarea was blanked).
+  //   - coverStatsRevertToAuto: set when the user clicks "Use auto-
+  //     generated values". On save we write coverStatCellsOverride
+  //     to NULL — clearing any previously-saved override and letting
+  //     the auto-derive run again on every render.
+  // If neither flag is set, save leaves coverStatCellsOverride alone.
+  const [coverStatsExplicitlyEdited, setCoverStatsExplicitlyEdited] =
+    useState(false);
+  const [coverStatsRevertToAuto, setCoverStatsRevertToAuto] = useState(false);
 
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -771,6 +870,19 @@ export default function ReviewBeforeGenerateModal({
       paymentTerms: initial.paymentTerms,
       signatoryName: initial.signatoryName,
       signatoryPosition: initial.signatoryPosition,
+      // Phase 4A Delivery 40 — initial cover-stats text. When the
+      // override is a populated array we show those cells. When it's
+      // null OR an empty array we start blank; the preview-query
+      // useEffect below then fills with the auto-derived cells once
+      // it lands (only when the override is null — an empty array is
+      // the user's explicit "hide the strip" choice and we must not
+      // overwrite it with a preview).
+      coverStats: cellsToText(
+        Array.isArray(initialCoverStatCellsOverride) &&
+          initialCoverStatCellsOverride.length > 0
+          ? initialCoverStatCellsOverride
+          : null,
+      ),
       migrationMethodology: initial.migrationMethodology,
       migrationPhases: initial.migrationPhases,
       migrationAssumptions: initial.migrationAssumptions,
@@ -787,6 +899,7 @@ export default function ReviewBeforeGenerateModal({
       paymentTerms: false,
       signatoryName: false,
       signatoryPosition: false,
+      coverStats: false,
       migrationMethodology: false,
       migrationPhases: false,
       migrationAssumptions: false,
@@ -803,6 +916,7 @@ export default function ReviewBeforeGenerateModal({
       paymentTerms: false,
       signatoryName: false,
       signatoryPosition: false,
+      coverStats: false,
       migrationMethodology: false,
       migrationPhases: false,
       migrationAssumptions: false,
@@ -810,6 +924,9 @@ export default function ReviewBeforeGenerateModal({
       migrationRollback: false,
       migrationOutOfScope: false,
     });
+    // D40 — clear the cover-stats edit-tracking flags on every open.
+    setCoverStatsExplicitlyEdited(false);
+    setCoverStatsRevertToAuto(false);
     setInlineError(null);
     setIsSaving(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -818,6 +935,76 @@ export default function ReviewBeforeGenerateModal({
   const updateQuote = trpc.quotes.update.useMutation();
   const upsertTenderContext = trpc.tenderContext.upsert.useMutation();
   const updateProfile = trpc.auth.updateProfile.useMutation();
+
+  // Phase 4A Delivery 40 — auto-derived cover stat preview.
+  //
+  // The server computes the cells exactly the way the chosen template's
+  // computeStatCells would when no override is set. We use it to:
+  //   - pre-fill the editor textarea when the user opens the section
+  //     and there's no saved override (so they see what the renderer
+  //     would otherwise produce);
+  //   - refill on demand when they click "Use auto-generated values".
+  //
+  // Disabled in Quick mode (the section isn't rendered there) and when
+  // the modal is closed (saves a needless query on every parent render).
+  // Also disabled until selectedTemplate is known — pendingBrandChoice
+  // is briefly null on workspace mount before the user picks Modern/Bold.
+  const coverStatPreviewQuery = trpc.quotes.previewCoverStatCells.useQuery(
+    {
+      quoteId,
+      template: selectedTemplate ?? "modern",
+    },
+    {
+      enabled: open && mode === "branded" && Boolean(selectedTemplate),
+    },
+  );
+  const previewCells: CoverStatCell[] =
+    coverStatPreviewQuery.data?.cells ?? [];
+
+  // D40 — fill the cover-stats textarea with the auto-derived cells when
+  // ALL of the following hold:
+  //   1. The modal is open AND in branded mode.
+  //   2. The preview query has resolved.
+  //   3. The user has neither typed in the textarea nor clicked
+  //      "Use auto-generated" (those flags carry their own intent).
+  //   4. The quote has no saved override (initialCoverStatCellsOverride
+  //      is null/undefined). When the override IS a populated array we
+  //      already populated values.coverStats from it on open. When it's
+  //      explicitly the empty array we leave the field blank — that's
+  //      the user's "hide the strip" choice.
+  // The dependency array intentionally omits values.coverStats so a
+  // typed character doesn't trip this effect into wiping itself; the
+  // edit flag does that gating instead.
+  useEffect(() => {
+    if (!open || mode !== "branded") return;
+    if (!coverStatPreviewQuery.data) return;
+    if (coverStatsExplicitlyEdited || coverStatsRevertToAuto) return;
+    // Only auto-fill when the override is null (legacy / never set).
+    // An empty array is a deliberate clear and must NOT be repopulated.
+    if (
+      Array.isArray(initialCoverStatCellsOverride) &&
+      initialCoverStatCellsOverride.length === 0
+    ) {
+      return;
+    }
+    if (
+      Array.isArray(initialCoverStatCellsOverride) &&
+      initialCoverStatCellsOverride.length > 0
+    ) {
+      return;
+    }
+    setValues((s) => ({
+      ...s,
+      coverStats: cellsToText(coverStatPreviewQuery.data!.cells),
+    }));
+  }, [
+    open,
+    mode,
+    coverStatPreviewQuery.data,
+    coverStatsExplicitlyEdited,
+    coverStatsRevertToAuto,
+    initialCoverStatCellsOverride,
+  ]);
 
   // D34.1 — query invalidation. The parent (QuoteWorkspace) caches
   // both quotes.getFull (the per-quote source of every initialX prop
@@ -867,6 +1054,14 @@ export default function ReviewBeforeGenerateModal({
       values.migrationRollback !== initial.migrationRollback,
     migrationOutOfScope:
       values.migrationOutOfScope !== initial.migrationOutOfScope,
+    // Phase 4A Delivery 40 — cover stats use their own edit-tracking
+    // flags rather than diffing values vs initial. The textarea gets
+    // auto-populated by the preview query, so a simple text diff
+    // would treat the auto-populated state as "dirty" and confuse
+    // the save logic. handleConfirm reads coverStatsExplicitlyEdited
+    // and coverStatsRevertToAuto directly to decide what to write;
+    // we expose the OR here for any callers that just need a yes/no.
+    coverStats: coverStatsExplicitlyEdited || coverStatsRevertToAuto,
   };
 
   // ── D34 — per-section Save / Cancel + close-with-save ──────────────
@@ -948,6 +1143,32 @@ export default function ReviewBeforeGenerateModal({
           break;
         case "signatoryPosition":
           next.signatoryPosition = initial.signatoryPosition;
+          break;
+        case "coverStats":
+          // D40 — Cancel reverts to whatever the section showed when
+          // the editor opened. Two cases:
+          //   - Override is a populated array → revert to that.
+          //   - Override is null/[] → revert to the auto-derived
+          //     preview cells (fall back to "" if the preview hasn't
+          //     landed yet — same UX as on first open).
+          if (
+            Array.isArray(initialCoverStatCellsOverride) &&
+            initialCoverStatCellsOverride.length > 0
+          ) {
+            next.coverStats = cellsToText(initialCoverStatCellsOverride);
+          } else if (
+            Array.isArray(initialCoverStatCellsOverride) &&
+            initialCoverStatCellsOverride.length === 0
+          ) {
+            next.coverStats = "";
+          } else {
+            next.coverStats = cellsToText(previewCells);
+          }
+          // Cancel also clears the edit-tracking flags — we're back
+          // to the pristine state, so no override should be written
+          // on save.
+          setCoverStatsExplicitlyEdited(false);
+          setCoverStatsRevertToAuto(false);
           break;
         case "migrationMethodology":
           next.migrationMethodology = initial.migrationMethodology;
@@ -1042,6 +1263,23 @@ export default function ReviewBeforeGenerateModal({
         && dirty.signatoryPosition
       ) {
         quoteUpdate.signatoryPosition = values.signatoryPosition || null;
+      }
+      // Phase 4A Delivery 40 — cover stats override write.
+      // Three branches based on the edit-tracking flags:
+      //   1. revertToAuto: write NULL (clears any saved override —
+      //      the renderer will auto-derive on next generate).
+      //   2. explicitlyEdited: write the parsed cells. An empty
+      //      textarea parses to [] and is persisted as such, which
+      //      tells the renderer to omit the strip entirely.
+      //   3. Neither flag set: leave coverStatCellsOverride alone —
+      //      the user opened the section but didn't make a decision,
+      //      and we shouldn't touch what's stored on the quote.
+      if (sectionIds.includes("coverStats")) {
+        if (coverStatsRevertToAuto) {
+          quoteUpdate.coverStatCellsOverride = null;
+        } else if (coverStatsExplicitlyEdited) {
+          quoteUpdate.coverStatCellsOverride = textToCells(values.coverStats);
+        }
       }
       // Phase 4A Delivery 29 — per-quote migration overrides. Each
       // dirty section writes its full content (or null when blanked)
@@ -1174,8 +1412,17 @@ export default function ReviewBeforeGenerateModal({
     const sad = saveAsDefault[id];
 
     const onEdit = () => setEditing((s) => ({ ...s, [id]: true }));
-    const onChange = (v: string) =>
+    const onChange = (v: string) => {
       setValues((s) => ({ ...s, [id]: v }));
+      // D40 — typing into the cover-stats textarea flips the explicit-
+      // edit flag and clears any pending revert-to-auto, so the save
+      // path knows to write the parsed cells as the override (vs.
+      // leaving coverStatCellsOverride alone or writing NULL).
+      if (id === "coverStats") {
+        setCoverStatsExplicitlyEdited(true);
+        setCoverStatsRevertToAuto(false);
+      }
+    };
     const onToggleDefault = () =>
       setSaveAsDefault((s) => ({ ...s, [id]: !s[id] }));
 
@@ -1302,6 +1549,61 @@ export default function ReviewBeforeGenerateModal({
                 : DEFAULT_HYPERCARE_DAYS}{" "}
             days).
           </p>
+        )}
+
+        {/* Phase 4A Delivery 40 — cover-stats helper UI. Two pieces
+            below the textarea: a one-line format hint, and a "Use
+            auto-generated values" button that refills the textarea
+            with the preview cells AND flags revert-to-auto for save. */}
+        {id === "coverStats" && isEditing && (
+          <div className="mt-2 space-y-2">
+            {selectedTemplate === "structured" ? (
+              <p
+                className="text-[11px] italic"
+                style={{ color: brand.navyMuted }}
+              >
+                The Structured template doesn't render a cover stat
+                strip — any override saved here is ignored when the
+                Structured renderer runs. Switch to Modern or Bold (in
+                Generate PDF) to see your stats on the cover.
+              </p>
+            ) : (
+              <p
+                className="text-[11px] italic"
+                style={{ color: brand.navyMuted }}
+              >
+                Format: one cell per line as <code>Label = Number</code> (for
+                example, <code>Users Covered = 40</code>). Blank textarea
+                means no stat strip on the cover. Save commits these as a
+                per-quote override.
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setValues((s) => ({
+                  ...s,
+                  coverStats: cellsToText(previewCells),
+                }));
+                setCoverStatsExplicitlyEdited(false);
+                setCoverStatsRevertToAuto(true);
+              }}
+              disabled={isSaving || coverStatPreviewQuery.isLoading}
+              className="text-[11px] underline"
+              style={{ color: brand.teal }}
+            >
+              Use auto-generated values
+            </button>
+            {coverStatsRevertToAuto && (
+              <p
+                className="text-[11px]"
+                style={{ color: brand.teal }}
+              >
+                Will revert to auto-derived on save — any saved override
+                for this quote will be cleared.
+              </p>
+            )}
+          </div>
         )}
       </div>
     );

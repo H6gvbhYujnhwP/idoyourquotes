@@ -1,0 +1,34 @@
+-- Phase 4A Delivery 40 — Editable cover stat strip.
+--
+-- Adds a nullable JSON column on the quotes table that holds a per-
+-- quote override for the four cells on the branded-proposal cover
+-- (Modern: Users Covered / P1 SLA / Uptime / £-per-user; Bold:
+-- Monthly / Annual / Term / Lines). When NULL the renderer
+-- auto-derives cells the way it has since Delivery 18 — except that
+-- D40 also tightens the Modern auto-derive so "Per User / Month"
+-- only fires when the per-user line items account for ≥90% of the
+-- monthly total (fixes the misleading £29 cell on quotes that mix
+-- per-user M365 with flat website hosting).
+--
+-- Three sentinel states once deployed:
+--
+--   NULL              → use the (now-narrowed) auto-derive
+--   '[]'::jsonb       → render no strip at all (user explicitly hid it)
+--   '[{...}]'::jsonb  → render exactly these cells, in order
+--
+-- Edited from the review-before-generate modal's new "Cover stat
+-- strip" section. No save-as-default option — per-quote-only — because
+-- different quotes will have different stats.
+--
+-- This migration is APPLIED MANUALLY on the Render shell (drizzle-kit
+-- push is broken on Render). Run via:
+--
+--   echo go; psql $DATABASE_URL < drizzle/0025_add_cover_stat_cells_override.sql
+--
+-- Idempotent — safe to re-run. After application no further wiring is
+-- needed; both schema files (shared/schema.ts and drizzle/schema.ts)
+-- already declare the column with matching type and the renderers
+-- read it directly.
+
+ALTER TABLE quotes
+  ADD COLUMN IF NOT EXISTS cover_stat_cells_override jsonb;

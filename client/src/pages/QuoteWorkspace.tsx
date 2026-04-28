@@ -1581,6 +1581,20 @@ export default function QuoteWorkspace() {
           (quote as any)?.migrationOutOfScope ?? null
         }
         initialHypercareDays={(quote as any)?.hypercareDays ?? null}
+        // Phase 4A Delivery 40 — editable cover stat strip. The
+        // template comes from the BrandChoiceModal selection so the
+        // preview tRPC call returns cells matching the renderer that
+        // will actually run; defaults to "modern" while the choice
+        // hasn't been made yet (matches the renderer's own default).
+        // The override starts as whatever the quote currently has
+        // saved — null on legacy quotes, [] when previously cleared,
+        // or a populated array after prior customisation.
+        selectedTemplate={pendingBrandChoice?.template ?? "modern"}
+        initialCoverStatCellsOverride={
+          ((quote as any)?.coverStatCellsOverride ?? null) as
+            | Array<{ num: string; label: string }>
+            | null
+        }
         orgDefaults={{
           defaultTerms: (orgProfile as any)?.defaultTerms ?? null,
           defaultExclusions: (orgProfile as any)?.defaultExclusions ?? null,
