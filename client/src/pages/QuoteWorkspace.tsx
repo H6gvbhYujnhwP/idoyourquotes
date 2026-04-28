@@ -1428,6 +1428,7 @@ export default function QuoteWorkspace() {
               onRequestRegenerate={handleRequestRegenerate}
               generationCount={generationCount}
               isGenerating={isGenerating}
+              generateStage={generateStage}
               titleValue={titleLocal}
               onUpdateTitle={(v) => {
                 userEdited.current.title = true;
@@ -2379,6 +2380,12 @@ interface EditorPanelProps {
   onRequestRegenerate: () => void;
   generationCount: number;
   isGenerating: boolean;
+  // Phase 4A Delivery 41 — re-generate progress banner. The empty-state
+  // panel already shows a hero generating animation off the same flag;
+  // the editor panel needs its own (smaller) feedback so the user
+  // sees the work is in flight while their existing line items are
+  // about to be wiped and rebuilt. Same three stages.
+  generateStage: "reading" | "building" | "finalising" | null;
   // Chunk 3 Delivery G — quote title moved from the old title bar into
   // the light green client card so the workspace chrome stays quiet.
   titleValue: string;
@@ -2413,6 +2420,7 @@ function EditorPanel({
   onRequestRegenerate,
   generationCount,
   isGenerating,
+  generateStage,
   titleValue,
   onUpdateTitle,
   onRequestAddToCatalogue,
@@ -2595,6 +2603,37 @@ function EditorPanel({
               </Button>
             </div>
           </div>
+          {/* Phase 4A Delivery 41 — re-generate progress banner. Shown
+              while isGenerating is true (replaces the amber re-generate
+              hint, which is gated on !isGenerating, so the two never
+              fight for the same row). Same three stages the empty-state
+              hero overlay cycles through, in a smaller teal strip so
+              it fits inside the populated editor. Pulses gently to
+              telegraph "work in progress" rather than "warning". */}
+          {isGenerating && (
+            <div
+              className="px-4 py-2 text-[11px] leading-snug flex items-center gap-2"
+              style={{
+                backgroundColor: brand.tealBg,
+                color: brand.teal,
+                borderBottom: `1px solid ${brand.tealBorder}`,
+              }}
+              role="status"
+              aria-live="polite"
+            >
+              <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
+              <span className="font-medium">
+                Re-generating your quote —{" "}
+                {generateStage === "reading"
+                  ? "reading your evidence…"
+                  : generateStage === "building"
+                    ? "rebuilding line items…"
+                    : generateStage === "finalising"
+                      ? "finalising quote…"
+                      : "getting started…"}
+              </span>
+            </div>
+          )}
           {/* Chunk 3 Delivery F — amber hint strip below the header when a
               re-generation is still available. Deliberately plain language
               so the user knows this is their last shot before the dialog. */}
@@ -2717,7 +2756,18 @@ function LineItemsTable({
   }
 
   return (
-    <div className="overflow-x-auto">
+    // Phase 4A Delivery 41 — was `overflow-x-auto`. Setting any axis to
+    // `auto` implicitly clamps the other axis to `auto` too (CSS spec:
+    // visible + non-visible is invalid; the visible side gets coerced to
+    // auto). The table is `w-full table-fixed` with column widths
+    // summing to 100% — it cannot overflow horizontally — so the wrapper
+    // was paying for a behaviour it never used. The clamped vertical
+    // overflow only surfaced when the CatalogPicker dropdown opened on
+    // the bottom row (its 360px max-height extends past the wrapper
+    // bounds), at which point a stray inner scrollbar appeared. Made
+    // `overflow-visible` explicitly so the dropdown can pop out cleanly
+    // and the page scroll handles vertical flow.
+    <div className="overflow-visible">
       <table className="w-full text-sm table-fixed">
         <thead>
           <tr
