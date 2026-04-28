@@ -1,8 +1,9 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import PublicHeader from "@/components/PublicHeader";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
 import {
   Check,
@@ -307,41 +308,9 @@ export default function Pricing() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Nav */}
-      <nav className="border-b bg-white sticky top-0 z-50">
-        <div className="container flex h-14 md:h-36 items-center justify-between">
-          <div className="flex items-center gap-4">
-            {user && (
-              <Button variant="ghost" size="sm" onClick={() => setLocation("/dashboard")}>
-                <ArrowLeft className="h-4 w-4 mr-1" /> Dashboard
-              </Button>
-            )}
-            <img
-              src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png"
-              alt="IdoYourQuotes"
-              className="h-9 md:h-28 w-auto object-contain cursor-pointer"
-              onClick={() => setLocation("/")}
-            />
-          </div>
-          <div className="flex items-center gap-3">
-            {user ? (
-              <Button variant="outline" size="sm" onClick={() => setLocation("/dashboard")}>
-                Go to Dashboard
-              </Button>
-            ) : (
-              <>
-                <Button variant="ghost" size="sm" onClick={() => setLocation("/login")}>
-                  Log in
-                </Button>
-                <Button size="sm" onClick={() => setLocation("/register")}>
-                  Get Started Free
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
-      </nav>
+    <div className="min-h-screen bg-white text-gray-900 font-sans antialiased">
+      {/* Header — matches Home/Login/Register Manus styling */}
+      <PublicHeader currentPage="pricing" />
 
       {/* Header */}
       <section className="pt-16 pb-8 text-center">

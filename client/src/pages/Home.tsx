@@ -1,5 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Link, useLocation } from "wouter";
+import PublicHeader from "@/components/PublicHeader";
 import {
   ArrowRight,
   ArrowLeft,
@@ -40,48 +41,7 @@ export default function Home() {
       {/* ============================================================
            PERSISTENT HEADER
          ============================================================ */}
-      <header className="sticky top-0 z-50 pub-sticky-nav">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between" style={{ height: 100 }}>
-          <Link href="/" aria-label="IdoYourQuotes home" className="inline-block flex-shrink-0" style={{ height: 65 }}>
-            <img
-              src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png"
-              alt="IdoYourQuotes logo"
-              style={{ height: 65, width: "auto", objectFit: "contain" }}
-            />
-          </Link>
-
-          <nav className="hidden md:flex items-center" style={{ gap: 10 }} aria-label="Main navigation">
-            <Link href="/pricing" className="text-[18px] font-medium text-[#464646] px-4 py-[18px] rounded-[9px] border border-transparent hover:border-[#464646] transition-colors no-underline whitespace-nowrap">
-              Pricing
-            </Link>
-            {!loading && !user && (
-              <Link href="/login" className="text-[18px] font-medium text-[#464646] px-4 py-[18px] rounded-[9px] border border-transparent hover:border-[#464646] transition-colors no-underline whitespace-nowrap">
-                Sign In
-              </Link>
-            )}
-          </nav>
-
-          {!loading && user ? (
-            <button
-              onClick={() => setLocation("/dashboard")}
-              className="hidden md:inline-flex items-center gap-2 text-white font-semibold pub-btn-pulse"
-              style={{ background: TEAL, fontSize: 18, padding: "18px 24px", borderRadius: 9 }}
-            >
-              Go to Dashboard
-              <ArrowRight className="h-[18px] w-[18px]" />
-            </button>
-          ) : (
-            <button
-              onClick={handleGetStarted}
-              className="hidden md:inline-flex items-center gap-2 text-white font-semibold pub-btn-pulse"
-              style={{ background: TEAL, fontSize: 18, padding: "18px 24px", borderRadius: 9 }}
-            >
-              Start Free Trial
-              <ArrowRight className="h-[18px] w-[18px]" />
-            </button>
-          )}
-        </div>
-      </header>
+      <PublicHeader currentPage="home" />
 
       {/* ============================================================
            HERO BAND

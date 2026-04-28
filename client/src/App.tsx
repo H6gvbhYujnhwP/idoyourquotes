@@ -9,6 +9,7 @@ import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Pricing from "./pages/Pricing";
+import Features from "./pages/Features";
 import Dashboard from "./pages/Dashboard";
 import QuoteRouter from "./pages/QuoteRouter";
 import Catalog from "./pages/Catalog";
@@ -22,10 +23,13 @@ function Router() {
       {/* Public landing page */}
       <Route path="/" component={Home} />
       
+      {/* Public marketing pages */}
+      <Route path="/features" component={Features} />
+      <Route path="/pricing" component={Pricing} />
+      
       {/* Auth pages */}
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
-      <Route path="/pricing" component={Pricing} />
       
       {/* Protected dashboard routes */}
       <Route path="/dashboard">

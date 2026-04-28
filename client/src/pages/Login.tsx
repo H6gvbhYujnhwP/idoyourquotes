@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Link } from "wouter";
+import PublicHeader from "@/components/PublicHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, AlertCircle, Mic, FileText, Clock, ArrowLeft, ArrowRight } from "lucide-react";
+import { Loader2, AlertCircle, Mic, FileText, Clock, ArrowLeft } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function Login() {
@@ -43,32 +44,7 @@ export default function Login() {
   return (
     <div className="min-h-screen flex flex-col bg-white font-sans">
       {/* Header */}
-      <header className="sticky top-0 z-50 pub-sticky-nav">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between" style={{ height: 100 }}>
-          <Link href="/" aria-label="IdoYourQuotes home" className="inline-block flex-shrink-0" style={{ height: 65 }}>
-            <img
-              src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png"
-              alt="IdoYourQuotes"
-              style={{ height: 65, width: "auto", objectFit: "contain" }}
-            />
-          </Link>
-
-          <nav className="hidden md:flex items-center" style={{ gap: 10 }} aria-label="Main navigation">
-            <Link href="/pricing" className="text-[18px] font-medium text-[#464646] px-4 py-[18px] rounded-[9px] border border-transparent hover:border-[#464646] transition-colors no-underline whitespace-nowrap">
-              Pricing
-            </Link>
-          </nav>
-
-          <Link
-            href="/register"
-            className="hidden md:inline-flex items-center gap-2 text-white font-semibold pub-btn-pulse no-underline whitespace-nowrap"
-            style={{ background: "#0d9488", fontSize: 18, padding: "18px 24px", borderRadius: 9 }}
-          >
-            Start Free Trial
-            <ArrowRight className="h-[18px] w-[18px]" />
-          </Link>
-        </div>
-      </header>
+      <PublicHeader currentPage="login" />
 
       {/* Split panel */}
       <main className="flex-1 flex">

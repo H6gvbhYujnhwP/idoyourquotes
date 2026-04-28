@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "wouter";
+import PublicHeader from "@/components/PublicHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -101,32 +102,7 @@ export default function Register() {
   return (
     <div className="min-h-screen flex flex-col bg-white font-sans">
       {/* Header */}
-      <header className="sticky top-0 z-50 pub-sticky-nav">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between" style={{ height: 100 }}>
-          <Link href="/" aria-label="IdoYourQuotes home" className="inline-block flex-shrink-0" style={{ height: 65 }}>
-            <img
-              src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png"
-              alt="IdoYourQuotes"
-              style={{ height: 65, width: "auto", objectFit: "contain" }}
-            />
-          </Link>
-
-          <nav className="hidden md:flex items-center" style={{ gap: 10 }} aria-label="Main navigation">
-            <Link
-              href="/pricing"
-              className="text-[18px] font-medium text-[#464646] px-4 py-[18px] rounded-[9px] border border-transparent hover:border-[#464646] transition-colors no-underline whitespace-nowrap"
-            >
-              Pricing
-            </Link>
-            <Link
-              href="/login"
-              className="text-[18px] font-medium text-[#464646] px-4 py-[18px] rounded-[9px] border border-transparent hover:border-[#464646] transition-colors no-underline whitespace-nowrap"
-            >
-              Sign In
-            </Link>
-          </nav>
-        </div>
-      </header>
+      <PublicHeader currentPage="register" />
 
       {/* Split panel */}
       <main className="flex-1 flex">
