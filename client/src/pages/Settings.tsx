@@ -35,12 +35,26 @@ export default function Settings() {
   const [companyEmail, setCompanyEmail] = useState("");
   const [companyLogo, setCompanyLogo] = useState<string | null>(null);
   const [defaultTradeSector, setDefaultTradeSector] = useState("");
+  // Phase 4A Delivery 37 — defaultTerms re-added to Settings as the
+  // single canonical home for company-wide boilerplate terms. Writes
+  // to organizations.defaultTerms; the AI reads the same column on
+  // every new quote (server/routers.ts ~line 4253). The modal's
+  // "Save as default" tick on Terms also writes here, so the two
+  // surfaces agree on the underlying value — Settings is the upfront
+  // home, the modal is the in-flow opportunistic capture.
+  //
+  // Seeded with a sensible 3-clause starter so a brand-new user sees
+  // proposed wording rather than an empty box; this fallback is only
+  // shown until the user (or AI) writes real terms.
+  const [defaultTerms, setDefaultTerms] = useState(
+    "1. This quote is valid for 30 days from the date of issue.\n2. Payment terms: 50% deposit, 50% on completion.\n3. All prices are exclusive of VAT unless otherwise stated."
+  );
 
   // Form state — trade defaults (from organization).
-  // Phase 4A Delivery 36 — defaultTerms / defaultExclusions /
-  // signatoryName / signatoryPosition / paymentTerms state removed.
-  // Their inputs were retired from this page; the Review-before-
-  // generate modal owns those fields end-to-end now.
+  // Phase 4A Delivery 36 — defaultExclusions / signatoryName /
+  // signatoryPosition / paymentTerms state removed. Their inputs were
+  // retired from this page; the Review-before-generate modal owns
+  // those fields end-to-end now.
   const [workingHoursStart, setWorkingHoursStart] = useState("08:00");
   const [workingHoursEnd, setWorkingHoursEnd] = useState("16:30");
   const [workingDays, setWorkingDays] = useState("Monday to Friday");
@@ -83,8 +97,13 @@ export default function Settings() {
       setCompanyEmail(user.companyEmail || "");
       setCompanyLogo(user.companyLogo || null);
       setDefaultTradeSector((user as any).defaultTradeSector || "");
-      // Phase 4A Delivery 36 — defaultTerms hydration retired with
-      // its state var. Modal owns this end-to-end.
+      // Phase 4A Delivery 37 — user-level defaultTerms is the legacy
+      // pre-org fallback. Org-level (loaded below) wins — this only
+      // pre-populates the textarea for orgs that haven't set their
+      // own org-level terms yet.
+      if (user.defaultTerms) {
+        setDefaultTerms(user.defaultTerms);
+      }
     }
   }, [user]);
 
@@ -109,6 +128,9 @@ export default function Settings() {
       // Phase 4A Delivery 36 — defaultExclusions / signatoryName /
       // signatoryPosition / paymentTerms hydration retired with
       // their state vars. Modal owns these end-to-end.
+      // Phase 4A Delivery 37 — defaultTerms re-added; org-level wins
+      // over the legacy user-level fallback set above.
+      if (org.defaultTerms) setDefaultTerms(org.defaultTerms);
       if (org.defaultValidityDays) setValidityDays(org.defaultValidityDays.toString());
       if (org.defaultSurfaceTreatment) setSurfaceTreatment(org.defaultSurfaceTreatment);
       if (org.defaultReturnVisitRate) setReturnVisitRate(org.defaultReturnVisitRate);
@@ -170,18 +192,23 @@ export default function Settings() {
 
   const handleSave = async () => {
     // Phase 4A Delivery 36 — the removed Settings inputs (signatory
-    // name/position, default terms, default exclusions, default
-    // payment terms) are no longer part of this save payload. Their
-    // org columns are now exclusively written via the Review-before-
-    // generate modal's "Save as default" tick. Including them here
-    // would accidentally overwrite modal-saved values with stale
-    // hydrated state if the user ever opened Settings, did nothing,
-    // and clicked Save.
+    // name/position, default exclusions, default payment terms) are
+    // not part of this save payload. Their org columns are now
+    // exclusively written via the Review-before-generate modal's
+    // "Save as default" tick. Including them here would accidentally
+    // overwrite modal-saved values with stale hydrated state if the
+    // user ever opened Settings, did nothing, and clicked Save.
+    //
+    // Phase 4A Delivery 37 — defaultTerms IS in the payload because
+    // its Settings card was re-added; the modal also writes to the
+    // same column when "Save as default" is ticked on the Terms
+    // section, so the two surfaces keep in sync naturally.
     updateProfile.mutate({
       companyName: companyName || undefined,
       companyAddress: companyAddress || undefined,
       companyPhone: companyPhone || undefined,
       companyEmail: companyEmail || undefined,
+      defaultTerms: defaultTerms || undefined,
       defaultTradeSector: defaultTradeSector || undefined,
       // Trade defaults — AI prompt context, not user-facing PDF text.
       // These genuinely belong in Settings.
@@ -971,13 +998,39 @@ export default function Settings() {
           "Save as default" tick that writes to the same
           brandedPaymentTerms column. */}
 
-      {/* Phase 4A Delivery 36 — Default Terms & Conditions card removed.
-          Editable inline in the Review-before-generate modal with a
-          "Save as default" tick that writes to the same defaultTerms /
-          brandedTerms columns. Settings duplicate retired to keep one
-          surface per concept. The columns themselves stay in the
-          schema and the auth.updateProfile mutation still accepts
-          them — the modal continues to use them. */}
+      {/* Default Terms */}
+      {/* Phase 4A Delivery 37 — Default Terms & Conditions card
+          re-added (was removed in D36 then reinstated). Settings is
+          the upfront home for company-wide boilerplate the user
+          wants stable across every quote; the Review-before-generate
+          modal is the in-flow opportunistic capture for the same
+          column. Both surfaces write to organizations.defaultTerms
+          via the same auth.updateProfile mutation, so they stay in
+          sync naturally — no fork in the data.
+          The CardDescription cross-references the modal so the user
+          knows where else this text shows up. */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            Default Terms &amp; Conditions
+          </CardTitle>
+          <CardDescription>
+            Pre-fills the terms section on every new quote. Also
+            editable on each quote in the Review screen — your saved
+            text flows in automatically and per-quote tweaks don't
+            change this default.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Textarea
+            placeholder="Enter your default terms and conditions..."
+            value={defaultTerms}
+            onChange={(e) => setDefaultTerms(e.target.value)}
+            rows={6}
+          />
+        </CardContent>
+      </Card>
 
       {/* Save Button */}
       <div className="flex justify-end">
