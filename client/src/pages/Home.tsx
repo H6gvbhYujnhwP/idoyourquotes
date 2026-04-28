@@ -17,7 +17,6 @@ import {
   UploadCloud,
   Cpu,
   Send,
-  User,
 } from "lucide-react";
 
 const TEAL = "#0d9488";
@@ -263,23 +262,36 @@ export default function Home() {
       </section>
 
       {/* ============================================================
-           SOCIAL PROOF (placeholder — testimonials coming soon)
+           WHY IT WORKS — value props
          ============================================================ */}
       <section className="py-16 md:py-20" style={{ background: "#f1f5f9" }}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <div className="pub-accent-bar mx-auto" />
-          <h2 className="text-2xl sm:text-3xl font-black mb-3" style={{ color: NAVY }}>What our customers say</h2>
-          <p className="text-gray-400 mb-10">Testimonials from trades, contractors, and consultants — coming soon.</p>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-2xl mx-auto mb-12">
+            <div className="pub-accent-bar mx-auto" />
+            <h2 className="text-2xl sm:text-3xl font-black mb-3" style={{ color: NAVY }}>
+              Why it works
+            </h2>
+            <p className="text-gray-500">
+              The three things tradespeople and SMEs care about most when picking a quoting tool.
+            </p>
+          </div>
 
           <div className="grid md:grid-cols-3 gap-6">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="bg-white rounded-2xl p-8 shadow-sm border border-dashed border-gray-200 flex flex-col items-center justify-center min-h-[160px]">
-                <div className="w-10 h-10 rounded-full bg-gray-100 mb-3 flex items-center justify-center">
-                  <User className="h-5 w-5 text-gray-400" />
-                </div>
-                <p className="text-gray-300 text-sm italic">Testimonial coming soon</p>
-              </div>
-            ))}
+            <ValuePropCard
+              icon={<Clock className="h-[26px] w-[26px]" style={{ color: TEAL }} />}
+              title="Under 5 minutes"
+              body="From voice note or tender PDF to a branded, signature-ready proposal."
+            />
+            <ValuePropCard
+              icon={<List className="h-[26px] w-[26px]" style={{ color: TEAL }} />}
+              title="Your catalogue, your rates"
+              body="Every line item priced from products you've set up — no copy-paste, no pricing errors."
+            />
+            <ValuePropCard
+              icon={<Layout className="h-[26px] w-[26px]" style={{ color: TEAL }} />}
+              title="Quick PDF or full tender pack"
+              body="Two output modes — fast quotes when you need speed, multi-page proposals when you need to win the work."
+            />
           </div>
         </div>
       </section>
@@ -454,6 +466,16 @@ function FeatureCard({ icon, title, body }: { icon: React.ReactNode; title: stri
     <div className="rounded-2xl p-7 pub-card-lift border border-transparent hover:border-[#0d9488] transition-all" style={{ background: "#f1f5f9" }}>
       <div className="pub-icon-circle mb-4">{icon}</div>
       <h3 className="font-bold mb-1" style={{ color: NAVY }}>{title}</h3>
+      <p className="text-sm text-gray-500 leading-relaxed">{body}</p>
+    </div>
+  );
+}
+
+function ValuePropCard({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
+  return (
+    <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 pub-card-lift">
+      <div className="pub-icon-circle mb-5">{icon}</div>
+      <h3 className="text-lg font-bold mb-2" style={{ color: NAVY }}>{title}</h3>
       <p className="text-sm text-gray-500 leading-relaxed">{body}</p>
     </div>
   );
