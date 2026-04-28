@@ -40,6 +40,20 @@ export type ClaudeInvokeParams = {
   messages: ClaudeMessage[];
   system?: string;
   maxTokens?: number;
+  /**
+   * Sampling temperature for the model.
+   *
+   * Defaults to 0.1 — low enough that the QDS pricing pass, the inventory
+   * pre-pass, and other extraction/classification calls behave deterministically
+   * across runs of the same evidence. Without this default the Anthropic API
+   * uses temperature 1.0, which produces large run-to-run drift in line items,
+   * unit prices, monthly/annual classification, and proposal titles when the
+   * same tender pack is generated more than once. See generalEngine.ts main
+   * pricing pass and inventory pre-pass for the primary code paths.
+   *
+   * Pass an explicit value to override (e.g. set higher for creative tasks).
+   */
+  temperature?: number;
 };
 
 export type ClaudeInvokeResult = {
@@ -68,6 +82,8 @@ export async function invokeClaude(params: ClaudeInvokeParams): Promise<ClaudeIn
     max_tokens: params.maxTokens || 4096,
     system: params.system,
     messages: params.messages,
+    // Default to 0.1 — see ClaudeInvokeParams.temperature for rationale.
+    temperature: params.temperature ?? 0.1,
   };
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {

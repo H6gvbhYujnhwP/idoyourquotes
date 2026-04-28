@@ -66,6 +66,19 @@ export type InvokeParams = {
   output_schema?: OutputSchema;
   responseFormat?: ResponseFormat;
   response_format?: ResponseFormat;
+  /**
+   * Sampling temperature for the model.
+   *
+   * Defaults to 0.1 — low enough that generateDraft's title / description /
+   * cover-letter / terms pass and the other invokeLLM callers behave
+   * deterministically across runs of the same evidence. Without this default
+   * both gpt-4o and gemini-2.5-flash sample at temperature 1.0, which produces
+   * different proposal titles and copy on every regeneration of the same
+   * tender pack.
+   *
+   * Pass an explicit value to override (e.g. set higher for creative tasks).
+   */
+  temperature?: number;
 };
 
 export type ToolCall = {
@@ -295,6 +308,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     output_schema,
     responseFormat,
     response_format,
+    temperature,
   } = params;
 
   // Use different model based on API provider
@@ -303,6 +317,8 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   const payload: Record<string, unknown> = {
     model,
     messages: messages.map(normalizeMessage),
+    // Default to 0.1 — see InvokeParams.temperature for rationale.
+    temperature: temperature ?? 0.1,
   };
 
   if (tools && tools.length > 0) {
