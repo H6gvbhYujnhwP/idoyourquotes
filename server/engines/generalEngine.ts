@@ -229,6 +229,24 @@ FIELD EMISSION — every material row from this addendum MUST carry evidenceCate
 ANTI-FABRICATION RULE — NON-NEGOTIABLE:
 If you use a catalog item's "name" on a material row, you MUST also use that item's EXACT "unit" and EXACT "defaultRate" from the catalog. You may NOT change a catalog item's unit or price to fit evidence that doesn't match. If the evidence doesn't fit any catalog item's unit / pricing model, apply the PASSTHROUGH FALLBACK instead of reusing a near-miss catalog SKU at an invented price or invented unit. The moment you find yourself typing a unitPrice that is not the evidence price, not a catalog defaultRate, and not one of the UK MSP anchor rates above — stop. That is fabrication. Use passthrough (with unitPrice 0 if no price is known) and let the user set the price in the QDS.
 
+TENDER EVIDENCE — IT IMPLIED SKUs YOU MUST INFER (CRITICAL — COMMON OMISSION):
+
+When the evidence is a tender / RFP for IT services (see TENDER MODE rules above for activation signals), requirements are usually stated at a contractual level rather than itemised. The following implied SKUs MUST appear on the materials output even when the tender does not list them as discrete bullets:
+
+- MICROSOFT 365 USER LICENCES (very common omission that loses tenders) — Whenever a tender mentions "Microsoft 365" with a user count, OR specifies a cloud migration to "Microsoft 365 / SharePoint", OR uses umbrella phrases like "all associated costs including licensing", "all-inclusive licensing", or "supplier to include licensing":
+   - Add a Microsoft 365 user licence line as its own materials row.
+   - Quantity: the tender's user count (or the migration seat count).
+   - Default tier: "Microsoft 365 Business Standard" unless the tender specifies a different tier (Basic / Premium / Apps for Business / E1 / E3 / E5).
+   - pricingType: "monthly". unit: "User".
+   - Use the user's catalog row when a M365 catalog item exists (e.g. "Microsoft 365 Business Standard — Monthly"). Otherwise estimate from the M365 anchor range above (Business Standard £13–£16, Business Basic £7–£8, Business Premium £22–£28).
+   - This is SEPARATE from any "Microsoft 365 Account Management" line. The licence is the per-user fee paid to Microsoft for the software. The account management is the per-user fee the MSP charges to administer the tenancy. Both belong on the quote when the tender asks the supplier to deliver both.
+
+- THIRD-PARTY PRODUCTS NAMED IN THE TENDER — when the tender names a specific third-party product / platform / certification in scope (e.g. "Yoast Premium", a named antivirus, a named backup vendor, "Cyber Essentials Plus certification fee") without itemising the licence cost, add the named product as its own materials row at the appropriate UK anchor rate.
+
+- HARDWARE / EQUIPMENT REPLACEMENT — if the tender mentions "asset lifecycle planning", "replacement scheduling", or "end-of-life management" without listing the hardware itself, add a notes entry flagging that hardware replacement budgets are typically procured separately and may need to be itemised once the asset audit is complete. Do NOT fabricate hardware line items.
+
+This is NOT scope invention. The tender's contractual language ("all associated costs", "including licensing", "fully managed") makes these costs part of the supplier's commitment. Omitting them is a material commercial under-bid that wins on price and loses on delivery.
+
 DO NOT INVENT SCOPE:
 Extract only what the evidence actually shows. If an invoice has 14 M365 licences, the quote has 14 — not 15, not "14 or so". If prices are redacted, flag with estimated: true on anchor-rated rows, or use passthrough with unitPrice 0 when the row cannot be anchor-rated — do not fabricate exact unit prices. If the client is asking about adding services, only quote what they asked for.
 
@@ -611,6 +629,30 @@ When a SKU is marked as an annual or multi-year commitment (indicators include: 
 
 Every other discrete item in the evidence MUST appear in materials[], even if it needs an estimated price.
 
+TENDER MODE — MANDATORY ENUMERATION (CRITICAL FOR ITT / RFP / TENDER PACKS):
+
+The evidence is a tender / Invitation to Tender / RFP / Request for Proposal when ANY of these signals are present:
+- A header containing "Invitation to Tender", "ITT", "Request for Proposal", "RFP", "Request for Quotation", "RFQ"
+- A "Scope of Services" / "Specification" / "Requirements" section with NUMBERED sub-sections (e.g. "3.1", "3.2", "3.3 Onsite Support") and bulleted lists beneath each
+- Imperative tender grammar: "the supplier will provide", "the supplier shall", "the contractor will / shall", "the successful bidder must", "tenders must demonstrate", "evidence of"
+- A "Submission Deadline" / "Submission Method" / "Tender Submission" block
+- "Evaluation Criteria" with weighted percentages (e.g. "Quality of service offering (30%)")
+- "Contract term" or "Contract Requirements" framing the engagement length
+
+When tender mode is active, these rules apply IN ADDITION to the standard COMPLETENESS AUDIT:
+
+1. ENUMERATE EVERY BULLET. Every bullet point under every numbered sub-section becomes a materials row. The tender's bullet structure IS the scope structure. Never roll three bullets into one line. Never drop "minor" bullets. Never assume one bullet is implied by another. If the tender section "3.7 Website Hosting & Support" lists six bullets (VPS hosting, SSL provision, plugin updates, SEO tool, support hours, telephone support), six rows are required.
+
+2. NO SUB-SECTION GETS COMPRESSED. If the tender has 8 numbered sub-sections (e.g. 3.1 through 3.8), the materials output must contain rows traceable to all 8. A whole sub-section being absent from materials is a critical failure UNLESS the sub-section is explicitly marked "out of scope" / "not required" / "optional" by the tender itself.
+
+3. PRESERVE TENDER VOCABULARY. Use the tender's own item names where possible — "VPS hosting with fixed IP" not "premium hosting"; "Quarterly Proactive Onsite Visits" not "Site Visits". The tender's wording is what the evaluator scores against. If the user's catalog contains a semantically-equivalent item, you may use the catalog name AND include the tender's own wording in the description so the evaluator can see the requirement is met.
+
+4. INFER IMPLIED SKUs. Tenders frequently state requirements at a contractual level ("all associated costs including licensing", "fully managed", "all-inclusive") rather than as itemised SKUs. Surface the implied SKUs as their own materials rows even when the tender does not list them as discrete bullets. Sector-specific implied-SKU rules appear in the sector addenda below — if a sector addendum tells you a SKU is mandatory under tender umbrella language, it is mandatory.
+
+5. UNIT-DRIVEN QUANTITIES. When a tender requirement names a unit explicitly ("minimum quarterly visits" → unit: "Visit", quantity: 4; "minimum 2 hours per month" → unit: "Hour", quantity: 2, pricingType: "monthly"; "26 users" → unit: "User", quantity: 26), use that exact unit. Do NOT silently substitute a different unit (e.g. converting "4 visits" into "16 hours" or vice versa) — the tender evaluator compares like-for-like against the requirement.
+
+6. RECONCILE BEFORE OUTPUT. Before emitting JSON: count the numbered sub-sections in the tender (3.1, 3.2, ... 3.N). For each, mentally identify which materials rows trace back to it via sourceInputIds and the row's content. If any sub-section has zero rows traceable to it AND was not explicitly marked out-of-scope by the tender itself, you have failed the audit — re-read that sub-section and add the missing rows with estimated UK rates if no catalog match. Do NOT output incomplete materials. Tender omissions cost the supplier the contract at evaluation.
+
 CATALOG MATCHING RULES:
 - STEP 1: First, extract ALL items, services, and deliverables from the evidence independently (see COMPLETENESS AUDIT above). Identify what hardware, software, labour, and services are actually named based on what the document lists. Do NOT look at the catalog yet.
 - STEP 2: Then, for each extracted item, check if there is a CLEAR and ACCURATE catalog match. "IT Labour Onsite" matches "engineer onsite for installation" — that is a good match. "Website 7 Pages" does NOT match "network infrastructure upgrade" — that is a bad match. Reject bad matches.
@@ -742,7 +784,8 @@ BEFORE OUTPUTTING JSON — run this mental checklist:
 6. Does labour[] contain ONLY roles that are NOT already priced as materials line items? If a labour role appears in materials, remove it from labour[].
 7. Does every materials row include a non-empty sourceInputIds array naming the [INPUT_ID: N] values of the evidence block(s) that justify the row?
 8. COMPLETENESS: If an EVIDENCE INVENTORY block appears above, use it as ground truth — every inventory entry must either appear as a materials row or have been legitimately skipped per the narrow list in COMPLETENESS AUDIT; nothing else may be dropped. If no inventory block is present, mentally count the discrete items in the evidence (rows in tables, bullets in lists, checkboxes on service sheets, named products/licences/services/contracts) and reconcile against materials[] the same way. If materials is materially smaller than the inventory or the evidence item count, re-read and add the missing items back — with estimated UK-market prices if no catalog match. The only legitimate drop reasons are the narrow list in COMPLETENESS AUDIT above. If the numbers don't reconcile and you can't cite one of those reasons, the output is incomplete.
-Only output JSON once all eight checks pass.
+9. TENDER MODE: If the evidence shows tender signals (numbered sub-sections like 3.1 / 3.2 / ..., "Scope of Services", "Submission Deadline", "Evaluation Criteria", imperative tender grammar like "the supplier shall"), have I produced at least one materials row traceable to EVERY numbered sub-section? Have I inferred the implied SKUs the sector addendum tells me are mandatory under tender umbrella language (notably Microsoft 365 user licences for IT tenders that mention M365 with a user count)? If a sub-section has zero rows traceable to it and was not explicitly marked out-of-scope by the tender, the output is incomplete — re-read that sub-section and add the missing rows with estimated UK rates if no catalog match.
+Only output JSON once all nine checks pass.
 
 If a field is not mentioned or cannot be determined, use null. Respond with valid JSON only — no preamble, no explanation, no markdown fences.`;
 
