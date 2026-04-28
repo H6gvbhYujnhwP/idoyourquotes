@@ -32,6 +32,7 @@ import { createElectricalTakeoff, getElectricalTakeoffsByQuoteId, getElectricalT
 import { createContainmentTakeoff, getContainmentTakeoffsByQuoteId, getContainmentTakeoffById, getContainmentTakeoffByInputId, updateContainmentTakeoff, deleteContainmentTakeoffByInputId, updateInputMimeType } from "./db";
 import { parseSpreadsheet, isSpreadsheet, formatSpreadsheetForAI } from "./services/excelParser";
 import { generateQuoteHTML } from "./pdfGenerator";
+import { generateQuoteDOCX } from "./docxGenerator";
 import { generateBrandedProposalHTML } from "./brandedProposalRenderer";
 import { getCatalogSeedForSector } from "./catalogSeeds";
 import { getDemoQuoteForSector } from "./demoQuotes";
@@ -1309,6 +1310,62 @@ Respond with valid JSON:
           return { html };
         } catch (error) {
           console.error("[generatePDF] Error:", error);
+          throw error;
+        }
+      }),
+
+    // ── Phase 4A — Delivery 38 ──
+    // Word document export. Mirrors generatePDF's data-fetching shape
+    // exactly — quote + line items + tender context + org — and hands
+    // them to docxGenerator which builds a clean no-graphics .docx as
+    // base64. The client decodes and triggers a browser download.
+    //
+    // Add-only endpoint: does NOT modify generatePDF or any of its
+    // upstream / downstream code paths. The Word path is a parallel
+    // export with no shared mutable state.
+    generateDOCX: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          // Same access-control sequence as generatePDF: org-first,
+          // then user-fallback for legacy single-user quotes.
+          const org = await getUserPrimaryOrg(ctx.user.id);
+          let quote = null;
+          if (org) {
+            quote = await getQuoteByIdAndOrg(input.id, org.id);
+          }
+          if (!quote) {
+            quote = await getQuoteById(input.id, ctx.user.id);
+          }
+          if (!quote) {
+            throw new Error("Quote not found");
+          }
+
+          const lineItems = await getLineItemsByQuoteId(input.id);
+
+          let tenderContext = null;
+          try {
+            tenderContext = await getTenderContextByQuoteId(input.id);
+          } catch (e) {
+            // Same fall-through behaviour as generatePDF — context is
+            // optional, missing context isn't a failure.
+          }
+
+          const base64 = generateQuoteDOCX({
+            quote,
+            lineItems,
+            user: ctx.user,
+            organization: org,
+            tenderContext,
+          });
+
+          // Return the base64-encoded .docx + a sensible filename.
+          // The client converts base64 → Blob → download. No R2
+          // upload involved; the file is generated fresh per request.
+          const filename = `${(quote.title || "Quote").replace(/[^\w\s-]/g, "").replace(/\s+/g, "_") || "Quote"}_${quote.id}.docx`;
+          return { base64, filename };
+        } catch (error) {
+          console.error("[generateDOCX] Error:", error);
           throw error;
         }
       }),

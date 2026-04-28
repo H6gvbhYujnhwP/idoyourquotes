@@ -321,6 +321,9 @@ export default function QuoteWorkspace() {
     "reading" | "building" | "finalising" | null
   >(null);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  // Phase 4A Delivery 38 — separate flag from PDF so both buttons
+  // can disable independently while either generation is in flight.
+  const [isGeneratingDOCX, setIsGeneratingDOCX] = useState(false);
   const [showMissingCostsModal, setShowMissingCostsModal] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
   // Chunk 3 Delivery F — controls the "Last chance to re-generate" dialog
@@ -431,6 +434,10 @@ export default function QuoteWorkspace() {
     onSuccess: () => void refetch(),
   });
   const generatePDF = trpc.quotes.generatePDF.useMutation();
+  // Phase 4A Delivery 38 — Word doc export mutation. Mirrors the
+  // generatePDF hook one-to-one; the actual download is triggered
+  // client-side by decoding the returned base64 to a Blob.
+  const generateDOCX = trpc.quotes.generateDOCX.useMutation();
   // Phase 4A Delivery 7 — branded Contract/Tender proposal. Separate
   // endpoint, does not touch generatePDF. Same return shape { html }.
   const generateBrandedProposal = trpc.quotes.generateBrandedProposal.useMutation();
@@ -949,6 +956,49 @@ export default function QuoteWorkspace() {
     setShowFormatPickerModal(true);
   };
 
+  // Phase 4A Delivery 38 — Word doc export handler. Tier-gated like
+  // PDF (Solo / Trial users see the upgrade modal first), but does
+  // NOT route through the format-picker or review-before-PDF modals
+  // — Word is a quick-export format, not a polished sign-and-send
+  // output, so we go straight to the mutation.
+  //
+  // The browser download is built by decoding the base64 to a Blob,
+  // creating an object URL, simulating a click on a hidden anchor,
+  // then revoking the URL on next tick. Standard pattern.
+  const handleGenerateDOCXClick = async () => {
+    if (isSoftGatedTier) {
+      setShowSoloUpgradeModal(true);
+      return;
+    }
+    setIsGeneratingDOCX(true);
+    try {
+      const result = await generateDOCX.mutateAsync({ id: quoteId });
+      const base64 = (result as any).base64 as string;
+      const filename = (result as any).filename as string;
+      // base64 → bytes → Blob. We don't use fetch's data: URL because
+      // larger docs (multi-page proposals) push that path past
+      // browser URL length limits.
+      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      const blob = new Blob([bytes], {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (err) {
+      console.error("[handleGenerateDOCXClick] Error:", err);
+      // Quiet failure — the mutation itself surfaces a server error
+      // toast via tRPC's default error handler.
+    } finally {
+      setIsGeneratingDOCX(false);
+    }
+  };
+
   // Phase 4A Delivery 5 — Solo upgrade modal handlers.
   const handleSoloUpgradeCTA = () => {
     setShowSoloUpgradeModal(false);
@@ -1183,6 +1233,11 @@ export default function QuoteWorkspace() {
           back-button on the left and the save-state indicator on the
           right so the user has a quiet, stable chrome above the
           workspace content. */}
+      {/* Phase 4A Delivery 38 — top bar gained two action buttons:
+          Generate PDF (moved up from the footer where it was clipping
+          the line-items table on smaller windows) and Generate Word.
+          Both are wired to the existing Pro/Team-gated handlers; tier
+          gating routes via SoloUpgradeModal exactly like before. */}
       <div
         className="flex items-center justify-between px-6 py-3 bg-white border-b"
         style={{ borderColor: brand.border }}
@@ -1195,24 +1250,76 @@ export default function QuoteWorkspace() {
           <ArrowLeft className="w-4 h-4" />
           Dashboard
         </button>
-        <div
-          className="flex items-center gap-3 text-xs"
-          style={{ color: brand.navyMuted }}
-        >
-          {anySaving ? (
-            <span className="inline-flex items-center gap-1.5">
-              <Clock className="w-3 h-3 animate-pulse" />
-              Saving…
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="inline-block w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: brand.teal }}
-              />
-              All changes saved
-            </span>
-          )}
+        <div className="flex items-center gap-3">
+          <div
+            className="flex items-center gap-3 text-xs"
+            style={{ color: brand.navyMuted }}
+          >
+            {anySaving ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Clock className="w-3 h-3 animate-pulse" />
+                Saving…
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5">
+                <span
+                  className="inline-block w-1.5 h-1.5 rounded-full"
+                  style={{ backgroundColor: brand.teal }}
+                />
+                All changes saved
+              </span>
+            )}
+          </div>
+          {/* D38 — Generate Word doc. Renders next to Generate PDF.
+              Disabled while either generation is in flight or before
+              any line items exist (parity with the old footer rule). */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleGenerateDOCXClick}
+            disabled={isGeneratingDOCX || isGeneratingPDF || lineItems.length === 0}
+            style={{
+              borderColor: brand.teal,
+              color: brand.teal,
+            }}
+          >
+            {isGeneratingDOCX ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                Preparing…
+              </>
+            ) : (
+              <>
+                <FileText className="w-3.5 h-3.5 mr-1.5" />
+                Generate Word
+              </>
+            )}
+          </Button>
+          {/* D38 — Generate PDF moved here from the per-quote footer.
+              Same handler (handleGeneratePDFClick) so tier gating, the
+              format picker, and the review modal all behave exactly
+              as before. */}
+          <Button
+            size="sm"
+            onClick={handleGeneratePDFClick}
+            disabled={isGeneratingPDF || isGeneratingDOCX || lineItems.length === 0}
+            className="text-white"
+            style={{
+              background: "linear-gradient(135deg, #0d9488 0%, #0f766e 100%)",
+            }}
+          >
+            {isGeneratingPDF ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                Preparing PDF…
+              </>
+            ) : (
+              <>
+                <Download className="w-3.5 h-3.5 mr-1.5" />
+                Generate PDF
+              </>
+            )}
+          </Button>
         </div>
       </div>
 
@@ -2509,42 +2616,21 @@ function EditorPanel({
           />
         </div>
 
-        <div
-          className="text-[11px] italic px-1 flex items-center gap-1.5"
-          style={{ color: brand.navyMuted }}
-        >
-          <Info className="w-3 h-3" />
-          Click an evidence card or a line item to see what was derived from
-          what.
-        </div>
+      <div
+        className="text-[11px] italic px-1 flex items-center gap-1.5"
+        style={{ color: brand.navyMuted }}
+      >
+        <Info className="w-3 h-3" />
+        Click an evidence card or a line item to see what was derived from
+        what.
+      </div>
       </div>
 
-      <div
-        className="flex-shrink-0 px-6 py-3 bg-white flex items-center justify-end gap-3"
-        style={{ borderTop: `1px solid ${brand.border}` }}
-      >
-        <Button
-          size="lg"
-          onClick={onGeneratePDF}
-          disabled={isGeneratingPDF || lineItems.length === 0}
-          className="text-white"
-          style={{
-            background: "linear-gradient(135deg, #0d9488 0%, #0f766e 100%)",
-          }}
-        >
-          {isGeneratingPDF ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Preparing PDF…
-            </>
-          ) : (
-            <>
-              <Download className="w-4 h-4 mr-2" />
-              Generate PDF
-            </>
-          )}
-        </Button>
-      </div>
+      {/* Phase 4A Delivery 38 — bottom Generate PDF button removed;
+          Generate PDF + Generate Word now live in the top bar
+          alongside the Dashboard / Saved-state row, freeing the
+          two-panel body to scroll without a fixed footer clipping
+          the line-items table on smaller windows. */}
     </div>
   );
 }
