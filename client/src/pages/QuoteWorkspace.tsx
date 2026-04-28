@@ -1224,9 +1224,16 @@ export default function QuoteWorkspace() {
 
   return (
     <div
-      className="flex flex-col h-[calc(100vh-8rem)]"
+      className="flex flex-col min-h-screen"
       style={{ backgroundColor: brand.slate }}
     >
+      {/* Phase 4A Delivery 38.1 — outer wrapper changed from a fixed
+          h-[calc(100vh-8rem)] to min-h-screen so the workspace grows
+          with its content rather than capping at one viewport. The
+          internal overflow-y-auto on the right panel was producing a
+          second scrollbar when a generated quote ran longer than the
+          viewport; the inner scrollbar is gone in this delivery and
+          the entire quote flows on the page's own scroll. */}
       {/* ── Title bar ──────────────────────────────────────────────────
           Chunk 3 Delivery G — the editable quote-title field moved into
           the light green client card below. The title bar is now just a
@@ -1238,8 +1245,11 @@ export default function QuoteWorkspace() {
           the line-items table on smaller windows) and Generate Word.
           Both are wired to the existing Pro/Team-gated handlers; tier
           gating routes via SoloUpgradeModal exactly like before. */}
+      {/* Phase 4A Delivery 38.1 — top bar is now sticky so the
+          Generate Word / Generate PDF buttons stay visible while
+          the user scrolls a long quote. */}
       <div
-        className="flex items-center justify-between px-6 py-3 bg-white border-b"
+        className="flex items-center justify-between px-6 py-3 bg-white border-b sticky top-0 z-20"
         style={{ borderColor: brand.border }}
       >
         <button
@@ -1324,11 +1334,20 @@ export default function QuoteWorkspace() {
       </div>
 
       {/* ── Two-panel body ───────────────────────────────────────────── */}
-      <div className="flex flex-1 overflow-hidden">
+      {/* Phase 4A Delivery 38.1 — overflow-hidden + flex-1 dropped so
+          the body row flows with page scroll. Left panel kept sticky
+          (top: 64px clears the sticky top bar) so evidence stays in
+          view while the user scrolls through the right panel's quote.
+          Right panel's internal overflow-y-auto removed too — quote
+          renders at full natural height now. */}
+      <div className="flex">
         <div
-          className="flex flex-col overflow-hidden"
+          className="flex flex-col sticky self-start"
           style={{
             width: "30%",
+            top: "64px",
+            maxHeight: "calc(100vh - 64px)",
+            overflowY: "auto",
             backgroundColor: "#f7fbfc",
             borderRight: `1px solid ${brand.border}`,
           }}
@@ -1357,7 +1376,7 @@ export default function QuoteWorkspace() {
           />
         </div>
 
-        <div className="flex flex-col flex-1 overflow-hidden bg-white">
+        <div className="flex flex-col flex-1 bg-white">
           {!isState2 ? (
             <EmptyStatePanel
               onGenerate={handleGenerate}
@@ -2407,8 +2426,14 @@ function EditorPanel({
   }, [totals]);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+    // Phase 4A Delivery 38.1 — the wrapper used to be h-full +
+    // overflow-hidden with a flex-1 overflow-y-auto inside. That
+    // produced the inner scrollbar reported alongside the page
+    // scrollbar. Both internal scroll containers are gone; content
+    // flows on the page's own scroll. Left padding/spacing kept by
+    // the inner div so the visual rhythm is unchanged.
+    <div className="flex flex-col">
+      <div className="px-6 py-5 space-y-4">
         <div
           className="rounded-xl p-4"
           style={{ backgroundColor: brand.tealBg }}
