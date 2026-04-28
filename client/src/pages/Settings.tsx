@@ -35,11 +35,12 @@ export default function Settings() {
   const [companyEmail, setCompanyEmail] = useState("");
   const [companyLogo, setCompanyLogo] = useState<string | null>(null);
   const [defaultTradeSector, setDefaultTradeSector] = useState("");
-  const [defaultTerms, setDefaultTerms] = useState(
-    "1. This quote is valid for 30 days from the date of issue.\n2. Payment terms: 50% deposit, 50% on completion.\n3. All prices are exclusive of VAT unless otherwise stated."
-  );
 
-  // Form state — trade defaults (from organization)
+  // Form state — trade defaults (from organization).
+  // Phase 4A Delivery 36 — defaultTerms / defaultExclusions /
+  // signatoryName / signatoryPosition / paymentTerms state removed.
+  // Their inputs were retired from this page; the Review-before-
+  // generate modal owns those fields end-to-end now.
   const [workingHoursStart, setWorkingHoursStart] = useState("08:00");
   const [workingHoursEnd, setWorkingHoursEnd] = useState("16:30");
   const [workingDays, setWorkingDays] = useState("Monday to Friday");
@@ -48,13 +49,9 @@ export default function Settings() {
   const [insuranceProfessional, setInsuranceProfessional] = useState("");
   const [dayWorkLabourRate, setDayWorkLabourRate] = useState("");
   const [defaultVatRate, setDefaultVatRate] = useState("20");
-  const [defaultExclusions, setDefaultExclusions] = useState("");
   const [validityDays, setValidityDays] = useState("30");
-  const [signatoryName, setSignatoryName] = useState("");
-  const [signatoryPosition, setSignatoryPosition] = useState("");
   const [surfaceTreatment, setSurfaceTreatment] = useState("");
   const [returnVisitRate, setReturnVisitRate] = useState("");
-  const [paymentTerms, setPaymentTerms] = useState("");
 
   // Phase 4A — Proposal Branding tab state.
   // companyWebsite is org-scoped; persisted via the dedicated
@@ -86,9 +83,8 @@ export default function Settings() {
       setCompanyEmail(user.companyEmail || "");
       setCompanyLogo(user.companyLogo || null);
       setDefaultTradeSector((user as any).defaultTradeSector || "");
-      if (user.defaultTerms) {
-        setDefaultTerms(user.defaultTerms);
-      }
+      // Phase 4A Delivery 36 — defaultTerms hydration retired with
+      // its state var. Modal owns this end-to-end.
     }
   }, [user]);
 
@@ -110,13 +106,12 @@ export default function Settings() {
         setDayWorkLabourRate(dw.labourRate?.toString() || "");
         setDefaultVatRate(dw.defaultVatRate?.toString() || "20");
       }
-      if (org.defaultExclusions) setDefaultExclusions(org.defaultExclusions);
+      // Phase 4A Delivery 36 — defaultExclusions / signatoryName /
+      // signatoryPosition / paymentTerms hydration retired with
+      // their state vars. Modal owns these end-to-end.
       if (org.defaultValidityDays) setValidityDays(org.defaultValidityDays.toString());
-      if (org.defaultSignatoryName) setSignatoryName(org.defaultSignatoryName);
-      if (org.defaultSignatoryPosition) setSignatoryPosition(org.defaultSignatoryPosition);
       if (org.defaultSurfaceTreatment) setSurfaceTreatment(org.defaultSurfaceTreatment);
       if (org.defaultReturnVisitRate) setReturnVisitRate(org.defaultReturnVisitRate);
-      if (org.defaultPaymentTerms) setPaymentTerms(org.defaultPaymentTerms);
       // Phase 4A — brand evidence
       setCompanyWebsite(org.companyWebsite || "");
       // Phase 4A — extraction status pill
@@ -174,14 +169,22 @@ export default function Settings() {
   });
 
   const handleSave = async () => {
+    // Phase 4A Delivery 36 — the removed Settings inputs (signatory
+    // name/position, default terms, default exclusions, default
+    // payment terms) are no longer part of this save payload. Their
+    // org columns are now exclusively written via the Review-before-
+    // generate modal's "Save as default" tick. Including them here
+    // would accidentally overwrite modal-saved values with stale
+    // hydrated state if the user ever opened Settings, did nothing,
+    // and clicked Save.
     updateProfile.mutate({
       companyName: companyName || undefined,
       companyAddress: companyAddress || undefined,
       companyPhone: companyPhone || undefined,
       companyEmail: companyEmail || undefined,
-      defaultTerms: defaultTerms || undefined,
       defaultTradeSector: defaultTradeSector || undefined,
-      // Trade defaults
+      // Trade defaults — AI prompt context, not user-facing PDF text.
+      // These genuinely belong in Settings.
       defaultWorkingHoursStart: workingHoursStart || undefined,
       defaultWorkingHoursEnd: workingHoursEnd || undefined,
       defaultWorkingDays: workingDays || undefined,
@@ -194,13 +197,9 @@ export default function Settings() {
         labourRate: dayWorkLabourRate ? parseFloat(dayWorkLabourRate) : undefined,
         defaultVatRate: defaultVatRate ? parseFloat(defaultVatRate) : 20,
       },
-      defaultExclusions: defaultExclusions || undefined,
       defaultValidityDays: validityDays ? parseInt(validityDays) : undefined,
-      defaultSignatoryName: signatoryName || undefined,
-      defaultSignatoryPosition: signatoryPosition || undefined,
       defaultSurfaceTreatment: surfaceTreatment || undefined,
       defaultReturnVisitRate: returnVisitRate || undefined,
-      defaultPaymentTerms: paymentTerms || undefined,
     });
   };
 
@@ -795,26 +794,11 @@ export default function Settings() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="signatoryName">Signatory Name</Label>
-              <Input
-                id="signatoryName"
-                placeholder="e.g. Andrew Wright"
-                value={signatoryName}
-                onChange={(e) => setSignatoryName(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="signatoryPosition">Position / Title</Label>
-              <Input
-                id="signatoryPosition"
-                placeholder="e.g. Estimator"
-                value={signatoryPosition}
-                onChange={(e) => setSignatoryPosition(e.target.value)}
-              />
-            </div>
-          </div>
+          {/* Phase 4A Delivery 36 — Signatory Name & Position fields
+              removed. Editable inline in the Review-before-generate
+              modal with a "Save as default" tick that writes to the
+              same brandedSignatoryName / brandedSignatoryPosition
+              columns. */}
           <div className="grid sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="validityDays">Quote Validity (days)</Label>
@@ -976,68 +960,24 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      {/* Standard Exclusions */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            Standard Exclusions
-          </CardTitle>
-          <CardDescription>
-            Items you always exclude from quotes. One per line. The AI will include these on every quote.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Textarea
-            placeholder={"e.g.\nSecondary steelwork where section sizes not provided\nWind posts\nBuilder's work (cutting out, padstones, grouting, dry packing)\nTemporary propping\nIntumescent painting\nDiamond drilling\nMaking good to existing"}
-            value={defaultExclusions}
-            onChange={(e) => setDefaultExclusions(e.target.value)}
-            rows={6}
-          />
-        </CardContent>
-      </Card>
+      {/* Phase 4A Delivery 36 — Standard Exclusions card removed.
+          Editable inline in the Review-before-generate modal with a
+          "Save as default" tick that writes to the same
+          defaultExclusions / brandedExclusions columns. Same deal as
+          terms — schema columns retained, modal still uses them. */}
 
-      {/* Payment Terms */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <PoundSterling className="h-5 w-5" />
-            Default Payment Terms
-          </CardTitle>
-          <CardDescription>
-            Specific payment terms for your trade (overrides generic T&Cs for payment section)
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Textarea
-            placeholder="e.g. Monthly valuations, payment 35 days from due date. 5% retention until practical completion."
-            value={paymentTerms}
-            onChange={(e) => setPaymentTerms(e.target.value)}
-            rows={3}
-          />
-        </CardContent>
-      </Card>
+      {/* Phase 4A Delivery 36 — Default Payment Terms card removed.
+          Editable inline in the Review-before-generate modal with a
+          "Save as default" tick that writes to the same
+          brandedPaymentTerms column. */}
 
-      {/* Default Terms */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            Default Terms & Conditions
-          </CardTitle>
-          <CardDescription>
-            These terms will be pre-filled on new quotes
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Textarea
-            placeholder="Enter your default terms and conditions..."
-            value={defaultTerms}
-            onChange={(e) => setDefaultTerms(e.target.value)}
-            rows={6}
-          />
-        </CardContent>
-      </Card>
+      {/* Phase 4A Delivery 36 — Default Terms & Conditions card removed.
+          Editable inline in the Review-before-generate modal with a
+          "Save as default" tick that writes to the same defaultTerms /
+          brandedTerms columns. Settings duplicate retired to keep one
+          surface per concept. The columns themselves stay in the
+          schema and the auth.updateProfile mutation still accepts
+          them — the modal continues to use them. */}
 
       {/* Save Button */}
       <div className="flex justify-end">
