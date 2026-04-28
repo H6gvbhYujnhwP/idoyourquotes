@@ -51,112 +51,142 @@ function TierCard({
   whoItsFor, limits, buildFrom, includes, excludes, popular, currentTier,
   onSelect, loading, buttonLabel,
 }: TierCardProps) {
+  // popular cards render dark navy with white text; others render white
+  const isDark = !!popular;
+  const cardBg = isDark ? brand.navy : '#ffffff';
+  const headingColor = isDark ? '#ffffff' : brand.navy;
+  const taglineColor = isDark ? 'rgb(191 219 254)' : '#6b7280';
+  const bodyColor = isDark ? 'rgb(219 234 254)' : '#4b5563';
+  const labelColor = isDark ? 'rgb(147 197 253)' : '#9ca3af';
+  const dividerColor = isDark ? 'rgba(255,255,255,0.10)' : '#f3f4f6';
+
   return (
     <div
-      className={`relative flex flex-col rounded-2xl border-2 overflow-hidden transition-all hover:shadow-xl ${
-        popular ? 'scale-[1.02] shadow-lg' : 'shadow-md'
+      className={`relative flex flex-col rounded-2xl overflow-hidden transition-all hover:shadow-2xl pub-card-lift ${
+        popular ? 'shadow-2xl' : 'shadow-sm'
       }`}
-      style={{ borderColor }}
+      style={{ background: cardBg, border: isDark ? 'none' : `1px solid ${borderColor}` }}
     >
       {popular && (
-        <div className="absolute top-0 right-0 px-4 py-1.5 text-xs font-extrabold text-white rounded-bl-xl" style={{ backgroundColor: brand.teal }}>
-          MOST POPULAR
+        <div
+          className="absolute top-4 right-4 text-xs font-bold text-white px-3 py-1 rounded-full"
+          style={{ backgroundColor: brand.teal }}
+        >
+          Most Popular
         </div>
       )}
       {currentTier && (
-        <div className="absolute top-0 left-0 px-4 py-1.5 text-xs font-extrabold text-white rounded-br-xl bg-green-600">
-          CURRENT PLAN
+        <div className="absolute top-4 left-4 text-xs font-bold text-white px-3 py-1 rounded-full bg-green-600">
+          Current Plan
         </div>
       )}
 
-      {/* Header */}
-      <div className="px-6 pt-8 pb-5" style={{ background: bgGradient }}>
-        <div className="flex items-center gap-3 mb-3">
-          {icon}
-          <h3 className="text-2xl font-extrabold text-white">{name}</h3>
-        </div>
-        <p className="text-white/70 text-sm mb-4">{tagline}</p>
-        <div className="flex items-baseline gap-1">
-          <span className="text-4xl font-extrabold text-white">£{price}</span>
-          <span className="text-white/60 text-sm font-medium">/ month + VAT</span>
-        </div>
-        <p className="text-white/50 text-xs mt-1">£{priceWithVat.toFixed(2)} inc VAT</p>
-      </div>
-
-      {/* Body */}
-      <div className="flex-1 px-6 py-5 bg-white space-y-5">
-        {/* Who it's for */}
-        <div>
-          <h4 className="text-[11px] font-extrabold uppercase tracking-wider mb-2" style={{ color: brand.navy }}>Who it's for</h4>
-          <ul className="space-y-1">
-            {whoItsFor.map((item, i) => (
-              <li key={i} className="text-sm text-gray-600 flex items-start gap-2">
-                <span className="mt-1 w-1 h-1 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-                {item}
-              </li>
-            ))}
-          </ul>
+      <div className="p-8 flex flex-col flex-1">
+        {/* Plan header: icon + name + tagline */}
+        <div className="mb-6 mt-2">
+          <div className="flex items-center gap-3 mb-3">
+            <div
+              className="w-10 h-10 rounded-full flex items-center justify-center"
+              style={{ background: 'rgba(13,148,136,0.12)' }}
+            >
+              {icon}
+            </div>
+            <h3 className="text-xl font-black" style={{ color: headingColor }}>{name}</h3>
+          </div>
+          <p className="text-sm" style={{ color: taglineColor }}>{tagline}</p>
         </div>
 
-        {/* Limits */}
-        <div>
-          <h4 className="text-[11px] font-extrabold uppercase tracking-wider mb-2" style={{ color: brand.navy }}>Limits</h4>
-          <ul className="space-y-1">
-            {limits.map((item, i) => (
-              <li key={i} className="text-sm text-gray-600 flex items-start gap-2">
-                <span className="mt-1 w-1 h-1 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-                {item}
-              </li>
-            ))}
-          </ul>
+        {/* Price */}
+        <div className="mb-6">
+          <div className="flex items-end gap-1">
+            <span className="text-5xl font-black" style={{ color: headingColor }}>£{price}</span>
+            <span className="text-sm mb-2" style={{ color: taglineColor }}>/month + VAT</span>
+          </div>
+          <p className="text-xs mt-1" style={{ color: taglineColor }}>£{priceWithVat.toFixed(2)} inc VAT</p>
         </div>
 
-        {/* Build quotes from */}
-        <div>
-          <h4 className="text-[11px] font-extrabold uppercase tracking-wider mb-2" style={{ color: brand.navy }}>Build quotes from</h4>
-          <ul className="space-y-1">
-            {buildFrom.map((item, i) => (
-              <li key={i} className="text-sm text-gray-600">{item}</li>
-            ))}
-          </ul>
-        </div>
-
-        {/* Includes */}
-        <div>
-          <h4 className="text-[11px] font-extrabold uppercase tracking-wider mb-2" style={{ color: brand.navy }}>Includes</h4>
-          <ul className="space-y-1.5">
-            {includes.map((item, i) => (
-              <li key={i} className="text-sm text-gray-700 flex items-start gap-2">
-                <Check className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color }} />
-                {item}
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* Excludes */}
-        {excludes && excludes.length > 0 && (
+        {/* Body sections */}
+        <div className="space-y-4 mb-8 flex-1">
+          {/* Who it's for */}
           <div>
-            <h4 className="text-[11px] font-extrabold uppercase tracking-wider mb-2 text-gray-400">Excludes</h4>
+            <div className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: labelColor }}>
+              Who it's for
+            </div>
             <ul className="space-y-1.5">
-              {excludes.map((item, i) => (
-                <li key={i} className="text-sm text-gray-400 flex items-start gap-2">
-                  <X className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              {whoItsFor.map((item, i) => (
+                <li key={i} className="text-sm flex items-center gap-2" style={{ color: bodyColor }}>
+                  <span style={{ color: brand.teal }}>✓</span> {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Limits */}
+          <div className="border-t pt-3" style={{ borderColor: dividerColor }}>
+            <div className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: labelColor }}>
+              Limits
+            </div>
+            <ul className="space-y-1.5">
+              {limits.map((item, i) => (
+                <li key={i} className="text-sm flex items-center gap-2" style={{ color: bodyColor }}>
+                  <span style={{ color: brand.teal }}>✓</span> {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Build quotes from */}
+          <div className="border-t pt-3" style={{ borderColor: dividerColor }}>
+            <div className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: labelColor }}>
+              Build quotes from
+            </div>
+            <ul className="space-y-1">
+              {buildFrom.map((item, i) => (
+                <li key={i} className="text-sm" style={{ color: bodyColor }}>{item}</li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Includes */}
+          <div className="border-t pt-3" style={{ borderColor: dividerColor }}>
+            <div className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: labelColor }}>
+              Includes
+            </div>
+            <ul className="space-y-1.5">
+              {includes.map((item, i) => (
+                <li key={i} className="text-sm flex items-start gap-2" style={{ color: bodyColor }}>
+                  <Check className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: brand.teal }} />
                   {item}
                 </li>
               ))}
             </ul>
           </div>
-        )}
-      </div>
 
-      {/* CTA */}
-      <div className="px-6 py-5 bg-gray-50 border-t">
+          {/* Excludes */}
+          {excludes && excludes.length > 0 && (
+            <div className="border-t pt-3" style={{ borderColor: dividerColor }}>
+              <div className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: isDark ? 'rgba(255,255,255,0.40)' : '#9ca3af' }}>
+                Excludes
+              </div>
+              <ul className="space-y-1.5">
+                {excludes.map((item, i) => (
+                  <li key={i} className="text-sm flex items-start gap-2" style={{ color: isDark ? 'rgba(255,255,255,0.50)' : '#9ca3af' }}>
+                    <X className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        {/* CTA */}
         <Button
-          className="w-full text-sm font-bold py-5 rounded-xl transition-all"
+          className={`w-full text-sm font-bold py-6 rounded-xl transition-all ${popular ? 'pub-btn-pulse' : ''}`}
           style={{
-            backgroundColor: currentTier ? '#e5e7eb' : color,
-            color: currentTier ? '#6b7280' : 'white',
+            backgroundColor: currentTier ? '#e5e7eb' : (popular ? brand.teal : 'transparent'),
+            color: currentTier ? '#6b7280' : (popular ? 'white' : brand.navy),
+            border: !popular && !currentTier ? `2px solid ${brand.navy}` : 'none',
           }}
           onClick={onSelect}
           disabled={loading || currentTier}
@@ -170,6 +200,26 @@ function TierCard({
       </div>
     </div>
   );
+}
+
+// Bgs and gradients on TierCardProps are unused now (popular flag + brand tokens handle it),
+// but kept on the interface to avoid breaking the call sites below. The bgGradient/borderColor
+// values passed in are simply ignored by the new render.
+
+// ComparisonCell — used by the feature comparison table
+function ComparisonCell({ value, highlighted }: { value: boolean | string; highlighted?: boolean }) {
+  const bg = highlighted ? 'rgba(13,148,136,0.05)' : undefined;
+  if (value === true) {
+    return (
+      <td className="p-4 text-center" style={{ background: bg }}>
+        <Check className="h-5 w-5 inline-block" style={{ color: brand.teal }} />
+      </td>
+    );
+  }
+  if (value === false) {
+    return <td className="p-4 text-center text-gray-300" style={{ background: bg }}>—</td>;
+  }
+  return <td className="p-4 text-center text-gray-600" style={{ background: bg }}>{value}</td>;
 }
 
 // Tier ranks for upgrade detection (client-side)
@@ -312,21 +362,31 @@ export default function Pricing() {
       {/* Header — matches Home/Login/Register Manus styling */}
       <PublicHeader currentPage="pricing" />
 
-      {/* Header */}
-      <section className="pt-16 pb-8 text-center">
-        <h1 className="text-4xl md:text-5xl font-extrabold mb-4" style={{ color: brand.navy }}>
-          Simple, transparent pricing
-        </h1>
-        <p className="text-lg text-gray-500 max-w-xl mx-auto mb-2">
-          Start with a free 14-day trial. No credit card required.
-        </p>
-        <p className="text-sm text-gray-400">
-          All plans include VAT at 20%. Cancel anytime.
-        </p>
+      {/* Hero band */}
+      <section className="pub-hero-band text-white py-16 md:py-20 relative overflow-hidden">
+        <div
+          className="absolute inset-0 opacity-5 pointer-events-none"
+          style={{
+            backgroundImage:
+              "repeating-linear-gradient(0deg,transparent,transparent 39px,rgba(255,255,255,0.3) 39px,rgba(255,255,255,0.3) 40px), repeating-linear-gradient(90deg,transparent,transparent 39px,rgba(255,255,255,0.3) 39px,rgba(255,255,255,0.3) 40px)",
+          }}
+        />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10">
+          <div className="pub-accent-bar mx-auto" />
+          <h1 className="text-4xl sm:text-5xl font-black mb-4 pub-anim-fade-up">
+            Simple, transparent pricing
+          </h1>
+          <p className="text-blue-100 text-lg max-w-xl mx-auto mb-3 pub-anim-fade-up pub-delay-200">
+            Start with a free 14-day trial. No credit card required. Only pay after 14 days if you're happy — we know you'll love it.
+          </p>
+          <p className="text-blue-300 text-sm pub-anim-fade-up pub-delay-300">
+            All prices exclude VAT at 20%. Cancel anytime.
+          </p>
+        </div>
       </section>
 
       {/* Tier Cards */}
-      <section className="pb-20 px-4">
+      <section className="py-16 md:py-20 px-4" style={{ background: '#f1f5f9' }}>
         <div className="max-w-7xl mx-auto grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           <TierCard
             name="Solo"
@@ -467,35 +527,193 @@ export default function Pricing() {
         </div>
       </section>
 
-      {/* Free Trial Banner */}
-      <section className="py-16 text-center" style={{ backgroundColor: brand.navy }}>
-        <div className="container">
-          <Crown className="h-10 w-10 text-teal-400 mx-auto mb-4" />
-          <h2 className="text-3xl font-extrabold text-white mb-3">
-            Try it free for 14 days
-          </h2>
-          <p className="text-white/60 max-w-lg mx-auto mb-6">
-            Full Solo features, no credit card required. See the value before you commit.
+      {/* Feature Comparison Table */}
+      <section className="py-16 md:py-20 bg-white">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <div className="pub-accent-bar mx-auto" />
+            <h2 className="text-3xl font-black" style={{ color: brand.navy }}>Feature comparison</h2>
+            <p className="mt-3 text-gray-500">See exactly what's included in each plan</p>
+          </div>
+
+          <div className="overflow-x-auto rounded-2xl border border-gray-100 shadow-sm">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-white" style={{ background: brand.navy }}>
+                  <th className="text-left p-4 font-semibold w-1/2">Feature</th>
+                  <th className="text-center p-4 font-semibold">Solo</th>
+                  <th className="text-center p-4 font-semibold" style={{ background: 'rgba(13,148,136,0.20)' }}>Pro</th>
+                  <th className="text-center p-4 font-semibold">Team</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  ["Users", "1", "Up to 2", "Up to 5"],
+                  ["AI quotes per month", "10", "15", "50"],
+                  ["Unlimited manual quotes", true, true, true],
+                  ["PDF tenders & specifications", true, true, true],
+                  ["Voice notes & dictation", true, true, true],
+                  ["Email threads (.eml / .msg)", true, true, true],
+                  ["Branded proposal templates", true, true, true],
+                  ["Product catalogue", "Up to 100 items", "Shared, unlimited", "Shared, unlimited"],
+                  ["Smart defaults", true, true, true],
+                  ["Quick PDF output", true, true, true],
+                  ["Contract / Tender output", true, true, true],
+                  ["Advanced AI takeoff & interpretation", false, true, true],
+                  ["IT migration appendix", false, true, true],
+                  ["Multi-user collaboration", false, true, true],
+                  ["Role management", false, false, true],
+                  ["Advanced modelling logic", false, false, true],
+                  ["Support", "Standard email", "Priority email", "Priority email"],
+                ].map(([label, solo, pro, team], i) => (
+                  <tr key={i} className="border-t border-gray-100 hover:bg-slate-50/50 transition-colors">
+                    <td className="p-4 font-medium text-gray-700">{label as string}</td>
+                    <ComparisonCell value={solo as boolean | string} />
+                    <ComparisonCell value={pro as boolean | string} highlighted />
+                    <ComparisonCell value={team as boolean | string} />
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section className="py-16 md:py-20" style={{ background: '#f1f5f9' }}>
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <div className="pub-accent-bar mx-auto" />
+            <h2 className="text-3xl font-black" style={{ color: brand.navy }}>Frequently asked questions</h2>
+          </div>
+
+          <div className="space-y-3">
+            {[
+              {
+                q: "Do I need a credit card to start the free trial?",
+                a: "No. Your 14-day trial starts immediately with full access to all features on your chosen plan. You only enter payment details if you decide to continue after the trial ends.",
+              },
+              {
+                q: "Can I cancel anytime?",
+                a: "Yes. Cancel at any time from your account settings. There are no cancellation fees, no minimum terms, and no lock-in contracts. If you cancel during your trial, you won't be charged anything.",
+              },
+              {
+                q: "Do the prices include VAT?",
+                a: "The listed prices are exclusive of VAT. VAT at 20% is added at checkout. Solo: £70.80 inc VAT. Pro: £118.80 inc VAT. Team: £190.80 inc VAT.",
+              },
+              {
+                q: "Can I upgrade or downgrade my plan?",
+                a: "Yes. You can upgrade or downgrade your plan at any time from your account settings. Upgrades take effect immediately; downgrades take effect at the start of your next billing cycle.",
+              },
+              {
+                q: "What happens if I go over my monthly AI quote limit?",
+                a: "You can still create unlimited manual quotes. AI-assisted drafting is paused until your limit resets at the start of your next billing cycle, or you can upgrade to a higher plan for more capacity.",
+              },
+              {
+                q: "Is the IT migration appendix available on all plans?",
+                a: "The IT migration appendix is available on Pro and Team plans. It's a sector-specific feature for IT service providers and MSPs quoting server migrations, Microsoft 365, Google Workspace, and tenant-merge projects.",
+              },
+              {
+                q: "Can I add more users to my plan?",
+                a: "Each plan has a set user limit: Solo (1 user), Pro (2 users), Team (5 users). To add more users, upgrade to the next plan tier.",
+              },
+              {
+                q: "Is my data secure?",
+                a: "Yes. Your data — including uploaded documents, voice notes, and proposal content — is stored securely and never shared with third parties. Your quotes and client information remain private to your account.",
+              },
+            ].map(({ q, a }, i) => (
+              <details key={i} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden group">
+                <summary className="flex items-center justify-between p-6 font-semibold cursor-pointer list-none" style={{ color: brand.navy }}>
+                  <span>{q}</span>
+                  <span className="flex-shrink-0 ml-4 text-xl font-bold transition-transform group-open:rotate-45" style={{ color: brand.teal }}>+</span>
+                </summary>
+                <div className="px-6 pb-6 text-gray-500 text-sm leading-relaxed">
+                  {a}
+                </div>
+              </details>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Final CTA — auth-aware: registered users go to /dashboard, others to /register */}
+      <section className="py-20 md:py-28 pub-hero-band text-white relative overflow-hidden">
+        <div
+          className="absolute inset-0 opacity-5 pointer-events-none"
+          style={{
+            backgroundImage:
+              "repeating-linear-gradient(45deg,transparent,transparent 35px,rgba(255,255,255,0.1) 35px,rgba(255,255,255,0.1) 36px)",
+          }}
+        />
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10">
+          <div className="pub-accent-bar mx-auto" />
+          <h2 className="text-3xl sm:text-4xl font-black mb-5">Try it free for 14 days</h2>
+          <p className="text-blue-100 text-lg mb-8 max-w-xl mx-auto">
+            Full access to all features. No credit card required. Cancel anytime.
           </p>
-          {!user && (
-            <Button
-              size="lg"
-              className="text-lg px-8 py-6 font-bold rounded-xl"
-              style={{ backgroundColor: brand.teal }}
+          {user ? (
+            <button
+              onClick={() => setLocation("/dashboard")}
+              className="inline-flex items-center gap-2 text-white font-bold rounded-xl text-lg shadow-xl hover:opacity-90 transition-all pub-btn-pulse"
+              style={{ background: brand.teal, padding: "16px 32px" }}
+            >
+              Go to Dashboard
+              <ArrowRight className="h-5 w-5" />
+            </button>
+          ) : (
+            <button
               onClick={() => setLocation("/register")}
+              className="inline-flex items-center gap-2 text-white font-bold rounded-xl text-lg shadow-xl hover:opacity-90 transition-all pub-btn-pulse"
+              style={{ background: brand.teal, padding: "16px 32px" }}
             >
               Start Your Free Trial
-              <ArrowRight className="ml-2 h-5 w-5" />
-            </Button>
+              <ArrowRight className="h-5 w-5" />
+            </button>
           )}
+          <p className="mt-4 text-blue-300 text-sm">No credit card required · Cancel anytime</p>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="py-8 border-t bg-white text-center">
-        <p className="text-sm text-gray-400">
-          © {new Date().getFullYear()} IdoYourQuotes. All rights reserved.
-        </p>
+      <footer className="bg-gray-900 text-gray-400 py-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8 mb-10">
+            <div>
+              <div className="mb-4 text-2xl font-black text-white">
+                IdoYour<span style={{ color: brand.teal }}>Quotes</span>
+              </div>
+              <p className="text-sm leading-relaxed">
+                AI-powered quoting and proposal platform for tradespeople and small businesses.
+              </p>
+            </div>
+            <div>
+              <h4 className="text-white font-semibold text-sm mb-3">Product</h4>
+              <ul className="space-y-2 text-sm">
+                <li><Link href="/features" className="hover:text-[#0d9488] transition-colors">Features</Link></li>
+                <li><Link href="/pricing" className="hover:text-[#0d9488] transition-colors">Pricing</Link></li>
+                <li><Link href="/register" className="hover:text-[#0d9488] transition-colors">Start Free Trial</Link></li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="text-white font-semibold text-sm mb-3">Company</h4>
+              <ul className="space-y-2 text-sm">
+                <li><span className="opacity-60">Contact</span></li>
+                <li><span className="opacity-60">Privacy Policy</span></li>
+                <li><span className="opacity-60">Terms of Service</span></li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="text-white font-semibold text-sm mb-3">Account</h4>
+              <ul className="space-y-2 text-sm">
+                <li><Link href="/login" className="hover:text-[#0d9488] transition-colors">Sign In</Link></li>
+                <li><Link href="/register" className="hover:text-[#0d9488] transition-colors">Register</Link></li>
+              </ul>
+            </div>
+          </div>
+          <div className="border-t border-gray-800 pt-6 text-sm text-center">
+            © {new Date().getFullYear()} IdoYourQuotes. All rights reserved.
+          </div>
+        </div>
       </footer>
 
       {/* Upgrade confirmation modal — existing subscribers only */}
