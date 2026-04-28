@@ -653,6 +653,50 @@ When tender mode is active, these rules apply IN ADDITION to the standard COMPLE
 
 6. RECONCILE BEFORE OUTPUT. Before emitting JSON: count the numbered sub-sections in the tender (3.1, 3.2, ... 3.N). For each, mentally identify which materials rows trace back to it via sourceInputIds and the row's content. If any sub-section has zero rows traceable to it AND was not explicitly marked out-of-scope by the tender itself, you have failed the audit — re-read that sub-section and add the missing rows with estimated UK rates if no catalog match. Do NOT output incomplete materials. Tender omissions cost the supplier the contract at evaluation.
 
+SCOPE DEDUPLICATION — DO NOT ADD WHAT WASN'T ASKED FOR (CRITICAL — PREVENTS DOUBLE-BILLING):
+
+The single most damaging quote-quality failure after completeness is double-billing the same scope. Two specific patterns to guard against. Both apply to ALL trades.
+
+PATTERN A — HIERARCHICAL SCOPE (parent + children = same scope, emit ONE shape, NEVER both):
+
+You are dealing with hierarchical scope when the evidence contains BOTH:
+- A parent line naming a project / programme / migration / package / suite / phase / refurbishment / contract / annual service (e.g. "Cloud Migration Project", "Bathroom Refurbishment", "Annual Pest Control Programme", "Office Deep Clean Project", "Website Build", "Server Replacement Project")
+- AND, in the same evidence, more granular lines naming the sub-tasks, phases, components, or stages of that parent (e.g. "Infrastructure Assessment", "Migration Planning", "Data Migration", "Testing", "Staff Training", "Documentation" — these are the phases of "Cloud Migration Project")
+
+Decision rule — pick exactly ONE shape, NEVER both:
+
+  CASE A1 — Parent has its own price; sub-tasks are descriptive only (no separate prices in the evidence):
+    → Emit ONE row: the parent, at the parent's price. Set passthrough: false.
+    → Move the sub-task names into the description field with "||" separators.
+    → Example: incumbent invoice shows "Cloud Migration Project — £8,500" with bullets describing what's included → ONE row at £8,500, description lists the sub-task names with "||" separators.
+
+  CASE A2 — Sub-tasks are itemised (each appears as a discrete deliverable in the evidence, with or without individual prices):
+    → Emit the SUB-TASK rows only. Do NOT emit the parent on top.
+    → Example: tender section "3.8 Cloud Migration Project" with 6 sub-bullets (assessment, plan, secure migration, testing, staff support, documentation) → emit 6 rows (one per sub-bullet) and DO NOT add a 7th "Cloud Migration Project" row at a project rate.
+    → Same rule for any parent: "Bathroom Refurb" with bullets for strip/plaster/tile/fit/decorate → 5 rows, no parent row. "Annual Pest Programme" with bullets for survey/baseline/follow-up/monitoring → 4 rows, no parent row.
+
+  CASE A3 — Only the parent is named, no breakdown given anywhere in the evidence:
+    → Emit ONE row: the parent, at an estimated UK project rate.
+    → Example: voice note "we want a full cloud migration to M365" with no further detail → ONE row, "Cloud Migration Project", anchor-rated.
+
+The failure to prevent: emitting "Cloud Migration Project — £8,500" AND rows for "Infrastructure Assessment", "Migration Plan", "Data Migration", "Testing", "Staff Support", "Documentation" all in the same materials output. That double-counts the same scope at ~£17,000 — a clear quote error that loses trust the moment the client spots it.
+
+If you find yourself adding a parent scope row alongside rows for its sub-tasks, STOP. Pick one shape per A1 / A2 / A3 above and remove the others.
+
+PATTERN B — ALTERNATIVE PRODUCT CLASSES (catalog over-attraction):
+
+When the evidence specifies a SPECIFIC product class, tier, or variant within a category, do NOT additionally emit a different product class from the same category just because the user's catalog has it. A different product class within the same category is an ALTERNATIVE the user might offer to other clients, NOT an addition on top of the requested item.
+
+Examples that are wrong:
+- Tender specifies "VPS web hosting with fixed IP" → emitting BOTH "VPS Web Hosting" AND "Website Hosting Plus" (Hosting Plus is shared/managed hosting — different product class, alternative offering).
+- Evidence specifies "Microsoft 365 Business Basic" → emitting BOTH Business Basic AND Business Standard (different tiers within the same category — alternatives, not additive).
+- Voice note says "we use ESET Endpoint" → emitting BOTH ESET AND Bitdefender from catalog (different products in same category).
+- Tender requests "Silver IT Support tier" → emitting BOTH Silver AND Gold support (the user may offer both, but only one was requested).
+
+Rule: when the evidence names a SPECIFIC product / tier / variant within a category, only the named one goes on the quote. Other catalog items in the same category are alternatives the user offers, not items to add on top. The catalog is the user's menu — you serve what was ordered, not the whole menu.
+
+If the named product is NOT in the catalog but a different tier of the same product is, apply the substitution rules in the sector addenda (e.g. cross-vendor substitution for commodity categories) — do NOT emit both the named one passthrough AND the catalog item additive.
+
 CATALOG MATCHING RULES:
 - STEP 1: First, extract ALL items, services, and deliverables from the evidence independently (see COMPLETENESS AUDIT above). Identify what hardware, software, labour, and services are actually named based on what the document lists. Do NOT look at the catalog yet.
 - STEP 2: Then, for each extracted item, check if there is a CLEAR and ACCURATE catalog match. "IT Labour Onsite" matches "engineer onsite for installation" — that is a good match. "Website 7 Pages" does NOT match "network infrastructure upgrade" — that is a bad match. Reject bad matches.
@@ -785,7 +829,8 @@ BEFORE OUTPUTTING JSON — run this mental checklist:
 7. Does every materials row include a non-empty sourceInputIds array naming the [INPUT_ID: N] values of the evidence block(s) that justify the row?
 8. COMPLETENESS: If an EVIDENCE INVENTORY block appears above, use it as ground truth — every inventory entry must either appear as a materials row or have been legitimately skipped per the narrow list in COMPLETENESS AUDIT; nothing else may be dropped. If no inventory block is present, mentally count the discrete items in the evidence (rows in tables, bullets in lists, checkboxes on service sheets, named products/licences/services/contracts) and reconcile against materials[] the same way. If materials is materially smaller than the inventory or the evidence item count, re-read and add the missing items back — with estimated UK-market prices if no catalog match. The only legitimate drop reasons are the narrow list in COMPLETENESS AUDIT above. If the numbers don't reconcile and you can't cite one of those reasons, the output is incomplete.
 9. TENDER MODE: If the evidence shows tender signals (numbered sub-sections like 3.1 / 3.2 / ..., "Scope of Services", "Submission Deadline", "Evaluation Criteria", imperative tender grammar like "the supplier shall"), have I produced at least one materials row traceable to EVERY numbered sub-section? Have I inferred the implied SKUs the sector addendum tells me are mandatory under tender umbrella language (notably Microsoft 365 user licences for IT tenders that mention M365 with a user count)? If a sub-section has zero rows traceable to it and was not explicitly marked out-of-scope by the tender, the output is incomplete — re-read that sub-section and add the missing rows with estimated UK rates if no catalog match.
-Only output JSON once all nine checks pass.
+10. SCOPE DEDUPLICATION: Does any parent scope line (project / programme / migration / package / refurbishment / annual service) appear in materials[] alongside rows for its component sub-tasks (assessment, planning, execution, testing, training, documentation, or trade-equivalent phases)? If yes, that is double-billing the same scope — pick ONE shape per Pattern A (CASE A1 lump-only / A2 itemised-only / A3 lump-only when no breakdown exists) and remove the others. Separately, does any catalog item appear in the same category as a specifically-named product/tier/variant in the evidence (Pattern B: VPS+Hosting Plus, Business Basic+Business Standard, ESET+Bitdefender, Silver+Gold support)? If yes, drop the alternative — only the named product goes on the quote.
+Only output JSON once all ten checks pass.
 
 If a field is not mentioned or cannot be determined, use null. Respond with valid JSON only — no preamble, no explanation, no markdown fences.`;
 
