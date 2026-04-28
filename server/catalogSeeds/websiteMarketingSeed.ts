@@ -1,9 +1,10 @@
 /**
  * Website & Digital Marketing — Starter Catalog Seed
  *
- * 28 items covering the common product stack for a UK digital agency starting
- * out: website build & development, hosting & care plans, SEO, paid media,
- * social media, content, branding, and labour rates.
+ * 44 items covering the common product stack for a UK digital agency starting
+ * out: website build & development, hosting & care plans, email & productivity
+ * licensing (Microsoft 365 + Google Workspace + email add-ons), SEO, paid
+ * media, social media, content, branding, and labour rates.
  *
  * Prices are UK mid-market reference points — every agency that signs up will
  * edit these to match their own production costs, supplier relationships, and
@@ -21,7 +22,11 @@
  *
  * Naming convention follows how UK mid-market agencies actually label services
  * on their public rate cards so AI extraction from competitor-agency invoices
- * or proposals matches cleanly.
+ * or proposals matches cleanly. The Microsoft 365 entries use Microsoft's
+ * canonical product names matching the IT Services seed verbatim — same
+ * names, same prices — so a user switching sectors (or working alongside an
+ * MSP partner) keeps consistent line items and AI extraction lands the same
+ * way in both contexts.
  */
 
 import type { CatalogSeedItem } from "./itServicesSeed";
@@ -128,6 +133,161 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
     pricingType: "annual",
     defaultRate: "15.00",
     costPrice: "8.00",
+  },
+
+  // ───────── Email & Productivity Licensing (16) ─────────
+  // Microsoft 365 entries are duplicated verbatim from itServicesSeed.ts
+  // (same canonical names, same prices) so a Web agency reselling email
+  // services to its clients matches the IT/MSP world's terminology and AI
+  // extraction from supplier / competitor invoices lands consistently in
+  // both sectors. Google Workspace entries follow Google's UK published
+  // pricing (1-year-term billed monthly is the discounted "Annual"; the
+  // 1-month-term flexible plan is the "Monthly"). Email add-ons (Exclaimer
+  // signature management + advanced email protection) round out the stack
+  // a typical web agency needs to package alongside hosting and email.
+  {
+    name: "Microsoft 365 Business Basic — Monthly",
+    description: "Microsoft 365 Business Basic [NCE / 1-Month term, no annual commitment] || Web and mobile Office apps (Word, Excel, PowerPoint) || Exchange Online mailbox (50GB) || Teams, OneDrive (1TB), SharePoint || No desktop Office apps — web/mobile only",
+    category: "Email & Productivity Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "5.52",
+    costPrice: "4.69",
+  },
+  {
+    name: "Microsoft 365 Business Basic — Annual",
+    description: "Microsoft 365 Business Basic [NCE / 1-Year term, billed monthly — best value] || Web and mobile Office apps (Word, Excel, PowerPoint) || Exchange Online mailbox (50GB) || Teams, OneDrive (1TB), SharePoint || No desktop Office apps — web/mobile only",
+    category: "Email & Productivity Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "4.83",
+    costPrice: "4.11",
+  },
+  {
+    name: "Microsoft 365 Business Standard — Monthly",
+    description: "Microsoft 365 Business Standard [NCE / 1-Month term, no annual commitment] || Full desktop Office apps (Word, Excel, PowerPoint, Outlook) || Exchange Online mailbox (50GB) || Teams, OneDrive (1TB), SharePoint || Installs on up to 5 PCs/Macs and 5 mobile devices per user",
+    category: "Email & Productivity Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "11.52",
+    costPrice: "9.79",
+  },
+  {
+    name: "Microsoft 365 Business Standard — Annual",
+    description: "Microsoft 365 Business Standard [NCE / 1-Year term, billed monthly — best value] || Full desktop Office apps (Word, Excel, PowerPoint, Outlook) || Exchange Online mailbox (50GB) || Teams, OneDrive (1TB), SharePoint || Installs on up to 5 PCs/Macs and 5 mobile devices per user",
+    category: "Email & Productivity Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "10.08",
+    costPrice: "8.57",
+  },
+  {
+    name: "Microsoft 365 Business Premium — Monthly",
+    description: "Microsoft 365 Business Premium [NCE / 1-Month term, no annual commitment] || Everything in Business Standard || Intune mobile device management || Azure AD Premium P1 (conditional access, SSO) || Defender for Business (endpoint protection) || Information Protection and DLP",
+    category: "Email & Productivity Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "20.28",
+    costPrice: "17.24",
+  },
+  {
+    name: "Microsoft 365 Business Premium — Annual",
+    description: "Microsoft 365 Business Premium [NCE / 1-Year term, billed monthly — best value] || Everything in Business Standard || Intune mobile device management || Azure AD Premium P1 (conditional access, SSO) || Defender for Business (endpoint protection) || Information Protection and DLP",
+    category: "Email & Productivity Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "17.75",
+    costPrice: "15.09",
+  },
+  {
+    name: "Microsoft 365 Exchange Online Plan 1 — Monthly",
+    description: "Exchange Online Plan 1 [NCE / 1-Month term, billed monthly] || 50GB mailbox per user || Anti-spam and anti-malware filtering || Calendar, contacts, shared mailboxes || Web-based Outlook access",
+    category: "Email & Productivity Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "3.72",
+    costPrice: "3.16",
+  },
+  {
+    name: "Microsoft 365 Exchange Online Plan 2 — Monthly",
+    description: "Exchange Online Plan 2 [NCE / 1-Month term, billed monthly] || 100GB mailbox per user || Data Loss Prevention (DLP) policies || Hosted voicemail || Unlimited archive mailbox || In-place eDiscovery and hold",
+    category: "Email & Productivity Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "7.44",
+    costPrice: "6.32",
+  },
+  {
+    name: "Google Workspace Business Starter — Monthly",
+    description: "Google Workspace Business Starter [Flexible / 1-Month term, no annual commitment] || Custom email at the client's domain || 30GB pooled cloud storage per user (Drive, Gmail, Photos) || Gmail, Calendar, Meet (100-participant video meetings), Chat, Docs, Sheets, Slides || Standard support || No annual commitment — cancel any month",
+    category: "Email & Productivity Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "6.00",
+    costPrice: "5.10",
+  },
+  {
+    name: "Google Workspace Business Starter — Annual",
+    description: "Google Workspace Business Starter [Annual / 1-Year term, billed monthly — best value] || Custom email at the client's domain || 30GB pooled cloud storage per user || Gmail, Calendar, Meet (100-participant video meetings), Chat, Docs, Sheets, Slides || Standard support || 12-month commitment",
+    category: "Email & Productivity Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "4.60",
+    costPrice: "3.91",
+  },
+  {
+    name: "Google Workspace Business Standard — Monthly",
+    description: "Google Workspace Business Standard [Flexible / 1-Month term, no annual commitment] || Custom email at the client's domain || 2TB pooled cloud storage per user || Gmail, Calendar, Meet (150-participant meetings with recording + noise cancellation), Chat, Docs, Sheets, Slides || Shared drives for teams || eSignature with Docs and PDFs || Standard support",
+    category: "Email & Productivity Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "12.00",
+    costPrice: "10.20",
+  },
+  {
+    name: "Google Workspace Business Standard — Annual",
+    description: "Google Workspace Business Standard [Annual / 1-Year term, billed monthly — best value] || Custom email at the client's domain || 2TB pooled cloud storage per user || Gmail, Calendar, Meet (150-participant meetings with recording + noise cancellation), Chat, Docs, Sheets, Slides || Shared drives for teams || eSignature with Docs and PDFs || 12-month commitment",
+    category: "Email & Productivity Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "9.20",
+    costPrice: "7.82",
+  },
+  {
+    name: "Google Workspace Business Plus — Monthly",
+    description: "Google Workspace Business Plus [Flexible / 1-Month term, no annual commitment] || Custom email at the client's domain with eDiscovery and retention || 5TB pooled cloud storage per user || Gmail, Calendar, Meet (500-participant meetings with recording + attendance tracking), Chat, Docs, Sheets, Slides || Shared drives, Vault (eDiscovery + retention), enhanced security and management controls || Standard support",
+    category: "Email & Productivity Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "18.00",
+    costPrice: "15.30",
+  },
+  {
+    name: "Google Workspace Business Plus — Annual",
+    description: "Google Workspace Business Plus [Annual / 1-Year term, billed monthly — best value] || Custom email at the client's domain with eDiscovery and retention || 5TB pooled cloud storage per user || Gmail, Calendar, Meet (500-participant meetings with recording + attendance tracking), Chat, Docs, Sheets, Slides || Vault and enhanced security controls || 12-month commitment",
+    category: "Email & Productivity Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "13.80",
+    costPrice: "11.73",
+  },
+  {
+    name: "Advanced Email Protection (E-Mail Protect)",
+    description: "Advanced email threat protection per mailbox || Anti-phishing and impersonation detection || URL rewriting and time-of-click analysis || Attachment sandboxing || Business email compromise (BEC) protection",
+    category: "Email & Productivity Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "2.00",
+    costPrice: "1.15",
+  },
+  {
+    name: "Email Signature Management (Exclaimer)",
+    description: "Centralised email signature management per mailbox || Consistent branded signatures across all devices || Campaign banners and marketing content in signatures || Signatures applied server-side (mobile and desktop included) || Central admin console for updates",
+    category: "Email & Productivity Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "1.25",
+    costPrice: "1.00",
   },
 
   // ───────── SEO Services (4) ─────────
