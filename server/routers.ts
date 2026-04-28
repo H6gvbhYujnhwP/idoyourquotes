@@ -25,6 +25,7 @@ import { inferMigrationType } from "./services/migrationTypeInference";
 import { inferTradePreset } from "./services/tradePresetInference";
 import { triggerBrandExtraction } from "./services/brandExtraction";
 import { parseWordDocument, isWordDocument } from "./services/wordParser";
+import { parseEmailFile, isEmail } from "./services/emailParser";
 import { performElectricalTakeoff, applyUserAnswers, formatTakeoffForQuoteContext, SYMBOL_STYLES, SYMBOL_DESCRIPTIONS, extractWithPdfJs, extractPdfLineColours, classifyElectricalPDF, extractWithPdfParse } from "./services/electricalTakeoff";
 import { performContainmentTakeoff, calculateCableSummary, generateContainmentSvgOverlay, isContainmentDrawing, formatContainmentForQuoteContext, TRAY_SIZE_COLOURS, WHOLESALER_LENGTH_METRES } from "./services/containmentTakeoff";
 import { generateSvgOverlay } from "./services/takeoffMarkup";
@@ -1901,7 +1902,7 @@ IMPORTANT: Address the email greeting using the first name only (e.g. "Hi ${gree
 
         // Auto-analyze the uploaded file in the background
         // Don't await - let it process asynchronously
-        if (input.inputType === "pdf" || input.inputType === "image" || input.inputType === "audio" || input.inputType === "document") {
+        if (input.inputType === "pdf" || input.inputType === "image" || input.inputType === "audio" || input.inputType === "document" || input.inputType === "email") {
           (async () => {
             try {
               // Mark as processing
@@ -2001,6 +2002,21 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
                 } else {
                   throw new Error(`Unsupported document type: ${input.contentType}`);
                 }
+              } else if (input.inputType === "email") {
+                // D39: Parse Outlook .msg and standards-based .eml files.
+                // emailParser produces a fully-formatted "## Email Content"
+                // markdown block (header metadata + body) — same shape as
+                // wordParser/excelParser so the engines treat email content
+                // identically to any other document evidence.
+                const emailBuffer = await getFileBuffer(key);
+                if (!isEmail(input.contentType, input.filename)) {
+                  throw new Error(`Unsupported email type: ${input.contentType} (${input.filename})`);
+                }
+                const emailResult = await parseEmailFile(emailBuffer, input.filename);
+                processedContent = emailResult.text;
+                if (emailResult.messages.length > 0) {
+                  console.log(`[Auto-analyze] Email parsing messages:`, emailResult.messages);
+                }
               }
 
               // Save processed content
@@ -2016,8 +2032,12 @@ Be thorough - missed details in drawings often lead to costly errors in quotes.`
                 const actionType = input.inputType === "pdf" ? "extract_pdf" 
                   : input.inputType === "image" ? "analyze_image" 
                   : input.inputType === "document" ? "parse_document"
+                  : input.inputType === "email" ? "parse_email"
                   : "transcribe_audio";
-                const credits = input.inputType === "document" ? 1 : 2; // Documents are cheaper to parse
+                // Documents and emails are cheap to parse (no LLM call) — 1 credit.
+                // PDFs and images use OpenAI/Claude vision — 2 credits.
+                // Audio uses Whisper — 2 credits.
+                const credits = (input.inputType === "document" || input.inputType === "email") ? 1 : 2;
                 await logUsage({
                   orgId: userOrg.id,
                   userId: ctx.user.id,
