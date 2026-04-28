@@ -26,8 +26,37 @@
  */
 
 import { simpleParser, type ParsedMail, type AddressObject, type EmailAddress } from "mailparser";
-import MsgReader from "@kenjiuno/msgreader";
+import * as MsgReaderModule from "@kenjiuno/msgreader";
+import type MsgReaderType from "@kenjiuno/msgreader";
 import * as cheerio from "cheerio";
+
+// CJS-from-ESM interop guard.
+// msgreader is a CommonJS package whose entry uses `__exportStar` plus
+// `exports.default = MsgReader_1.default`. When this gets imported under
+// Node native ESM (which is how the production esbuild bundle runs with
+// `--packages=external`), the namespace ends up shaped like:
+//
+//   { default: { default: <MsgReader class>, __esModule: true, ...names }, ...names }
+//
+// — i.e. the real constructor lives TWO `.default` levels deep, not one.
+// Different bundlers and dev runtimes (tsx) may surface it at different
+// depths, so we walk the chain until we hit a function. Without this guard
+// `new MsgReader(...)` throws "MsgReader is not a constructor" at runtime —
+// only in production, because tsx and native ESM resolve CJS differently.
+function unwrapCjsDefault<T>(mod: unknown, maxDepth = 3): T {
+  let cur: unknown = mod;
+  for (let i = 0; i < maxDepth; i++) {
+    if (typeof cur === "function") return cur as T;
+    if (cur && typeof cur === "object" && "default" in cur) {
+      cur = (cur as { default: unknown }).default;
+      continue;
+    }
+    break;
+  }
+  return cur as T;
+}
+
+const MsgReader = unwrapCjsDefault<typeof MsgReaderType>(MsgReaderModule);
 
 export interface EmailParseResult {
   /** The markdown-formatted block ready for processed_content. Always populated. */
@@ -156,7 +185,7 @@ async function parseMsg(buffer: Buffer): Promise<EmailParseResult> {
     buffer.byteOffset + buffer.byteLength,
   );
 
-  let fields: ReturnType<MsgReader["getFileData"]>;
+  let fields: ReturnType<MsgReaderType["getFileData"]>;
   try {
     const reader = new MsgReader(ab as ArrayBuffer);
     fields = reader.getFileData();
