@@ -385,11 +385,9 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8 mb-10">
             <div>
-              <img
-                src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png"
-                alt="IdoYourQuotes logo"
-                className="h-8 w-auto object-contain mb-4 brightness-0 invert opacity-80"
-              />
+              <div className="mb-4 text-2xl font-black text-white">
+                IdoYour<span style={{ color: TEAL }}>Quotes</span>
+              </div>
               <p className="text-sm leading-relaxed">
                 AI-powered quoting and proposal platform for tradespeople and small businesses.
               </p>
