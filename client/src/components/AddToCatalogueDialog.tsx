@@ -18,7 +18,7 @@
  * invalidate catalog.list so the CatalogPicker elsewhere in the row
  * stack sees the new item immediately.
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import {
@@ -99,7 +99,27 @@ export default function AddToCatalogueDialog({
   const [rate, setRate] = useState("");
   const [costPrice, setCostPrice] = useState("");
   const [pricingType, setPricingType] = useState<PricingType>("standard");
+  const [category, setCategory] = useState<string>("");
+  // "select" = pick from the existing dropdown; "new" = type a fresh
+  // category. Falls back to "new" automatically when the user has no
+  // existing categories yet (first-time use, or all items uncategorised).
+  const [categoryMode, setCategoryMode] = useState<"select" | "new">("select");
   const [inlineError, setInlineError] = useState<string | null>(null);
+
+  // Pull existing catalogue items so we can offer their categories as a
+  // dropdown — this is what stops category sprawl ("Support" / "support" /
+  // "IT Support" / "I.T. support" all becoming separate categories). The
+  // query is shared with QuoteWorkspace so it's already cached in most
+  // cases — opening this dialog usually doesn't trigger a refetch.
+  const { data: catalogItems } = trpc.catalog.list.useQuery();
+  const existingCategories = useMemo(() => {
+    const cats = new Set<string>();
+    for (const item of catalogItems ?? []) {
+      const c = (item.category || "").trim();
+      if (c) cats.add(c);
+    }
+    return Array.from(cats).sort((a, b) => a.localeCompare(b));
+  }, [catalogItems]);
 
   // Reset the form whenever a fresh seed arrives (new row clicked) OR
   // the dialog transitions from closed → open. Intentionally NOT reset
@@ -113,8 +133,14 @@ export default function AddToCatalogueDialog({
     setRate(seed.rate || "");
     setCostPrice(seed.costPrice || "");
     setPricingType(normalisePricingType(seed.pricingType));
+    setCategory("");
+    // If the user already has categories in their catalogue, default to
+    // picking from the dropdown — that's the path that prevents sprawl.
+    // If they have none yet (fresh user / uncategorised seed), fall back
+    // to free-text so the dropdown isn't empty and confusing.
+    setCategoryMode(existingCategories.length > 0 ? "select" : "new");
     setInlineError(null);
-  }, [open, seed]);
+  }, [open, seed, existingCategories.length]);
 
   const createFromLineItem = trpc.catalog.createFromLineItem.useMutation();
 
@@ -129,6 +155,7 @@ export default function AddToCatalogueDialog({
       await createFromLineItem.mutateAsync({
         name: trimmedName,
         description: description.trim() || undefined,
+        category: category.trim() || undefined,
         unit: unit.trim() || undefined,
         defaultRate: rate.trim() || undefined,
         costPrice: costPrice.trim() || undefined,
@@ -189,6 +216,63 @@ export default function AddToCatalogueDialog({
               rows={3}
               placeholder="Optional — a short note shown on future quotes."
             />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="catalogue-category" className="text-xs font-semibold">
+              Category
+            </Label>
+            {categoryMode === "select" && existingCategories.length > 0 ? (
+              <Select
+                value={category}
+                onValueChange={(v) => {
+                  if (v === "__new__") {
+                    setCategoryMode("new");
+                    setCategory("");
+                  } else {
+                    setCategory(v);
+                  }
+                }}
+              >
+                <SelectTrigger id="catalogue-category">
+                  <SelectValue placeholder="Choose a category (optional)">
+                    {category || "Choose a category (optional)"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {existingCategories.map((c) => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                  <SelectItem value="__new__">+ New category…</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Input
+                  id="catalogue-category"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  maxLength={100}
+                  placeholder={
+                    existingCategories.length > 0
+                      ? "Type a new category name"
+                      : "Optional — e.g. Support, Hardware, Licensing"
+                  }
+                />
+                {existingCategories.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCategoryMode("select");
+                      setCategory("");
+                    }}
+                    className="text-xs text-muted-foreground hover:text-foreground whitespace-nowrap"
+                  >
+                    ← Use existing
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-3">
