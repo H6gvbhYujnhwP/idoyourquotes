@@ -2055,7 +2055,7 @@ function DictateTile({
         {recording ? "Listening…" : "Dictate"}
       </span>
       <DictationButton
-        variant="inline"
+        variant="modal"
         autoStart={false}
         onTranscript={onTranscript}
         onListeningChange={setRecording}

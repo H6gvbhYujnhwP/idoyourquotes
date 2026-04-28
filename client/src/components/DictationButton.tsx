@@ -10,6 +10,7 @@
  * Works on: Chrome (desktop/Android), Safari (macOS/iOS), Edge
  */
 import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Mic, Square } from "lucide-react";
 
@@ -115,7 +116,7 @@ interface DictationButtonProps {
   onCommand?: (command: DictationCommand) => void;
   disabled?: boolean;
   className?: string;
-  variant?: "default" | "inline" | "floating";
+  variant?: "default" | "inline" | "floating" | "modal";
   /** Simple mode: just returns text, no command detection */
   onTranscript?: (text: string) => void;
   /** Auto-start listening when mounted or when this value changes to true */
@@ -276,6 +277,34 @@ export default function DictationButton({
     }
   }, [isListening]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Elapsed-seconds counter — used by the modal variant header.
+  // Resets to 0 every time listening stops; ticks 1/sec while active.
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  useEffect(() => {
+    if (!isListening) {
+      setElapsedSeconds(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setElapsedSeconds(s => s + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isListening]);
+
+  // ESC key cancels dictation when the modal is open.
+  // Only registers when variant === "modal" AND listening — otherwise no-op.
+  useEffect(() => {
+    if (variant !== "modal" || !isListening) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        cancelListening();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [variant, isListening, cancelListening]);
+
   if (!isSupported) {
     return null;
   }
@@ -412,6 +441,231 @@ export default function DictationButton({
       >
         {isListening ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
       </button>
+    );
+  }
+
+  // Modal variant — minimal click-target button matching the inline variant
+  // (so the QuoteWorkspace opacity-0 wrapper continues to work as a click-
+  // through). When dictating, a full-screen modal overlay is rendered via a
+  // React portal to document.body so it escapes the parent's opacity-0
+  // wrapper. The wrapper makes the inline button invisible to keep the
+  // existing "Dictate / Listening…" text label as the sole visible affordance.
+  if (variant === "modal") {
+    const elapsedM = Math.floor(elapsedSeconds / 60);
+    const elapsedS = (elapsedSeconds % 60).toString().padStart(2, "0");
+    const elapsedLabel = `${elapsedM}:${elapsedS}`;
+
+    return (
+      <>
+        <button
+          type="button"
+          onClick={isListening ? stopListening : startListening}
+          disabled={disabled}
+          className={`p-1.5 rounded-md transition-all ${
+            isListening
+              ? "bg-red-100 text-red-600 animate-pulse"
+              : "hover:bg-muted text-muted-foreground hover:text-foreground"
+          } ${className}`}
+          title={isListening ? "Stop dictating" : "Dictate with voice"}
+        >
+          {isListening ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+        </button>
+
+        {isListening && typeof document !== "undefined" && createPortal(
+          <div
+            // Backdrop. Fixed-position relative to viewport. Click-through
+            // is intentionally NOT bound to cancel — we don't want a fumbled
+            // tap mid-dictation to discard captured speech. ESC and the
+            // explicit Cancel button are the only ways out.
+            style={{
+              position: "fixed",
+              inset: 0,
+              backgroundColor: "rgba(15, 23, 42, 0.55)",
+              zIndex: 9999,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "1rem",
+            }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Voice dictation"
+          >
+            <div
+              style={{
+                backgroundColor: "white",
+                borderRadius: 12,
+                width: "100%",
+                maxWidth: 520,
+                padding: "20px 22px",
+                boxShadow: "0 20px 60px rgba(15,23,42,0.35)",
+                fontFamily: "Inter, system-ui, sans-serif",
+              }}
+            >
+              {/* Header — recording indicator + elapsed time */}
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 14,
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ position: "relative", display: "inline-flex", height: 10, width: 10 }}>
+                    <span style={{
+                      position: "absolute",
+                      display: "inline-flex",
+                      height: "100%",
+                      width: "100%",
+                      borderRadius: "50%",
+                      backgroundColor: "#ef4444",
+                      opacity: 0.6,
+                      animation: "ping 1.5s cubic-bezier(0,0,0.2,1) infinite",
+                    }} />
+                    <span style={{
+                      position: "relative",
+                      display: "inline-flex",
+                      height: 10,
+                      width: 10,
+                      borderRadius: "50%",
+                      backgroundColor: "#ef4444",
+                    }} />
+                  </span>
+                  <span style={{ fontSize: 14, fontWeight: 500, color: "#1a2b4a" }}>
+                    Dictating job notes
+                  </span>
+                </div>
+                <span style={{
+                  fontSize: 12,
+                  color: "#64748b",
+                  fontVariantNumeric: "tabular-nums",
+                }}>
+                  {elapsedLabel}
+                </span>
+              </div>
+
+              {/* Transcript area — big, readable, scrolls when speech runs long */}
+              <div style={{
+                backgroundColor: "#f8fafc",
+                borderRadius: 8,
+                padding: "16px 18px",
+                minHeight: 140,
+                maxHeight: 320,
+                overflowY: "auto",
+                marginBottom: 14,
+                border: commandLabel ? "1.5px solid #0d9488" : "1px solid #e2e8f0",
+              }}>
+                {commandLabel && (
+                  <div style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    marginBottom: 8,
+                    color: liveCommand?.type === "remove" ? "#b45309"
+                      : (liveCommand?.type === "build" || liveCommand?.type === "build_with_text") ? "#065f46"
+                      : "#1e40af",
+                    letterSpacing: "0.02em",
+                  }}>
+                    {liveCommand?.type === "remove" && "⏪ "}
+                    {(liveCommand?.type === "build" || liveCommand?.type === "build_with_text") && "⚡ "}
+                    {liveCommand?.type === "change" && "✏️ "}
+                    {commandLabel}
+                  </div>
+                )}
+                <p style={{
+                  fontSize: 17,
+                  lineHeight: 1.5,
+                  margin: 0,
+                  color: displayText ? "#1a2b4a" : "#94a3b8",
+                  wordBreak: "break-word",
+                  fontStyle: displayText ? "normal" : "italic",
+                }}>
+                  {transcript}
+                  {interimText && (
+                    <span style={{ color: "#94a3b8" }}>
+                      {transcript ? " " : ""}{interimText}
+                    </span>
+                  )}
+                  {!displayText && (
+                    <>
+                      Speak now — describe the job, materials, labour, pricing…
+                    </>
+                  )}
+                  {/* Blinking cursor */}
+                  <span style={{
+                    display: "inline-block",
+                    width: 2,
+                    height: 18,
+                    backgroundColor: "#94a3b8",
+                    marginLeft: 3,
+                    verticalAlign: "middle",
+                    animation: "dictateCursor 1s steps(2) infinite",
+                  }} />
+                </p>
+              </div>
+
+              {/* Hints row — voice command reminder, only visible while idle in transcript */}
+              {!displayText && (
+                <p style={{
+                  fontSize: 11,
+                  color: "#94a3b8",
+                  margin: "0 0 14px",
+                  lineHeight: 1.5,
+                }}>
+                  Say "remove that" to undo · "change that to…" to edit · "build the quote" when ready
+                </p>
+              )}
+
+              {/* Footer — Cancel + Done */}
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  onClick={cancelListening}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: 8,
+                    border: "1px solid #e2e8f0",
+                    background: "transparent",
+                    color: "#64748b",
+                    fontSize: 13,
+                    fontWeight: 500,
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={stopListening}
+                  style={{
+                    padding: "8px 20px",
+                    borderRadius: 8,
+                    border: "none",
+                    backgroundColor: "#ef4444",
+                    color: "white",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <Square style={{ height: 14, width: 14 }} />
+                  Done
+                </button>
+              </div>
+            </div>
+
+            {/* Keyframes for cursor + ping. Scoped via a unique animation
+                name so they don't collide with the floating variant's
+                ping keyframe declared elsewhere in the file. */}
+            <style>{`
+              @keyframes dictateCursor { 50% { opacity: 0; } }
+              @keyframes ping { 75%, 100% { transform: scale(2); opacity: 0; } }
+            `}</style>
+          </div>,
+          document.body
+        )}
+      </>
     );
   }
 
