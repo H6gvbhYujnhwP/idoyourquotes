@@ -303,3 +303,136 @@
   border-radius: 4px;
   animation: iyq-progress-sweep 1.4s ease-in-out infinite;
 }
+
+/* ─────────────────────────────────────────────────────────────────
+ * Public marketing pages — Nano-banana editorial design system
+ * Used by Home, Pricing, Features, Login, Register.
+ * Tokens use BRAND values from brandTheme.ts (navy #1a2b4a, teal
+ * #0d9488, slate #f1f5f9) — NOT the brighter Manus design tokens.
+ * All classes prefixed `pub-` to avoid colliding with existing
+ * dashboard utilities.
+ * ───────────────────────────────────────────────────────────────── */
+:root {
+  --pub-navy:        #1a2b4a;
+  --pub-navy-2:      #243d7a;
+  --pub-navy-3:      #2d5080;
+  --pub-teal:        #0d9488;
+  --pub-teal-light:  #14b8a6;
+  --pub-slate:       #f1f5f9;
+}
+
+@keyframes pubFadeUp   { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pubFadeIn   { from { opacity: 0; }                              to { opacity: 1; } }
+@keyframes pubSlideR   { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes pubPulse    { 0%, 100% { box-shadow: 0 0 0 0 rgba(13,148,136,0.40); } 50% { box-shadow: 0 0 0 12px rgba(13,148,136,0); } }
+
+.pub-anim-fade-up { animation: pubFadeUp 0.7s ease both; }
+.pub-anim-fade-in { animation: pubFadeIn 0.6s ease both; }
+.pub-anim-slide-r { animation: pubSlideR 0.6s ease both; }
+.pub-delay-100 { animation-delay: 0.1s; }
+.pub-delay-200 { animation-delay: 0.2s; }
+.pub-delay-300 { animation-delay: 0.3s; }
+.pub-delay-400 { animation-delay: 0.4s; }
+.pub-delay-500 { animation-delay: 0.5s; }
+
+.pub-accent-bar {
+  display: inline-block;
+  width: 48px;
+  height: 4px;
+  background: var(--pub-teal);
+  border-radius: 2px;
+  margin-bottom: 1rem;
+}
+
+.pub-step-number {
+  font-size: 7rem;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--pub-teal);
+  opacity: 0.15;
+  position: absolute;
+  top: -1rem;
+  left: -0.5rem;
+  pointer-events: none;
+  user-select: none;
+}
+
+.pub-card-lift {
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+.pub-card-lift:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 20px 40px rgba(26,43,74,0.12);
+}
+
+.pub-btn-pulse { animation: pubPulse 2.5s infinite; }
+
+.pub-hero-band {
+  background: linear-gradient(135deg, var(--pub-navy) 0%, var(--pub-navy-2) 60%, var(--pub-navy-3) 100%);
+}
+
+.pub-slash-divider::after {
+  content: '';
+  display: block;
+  width: 64px;
+  height: 5px;
+  background: var(--pub-teal);
+  margin-top: 1.5rem;
+  border-radius: 3px;
+}
+
+.pub-sector-card {
+  background: linear-gradient(160deg, var(--pub-navy) 0%, #1e3a6e 100%);
+  border-left: 4px solid var(--pub-teal);
+}
+
+.pub-icon-circle {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(13,148,136,0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.pub-icon-circle-sm {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(13,148,136,0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.pub-pain-card {
+  border-left: 3px solid var(--pub-teal);
+  background: #ffffff;
+}
+
+.pub-grid-texture {
+  background-image:
+    repeating-linear-gradient(0deg,  transparent, transparent 39px, rgba(255,255,255,0.06) 39px, rgba(255,255,255,0.06) 40px),
+    repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(255,255,255,0.06) 39px, rgba(255,255,255,0.06) 40px);
+}
+
+/* Auth-page split-panel left side — DARK text on LIGHT bg
+ * (fixes invisible white-text-on-near-white-bg from screenshots)
+ */
+.pub-auth-left {
+  background: linear-gradient(160deg, #f8fafc 0%, var(--pub-slate) 100%);
+}
+.pub-auth-left-grid {
+  background-image:
+    repeating-linear-gradient(0deg,  transparent, transparent 39px, rgba(26,43,74,0.04) 39px, rgba(26,43,74,0.04) 40px),
+    repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(26,43,74,0.04) 39px, rgba(26,43,74,0.04) 40px);
+}
+
+/* Public-page sticky nav with blur */
+.pub-sticky-nav {
+  backdrop-filter: blur(12px);
+  background: rgba(255,255,255,0.95);
+  box-shadow: 0 3px 0 #ededed;
+}
