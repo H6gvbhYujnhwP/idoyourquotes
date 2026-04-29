@@ -1,18 +1,27 @@
 // Step 1 of the proof pipeline.
 //
-// Reads the brochure PDF page-by-page (text only, via pdf-parse) and asks
-// Claude to classify each page into one of the well-defined tags. One
-// batched API call, not 28 separate calls — significantly cheaper and
-// gives the model context across pages so it can spot, for example, that
-// page 3 is the "About" page only relative to other pages it has seen.
+// Reads the brochure PDF page-by-page (text only, via pdf-parse v2) and
+// asks Claude to classify each page into one of the well-defined tags.
+// One batched API call, not 28 separate calls — significantly cheaper
+// and gives the model context across pages.
+//
+// pdf-parse v2 injects "-- N of M --" page markers into its output.
+// We use those as the per-page splitter; falls back to whole-doc if the
+// markers aren't present (rare).
 
 import { createRequire } from "module";
 import { callClaude, extractJson } from "./claudeClient";
 import type { PageClassification, PageTag, Clarity } from "./types";
 
-// pdf-parse v2 default-exports a CJS function. We're ESM, so use createRequire.
+// pdf-parse v2 exports the class { PDFParse }, not a callable default.
+// This matches the pattern already used in server/_core/claude.ts.
 const require = createRequire(import.meta.url);
-const pdfParse: (buffer: Buffer) => Promise<{ text: string; numpages: number }> = require("pdf-parse");
+const { PDFParse } = require("pdf-parse") as {
+  PDFParse: new (opts: { data: Buffer | Uint8Array }) => {
+    getText: () => Promise<{ text: string; total: number }>;
+    destroy: () => Promise<void>;
+  };
+};
 
 const VALID_TAGS: PageTag[] = [
   "cover",
@@ -32,29 +41,63 @@ interface PageText {
 }
 
 /**
- * pdf-parse v2 gives the full document text in one go. We need per-page
- * text. Standard trick: split on form-feed characters (\f) which pdf-parse
- * inserts between pages. Falls back to whole-doc as a single page if no
- * form feeds are present (rare — happens with malformed PDFs).
+ * pdf-parse v2 returns the full document text in `parsed.text` with
+ * "-- N of M --" markers inserted between pages. Split on those to get
+ * per-page text. The marker is also useful as a sanity check on page
+ * count (pdf-parse's `total` may disagree with what we see).
  */
 async function extractPerPageText(pdfBuffer: Buffer): Promise<PageText[]> {
-  const parsed = await pdfParse(pdfBuffer);
-  const totalPages = parsed.numpages;
-  const segments = parsed.text.split("\f");
-
-  // Some PDFs don't have form feeds. Fallback: estimate equal slices.
-  if (segments.length < 2) {
-    return [{ pageNumber: 1, text: parsed.text }];
+  const parser = new PDFParse({ data: pdfBuffer });
+  let parsed: { text: string; total: number };
+  try {
+    parsed = await parser.getText();
+  } finally {
+    try {
+      await parser.destroy();
+    } catch {
+      /* noop */
+    }
   }
 
-  const pages: PageText[] = [];
-  for (let i = 0; i < segments.length && i < totalPages; i++) {
-    pages.push({
-      pageNumber: i + 1,
-      text: segments[i].trim(),
-    });
+  const totalFromParser = parsed.total || 1;
+  const raw = parsed.text || "";
+
+  // Split on the "-- N of M --" markers. pdf-parse v2 places the marker
+  // AT THE END of each page's content (so content between the start and
+  // the first marker is page 1; content between marker N-1 and marker N
+  // is page N).
+  const markerPattern = /--\s*(\d+)\s+of\s+\d+\s*--/g;
+  const pages = new Map<number, string>();
+
+  let lastIdx = 0;
+  let match: RegExpExecArray | null;
+  while ((match = markerPattern.exec(raw)) !== null) {
+    const pageNumber = parseInt(match[1], 10);
+    const segment = raw.slice(lastIdx, match.index).trim();
+    pages.set(pageNumber, segment);
+    lastIdx = match.index + match[0].length;
   }
-  return pages;
+  // Any content after the final marker is trailing junk in well-formed
+  // PDFs; in malformed ones it might be the last page. Attach it to
+  // (max seen + 1) so we don't lose it.
+  const tail = raw.slice(lastIdx).trim();
+  if (tail.length > 0) {
+    const maxSeen = Math.max(0, ...pages.keys());
+    pages.set(maxSeen + 1, tail);
+  }
+
+  // Fallback: if we found no markers at all, treat the whole thing as page 1
+  if (pages.size === 0) {
+    return [{ pageNumber: 1, text: raw.trim() }];
+  }
+
+  // Build sorted array, filling missing page numbers with empty strings
+  const result: PageText[] = [];
+  const maxPage = Math.max(totalFromParser, ...pages.keys());
+  for (let n = 1; n <= maxPage; n++) {
+    result.push({ pageNumber: n, text: pages.get(n) || "" });
+  }
+  return result;
 }
 
 export async function classifyBrochurePages(pdfBuffer: Buffer): Promise<{

@@ -31,10 +31,15 @@ import { generateNarrative } from "./generateNarrative";
 import { renderNarrativePages } from "./renderNarrativePages";
 import { assembleFinalPdf } from "./assembleFinalPdf";
 
-// pdf-parse v2 default-exports a CJS function. The project is ESM
-// (package.json "type": "module"), so we use createRequire to load it.
+// pdf-parse v2 exports the class { PDFParse }, not a callable default.
+// This matches the pattern already used in server/_core/claude.ts.
 const require = createRequire(import.meta.url);
-const pdfParse: (buffer: Buffer) => Promise<{ text: string }> = require("pdf-parse");
+const { PDFParse } = require("pdf-parse") as {
+  PDFParse: new (opts: { data: Buffer | Uint8Array }) => {
+    getText: () => Promise<{ text: string; total: number }>;
+    destroy: () => Promise<void>;
+  };
+};
 
 // ESM-safe equivalent of __dirname / __filename
 const __filename = fileURLToPath(import.meta.url);
@@ -61,6 +66,25 @@ function logSection(title: string) {
   console.log("\n" + "─".repeat(64));
   console.log("  " + title);
   console.log("─".repeat(64));
+}
+
+/**
+ * Read tender text using pdf-parse v2's class API.
+ * Strips the "-- N of M --" page-marker debris that v2 injects.
+ */
+async function readPdfText(pdfBuffer: Buffer): Promise<string> {
+  const parser = new PDFParse({ data: pdfBuffer });
+  try {
+    const parsed = await parser.getText();
+    const raw = parsed?.text || "";
+    return raw.replace(/--\s*\d+\s+of\s+\d+\s*--/g, "").trim();
+  } finally {
+    try {
+      await parser.destroy();
+    } catch {
+      /* noop */
+    }
+  }
 }
 
 async function main() {
@@ -101,9 +125,8 @@ async function main() {
     `(${(brochureWidth * 0.3528).toFixed(0)} × ${(brochureHeight * 0.3528).toFixed(0)} mm)`,
   );
 
-  // Extract tender text
-  const tenderParsed = await pdfParse(tenderBuffer);
-  const tenderText = tenderParsed.text;
+  // Extract tender text (single document, full text)
+  const tenderText = await readPdfText(tenderBuffer);
   console.log(`  Tender text length: ${tenderText.length} chars`);
 
   // ── Step 1: Classify brochure pages ──────────────────────────────
