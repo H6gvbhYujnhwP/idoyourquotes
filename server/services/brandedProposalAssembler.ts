@@ -30,6 +30,7 @@ import {
   rgb,
   type PDFPage,
   type PDFFont,
+  type PDFEmbeddedPage,
 } from "pdf-lib";
 import type {
   ChapterSlot,
@@ -57,6 +58,113 @@ function computeLayout(dim: PageDimensions) {
     contentTop: dim.height - marginTop,
     contentBottom: marginBottom,
   };
+}
+
+// ─── A4 sizing & letterboxing — Phase 4B Delivery E ──────────────────
+//
+// The original assembler (Delivery A) inherited the brochure's page
+// dimensions throughout — so a brochure authored at A5 landscape
+// produced an A5 landscape proposal, half the size of A4 and
+// presentation-feeling rather than business-document-feeling.
+//
+// Delivery E shifts to: narrative pages always render at A4 in the
+// brochure's matching orientation, and embedded brochure pages are
+// drawn at their NATIVE size centred on those A4 pages (letterboxed
+// with white margin around them). No upscaling — preserves brochure
+// fidelity perfectly. Larger-than-A4 brochures (rare) get scaled
+// DOWN, which never softens.
+//
+// Special-case behaviour:
+//   - Brochure already exactly A4 (either orientation) → no change.
+//     Target dim equals source dim, no letterboxing needed.
+//   - Brochure already larger than A4 → keep it at native size, output
+//     matches it. We can't sensibly downscale narrative pages to fit
+//     the brochure's huge page, and upscaling brochure pages would
+//     soften them — so accept the user's authoring choice.
+//   - Brochure is an unusual aspect ratio (e.g. square) → match
+//     orientation by long-edge convention and letterbox normally.
+
+const A4_WIDTH_PT = 595;   // 210 mm at 72 dpi
+const A4_HEIGHT_PT = 842;  // 297 mm at 72 dpi
+// 5pt tolerance when classifying input dimensions — handles tiny
+// rounding from PDF authoring tools that emit, say, 595.276 for A4.
+const SIZE_TOLERANCE_PT = 5;
+
+/**
+ * Given the brochure's first-page dimensions, decide the target page
+ * size for the rendered proposal. Returns target equal to source when
+ * no resize is warranted (saves an embedPdf round-trip later).
+ */
+function computeTargetDimensions(
+  brochureWidth: number,
+  brochureHeight: number,
+): PageDimensions {
+  const isLandscape = brochureWidth > brochureHeight;
+
+  // Already A4 (either orientation) — leave as-is.
+  const isA4Portrait =
+    Math.abs(brochureWidth - A4_WIDTH_PT) < SIZE_TOLERANCE_PT &&
+    Math.abs(brochureHeight - A4_HEIGHT_PT) < SIZE_TOLERANCE_PT;
+  const isA4Landscape =
+    Math.abs(brochureWidth - A4_HEIGHT_PT) < SIZE_TOLERANCE_PT &&
+    Math.abs(brochureHeight - A4_WIDTH_PT) < SIZE_TOLERANCE_PT;
+  if (isA4Portrait || isA4Landscape) {
+    return { width: brochureWidth, height: brochureHeight };
+  }
+
+  // Larger than A4 in either dimension — keep brochure dimensions.
+  // (Upscaling narrative to a custom larger size is fine; downscaling
+  // brochure pages would defeat the no-scale-up rationale.)
+  const longestEdge = Math.max(brochureWidth, brochureHeight);
+  if (longestEdge > A4_HEIGHT_PT + SIZE_TOLERANCE_PT) {
+    return { width: brochureWidth, height: brochureHeight };
+  }
+
+  // Standard case: brochure smaller than A4 (e.g. A5). Bump to A4 in
+  // matching orientation. Brochure pages will letterbox at native size.
+  if (isLandscape) {
+    return { width: A4_HEIGHT_PT, height: A4_WIDTH_PT };
+  }
+  return { width: A4_WIDTH_PT, height: A4_HEIGHT_PT };
+}
+
+/**
+ * Draw a brochure page (already embedded into the final doc via
+ * embedPdf) onto a fresh target-sized page, centred at the brochure
+ * page's native dimensions. NEVER upscales — that would soften any
+ * raster content (icons, logos, photos) that the brochure includes.
+ * If the brochure page is larger than the target (rare), scales DOWN
+ * preserving aspect ratio.
+ */
+function drawBrochurePageLetterboxed(
+  targetPage: PDFPage,
+  embed: PDFEmbeddedPage,
+  sourceWidth: number,
+  sourceHeight: number,
+  targetWidth: number,
+  targetHeight: number,
+) {
+  let drawWidth = sourceWidth;
+  let drawHeight = sourceHeight;
+
+  // Down-scale only — never enlarge. preserves aspect ratio.
+  if (sourceWidth > targetWidth || sourceHeight > targetHeight) {
+    const scale = Math.min(
+      targetWidth / sourceWidth,
+      targetHeight / sourceHeight,
+    );
+    drawWidth = sourceWidth * scale;
+    drawHeight = sourceHeight * scale;
+  }
+
+  const offsetX = (targetWidth - drawWidth) / 2;
+  const offsetY = (targetHeight - drawHeight) / 2;
+  targetPage.drawPage(embed, {
+    x: offsetX,
+    y: offsetY,
+    width: drawWidth,
+    height: drawHeight,
+  });
 }
 
 /**
@@ -1011,20 +1119,32 @@ export interface AssembleParams {
 export async function assembleBrandedProposal(
   params: AssembleParams,
 ): Promise<Uint8Array> {
-  // Step 1: detect dimensions
+  // Step 1: detect brochure dimensions, decide target output dimensions.
+  // Phase 4B Delivery E — output is always A4 (in matching orientation)
+  // when the brochure is smaller than A4. Brochure pages embed at
+  // native size, centred and letterboxed onto A4. Never upscale.
   const brochureDoc = await PDFDocument.load(params.brochurePdfBytes);
   const firstPage = brochureDoc.getPage(0);
-  const { width, height } = firstPage.getSize();
-  const dim: PageDimensions = { width, height };
+  const { width: brochureWidth, height: brochureHeight } = firstPage.getSize();
+  const sourceDim: PageDimensions = {
+    width: brochureWidth,
+    height: brochureHeight,
+  };
+  const targetDim = computeTargetDimensions(brochureWidth, brochureHeight);
 
-  // Step 2: render narrative pages
-  // Phase 4B Delivery D Phase 3 — quoteContext now flows into the
-  // narrative renderer so slot 15 (Pricing Summary) can draw the
-  // structured pricing table from the line items rather than relying
-  // on the AI's prose body alone.
+  // If target equals source the dimensions match — fall back to the
+  // original copyPages path (cheaper than embedPdf and avoids any
+  // chance of subtle rendering differences for the no-op case).
+  const needsLetterbox =
+    targetDim.width !== sourceDim.width || targetDim.height !== sourceDim.height;
+
+  // Step 2: render narrative pages at TARGET dimensions
+  // Phase 4B Delivery D Phase 3 — quoteContext flows in so slot 15
+  // (Pricing Summary) can draw the structured pricing table from the
+  // line items rather than relying on the AI's prose alone.
   const { narrativePdfBytes, pageIndexBySlot } = await renderNarrativePages({
     slots: params.slots,
-    pageDimensions: dim,
+    pageDimensions: targetDim,
     quoteContext: params.quoteContext,
   });
 
@@ -1032,8 +1152,7 @@ export async function assembleBrandedProposal(
   const finalDoc = await PDFDocument.create();
   const narrativeDoc = await PDFDocument.load(narrativePdfBytes);
 
-  // Pre-collect the source-page indices we'll need from each source
-  // (cheaper than calling copyPages once per page).
+  // Pre-collect the source-page indices we'll need from each source.
   const brochurePagesNeeded = new Set<number>();
   const narrativePagesNeeded = new Set<number>();
 
@@ -1059,21 +1178,49 @@ export async function assembleBrandedProposal(
   const brochureIndicesArr = Array.from(brochurePagesNeeded).sort((a, b) => a - b);
   const narrativeIndicesArr = Array.from(narrativePagesNeeded).sort((a, b) => a - b);
 
-  const copiedBrochurePages =
-    brochureIndicesArr.length > 0
-      ? await finalDoc.copyPages(brochureDoc, brochureIndicesArr)
-      : [];
+  // Phase 4B Delivery E — branch the brochure-page handling based on
+  // whether we're letterboxing.
+  //   - Letterbox path: embedPdf gives PDFEmbeddedPage objects we draw
+  //     onto fresh target-sized pages. Lets us position the brochure
+  //     content anywhere on the target canvas at any (downscaled) size.
+  //   - Pass-through path: copyPages preserves dimensions as before.
+  //     Used when the brochure is already at A4, or larger than A4.
+  let copiedBrochurePages: PDFPage[] = [];
+  let embeddedBrochurePages: PDFEmbeddedPage[] = [];
+
+  if (needsLetterbox && brochureIndicesArr.length > 0) {
+    // embedPdf accepts the raw bytes + indices and returns
+    // PDFEmbeddedPage[] in the same order. These can be drawn onto
+    // any target page at any size.
+    embeddedBrochurePages = await finalDoc.embedPdf(
+      params.brochurePdfBytes,
+      brochureIndicesArr,
+    );
+  } else if (brochureIndicesArr.length > 0) {
+    copiedBrochurePages = await finalDoc.copyPages(
+      brochureDoc,
+      brochureIndicesArr,
+    );
+  }
+
   const copiedNarrativePages =
     narrativeIndicesArr.length > 0
       ? await finalDoc.copyPages(narrativeDoc, narrativeIndicesArr)
       : [];
 
-  // Lookup tables: source-index → copied page object
-  const brochurePageByIdx = new Map<number, any>();
+  // Lookup tables: source-index → either a copied PDFPage (pass-through)
+  // OR a PDFEmbeddedPage (letterbox path). We don't unify the type
+  // because the consumer below dispatches on whether we're letterboxing.
+  const brochureCopiedByIdx = new Map<number, PDFPage>();
+  const brochureEmbedByIdx = new Map<number, PDFEmbeddedPage>();
   brochureIndicesArr.forEach((srcIdx, i) => {
-    brochurePageByIdx.set(srcIdx, copiedBrochurePages[i]);
+    if (needsLetterbox) {
+      brochureEmbedByIdx.set(srcIdx, embeddedBrochurePages[i]);
+    } else {
+      brochureCopiedByIdx.set(srcIdx, copiedBrochurePages[i]);
+    }
   });
-  const narrativePageByIdx = new Map<number, any>();
+  const narrativePageByIdx = new Map<number, PDFPage>();
   narrativeIndicesArr.forEach((srcIdx, i) => {
     narrativePageByIdx.set(srcIdx, copiedNarrativePages[i]);
   });
@@ -1082,8 +1229,27 @@ export async function assembleBrandedProposal(
   for (const slot of params.slots) {
     if (slot.source === "embed") {
       const srcIdx = slot.brochurePageNumber - 1;
-      const page = brochurePageByIdx.get(srcIdx);
-      if (page) finalDoc.addPage(page);
+      if (needsLetterbox) {
+        const embed = brochureEmbedByIdx.get(srcIdx);
+        if (embed) {
+          // Read this specific page's dimensions — defensive against
+          // brochures that mix page sizes (rare but legal in PDF).
+          const srcPage = brochureDoc.getPage(srcIdx);
+          const { width: srcW, height: srcH } = srcPage.getSize();
+          const targetPage = finalDoc.addPage([targetDim.width, targetDim.height]);
+          drawBrochurePageLetterboxed(
+            targetPage,
+            embed,
+            srcW,
+            srcH,
+            targetDim.width,
+            targetDim.height,
+          );
+        }
+      } else {
+        const page = brochureCopiedByIdx.get(srcIdx);
+        if (page) finalDoc.addPage(page);
+      }
     } else {
       const indices = pageIndexBySlot.get(slot.slotIndex) ?? [];
       for (const idx of indices) {
