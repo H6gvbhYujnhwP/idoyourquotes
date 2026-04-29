@@ -16,6 +16,7 @@ import Catalog from "./pages/Catalog";
 import Settings from "./pages/Settings";
 import AdminPanel from "./pages/AdminPanel";
 import SetPassword from "./pages/SetPassword";
+import BrandedProposalWorkspace from "./pages/BrandedProposalWorkspace";
 
 function Router() {
   return (
@@ -41,6 +42,21 @@ function Router() {
       <Route path="/quotes/:id">
         <DashboardLayout>
           <QuoteRouter />
+        </DashboardLayout>
+      </Route>
+
+      {/* Phase 4B Delivery C — Branded Proposal Workspace.
+          Reached when a Pro/Team user picks Tile 3 ("Branded with your
+          artwork and company story") on the Generate-PDF picker AND
+          they have a brochure uploaded. The screen reads its own
+          quoteId from the URL, fires brandedProposal.generateDraft on
+          mount, and lets the user edit/regenerate per chapter before
+          rendering the final PDF. Tier gating is enforced server-side
+          on every brandedProposal.* endpoint, so no client-side gate
+          is layered on top of the route. */}
+      <Route path="/branded-proposal/:quoteId">
+        <DashboardLayout>
+          <BrandedProposalWorkspace />
         </DashboardLayout>
       </Route>
       

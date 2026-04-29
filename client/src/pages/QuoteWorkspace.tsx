@@ -90,6 +90,13 @@ import ReviewBeforeGenerateModal from "@/components/ReviewBeforeGenerateModal";
 import SoloUpgradeModal from "@/components/SoloUpgradeModal";
 import ExportFormatPickerModal from "@/components/ExportFormatPickerModal";
 import BrandChoiceModal, { type BrandMode } from "@/components/BrandChoiceModal";
+// Phase 4B Delivery C — Tile 3 ("Branded with your artwork and company
+// story") routes through here. If the org has no brochure yet, we open
+// BrochureUploadModal inline (with first-run-specific copy) so the user
+// doesn't have to detour through Settings before generating their
+// proposal. After upload completes, the modal's onUploaded callback
+// navigates them to /branded-proposal/:quoteId.
+import BrochureUploadModal from "@/components/BrochureUploadModal";
 import { type DesignTemplate } from "@/lib/proposalShowcaseAssets";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import { brand } from "@/lib/brandTheme";
@@ -366,6 +373,12 @@ export default function QuoteWorkspace() {
   const [pendingBrandChoice, setPendingBrandChoice] = useState<
     { mode: BrandMode; template: DesignTemplate } | null
   >(null);
+  // Phase 4B Delivery C — Tile 3 first-run brochure upload modal. Shown
+  // when the user picks "Branded with your artwork and company story"
+  // and we discover their org has no brochure yet. After upload, the
+  // onUploaded callback navigates them straight to the branded proposal
+  // workspace; if they cancel, we leave them on the quote workspace.
+  const [showBrochureUploadModal, setShowBrochureUploadModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // ── Controlled field state ──
@@ -1026,6 +1039,36 @@ export default function QuoteWorkspace() {
   const handlePickerSelectContractTender = () => {
     setShowFormatPickerModal(false);
     setShowBrandChoiceModal(true);
+  };
+
+  // Phase 4B Delivery C — Tile 3 handler. The user picked "Branded with
+  // your artwork and company story". Two paths:
+  //   1. Org already has a brochure → close the picker, navigate
+  //      straight to /branded-proposal/:quoteId. The new screen fires
+  //      generateDraft on mount.
+  //   2. Org has no brochure yet → close the picker, open
+  //      BrochureUploadModal with first-run-specific copy. After
+  //      upload, onUploaded navigates to the workspace.
+  // We use trpcUtils.brochure.get.fetch() rather than mounting a
+  // useQuery at render-time so we don't pay for the brochure call on
+  // every quote view — only when Tile 3 is actually clicked.
+  const handlePickerSelectBrandedProposal = async () => {
+    setShowFormatPickerModal(false);
+    try {
+      const brochure = await trpcUtils.brochure.get.fetch();
+      if (brochure) {
+        setLocation(`/branded-proposal/${quoteId}`);
+      } else {
+        setShowBrochureUploadModal(true);
+      }
+    } catch (err) {
+      console.error("[handlePickerSelectBrandedProposal] brochure check failed:", err);
+      // If the brochure-state lookup fails for any reason, surface the
+      // upload modal — uploading is the first-run path and is the
+      // safer default than auto-routing to a workspace that may then
+      // fail on missing brochure.
+      setShowBrochureUploadModal(true);
+    }
   };
 
   // Phase 4A Delivery 7 — "← Back" on the Brand Choice modal returns
@@ -1692,6 +1735,7 @@ export default function QuoteWorkspace() {
         onDismiss={() => setShowFormatPickerModal(false)}
         onSelectQuickQuote={handlePickerSelectQuickQuote}
         onSelectContractTender={handlePickerSelectContractTender}
+        onSelectBrandedProposal={handlePickerSelectBrandedProposal}
         sectorHint={tradePreset}
       />
 
@@ -1708,6 +1752,25 @@ export default function QuoteWorkspace() {
         onBack={handleBrandChoiceBack}
         onGenerate={handleBrandChoiceCommitted}
         isGenerating={generateBrandedProposal.isPending}
+      />
+
+      {/* Phase 4B Delivery C — first-run brochure upload modal for
+          Tile 3. Opens when the user picked "Branded with your artwork
+          and company story" but has no brochure on file yet. The title
+          and description are scoped to the proposal-generation context
+          (rather than the generic Settings copy). On successful upload,
+          we close the modal AND navigate straight to the new branded
+          proposal workspace — the user doesn't need to click anything
+          else. */}
+      <BrochureUploadModal
+        open={showBrochureUploadModal}
+        onOpenChange={setShowBrochureUploadModal}
+        title="First, let's add your brochure"
+        description="To build a branded proposal, we need your company brochure once. We'll pick out your About Us, USPs and key infographics, and weave them into every Tile 3 proposal you generate from now on."
+        onUploaded={() => {
+          setShowBrochureUploadModal(false);
+          setLocation(`/branded-proposal/${quoteId}`);
+        }}
       />
     </div>
   );

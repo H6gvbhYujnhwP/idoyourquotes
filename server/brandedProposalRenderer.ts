@@ -1,3 +1,22 @@
+// @deprecated — Phase 4B Delivery C.
+//
+// Superseded by the Tile 3 Branded-with-Brochure pipeline:
+//   - server/engines/brandedProposalEngine.ts (chapter slot generation)
+//   - server/services/brandedProposalAssembler.ts (final PDF assembly)
+//   - server/services/brandedProposalRouter.ts (tRPC endpoints)
+//   - client/src/pages/BrandedProposalWorkspace.tsx (the user-facing
+//     edit/render workflow)
+//
+// Do NOT extend this file. New design-led proposal work goes through
+// the engine + assembler above. This module remains in the build only
+// because Tile 2 ("Use a branded colour template") still routes through
+// it via QuoteWorkspace's BrandChoiceModal flow; removing it now would
+// break that path. Scheduled for removal in a separate later session
+// once Tile 3 has been live in production for long enough that Tile 2
+// can be retired alongside it.
+//
+// ──────────────────────────────────────────────────────────────────────
+//
 // Phase 4A — Delivery 7.
 //
 // Branded Contract/Tender proposal renderer.

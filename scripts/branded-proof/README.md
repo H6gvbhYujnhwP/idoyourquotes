@@ -1,5 +1,25 @@
 # Branded proposal — proof of concept (Delivery 1)
 
+> **Status: superseded — kept for archival reference.** Phase 4B Deliveries
+> A, B and C have shipped the live Tile 3 ("Branded with your artwork
+> and company story") pipeline. The proof's logic now lives in:
+>
+> - `server/services/brochureExtractor.ts` — page classification, ported
+>   from `src/classifyBrochurePages.ts`
+> - `server/engines/brandedProposalEngine.ts` — chapter generation,
+>   ported from `src/generateNarrative.ts`
+> - `server/services/brandedProposalAssembler.ts` — pdf-lib splice,
+>   ported from `src/renderNarrativePages.ts` and
+>   `src/assembleFinalPdf.ts`
+> - `client/src/pages/BrandedProposalWorkspace.tsx` — the user-facing
+>   edit/render workflow, replacing the standalone `run.ts` orchestrator
+>
+> This script directory lives outside `tsconfig.json`'s `include` scope
+> and outside the Vite build root, so it ships nothing to production.
+> Safe to leave or delete; the live pipeline does not depend on it.
+
+---
+
 This is the proof-of-concept script for the new "Branded with your artwork
 and company story" quote mode (Tile 3). It exists to answer **one question**:
 

@@ -1,4 +1,16 @@
 /**
+ * @deprecated — Phase 4B Delivery C.
+ *
+ * Superseded by the Tile 3 Branded-with-Brochure pipeline (see
+ * server/engines/brandedProposalEngine.ts +
+ * server/services/brandedProposalAssembler.ts). Do NOT extend this
+ * template. Still in the build because Tile 2 ("Use a branded colour
+ * template") routes through brandedProposalRenderer.ts which consumes
+ * this file; scheduled for removal alongside that renderer once Tile 3
+ * is stable in production.
+ */
+
+/**
  * Phase 4A Delivery 20 — Bold proposal template renderer.
  *
  * The "Bold" design template, sector-agnostic. Adapted from Manus's
