@@ -67,64 +67,45 @@ function computeLayout(dim: PageDimensions) {
 // produced an A5 landscape proposal, half the size of A4 and
 // presentation-feeling rather than business-document-feeling.
 //
-// Delivery E shifts to: narrative pages always render at A4 in the
-// brochure's matching orientation, and embedded brochure pages are
-// drawn at their NATIVE size centred on those A4 pages (letterboxed
-// with white margin around them). No upscaling — preserves brochure
-// fidelity perfectly. Larger-than-A4 brochures (rare) get scaled
-// DOWN, which never softens.
+// Delivery E shifts to: narrative pages always render at A4 PORTRAIT
+// regardless of the brochure's native orientation, and embedded
+// brochure pages are drawn at their NATIVE size centred on those A4
+// portrait pages (letterboxed with white margin around them). No
+// upscaling — preserves brochure fidelity perfectly.
+//
+// Why forced A4 portrait rather than orientation-matched A4:
+//   - Conventional business documents are A4 portrait. Customers
+//     receiving a quote/proposal expect a vertical document, not a
+//     landscape deck.
+//   - Brochures are often authored in landscape because they're
+//     designed as marketing handouts. The branded proposal is a
+//     business document wrapped around a brochure — the document's
+//     orientation should match the document's purpose, not the
+//     brochure's.
+//   - Letterboxing landscape-authored brochure pages onto A4 portrait
+//     leaves visible whitespace above/below the embedded page. That's
+//     an acceptable trade-off for keeping the document conventional.
 //
 // Special-case behaviour:
-//   - Brochure already exactly A4 (either orientation) → no change.
-//     Target dim equals source dim, no letterboxing needed.
-//   - Brochure already larger than A4 → keep it at native size, output
-//     matches it. We can't sensibly downscale narrative pages to fit
-//     the brochure's huge page, and upscaling brochure pages would
-//     soften them — so accept the user's authoring choice.
-//   - Brochure is an unusual aspect ratio (e.g. square) → match
-//     orientation by long-edge convention and letterbox normally.
+//   - Brochure already A4 portrait → no change (target == source).
+//   - Brochure larger than A4 portrait → embed page scales DOWN to fit
+//     (preserving aspect ratio) inside the A4 portrait canvas. Never
+//     enlarges, so raster content stays sharp.
 
 const A4_WIDTH_PT = 595;   // 210 mm at 72 dpi
 const A4_HEIGHT_PT = 842;  // 297 mm at 72 dpi
-// 5pt tolerance when classifying input dimensions — handles tiny
-// rounding from PDF authoring tools that emit, say, 595.276 for A4.
-const SIZE_TOLERANCE_PT = 5;
 
 /**
- * Given the brochure's first-page dimensions, decide the target page
- * size for the rendered proposal. Returns target equal to source when
- * no resize is warranted (saves an embedPdf round-trip later).
+ * Decide the target page size for the rendered proposal. Phase 4B
+ * Delivery E (revised): always A4 portrait, regardless of brochure
+ * orientation. The brochure's first-page dimensions are accepted as
+ * a parameter so a future iteration can switch behaviour per-org or
+ * per-quote without changing the call sites.
  */
 function computeTargetDimensions(
-  brochureWidth: number,
-  brochureHeight: number,
+  _brochureWidth: number,
+  _brochureHeight: number,
 ): PageDimensions {
-  const isLandscape = brochureWidth > brochureHeight;
-
-  // Already A4 (either orientation) — leave as-is.
-  const isA4Portrait =
-    Math.abs(brochureWidth - A4_WIDTH_PT) < SIZE_TOLERANCE_PT &&
-    Math.abs(brochureHeight - A4_HEIGHT_PT) < SIZE_TOLERANCE_PT;
-  const isA4Landscape =
-    Math.abs(brochureWidth - A4_HEIGHT_PT) < SIZE_TOLERANCE_PT &&
-    Math.abs(brochureHeight - A4_WIDTH_PT) < SIZE_TOLERANCE_PT;
-  if (isA4Portrait || isA4Landscape) {
-    return { width: brochureWidth, height: brochureHeight };
-  }
-
-  // Larger than A4 in either dimension — keep brochure dimensions.
-  // (Upscaling narrative to a custom larger size is fine; downscaling
-  // brochure pages would defeat the no-scale-up rationale.)
-  const longestEdge = Math.max(brochureWidth, brochureHeight);
-  if (longestEdge > A4_HEIGHT_PT + SIZE_TOLERANCE_PT) {
-    return { width: brochureWidth, height: brochureHeight };
-  }
-
-  // Standard case: brochure smaller than A4 (e.g. A5). Bump to A4 in
-  // matching orientation. Brochure pages will letterbox at native size.
-  if (isLandscape) {
-    return { width: A4_HEIGHT_PT, height: A4_WIDTH_PT };
-  }
   return { width: A4_WIDTH_PT, height: A4_HEIGHT_PT };
 }
 
