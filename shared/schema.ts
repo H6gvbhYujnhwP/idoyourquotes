@@ -152,6 +152,43 @@ export const organizations = pgTable("organizations", {
   defaultTenantRisks: text("default_tenant_risks"),
   defaultTenantRollback: text("default_tenant_rollback"),
   defaultTenantOutOfScope: text("default_tenant_out_of_scope"),
+  // Phase 4B Delivery A — Branded Proposal with Brochure (Tile 3).
+  // The user uploads a single company brochure PDF once, the AI
+  // classifies each page (about / usp / track-record / service /
+  // testimonial / contact / other) plus extracts factual claims, and
+  // the result is reused on every Branded-with-Brochure proposal until
+  // the user uploads a new brochure or deletes the current one. The
+  // file itself lives in R2; brochureKnowledge is the structured
+  // extraction output the engine reads at proposal-generation time.
+  // brochureDeletedAt enables soft-archive (the file stays in R2 so
+  // any saved proposals that referenced its embedded pages still
+  // render, but the active flow treats the org as having no brochure).
+  brochureFileUrl: text("brochure_file_url"),
+  brochureFileKey: text("brochure_file_key"),
+  brochureFilename: text("brochure_filename"),
+  brochureFileSize: integer("brochure_file_size"),
+  brochurePageCount: integer("brochure_page_count"),
+  brochureHash: varchar("brochure_hash", { length: 64 }),
+  brochureExtractedAt: timestamp("brochure_extracted_at"),
+  brochureDeletedAt: timestamp("brochure_deleted_at"),
+  brochureKnowledge: json("brochure_knowledge").$type<{
+    pageCount: number;
+    classifications: Array<{
+      pageNumber: number;
+      tag:
+        | "cover"
+        | "contents"
+        | "about"
+        | "usp"
+        | "track-record"
+        | "service"
+        | "testimonial"
+        | "contact"
+        | "other";
+      clarity: "clean" | "partial";
+      facts: string[];
+    }>;
+  }>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

@@ -6,6 +6,8 @@ import { z } from "zod";
 import { invokeLLM } from "./_core/llm";
 import { subscriptionRouter } from "./services/subscriptionRouter";
 import { adminRouter } from "./services/adminRouter";
+import { brochureRouter } from "./services/brochureRouter";
+import { brandedProposalRouter } from "./services/brandedProposalRouter";
 import { canCreateQuote, canUseAIFeatures, canAddCatalogItem, getUpgradeSuggestion, TIER_CONFIG, type SubscriptionTier } from "./services/stripe";
 import { sendLimitWarningEmail } from "./services/emailService";
 import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured, getFileBuffer } from "./r2Storage";
@@ -3965,6 +3967,15 @@ Rules:
   // ============ SUBSCRIPTION (real router with Stripe integration) ============
   subscription: subscriptionRouter,
   admin: adminRouter,
+
+  // ============ BRANDED PROPOSAL WITH BROCHURE (Phase 4B Delivery A) ============
+  // Tile 3 ("Branded with your artwork and company story"). Two routers:
+  //   - brochure: upload / get / delete the org's company brochure.
+  //     Pro / Business tiers only.
+  //   - brandedProposal: generate a chapter draft from the brochure +
+  //     tender, regenerate single chapters, render the final PDF.
+  brochure: brochureRouter,
+  brandedProposal: brandedProposalRouter,
 
   // ============ AI ASSISTANT ============
   ai: router({
