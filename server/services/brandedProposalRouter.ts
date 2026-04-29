@@ -34,6 +34,7 @@ import {
   getQuoteByIdAndOrg,
   getQuoteById,
   getInputsByQuoteId,
+  getLineItemsByQuoteId,
   logUsage,
 } from "../db";
 import { getFileBuffer } from "../r2Storage";
@@ -41,6 +42,8 @@ import {
   generateBrandedProposalDraft,
   regenerateSingleChapter,
   type ChapterSlot,
+  type QuoteContext,
+  type QuoteContextLineItem,
 } from "../engines/brandedProposalEngine";
 import { assembleBrandedProposal } from "./brandedProposalAssembler";
 import type { BrochureKnowledge } from "./brochureExtractor";
@@ -88,6 +91,60 @@ async function gatherTenderText(quoteId: number): Promise<string> {
   }
 
   return parts.join("\n\n---\n\n");
+}
+
+/**
+ * Phase 4B Delivery D Phase 1 — assemble the structured quote context
+ * the engine and assembler need. Called once at the top of every
+ * endpoint that runs an AI step or renders a PDF; same shape passed
+ * through so prompt builders and renderers don't each re-implement
+ * decimal-string parsing or pricing-type filtering.
+ *
+ * Defensive parsing:
+ *   - Decimal columns come out of Drizzle as strings; we parseFloat
+ *     them once here so downstream code is dealing with numbers.
+ *   - Unknown / null pricingType values default to "standard". This
+ *     matches the existing pdfGenerator behaviour (see line ~661 of
+ *     server/pdfGenerator.ts).
+ *   - If parsing fails for any single line item field, we return 0
+ *     for that field rather than throw — a single corrupt row
+ *     shouldn't block proposal generation.
+ */
+async function gatherQuoteContext(
+  quote: any,
+  quoteId: number,
+): Promise<QuoteContext> {
+  const dbLineItems = await getLineItemsByQuoteId(quoteId);
+
+  const lineItems: QuoteContextLineItem[] = dbLineItems.map((li: any) => {
+    const rawType = (li.pricingType ?? "standard") as string;
+    const normalisedType: QuoteContextLineItem["pricingType"] =
+      rawType === "monthly" ||
+      rawType === "annual" ||
+      rawType === "optional"
+        ? rawType
+        : "standard";
+
+    return {
+      description: li.description ?? "",
+      quantity: parseFloat(li.quantity ?? "0") || 0,
+      unit: li.unit ?? "each",
+      rate: parseFloat(li.rate ?? "0") || 0,
+      total: parseFloat(li.total ?? "0") || 0,
+      pricingType: normalisedType,
+      sortOrder: typeof li.sortOrder === "number" ? li.sortOrder : 0,
+    };
+  });
+
+  return {
+    clientName: quote.clientName ?? null,
+    contactName: quote.contactName ?? null,
+    clientEmail: quote.clientEmail ?? null,
+    title: quote.title ?? null,
+    reference: quote.reference ?? null,
+    taxRate: parseFloat(quote.taxRate ?? "0") || 0,
+    lineItems,
+  };
 }
 
 const ChapterSlotSchema = z.union([
@@ -145,9 +202,17 @@ export const brandedProposalRouter = router({
         );
       }
 
+      // Phase 4B Delivery D Phase 1 — gather structured quote data
+      // alongside the tender text. Plumbed into the engine but not yet
+      // consumed by it (Phase 2 wires this into the cover and chapter
+      // prompts so we stop saying "Your Organisation" and stop
+      // inventing service specifics).
+      const quoteContext = await gatherQuoteContext(quote, input.quoteId);
+
       const draft = await generateBrandedProposalDraft({
         tenderText,
         brochureKnowledge: knowledge,
+        quoteContext,
       });
 
       // Log usage so it shows up alongside other AI actions in admin.
@@ -203,11 +268,17 @@ export const brandedProposalRouter = router({
 
       const tenderText = await gatherTenderText(input.quoteId);
 
+      // Phase 4B Delivery D Phase 1 — same structured context the
+      // initial draft endpoint receives. Phase 2 will use this to keep
+      // regenerated chapters consistent with the line items.
+      const quoteContext = await gatherQuoteContext(quote, input.quoteId);
+
       const result = await regenerateSingleChapter({
         slotIndex: input.slotIndex,
         currentSlots: input.currentSlots as ChapterSlot[],
         tenderText,
         brochureKnowledge: knowledge,
+        quoteContext,
       });
 
       // Lighter usage log — single-chapter regen costs less than full draft.
@@ -264,9 +335,16 @@ export const brandedProposalRouter = router({
       const brochureBuffer = await getFileBuffer(orgAny.brochureFileKey);
       const brochureBytes = new Uint8Array(brochureBuffer);
 
+      // Phase 4B Delivery D Phase 1 — gather quote context for the
+      // assembler. Phase 1 plumbs but doesn't render this; Phase 3
+      // will use the line items to draw a real pricing table for
+      // slot 15 (Pricing Summary).
+      const quoteContext = await gatherQuoteContext(quote, input.quoteId);
+
       const pdfBytes = await assembleBrandedProposal({
         brochurePdfBytes: brochureBytes,
         slots: input.slots as ChapterSlot[],
+        quoteContext,
       });
 
       // Build a sensible filename: "<client-name> Proposal <ref>.pdf"

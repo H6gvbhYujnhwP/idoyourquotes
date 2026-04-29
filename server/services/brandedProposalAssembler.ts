@@ -31,7 +31,7 @@ import {
   type PDFPage,
   type PDFFont,
 } from "pdf-lib";
-import type { ChapterSlot } from "../engines/brandedProposalEngine";
+import type { ChapterSlot, QuoteContext } from "../engines/brandedProposalEngine";
 
 interface PageDimensions {
   width: number;
@@ -317,6 +317,15 @@ export interface AssembleParams {
   brochurePdfBytes: Uint8Array;
   /** Chapter slots from generateBrandedProposalDraft(). */
   slots: ChapterSlot[];
+  /**
+   * Phase 4B Delivery D Phase 1 — structured data from the quote
+   * record (clientName, reference, taxRate, line items, etc.).
+   * Optional. Phase 1 receives but does not render this; Phase 3 will
+   * use the line items to draw a real pricing table for slot 15
+   * (Pricing Summary) instead of relying on the AI's prose-only
+   * placeholder.
+   */
+  quoteContext?: QuoteContext;
 }
 
 /**
@@ -342,6 +351,17 @@ export interface AssembleParams {
 export async function assembleBrandedProposal(
   params: AssembleParams,
 ): Promise<Uint8Array> {
+  // Phase 4B Delivery D Phase 1 plumbing log — confirms in Render logs
+  // that the router is passing the new context through to the
+  // assembler. Removed in Phase 3 once the line items are actively
+  // consumed to render the pricing table.
+  if (params.quoteContext) {
+    const qc = params.quoteContext;
+    console.log(
+      `[brandedProposal] assemble received quoteContext: client="${qc.clientName ?? ""}", ref="${qc.reference ?? ""}", taxRate=${qc.taxRate ?? 0}, lineItems=${qc.lineItems?.length ?? 0}`,
+    );
+  }
+
   // Step 1: detect dimensions
   const brochureDoc = await PDFDocument.load(params.brochurePdfBytes);
   const firstPage = brochureDoc.getPage(0);

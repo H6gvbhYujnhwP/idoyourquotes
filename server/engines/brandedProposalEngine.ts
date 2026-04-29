@@ -68,6 +68,72 @@ export interface BrandedProposalDraft {
   };
 }
 
+// ─── Quote context — Phase 4B Delivery D, Phase 1 ────────────────────
+//
+// The structured data attached to the quote that the engine and the
+// assembler need in order to:
+//
+//   - render a real client name on the cover (Phase 2)
+//   - keep narrative chapters anchored to contractual specifics from
+//     the line items rather than letting the AI invent numbers
+//     (Phase 2)
+//   - render a real pricing table from the quote's line items rather
+//     than letting the AI write generic prose (Phase 3)
+//
+// PHASE 1 SCOPE: this type is defined and threaded through the
+// engine + assembler call signatures, but neither function reads from
+// it yet. Phase 1 is plumbing-only so a regression after deploy can
+// only have come from the new arguments being passed, not from prompt
+// or rendering changes.
+//
+// Field choices:
+//   - All fields are optional so legacy callers (none in production
+//     today, but defensive against future test harnesses) can omit
+//     anything they don't have.
+//   - `taxRate` is a number (e.g. 20 for 20%), already parsed from the
+//     decimal column at the router boundary. This keeps prompt-side
+//     and assembler-side code free of decimal-string parsing.
+//   - `lineItems` carries only the fields the renderer needs. We don't
+//     forward every column from quote_line_items because most are
+//     irrelevant (createdAt, updatedAt, phaseId etc.) and including
+//     them wastes prompt tokens once Phase 2 wires this into Claude.
+
+export interface QuoteContextLineItem {
+  description: string;
+  quantity: number;
+  unit: string;
+  rate: number;
+  total: number;
+  /**
+   * One of "standard" (one-off, default), "monthly", "annual",
+   * "optional". Matches the existing pdfGenerator grouping. Optional
+   * items are shown but excluded from the headline totals.
+   */
+  pricingType: "standard" | "monthly" | "annual" | "optional";
+  sortOrder: number;
+}
+
+export interface QuoteContext {
+  /** The quote's client / customer name. Used for the cover and exec
+   *  summary in Phase 2. Renders as "Your Organisation" if absent. */
+  clientName?: string | null;
+  /** Optional contact person at the client. Used in salutations. */
+  contactName?: string | null;
+  /** Optional contact email. Currently unused; reserved for a later
+   *  delivery that adds a "How to reach us" appendix. */
+  clientEmail?: string | null;
+  /** The quote's own title (e.g. "IT Support, Security, and Website
+   *  Development"). Used as the proposal title on the cover. */
+  title?: string | null;
+  /** The quote reference (e.g. "Q-187"). Used in the cover ref block
+   *  and the rendered PDF filename. */
+  reference?: string | null;
+  /** VAT rate as a number (e.g. 20 for 20%). 0 means VAT not applied. */
+  taxRate?: number;
+  /** All line items on the quote, ordered by sortOrder. */
+  lineItems?: QuoteContextLineItem[];
+}
+
 // ─── Slot definitions ────────────────────────────────────────────────
 // The 18 chapter slots that match the Manus Headway proposal structure.
 // fillerType:
@@ -297,7 +363,24 @@ interface NarrativeChapterFromAI {
 export async function generateBrandedProposalDraft(params: {
   tenderText: string;
   brochureKnowledge: BrochureKnowledge;
+  /**
+   * Phase 4B Delivery D Phase 1 — structured data from the quote
+   * record. Optional (legacy callers and tests omit it). Phase 1
+   * stores but does not read from this; Phase 2 will wire it into
+   * the cover and narrative prompts so chapters stop inventing
+   * numbers and the cover stops saying "Your Organisation".
+   */
+  quoteContext?: QuoteContext;
 }): Promise<BrandedProposalDraft> {
+  // Phase 1 plumbing log — confirms in Render logs that the router is
+  // passing the new context through. Removed in Phase 2 once the
+  // context is actively consumed by the prompt builder.
+  if (params.quoteContext) {
+    const qc = params.quoteContext;
+    console.log(
+      `[brandedProposal] generateDraft received quoteContext: client="${qc.clientName ?? ""}", ref="${qc.reference ?? ""}", taxRate=${qc.taxRate ?? 0}, lineItems=${qc.lineItems?.length ?? 0}`,
+    );
+  }
   // ── Phase 1: deterministic slot-to-page pairing ───────────────────
   const slotPlan: Array<
     | {
@@ -464,6 +547,13 @@ export async function regenerateSingleChapter(params: {
   currentSlots: ChapterSlot[];
   tenderText: string;
   brochureKnowledge: BrochureKnowledge;
+  /**
+   * Phase 4B Delivery D Phase 1 — same structured quote data the
+   * draft endpoint receives. Optional. Phase 1 stores but does not
+   * read from this; Phase 2 will use it to keep regenerated chapters
+   * factually consistent with the line items.
+   */
+  quoteContext?: QuoteContext;
 }): Promise<{ slot: ChapterSlot; tokenUsage: { inputTokens: number; outputTokens: number } }> {
   const target = params.currentSlots.find((s) => s.slotIndex === params.slotIndex);
   if (!target) {
