@@ -348,6 +348,179 @@ interface NarrativeChapterFromAI {
   body: string;
 }
 
+// ─── Quote-facts prompt helpers — Phase 4B Delivery D Phase 2 ────────
+//
+// The engine's two AI calls (initial draft + per-chapter regenerate)
+// both need to put the quote's structured data in front of the model
+// in a way that's:
+//
+//   1. Visually distinct from the tender text and brochure facts so
+//      the model can apply different trust levels (line items =
+//      contractual truth, brochure = supplier capability claims).
+//   2. Compact enough not to blow the prompt token budget, but
+//      complete enough that scope-relevant detail (e.g. "4-hour
+//      response SLA" buried in a sub-bullet of a line item) survives.
+//   3. Resilient — when a field is missing (Q-187 has no clientName)
+//      we don't crash; we hand the model an explicit fallback so it
+//      knows to use the placeholder rather than invent something.
+
+/**
+ * Render a single line item description with its sub-bullets / numbered
+ * steps as the human-facing PDF generator does (see
+ * server/pdfGenerator.ts ~line 72). Same convention:
+ *   - "||"  → bullet separator (sub-detail items)
+ *   - "##"  → numbered step separator (multi-step scope)
+ *
+ * Reusing the convention is important: line items often carry the
+ * actual contractual specifics (SLAs, scope inclusions, exclusions) in
+ * their sub-bullets. If we only fed the AI the description's first
+ * line, "Silver IT Support — Unlimited Remote — Managed IT support
+ * contract per named user" would surface but "Ticket-based support
+ * with 4-hour response SLA" would not — and 4-hour is exactly the
+ * fact the narrative chapters were inventing wrong before this fix.
+ */
+function formatLineItemForPrompt(li: QuoteContextLineItem): string {
+  const desc = (li.description || "(no description)").trim();
+  const rate = li.rate.toFixed(2);
+  const qty = li.quantity;
+  const unit = li.unit || "each";
+
+  // Numbered steps take precedence over bullets if both are present
+  // (matches pdfGenerator's ordering).
+  if (desc.includes("##")) {
+    const parts = desc.split("##").map((p) => p.trim()).filter(Boolean);
+    const summary = parts[0];
+    const steps = parts.slice(1);
+    const header = `    - ${summary} (qty ${qty} ${unit} @ £${rate})`;
+    if (steps.length === 0) return header;
+    return [header, ...steps.map((s, i) => `        ${i + 1}. ${s}`)].join("\n");
+  }
+  if (desc.includes("||")) {
+    const parts = desc.split("||").map((p) => p.trim()).filter(Boolean);
+    const summary = parts[0];
+    const bullets = parts.slice(1);
+    const header = `    - ${summary} (qty ${qty} ${unit} @ £${rate})`;
+    if (bullets.length === 0) return header;
+    return [header, ...bullets.map((b) => `        • ${b}`)].join("\n");
+  }
+  return `    - ${desc} (qty ${qty} ${unit} @ £${rate})`;
+}
+
+/**
+ * Render the full QuoteContext as a structured prompt block. This is
+ * the single place that decides what the AI sees about a quote — so
+ * every prompt change for fact-discipline goes here, not duplicated
+ * across the two AI-call functions.
+ *
+ * Special handling:
+ *   - clientName empty → explicit fallback note. The AI must use
+ *     "Your Organisation" on the cover rather than fabricate.
+ *   - taxRate 0 → omitted entirely. Some users aren't VAT-registered
+ *     and a "VAT rate: 0%" line would be misleading.
+ *   - Empty line item list → explicit "(none recorded yet)" so the
+ *     AI doesn't silently assume there are line items it hasn't been
+ *     shown.
+ *   - Line items grouped by pricingType. The cadence matters when
+ *     writing: monthly recurring vs one-off vs optional has different
+ *     contractual implications, and the chapter narrative should not
+ *     describe a one-off project as a monthly subscription.
+ */
+function buildQuoteFactsBlock(qc: QuoteContext | undefined): string {
+  if (!qc) return "(no quote facts available)";
+
+  const lines: string[] = [];
+
+  if (qc.clientName && qc.clientName.trim().length > 0) {
+    lines.push(`Client name: ${qc.clientName}`);
+  } else {
+    lines.push(
+      `Client name: (NOT SET — when chapter copy needs the client's name, use the placeholder "Your Organisation" on the cover, and "your organisation" / "you" / "your business" in body prose. Do NOT invent a name.)`,
+    );
+  }
+  if (qc.title && qc.title.trim().length > 0) {
+    lines.push(`Proposal title: ${qc.title}`);
+  } else {
+    lines.push(
+      `Proposal title: (NOT SET — invent a sensible title from the tender scope.)`,
+    );
+  }
+  if (qc.reference) lines.push(`Quote reference: ${qc.reference}`);
+  if (qc.contactName) lines.push(`Client contact: ${qc.contactName}`);
+  if (typeof qc.taxRate === "number" && qc.taxRate > 0) {
+    lines.push(`VAT rate: ${qc.taxRate}%`);
+  }
+
+  const items = qc.lineItems ?? [];
+  if (items.length === 0) {
+    lines.push("");
+    lines.push(
+      "Line items: (none recorded yet — be vague about service specifics rather than invent them)",
+    );
+    return lines.join("\n");
+  }
+
+  lines.push("");
+  lines.push(
+    "Line items (the contractual scope being delivered — every number, SLA, and inclusion below is the truth and overrides anything else):",
+  );
+
+  const byType: Record<string, QuoteContextLineItem[]> = {
+    standard: [],
+    monthly: [],
+    annual: [],
+    optional: [],
+  };
+  for (const li of items) {
+    byType[li.pricingType].push(li);
+  }
+
+  const groups: Array<[string, string]> = [
+    ["standard", "One-off / standard items:"],
+    ["monthly", "Monthly recurring items:"],
+    ["annual", "Annual recurring items:"],
+    ["optional", "Optional add-ons (offered but not in the headline totals):"],
+  ];
+
+  for (const [key, label] of groups) {
+    const group = byType[key];
+    if (!group || group.length === 0) continue;
+    lines.push(`  ${label}`);
+    for (const li of group) {
+      lines.push(formatLineItemForPrompt(li));
+    }
+  }
+
+  return lines.join("\n");
+}
+
+// ─── Authority hierarchy — applied to both AI calls ──────────────────
+//
+// Phase 4B Delivery D Phase 2. This block is appended to both
+// system prompts (initial draft and regenerate) so the model has the
+// same fact-discipline constraints whichever path it's taking.
+//
+// The named examples ("8-hour SLA", "1TB OneDrive", "99.9% uptime",
+// "£49 per workstation setup", "50GB Exchange Email") are taken
+// directly from the prior live Q-187 output where the model
+// hallucinated industry defaults. Calling them out by name in the
+// prompt is the strongest deterrent — softer rules ("don't invent
+// statistics") have proven insufficient because the model interprets
+// gaps in the tender as licence to fill in plausible defaults.
+
+const AUTHORITY_HIERARCHY_RULES = `
+AUTHORITY HIERARCHY — when sources conflict or you need a specific number, follow this ranking:
+
+1. QUOTE LINE ITEMS are the contractual truth. If a line item or its sub-bullets specify "4-hour response SLA", "£18 per user", "ESET at £4 per device", "Silver Support for 6 users", or any other concrete fact — that is exactly what is being delivered. Reflect it accurately in chapter narrative or stay vague — NEVER contradict.
+
+2. TENDER TEXT is the client's stated requirements and context. Use it to understand what they need, what their environment looks like, and what specific concerns to address.
+
+3. BROCHURE FACTS are the supplier's general capability claims and credentials. Use them for "About Us"-style content (history, location, team size, awards, testimonials), and for capability descriptions ("our backup uses zero-knowledge architecture") — but NOT to assert engagement-specific commitments. The brochure says what the supplier CAN do; the line items say what THIS engagement IS.
+
+4. ANYTHING ELSE is forbidden. Do NOT invent: response times, storage allocations (e.g. "1TB OneDrive per user"), mailbox sizes (e.g. "50GB Exchange Email"), uptime guarantees (e.g. "99.9% uptime"), included service hours (e.g. "6 hours per month"), per-workstation setup fees (e.g. "£49 per workstation"), certifications, scope items, or any other specific number not present in the line items, tender, or brochure.
+
+If you find yourself reaching for a default like "8-hour SLA" or "1TB OneDrive" or "99.9% uptime" or "£49 per workstation" — STOP. Check the line items first, then the tender, then the brochure. If the number isn't in any of those, omit the sentence or hedge with phrasing like "as set out in your line items", "per the contract terms below", or "in line with the scope agreed with you". Capability statements ("we provide secure cloud backup") are fine; specific commitments ("with 99.9% uptime") are not, unless the line items or tender say so.
+`.trim();
+
 // ─── Public entry point ──────────────────────────────────────────────
 
 /**
@@ -458,12 +631,16 @@ export async function generateBrandedProposalDraft(params: {
   const system = `You are writing a B2B services proposal. The structure is fixed: 18 chapter slots. Some slots will be filled by embedding the supplier's brochure pages verbatim. You are writing the OTHER slots — the ones that need generated text.
 
 CRITICAL RULES:
-1. Use ONLY facts that are explicitly provided to you (tender text + brochure facts). Never invent: founding dates, founder names, certifications, locations, contract lengths, statistics, customer counts, employee counts, awards.
+1. Use ONLY facts that are explicitly provided to you (quote line items + tender text + brochure facts). Never invent: founding dates, founder names, certifications, locations, contract lengths, statistics, customer counts, employee counts, awards.
 2. Reference SPECIFIC details from the tender (user count, site count, technology names, sector type, mission). The proposal must read as written for THIS client, not a template.
 3. Where the brochure provides facts (USPs, service descriptions, contract posture), USE THEM verbatim or near-verbatim. Don't paraphrase loosely and lose the specificity.
 4. No marketing waffle. No "leveraging synergies" or "best-in-class". Plain, confident, professional UK English.
 5. No source attribution superscripts. No footnotes.
 6. If a slot's guidance says "only include if the tender mentions X" and the tender doesn't mention X, return an empty body for that slot (just the title) — the assembly step will skip it.
+
+${AUTHORITY_HIERARCHY_RULES}
+
+When chapter content needs the CLIENT'S NAME, use the value of "Client name:" from the Quote Facts block. When it needs the PROPOSAL TITLE (e.g. on the cover), use the value of "Proposal title:" from the Quote Facts block. Follow the explicit fallback instructions if either field is marked NOT SET.
 
 Return ONLY valid JSON in this exact shape:
 {
@@ -475,7 +652,10 @@ Return ONLY valid JSON in this exact shape:
 
 The body should be plain text with double-newlines (\\n\\n) between paragraphs. No HTML, no markdown, no headings inside body.`;
 
-  const user = `# Tender text
+  const user = `# Quote facts (the contractual scope being delivered)
+${buildQuoteFactsBlock(params.quoteContext)}
+
+# Tender text
 ${params.tenderText.slice(0, 8000)}
 
 # Brochure facts (organised by page purpose)
@@ -601,10 +781,17 @@ export async function regenerateSingleChapter(params: {
 2. Reference specific tender details — make it read as written for THIS client.
 3. No marketing waffle, no source attribution superscripts.
 
+${AUTHORITY_HIERARCHY_RULES}
+
+When chapter content needs the CLIENT'S NAME, use the value of "Client name:" from the Quote Facts block. When it needs the PROPOSAL TITLE, use the value of "Proposal title:" from the Quote Facts block. Follow the explicit fallback instructions if either field is marked NOT SET.
+
 Return ONLY valid JSON:
 { "slotIndex": ${params.slotIndex}, "title": "...", "body": "..." }`;
 
-  const user = `# Chapter to rewrite
+  const user = `# Quote facts (the contractual scope being delivered)
+${buildQuoteFactsBlock(params.quoteContext)}
+
+# Chapter to rewrite
 Slot ${def.slotIndex} — ${def.slotName}
 Title: "${def.generateTitle}"
 Guidance: ${def.generateGuidance}
