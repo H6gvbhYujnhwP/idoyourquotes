@@ -45,7 +45,10 @@ import {
 import { assembleBrandedProposal } from "./brandedProposalAssembler";
 import type { BrochureKnowledge } from "./brochureExtractor";
 
-const ALLOWED_TIERS = ["pro", "business"] as const;
+// Runtime tier values are "trial" / "solo" / "pro" / "team" — see
+// server/services/stripe.ts TIER_CONFIG. Schema files say "business"
+// but the live DB and all runtime writes use "team".
+const ALLOWED_TIERS = ["pro", "team"] as const;
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 

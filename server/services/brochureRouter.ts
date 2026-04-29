@@ -50,7 +50,12 @@ import { PDFDocument } from "pdf-lib";
 
 const MAX_PAGE_COUNT = 30;
 const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB
-const ALLOWED_TIERS = ["pro", "business"] as const;
+// Runtime tier values are "trial" / "solo" / "pro" / "team" — see
+// server/services/stripe.ts TIER_CONFIG. The shared/schema.ts enum
+// still says "business" but the DB-level enum was migrated to "team"
+// in production some time ago. All runtime writes use "team", so the
+// tier gate must check against "team".
+const ALLOWED_TIERS = ["pro", "team"] as const;
 type AllowedTier = (typeof ALLOWED_TIERS)[number];
 
 // ─── Helpers ─────────────────────────────────────────────────────────

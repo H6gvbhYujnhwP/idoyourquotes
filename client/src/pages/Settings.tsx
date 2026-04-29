@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase, Shield, Clock, PoundSterling, CreditCard, Users, Crown, AlertTriangle, Trash2, Mail, UserPlus, Check, ArrowRight, XCircle, RotateCcw, Download, Palette, Globe, CheckCircle2, AlertCircle } from "lucide-react";
+import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase, Shield, Clock, PoundSterling, CreditCard, Users, Crown, AlertTriangle, Trash2, Mail, UserPlus, Check, ArrowRight, XCircle, RotateCcw, Download, Palette, Globe, CheckCircle2, AlertCircle, BookOpen } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog,
@@ -23,6 +23,10 @@ import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
+// Phase 4B Delivery B — new Settings tab for managing the company brochure.
+// Lives in its own component file rather than inline so the surgical
+// delta to this 2,025-line Settings.tsx stays small.
+import BrochureSettingsTab from "@/components/BrochureSettingsTab";
 
 export default function Settings() {
   const { user, logout } = useAuth();
@@ -326,6 +330,7 @@ export default function Settings() {
         {[
           { id: 'profile', label: 'Profile', icon: User },
           { id: 'branding', label: 'Proposal Branding', icon: Palette },
+          { id: 'brochure', label: 'Company Brochure', icon: BookOpen },
           { id: 'billing', label: 'Billing', icon: CreditCard },
           { id: 'team', label: 'Team', icon: Users },
         ].map(tab => (
@@ -349,6 +354,13 @@ export default function Settings() {
 
       {/* Team Tab */}
       {activeTab === 'team' && <TeamTab />}
+
+      {/* Company Brochure Tab — Phase 4B Delivery B.
+          The brochure is stored at the org level and reused on every
+          Branded Proposal generation (Tile 3). Tab is visible to all
+          tiers but the upload/extract actions inside are gated to
+          Pro/Team — Solo/Trial users see a soft upgrade CTA instead. */}
+      {activeTab === 'brochure' && <BrochureSettingsTab />}
 
       {/* Proposal Branding Tab — Phase 4A.
           Holds the website URL alongside the existing logo upload (Profile
