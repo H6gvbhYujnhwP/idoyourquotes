@@ -47,9 +47,18 @@ interface PageDimensions {
 // ─── Layout helpers ──────────────────────────────────────────────────
 
 function computeLayout(dim: PageDimensions) {
-  const marginX = Math.max(dim.width * 0.08, 36);
-  const marginTop = Math.max(dim.height * 0.10, 36);
-  const marginBottom = Math.max(dim.height * 0.08, 32);
+  // Fixed pt values for A4 portrait business documents
+  // (Phase 4B Delivery E.2). The previous height-percentage formula
+  // was calibrated for narrative pages that inherited the brochure's
+  // native size (typically A5 landscape, ~420pt tall). Once Delivery
+  // E.1 forced narrative pages to A4 portrait (842pt tall — exactly
+  // 2x taller), every margin and font size doubled with it. We now
+  // anchor to absolute values appropriate for A4 portrait. If the
+  // target page size ever changes (computeTargetDimensions returns
+  // something other than A4 portrait), revisit these.
+  const marginX = 48;       // ~17 mm — conventional A4 side margin
+  const marginTop = 60;     // ~21 mm
+  const marginBottom = 50;  // ~17.5 mm
   return {
     marginX,
     marginTop,
@@ -187,8 +196,15 @@ function drawChapter(
   const layout = computeLayout(dim);
   const pages: PDFPage[] = [];
 
-  const titleSize = Math.max(dim.height * 0.045, 18);
-  const bodySize = Math.max(dim.height * 0.024, 10);
+  // Fixed pt sizes for A4 portrait business documents
+  // (Phase 4B Delivery E.2). Previously these were
+  // dim.height * 0.045 (title) and dim.height * 0.024 (body), which
+  // doubled when E.1 moved narrative pages from A5-landscape height
+  // (~420pt) to A4-portrait height (842pt). Symptoms in production:
+  // chapter titles cut off mid-word ("Understanding Your Requirem")
+  // and short chapters spilling onto unnecessary continuation pages.
+  const titleSize = 20;
+  const bodySize = 11;
   const lineHeight = bodySize * 1.55;
   const paragraphGap = bodySize * 0.7;
 
@@ -297,9 +313,14 @@ function drawCover(
   const subline = lines[1] ?? "";
   const valueLine = lines.slice(2).join(" ").trim();
 
-  const titleSize = Math.max(dim.height * 0.075, 28);
-  const sublineSize = Math.max(dim.height * 0.035, 14);
-  const valueSize = Math.max(dim.height * 0.025, 11);
+  const titleSize = 32;
+  const sublineSize = 16;
+  const valueSize = 12;
+  // Fixed pt sizes for the A4 portrait cover (Phase 4B Delivery E.2).
+  // Previously dim.height * 0.075 / 0.035 / 0.025, which produced a
+  // 63pt title on A4 portrait — wrapping the proposal title to 4
+  // lines instead of 2 and crowding the page. See drawChapter for
+  // the same fix's full rationale.
 
   const inkPrimary = rgb(0.06, 0.06, 0.10);
   const inkSecondary = rgb(0.30, 0.30, 0.35);
@@ -529,10 +550,23 @@ function drawPricingChapter(
   const cols = buildColumns(layout);
   const pages: PDFPage[] = [];
 
-  const titleSize = Math.max(dim.height * 0.045, 18);
-  const sectionSize = Math.max(dim.height * 0.028, 12);
-  const bodySize = Math.max(dim.height * 0.024, 10);
-  const tableSize = Math.max(dim.height * 0.022, 9);
+  // Fixed pt sizes for A4 portrait pricing chapter
+  // (Phase 4B Delivery E.2). Previously these were:
+  //   titleSize:   dim.height * 0.045  → ~38pt on A4 portrait
+  //   sectionSize: dim.height * 0.028  → ~24pt
+  //   bodySize:    dim.height * 0.024  → ~20pt
+  //   tableSize:   dim.height * 0.022  → ~19pt
+  // The table at 19pt cells was readable but visually dominant; on
+  // a busy quote it could spill across multiple pages unnecessarily.
+  // See drawChapter for the same fix's full rationale.
+  // Section heads are intentionally smaller than the chapter title
+  // so they read as sub-sections within the chapter (one-off /
+  // monthly recurring / annual / optional) rather than competing
+  // with the chapter heading itself.
+  const titleSize = 20;
+  const sectionSize = 13;
+  const bodySize = 11;
+  const tableSize = 9.5;
   const lineHeight = bodySize * 1.55;
   const tableLineHeight = tableSize * 1.6;
   const paragraphGap = bodySize * 0.7;
