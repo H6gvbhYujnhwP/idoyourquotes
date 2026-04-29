@@ -134,6 +134,17 @@ export interface QuoteContext {
   lineItems?: QuoteContextLineItem[];
 }
 
+// ─── Slot index constants — Phase 4B Delivery D Phase 3 ──────────────
+//
+// The assembler needs to dispatch slot 15 to a custom renderer (one
+// that draws a real pricing table from the quote's line items rather
+// than rendering the AI's prose body verbatim). Exporting a named
+// constant beats sprinkling the magic number `15` across files —
+// reorder the SLOT_DEFS later and the constant is the single source
+// of truth that needs updating.
+
+export const PRICING_SLOT_INDEX = 15;
+
 // ─── Slot definitions ────────────────────────────────────────────────
 // The 18 chapter slots that match the Manus Headway proposal structure.
 // fillerType:
@@ -284,7 +295,7 @@ const SLOT_DEFS: SlotDef[] = [
     preferredTags: [],
     generateTitle: "Pricing Summary",
     generateGuidance:
-      "PROOF-EQUIVALENT NOTE: For Delivery A this slot is filled by the AI based on tender scope. Delivery C wires this to the existing pricing engine (the IT addendum, tender mode, and scope dedup work from previous deliveries continue to drive line-item generation; the engine output is then formatted into a clean pricing table for this chapter).",
+      "Write a SHORT intro of 2-3 sentences ONLY. Frame the pricing approach in plain English (e.g. 'Our pricing separates one-off project work from ongoing monthly services, with all costs based on the scope agreed in your tender.'). Do NOT write any line items, prices, totals, percentages, monthly figures, or numerical breakdowns of any kind — these are rendered as a structured table immediately below your prose, drawn directly from the quote's line items. Anything you write that contains a £ amount or a numerical total will be redundant with the table that follows.",
   },
   {
     slotIndex: 16,
@@ -545,15 +556,6 @@ export async function generateBrandedProposalDraft(params: {
    */
   quoteContext?: QuoteContext;
 }): Promise<BrandedProposalDraft> {
-  // Phase 1 plumbing log — confirms in Render logs that the router is
-  // passing the new context through. Removed in Phase 2 once the
-  // context is actively consumed by the prompt builder.
-  if (params.quoteContext) {
-    const qc = params.quoteContext;
-    console.log(
-      `[brandedProposal] generateDraft received quoteContext: client="${qc.clientName ?? ""}", ref="${qc.reference ?? ""}", taxRate=${qc.taxRate ?? 0}, lineItems=${qc.lineItems?.length ?? 0}`,
-    );
-  }
   // ── Phase 1: deterministic slot-to-page pairing ───────────────────
   const slotPlan: Array<
     | {

@@ -31,7 +31,12 @@ import {
   type PDFPage,
   type PDFFont,
 } from "pdf-lib";
-import type { ChapterSlot, QuoteContext } from "../engines/brandedProposalEngine";
+import type {
+  ChapterSlot,
+  QuoteContext,
+  QuoteContextLineItem,
+} from "../engines/brandedProposalEngine";
+import { PRICING_SLOT_INDEX } from "../engines/brandedProposalEngine";
 
 interface PageDimensions {
   width: number;
@@ -259,6 +264,638 @@ function drawCover(
   return page;
 }
 
+// ─── Pricing chapter — Phase 4B Delivery D Phase 3 ───────────────────
+//
+// Custom renderer for slot 15 (Pricing Summary). Replaces the prose-
+// only chapter with a structured layout: short AI intro at the top,
+// then real line item tables drawn directly from the quote's line
+// items, then a totals strip. The AI is instructed (via slot 15's
+// generateGuidance) to write only an intro paragraph and never any
+// numbers — the table is the source of truth.
+//
+// Why this matters:
+//   - Numbers in the proposal must match the quote DB exactly. If the
+//     user edits a line item and re-renders, the table updates with no
+//     AI involvement (no regenerate needed). The intro prose is
+//     ornament; the table is contract.
+//   - Cadence (one-off vs monthly vs annual vs optional) is visually
+//     distinct so a customer can see at a glance what they're
+//     committing to. The existing pdfGenerator pipeline does the same
+//     split — we match its convention rather than invent a new one.
+//   - VAT only applies to the one-off (standard) subtotal, mirroring
+//     pdfGenerator's behaviour. Recurring rows display as "+ VAT"
+//     since the VAT is per-period and depends on when it's applied.
+//
+// Pagination: when there are too many line items to fit on one page
+// the table flows onto continuation pages. Each continuation page
+// re-emits the column header. Totals only appear at the end.
+
+function formatCurrency(value: number): string {
+  // £-prefixed, two-decimal, thousands separator. Negative values
+  // show as "-£123.45". This matches the existing PDF generator's
+  // formatting (see formatCurrency in pdfGenerator.ts).
+  const sign = value < 0 ? "-" : "";
+  const abs = Math.abs(value);
+  const fixed = abs.toFixed(2);
+  const [whole, frac] = fixed.split(".");
+  const withSep = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${sign}£${withSep}.${frac}`;
+}
+
+function formatQuantity(value: number): string {
+  // Show quantities as integers when they're whole numbers, otherwise
+  // up to 2 decimal places. Matches the existing PDF behaviour and
+  // avoids "6.00 User" looking odd next to "1 each".
+  if (Number.isInteger(value)) return value.toString();
+  return value.toFixed(2).replace(/\.?0+$/, "");
+}
+
+/**
+ * Pull the summary (first line before any "||" or "##" sub-bullet
+ * separator) from a line item description. Sub-bullet detail is
+ * relevant in the AI's narrative chapters (where it informs scope
+ * specifics) but would crowd the pricing table — so the table shows
+ * the headline only.
+ */
+function extractDescriptionSummary(desc: string): string {
+  if (!desc) return "";
+  const split = desc.split(/\|\||##/);
+  return split[0].trim();
+}
+
+interface PricingTableColumns {
+  descriptionX: number;
+  descriptionWidth: number;
+  qtyX: number;
+  qtyWidth: number;
+  unitX: number;
+  unitWidth: number;
+  rateX: number;
+  rateWidth: number;
+  totalX: number;
+  totalWidth: number;
+}
+
+/** Compute column positions inside the chapter content area. */
+function buildColumns(layout: ReturnType<typeof computeLayout>): PricingTableColumns {
+  const totalWidth = 70;
+  const rateWidth = 60;
+  const unitWidth = 50;
+  const qtyWidth = 40;
+  const gap = 8;
+  const descriptionWidth =
+    layout.contentWidth - totalWidth - rateWidth - unitWidth - qtyWidth - gap * 4;
+  const descriptionX = layout.marginX;
+  const qtyX = descriptionX + descriptionWidth + gap;
+  const unitX = qtyX + qtyWidth + gap;
+  const rateX = unitX + unitWidth + gap;
+  const totalX = rateX + rateWidth + gap;
+  return {
+    descriptionX,
+    descriptionWidth,
+    qtyX,
+    qtyWidth,
+    unitX,
+    unitWidth,
+    rateX,
+    rateWidth,
+    totalX,
+    totalWidth,
+  };
+}
+
+interface RenderState {
+  page: PDFPage;
+  y: number;
+}
+
+/**
+ * Right-align text inside a column. pdf-lib's drawText is left-anchored
+ * so we measure the rendered width and offset accordingly. Used for
+ * Qty (right), Rate (right), and Total (right) columns; description
+ * stays left-aligned, unit centred.
+ */
+function drawTextInColumn(
+  page: PDFPage,
+  text: string,
+  font: PDFFont,
+  size: number,
+  columnX: number,
+  columnWidth: number,
+  baselineY: number,
+  align: "left" | "right" | "center",
+  color: ReturnType<typeof rgb>,
+) {
+  const width = font.widthOfTextAtSize(text, size);
+  let x: number;
+  if (align === "right") x = columnX + columnWidth - width;
+  else if (align === "center") x = columnX + (columnWidth - width) / 2;
+  else x = columnX;
+  page.drawText(text, { x, y: baselineY, size, font, color });
+}
+
+interface PricingTotals {
+  oneOffSubtotal: number;
+  monthlySubtotal: number;
+  annualSubtotal: number;
+  vat: number;
+  oneOffWithVat: number;
+}
+
+/** Compute totals across the line item groups. VAT applies to the
+ *  one-off subtotal only (matching the existing pdfGenerator
+ *  convention — recurring services have their VAT applied per-period
+ *  and aren't summed into a single number). */
+function computeTotals(
+  lineItems: QuoteContextLineItem[],
+  taxRate: number,
+): PricingTotals {
+  const oneOff = lineItems
+    .filter((li) => li.pricingType === "standard")
+    .reduce((s, li) => s + li.total, 0);
+  const monthly = lineItems
+    .filter((li) => li.pricingType === "monthly")
+    .reduce((s, li) => s + li.total, 0);
+  const annual = lineItems
+    .filter((li) => li.pricingType === "annual")
+    .reduce((s, li) => s + li.total, 0);
+  const vat = taxRate > 0 ? oneOff * (taxRate / 100) : 0;
+  return {
+    oneOffSubtotal: oneOff,
+    monthlySubtotal: monthly,
+    annualSubtotal: annual,
+    vat,
+    oneOffWithVat: oneOff + vat,
+  };
+}
+
+function drawPricingChapter(
+  doc: PDFDocument,
+  dim: PageDimensions,
+  introBody: string,
+  quoteContext: QuoteContext,
+  fonts: { regular: PDFFont; bold: PDFFont },
+): PDFPage[] {
+  const layout = computeLayout(dim);
+  const cols = buildColumns(layout);
+  const pages: PDFPage[] = [];
+
+  const titleSize = Math.max(dim.height * 0.045, 18);
+  const sectionSize = Math.max(dim.height * 0.028, 12);
+  const bodySize = Math.max(dim.height * 0.024, 10);
+  const tableSize = Math.max(dim.height * 0.022, 9);
+  const lineHeight = bodySize * 1.55;
+  const tableLineHeight = tableSize * 1.6;
+  const paragraphGap = bodySize * 0.7;
+
+  const ink = rgb(0.10, 0.10, 0.13);
+  const titleInk = rgb(0.06, 0.06, 0.10);
+  const mutedInk = rgb(0.45, 0.45, 0.50);
+  const ruleColor = rgb(0.85, 0.85, 0.88);
+  const accentColor = rgb(0.05, 0.58, 0.53); // matches the brand teal
+
+  // ── Page management ─────────────────────────────────────────────
+  const newPage = (): PDFPage => {
+    const p = doc.addPage([dim.width, dim.height]);
+    pages.push(p);
+    return p;
+  };
+
+  let state: RenderState = { page: newPage(), y: layout.contentTop };
+
+  const ensureSpace = (needed: number) => {
+    if (state.y - needed < layout.contentBottom) {
+      state = { page: newPage(), y: layout.contentTop };
+    }
+  };
+
+  // ── Chapter title ───────────────────────────────────────────────
+  state.page.drawText("Pricing Summary", {
+    x: layout.marginX,
+    y: state.y - titleSize,
+    size: titleSize,
+    font: fonts.bold,
+    color: titleInk,
+  });
+  state.y -= titleSize * 1.6;
+  state.page.drawLine({
+    start: { x: layout.marginX, y: state.y },
+    end: { x: layout.marginX + Math.min(layout.contentWidth * 0.35, 120), y: state.y },
+    thickness: 0.75,
+    color: mutedInk,
+  });
+  state.y -= titleSize * 0.5;
+
+  // ── Intro prose ─────────────────────────────────────────────────
+  // Cap to a sensible length. The slot 15 prompt asks for 2-3 sentences
+  // only, but the assembler is the second line of defence: if the
+  // model writes a long body anyway, we truncate at 600 chars to
+  // reserve room for the table without losing all of the AI's framing.
+  const trimmedIntro = (introBody || "").trim();
+  const cappedIntro =
+    trimmedIntro.length > 600
+      ? trimmedIntro.slice(0, 600).replace(/\s+\S*$/, "") + "…"
+      : trimmedIntro;
+
+  if (cappedIntro.length > 0) {
+    const introParagraphs = cappedIntro
+      .split(/\n\s*\n/)
+      .map((p) => p.replace(/\s+/g, " ").trim())
+      .filter((p) => p.length > 0);
+
+    introParagraphs.forEach((paragraph, idx) => {
+      if (idx > 0) state.y -= paragraphGap;
+      const wrapped = wrapText(paragraph, fonts.regular, bodySize, layout.contentWidth);
+      for (const line of wrapped) {
+        ensureSpace(lineHeight);
+        state.page.drawText(line, {
+          x: layout.marginX,
+          y: state.y - bodySize,
+          size: bodySize,
+          font: fonts.regular,
+          color: ink,
+        });
+        state.y -= lineHeight;
+      }
+    });
+    state.y -= paragraphGap;
+  }
+
+  // ── Tables, grouped by pricing type ─────────────────────────────
+  const lineItems = quoteContext.lineItems ?? [];
+  const groups: Array<{
+    label: string;
+    totalLabel: string;
+    items: QuoteContextLineItem[];
+    showSubtotal: boolean;
+    excludedFromHeadline: boolean;
+  }> = [
+    {
+      label: "One-off charges",
+      totalLabel: "Subtotal (ex VAT)",
+      items: lineItems.filter((li) => li.pricingType === "standard"),
+      showSubtotal: true,
+      excludedFromHeadline: false,
+    },
+    {
+      label: "Monthly recurring services",
+      totalLabel: "Monthly total (ex VAT)",
+      items: lineItems.filter((li) => li.pricingType === "monthly"),
+      showSubtotal: true,
+      excludedFromHeadline: false,
+    },
+    {
+      label: "Annual recurring services",
+      totalLabel: "Annual total (ex VAT)",
+      items: lineItems.filter((li) => li.pricingType === "annual"),
+      showSubtotal: true,
+      excludedFromHeadline: false,
+    },
+    {
+      label: "Optional add-ons (not included in totals)",
+      totalLabel: "",
+      items: lineItems.filter((li) => li.pricingType === "optional"),
+      showSubtotal: false,
+      excludedFromHeadline: true,
+    },
+  ];
+
+  const drawTableHeader = () => {
+    // Column header row — small caps, muted, with a thin rule below.
+    const headerY = state.y - tableSize;
+    drawTextInColumn(
+      state.page,
+      "Description",
+      fonts.bold,
+      tableSize,
+      cols.descriptionX,
+      cols.descriptionWidth,
+      headerY,
+      "left",
+      mutedInk,
+    );
+    drawTextInColumn(
+      state.page,
+      "Qty",
+      fonts.bold,
+      tableSize,
+      cols.qtyX,
+      cols.qtyWidth,
+      headerY,
+      "right",
+      mutedInk,
+    );
+    drawTextInColumn(
+      state.page,
+      "Unit",
+      fonts.bold,
+      tableSize,
+      cols.unitX,
+      cols.unitWidth,
+      headerY,
+      "center",
+      mutedInk,
+    );
+    drawTextInColumn(
+      state.page,
+      "Rate",
+      fonts.bold,
+      tableSize,
+      cols.rateX,
+      cols.rateWidth,
+      headerY,
+      "right",
+      mutedInk,
+    );
+    drawTextInColumn(
+      state.page,
+      "Amount",
+      fonts.bold,
+      tableSize,
+      cols.totalX,
+      cols.totalWidth,
+      headerY,
+      "right",
+      mutedInk,
+    );
+    state.y -= tableLineHeight;
+    state.page.drawLine({
+      start: { x: layout.marginX, y: state.y + tableSize * 0.2 },
+      end: { x: layout.marginX + layout.contentWidth, y: state.y + tableSize * 0.2 },
+      thickness: 0.5,
+      color: ruleColor,
+    });
+    state.y -= tableSize * 0.3;
+  };
+
+  for (const group of groups) {
+    if (group.items.length === 0) continue;
+
+    // Section heading — needs the rest of the heading + at least one row to fit
+    ensureSpace(sectionSize * 1.6 + tableLineHeight * 2);
+
+    state.page.drawText(group.label, {
+      x: layout.marginX,
+      y: state.y - sectionSize,
+      size: sectionSize,
+      font: fonts.bold,
+      color: titleInk,
+    });
+    state.y -= sectionSize * 1.6;
+
+    drawTableHeader();
+
+    // Rows — each row may need 1 or more lines for description wrapping
+    for (const li of group.items) {
+      const desc = extractDescriptionSummary(li.description) || "(no description)";
+      const wrappedDesc = wrapText(desc, fonts.regular, tableSize, cols.descriptionWidth);
+      const rowHeight = tableLineHeight * wrappedDesc.length;
+
+      // Page break BEFORE drawing the row if it won't fit. Re-emit
+      // header on the new page so the table reads coherently.
+      if (state.y - rowHeight < layout.contentBottom) {
+        state = { page: newPage(), y: layout.contentTop };
+        drawTableHeader();
+      }
+
+      // Description (may wrap across multiple lines)
+      const rowTopY = state.y;
+      wrappedDesc.forEach((line, lineIdx) => {
+        state.page.drawText(line, {
+          x: cols.descriptionX,
+          y: rowTopY - tableSize - lineIdx * tableLineHeight,
+          size: tableSize,
+          font: fonts.regular,
+          color: ink,
+        });
+      });
+      // Qty / Unit / Rate / Total — drawn on the first line only
+      const firstLineY = rowTopY - tableSize;
+      drawTextInColumn(
+        state.page,
+        formatQuantity(li.quantity),
+        fonts.regular,
+        tableSize,
+        cols.qtyX,
+        cols.qtyWidth,
+        firstLineY,
+        "right",
+        ink,
+      );
+      drawTextInColumn(
+        state.page,
+        li.unit || "each",
+        fonts.regular,
+        tableSize,
+        cols.unitX,
+        cols.unitWidth,
+        firstLineY,
+        "center",
+        mutedInk,
+      );
+      drawTextInColumn(
+        state.page,
+        formatCurrency(li.rate),
+        fonts.regular,
+        tableSize,
+        cols.rateX,
+        cols.rateWidth,
+        firstLineY,
+        "right",
+        ink,
+      );
+      drawTextInColumn(
+        state.page,
+        formatCurrency(li.total),
+        fonts.bold,
+        tableSize,
+        cols.totalX,
+        cols.totalWidth,
+        firstLineY,
+        "right",
+        accentColor,
+      );
+
+      state.y -= rowHeight;
+
+      // Faint row separator
+      state.page.drawLine({
+        start: { x: layout.marginX, y: state.y + tableSize * 0.15 },
+        end: { x: layout.marginX + layout.contentWidth, y: state.y + tableSize * 0.15 },
+        thickness: 0.25,
+        color: ruleColor,
+      });
+      state.y -= tableSize * 0.25;
+    }
+
+    // Group subtotal
+    if (group.showSubtotal) {
+      ensureSpace(tableLineHeight * 1.4);
+      const subtotal = group.items.reduce((s, li) => s + li.total, 0);
+      const labelX = cols.rateX;
+      const labelWidth = cols.rateWidth + cols.totalWidth + 8;
+      drawTextInColumn(
+        state.page,
+        group.totalLabel,
+        fonts.bold,
+        tableSize,
+        labelX,
+        labelWidth - cols.totalWidth - 8,
+        state.y - tableSize,
+        "right",
+        mutedInk,
+      );
+      drawTextInColumn(
+        state.page,
+        formatCurrency(subtotal),
+        fonts.bold,
+        tableSize,
+        cols.totalX,
+        cols.totalWidth,
+        state.y - tableSize,
+        "right",
+        titleInk,
+      );
+      state.y -= tableLineHeight * 1.2;
+    }
+
+    // Spacing between groups
+    state.y -= paragraphGap;
+  }
+
+  // ── Headline totals strip ───────────────────────────────────────
+  // Always rendered (even if only one group exists) so the customer
+  // gets a clear "what do I pay" summary at the bottom. VAT and
+  // total-including-VAT only appear when there are one-off items
+  // (recurring totals don't get summed into a single grand total here
+  // — the cadence matters too much to flatten).
+  const totals = computeTotals(lineItems, quoteContext.taxRate ?? 0);
+
+  if (totals.oneOffSubtotal > 0 && (quoteContext.taxRate ?? 0) > 0) {
+    ensureSpace(tableLineHeight * 3);
+
+    // Visual strip on the right — three rows of label + value.
+    const stripLabelX = cols.rateX - 60;
+    const stripLabelWidth = cols.rateWidth + cols.totalWidth + 60 - cols.totalWidth - 8;
+
+    const drawStripRow = (
+      label: string,
+      value: string,
+      bold: boolean,
+      color: ReturnType<typeof rgb>,
+    ) => {
+      const f = bold ? fonts.bold : fonts.regular;
+      drawTextInColumn(
+        state.page,
+        label,
+        f,
+        tableSize,
+        stripLabelX,
+        stripLabelWidth,
+        state.y - tableSize,
+        "right",
+        bold ? titleInk : mutedInk,
+      );
+      drawTextInColumn(
+        state.page,
+        value,
+        fonts.bold,
+        tableSize,
+        cols.totalX,
+        cols.totalWidth,
+        state.y - tableSize,
+        "right",
+        color,
+      );
+      state.y -= tableLineHeight;
+    };
+
+    // Top rule on the strip
+    state.page.drawLine({
+      start: { x: stripLabelX, y: state.y },
+      end: { x: cols.totalX + cols.totalWidth, y: state.y },
+      thickness: 0.5,
+      color: ruleColor,
+    });
+    state.y -= tableSize * 0.4;
+
+    drawStripRow(
+      "Subtotal (one-off, ex VAT)",
+      formatCurrency(totals.oneOffSubtotal),
+      false,
+      ink,
+    );
+    drawStripRow(
+      `VAT (${quoteContext.taxRate}%)`,
+      formatCurrency(totals.vat),
+      false,
+      ink,
+    );
+    drawStripRow(
+      "Total one-off (inc VAT)",
+      formatCurrency(totals.oneOffWithVat),
+      true,
+      accentColor,
+    );
+
+    // Recurring summary lines underneath — separate because they're
+    // per-period, not summed into the headline.
+    if (totals.monthlySubtotal > 0) {
+      drawStripRow(
+        "Monthly recurring (ex VAT)",
+        formatCurrency(totals.monthlySubtotal) + " / month",
+        true,
+        accentColor,
+      );
+    }
+    if (totals.annualSubtotal > 0) {
+      drawStripRow(
+        "Annual recurring (ex VAT)",
+        formatCurrency(totals.annualSubtotal) + " / year",
+        true,
+        accentColor,
+      );
+    }
+  } else if (lineItems.length > 0) {
+    // No VAT case — just the three recurring/one-off subtotals.
+    ensureSpace(tableLineHeight * 2);
+    state.page.drawLine({
+      start: { x: cols.rateX - 60, y: state.y },
+      end: { x: cols.totalX + cols.totalWidth, y: state.y },
+      thickness: 0.5,
+      color: ruleColor,
+    });
+    state.y -= tableSize * 0.4;
+    if (totals.oneOffSubtotal > 0) {
+      drawTextInColumn(
+        state.page,
+        "Total one-off",
+        fonts.bold,
+        tableSize,
+        cols.rateX - 60,
+        cols.rateWidth + 60 - 8,
+        state.y - tableSize,
+        "right",
+        titleInk,
+      );
+      drawTextInColumn(
+        state.page,
+        formatCurrency(totals.oneOffSubtotal),
+        fonts.bold,
+        tableSize,
+        cols.totalX,
+        cols.totalWidth,
+        state.y - tableSize,
+        "right",
+        accentColor,
+      );
+      state.y -= tableLineHeight;
+    }
+  }
+
+  return pages;
+}
+
 // ─── Render narrative half ───────────────────────────────────────────
 
 /**
@@ -273,6 +910,7 @@ function drawCover(
 async function renderNarrativePages(params: {
   slots: ChapterSlot[];
   pageDimensions: PageDimensions;
+  quoteContext?: QuoteContext;
 }): Promise<{
   narrativePdfBytes: Uint8Array;
   pageIndexBySlot: Map<number, number[]>;
@@ -285,12 +923,34 @@ async function renderNarrativePages(params: {
   const pageIndexBySlot = new Map<number, number[]>();
   let runningIndex = 0;
 
+  // Slot 15 (Pricing Summary) gets the structured renderer when we
+  // have line items to draw from. If lineItems is empty (legacy
+  // quotes, partial data), fall back to the prose-only drawChapter
+  // path so the proposal still renders coherently.
+  const hasLineItems =
+    !!params.quoteContext?.lineItems &&
+    params.quoteContext.lineItems.length > 0;
+
   for (const slot of params.slots) {
     if (slot.source !== "generate") continue;
 
     let pages: PDFPage[];
     if (slot.slotName === "Cover") {
       pages = [drawCover(doc, params.pageDimensions, slot.body, fonts)];
+    } else if (
+      slot.slotIndex === PRICING_SLOT_INDEX &&
+      hasLineItems &&
+      params.quoteContext
+    ) {
+      // Phase 4B Delivery D Phase 3 — structured pricing chapter.
+      // The AI body is the intro prose; the table comes from the DB.
+      pages = drawPricingChapter(
+        doc,
+        params.pageDimensions,
+        slot.body,
+        params.quoteContext,
+        fonts,
+      );
     } else if (!slot.body || slot.body.trim().length === 0) {
       // Empty body = conditional slot the tender didn't trigger. Skip.
       continue;
@@ -351,17 +1011,6 @@ export interface AssembleParams {
 export async function assembleBrandedProposal(
   params: AssembleParams,
 ): Promise<Uint8Array> {
-  // Phase 4B Delivery D Phase 1 plumbing log — confirms in Render logs
-  // that the router is passing the new context through to the
-  // assembler. Removed in Phase 3 once the line items are actively
-  // consumed to render the pricing table.
-  if (params.quoteContext) {
-    const qc = params.quoteContext;
-    console.log(
-      `[brandedProposal] assemble received quoteContext: client="${qc.clientName ?? ""}", ref="${qc.reference ?? ""}", taxRate=${qc.taxRate ?? 0}, lineItems=${qc.lineItems?.length ?? 0}`,
-    );
-  }
-
   // Step 1: detect dimensions
   const brochureDoc = await PDFDocument.load(params.brochurePdfBytes);
   const firstPage = brochureDoc.getPage(0);
@@ -369,9 +1018,14 @@ export async function assembleBrandedProposal(
   const dim: PageDimensions = { width, height };
 
   // Step 2: render narrative pages
+  // Phase 4B Delivery D Phase 3 — quoteContext now flows into the
+  // narrative renderer so slot 15 (Pricing Summary) can draw the
+  // structured pricing table from the line items rather than relying
+  // on the AI's prose body alone.
   const { narrativePdfBytes, pageIndexBySlot } = await renderNarrativePages({
     slots: params.slots,
     pageDimensions: dim,
+    quoteContext: params.quoteContext,
   });
 
   // Step 3: assemble final PDF
