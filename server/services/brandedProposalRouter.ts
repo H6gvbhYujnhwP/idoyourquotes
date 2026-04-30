@@ -461,6 +461,18 @@ export const brandedProposalRouter = router({
       const targetOrientation: "portrait" | "landscape" =
         input.orientation === "landscape" ? "landscape" : "portrait";
 
+      // Phase 4B Delivery E.4.3 — quote reference + render-time date
+      // for the Title Page slot (the new slot 2 — formal "Proposal
+      // for X" page that follows the brochure cover). Reference falls
+      // back to "Q-{id}" if the quote record has none. Date is the
+      // current render date in long British format ("30 April 2026").
+      const quoteRefForTitle: string =
+        (quote as any).reference?.trim() || `Q-${quote.id}`;
+      const quoteDateStrForTitle: string = new Date().toLocaleDateString(
+        "en-GB",
+        { day: "numeric", month: "long", year: "numeric" },
+      );
+
       const pdfBytes = await assembleBrandedProposal({
         brochurePdfBytes: brochureBytes,
         slots: input.slots as ChapterSlot[],
@@ -469,6 +481,8 @@ export const brandedProposalRouter = router({
         companyLogoFormat: logo?.format,
         brandPrimaryHex,
         targetOrientation,
+        quoteReference: quoteRefForTitle,
+        quoteDateStr: quoteDateStrForTitle,
       });
 
       // Build a sensible filename: "<client-name> Proposal <ref>.pdf"

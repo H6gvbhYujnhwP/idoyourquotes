@@ -143,19 +143,30 @@ export interface QuoteContext {
 // reorder the SLOT_DEFS later and the constant is the single source
 // of truth that needs updating.
 
-export const PRICING_SLOT_INDEX = 15;
+export const PRICING_SLOT_INDEX = 16;
 
 // ─── Slot definitions ────────────────────────────────────────────────
-// The 18 chapter slots that match the Manus Headway proposal structure.
+// The 19 chapter slots that match the Manus Headway proposal structure.
+//
+// Phase 4B Delivery E.4.3 — slot 1 (Cover) changed from generated
+// content to "always-embed-first-page" (brochure page 1 verbatim is
+// the proposal cover). New slot 2 (Title Page) inserted to carry the
+// formal "Proposal for X" content that previously lived on slot 1.
+// All subsequent slots renumbered +1 (PRICING was 15, now 16).
+//
 // fillerType:
-//   "embed-or-generate": prefer to embed a brochure page if a clean one
-//     with a matching tag exists; otherwise generate text from facts.
+//   "always-embed-first-page": ignore brochure classification; always
+//     embed brochure page 1. Used for the new cover slot which IS the
+//     brochure's own cover by definition.
+//   "embed-or-generate": prefer to embed a brochure page if a clean
+//     one with a matching tag exists; otherwise generate text from
+//     facts.
 //   "always-generate": this slot is too tender-specific to ever embed.
 
 interface SlotDef {
   slotIndex: number;
   slotName: string;
-  fillerType: "embed-or-generate" | "always-generate";
+  fillerType: "always-embed-first-page" | "embed-or-generate" | "always-generate";
   preferredTags: string[];
   generateTitle: string;
   generateGuidance: string;
@@ -163,16 +174,32 @@ interface SlotDef {
 
 const SLOT_DEFS: SlotDef[] = [
   {
+    // Phase 4B Delivery E.4.3 — Cover IS the brochure's own first page.
+    // No generation, no overlay, no logo from Settings (the brochure
+    // page already carries the supplier's brand identity). Page 1
+    // verbatim is the proposal's cover.
     slotIndex: 1,
     slotName: "Cover",
-    fillerType: "always-generate",
+    fillerType: "always-embed-first-page",
     preferredTags: [],
-    generateTitle: "Cover Page",
-    generateGuidance:
-      "Title of the proposal, the client's name, the supplier's name, and a one-line value statement. Plain, calm, professional.",
+    generateTitle: "",
+    generateGuidance: "",
   },
   {
+    // Phase 4B Delivery E.4.3 — formal title page. "Proposal for X"
+    // with the supplier's logo, quote reference, and date. This is
+    // what the old Cover slot used to render before E.4.3 split the
+    // brochure cover and the formal title page into two slots.
     slotIndex: 2,
+    slotName: "Title Page",
+    fillerType: "always-generate",
+    preferredTags: [],
+    generateTitle: "Title Page",
+    generateGuidance:
+      "Output exactly two short lines (separated by a blank line):\nLine 1: 'Proposal for {Client Name}' — use the exact client name from the tender, no extra words.\nLine 2: One single sentence of 8-12 words capturing the supplier's core value statement for THIS specific client. Plain, calm, professional. No marketing hyperbole.\nThe supplier's name, quote reference, and date are added automatically — do NOT include them. Do not use markdown.",
+  },
+  {
+    slotIndex: 3,
     slotName: "Executive Summary",
     fillerType: "always-generate",
     preferredTags: [],
@@ -181,7 +208,7 @@ const SLOT_DEFS: SlotDef[] = [
       "3–4 paragraphs. Open with a sentence that shows you understand THIS client's situation specifically (not generic industry-speak). Reference the client's mission/sector/size. State three priorities your service addresses for them. End with a confidence-building line about your operating model.",
   },
   {
-    slotIndex: 3,
+    slotIndex: 4,
     slotName: "About the Supplier",
     fillerType: "embed-or-generate",
     preferredTags: ["about"],
@@ -190,7 +217,7 @@ const SLOT_DEFS: SlotDef[] = [
       "Use ONLY the facts the brochure provides about company history, location, focus. Do not invent founding dates, locations, founders, or certifications. 2–3 paragraphs.",
   },
   {
-    slotIndex: 4,
+    slotIndex: 5,
     slotName: "What Makes Us Different",
     fillerType: "embed-or-generate",
     preferredTags: ["usp"],
@@ -199,7 +226,7 @@ const SLOT_DEFS: SlotDef[] = [
       "Use ONLY the USPs the brochure states. Tie each USP to a specific tender requirement where reasonable. Don't pad — if there are 3 USPs, write about 3.",
   },
   {
-    slotIndex: 5,
+    slotIndex: 6,
     slotName: "Track Record",
     fillerType: "embed-or-generate",
     preferredTags: ["track-record", "testimonial"],
@@ -208,7 +235,7 @@ const SLOT_DEFS: SlotDef[] = [
       "Use ONLY the metrics or social proof the brochure states (e.g. SLA percentages, review scores, testimonial themes). If the brochure has none, write a brief paragraph about retention and client relationships without inventing statistics.",
   },
   {
-    slotIndex: 6,
+    slotIndex: 7,
     slotName: "Understanding Your Requirements",
     fillerType: "always-generate",
     preferredTags: [],
@@ -217,7 +244,7 @@ const SLOT_DEFS: SlotDef[] = [
       "Read the tender carefully and restate the client's situation in your own words. Mention specific numbers (user count, sites, technology stack) the tender provides. Show comprehension, not regurgitation.",
   },
   {
-    slotIndex: 7,
+    slotIndex: 8,
     slotName: "Proposed Service Delivery",
     fillerType: "always-generate",
     preferredTags: [],
@@ -226,7 +253,7 @@ const SLOT_DEFS: SlotDef[] = [
       "Map the tender's scope of services to your delivery commitments. Use the brochure's service descriptions for HOW you deliver each, but the structure follows the tender's scope sections, not the brochure's sales order.",
   },
   {
-    slotIndex: 8,
+    slotIndex: 9,
     slotName: "Cloud Migration Approach",
     fillerType: "always-generate",
     preferredTags: [],
@@ -235,7 +262,7 @@ const SLOT_DEFS: SlotDef[] = [
       "Only include this chapter if the tender mentions cloud migration. Outline a discovery-led, phased approach. 6 stages: assess → plan → migrate → test → train → document. Keep it generic-but-credible — no invented timelines.",
   },
   {
-    slotIndex: 9,
+    slotIndex: 10,
     slotName: "Cybersecurity & Compliance",
     fillerType: "always-generate",
     preferredTags: [],
@@ -244,7 +271,7 @@ const SLOT_DEFS: SlotDef[] = [
       "Cover the controls the tender expects (GDPR, MFA, endpoint protection, email protection, backup verification, secure operations). Brief table-of-controls format works well here.",
   },
   {
-    slotIndex: 10,
+    slotIndex: 11,
     slotName: "Disaster Recovery & Continuity",
     fillerType: "always-generate",
     preferredTags: [],
@@ -253,7 +280,7 @@ const SLOT_DEFS: SlotDef[] = [
       "DR plan, annual review, annual testing, backup verification, secure handling of test data. Match what the tender asks for if those details are present.",
   },
   {
-    slotIndex: 11,
+    slotIndex: 12,
     slotName: "Website Hosting & Support",
     fillerType: "always-generate",
     preferredTags: [],
@@ -262,7 +289,7 @@ const SLOT_DEFS: SlotDef[] = [
       "Only include if the tender mentions a website. Cover hosting type, SSL, plugin updates, support hours per month. Match the tender's specific language (e.g. WordPress, VPS).",
   },
   {
-    slotIndex: 12,
+    slotIndex: 13,
     slotName: "Service Level Agreement",
     fillerType: "always-generate",
     preferredTags: [],
@@ -271,7 +298,7 @@ const SLOT_DEFS: SlotDef[] = [
       "Response times, resolution targets, escalation, reporting, review meetings. Match the tender's stated SLA expectations precisely where given.",
   },
   {
-    slotIndex: 13,
+    slotIndex: 14,
     slotName: "Implementation & Onboarding",
     fillerType: "always-generate",
     preferredTags: [],
@@ -280,7 +307,7 @@ const SLOT_DEFS: SlotDef[] = [
       "Discovery → Audit → Tooling → Stabilisation → Optimisation. Phased approach with clear outcomes per phase.",
   },
   {
-    slotIndex: 14,
+    slotIndex: 15,
     slotName: "Key Personnel",
     fillerType: "always-generate",
     preferredTags: [],
@@ -289,7 +316,7 @@ const SLOT_DEFS: SlotDef[] = [
       "Use ONLY names and roles explicitly named in the brochure. If the brochure names no one, describe the team in role terms only (helpdesk-led, account-managed) without inventing names.",
   },
   {
-    slotIndex: 15,
+    slotIndex: 16,
     slotName: "Pricing Summary",
     fillerType: "always-generate",
     preferredTags: [],
@@ -298,7 +325,7 @@ const SLOT_DEFS: SlotDef[] = [
       "Write a SHORT intro of 2-3 sentences ONLY. Frame the pricing approach in plain English (e.g. 'Our pricing separates one-off project work from ongoing monthly services, with all costs based on the scope agreed in your tender.'). Do NOT write any line items, prices, totals, percentages, monthly figures, or numerical breakdowns of any kind — these are rendered as a structured table immediately below your prose, drawn directly from the quote's line items. Anything you write that contains a £ amount or a numerical total will be redundant with the table that follows.",
   },
   {
-    slotIndex: 16,
+    slotIndex: 17,
     slotName: "Contract Terms",
     fillerType: "always-generate",
     preferredTags: [],
@@ -307,7 +334,7 @@ const SLOT_DEFS: SlotDef[] = [
       "Contract length, notice period, performance basis. Use the brochure's stated contract posture (e.g. no long contracts, 3-month rolling) if present. 2–3 short paragraphs.",
   },
   {
-    slotIndex: 17,
+    slotIndex: 18,
     slotName: "Why Us",
     fillerType: "always-generate",
     preferredTags: [],
@@ -316,7 +343,7 @@ const SLOT_DEFS: SlotDef[] = [
       "One concise paragraph pulling together the top 3–4 reasons (drawn from the brochure's USPs and the tender's stated priorities) why this supplier fits this client.",
   },
   {
-    slotIndex: 18,
+    slotIndex: 19,
     slotName: "Call to Action",
     fillerType: "always-generate",
     preferredTags: [],
@@ -571,6 +598,23 @@ export async function generateBrandedProposalDraft(params: {
   const usedPages = new Set<number>();
 
   for (const def of SLOT_DEFS) {
+    if (def.fillerType === "always-embed-first-page") {
+      // Phase 4B Delivery E.4.3 — Cover slot. Brochure page 1 is
+      // ALWAYS the proposal cover, regardless of how the brochure
+      // extractor classified that page (some brochures don't
+      // self-identify their first page as "cover" but it's still
+      // the cover by convention).
+      usedPages.add(1);
+      slotPlan.push({
+        type: "embed",
+        slotIndex: def.slotIndex,
+        slotName: def.slotName,
+        brochurePageNumber: 1,
+        tag: "cover",
+      });
+      continue;
+    }
+
     if (def.fillerType === "always-generate") {
       slotPlan.push({ type: "generate", def });
       continue;
@@ -687,12 +731,19 @@ ${slotInstructions}`;
   // Zip the slot plan with generated content into the final ChapterSlot[]
   const slots: ChapterSlot[] = slotPlan.map((s) => {
     if (s.type === "embed") {
+      // Phase 4B Delivery E.4.3 — Cover slot has a different reason
+      // text. It's not a brochure-classification match, it's a
+      // hard-coded "page 1 is your cover" rule.
+      const reason =
+        s.slotName === "Cover"
+          ? "Page 1 of your brochure is the proposal cover"
+          : `Brochure page ${s.brochurePageNumber} classified as "${s.tag}" with clean clarity`;
       return {
         slotIndex: s.slotIndex,
         slotName: s.slotName,
         source: "embed",
         brochurePageNumber: s.brochurePageNumber,
-        reason: `Brochure page ${s.brochurePageNumber} classified as "${s.tag}" with clean clarity`,
+        reason,
       };
     }
     const gen = generatedBySlot.get(s.def.slotIndex);

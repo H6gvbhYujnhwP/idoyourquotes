@@ -492,6 +492,8 @@ function drawCover(
   body: string,
   fonts: { regular: PDFFont; bold: PDFFont },
   logoImage?: PDFImage,
+  quoteReference?: string,
+  quoteDateStr?: string,
 ): PDFPage {
   const page = doc.addPage([dim.width, dim.height]);
   const layout = computeLayout(dim);
@@ -610,6 +612,24 @@ function drawCover(
       });
       y -= valueSize * 1.5;
     }
+  }
+
+  // ── Reference + date strip (Delivery E.4.3) ─────────────────────
+  // Below the value statement, in muted ink. Only rendered when at
+  // least one of the two strings is present. Format: "Q-1234 · 30 April 2026"
+  // (separator omitted if only one is given).
+  if (quoteReference || quoteDateStr) {
+    y -= valueSize * 0.6; // small additional gap before the meta line
+    const meta = [quoteReference, quoteDateStr]
+      .filter((s) => s && s.trim().length > 0)
+      .join("  ·  ");
+    page.drawText(meta, {
+      x: layout.marginX,
+      y,
+      size: valueSize * 0.85,
+      font: fonts.regular,
+      color: inkSecondary,
+    });
   }
 
   return page;
@@ -1305,6 +1325,13 @@ async function renderNarrativePages(params: {
    * or too-pale colours produce the same render as pre-E.4.
    */
   brandPrimaryHex?: string;
+  /**
+   * Phase 4B Delivery E.4.3 — quote reference + formatted date string
+   * for rendering on the Title Page slot (e.g. "Q-1234" + "30 April
+   * 2026"). Both optional; drawCover renders gracefully when absent.
+   */
+  quoteReference?: string;
+  quoteDateStr?: string;
 }): Promise<{
   narrativePdfBytes: Uint8Array;
   pageIndexBySlot: Map<number, number[]>;
@@ -1369,10 +1396,26 @@ async function renderNarrativePages(params: {
     }
 
     let pages: PDFPage[];
-    if (slot.slotName === "Cover") {
-      // Cover is a hero layout — never flows into / out of.
+    if (slot.slotName === "Title Page") {
+      // Phase 4B Delivery E.4.3 — Title Page replaces the old Cover
+      // slot. Brochure page 1 is now the actual cover (handled via
+      // standard embed letterboxing in assembleBrandedProposal).
+      // Title Page is the formal "Proposal for X" page that follows
+      // immediately after, drawn here as a generated page with the
+      // company logo from Settings, the AI-generated title and value
+      // statement, plus the quote reference and date.
       flowState = null;
-      pages = [drawCover(doc, params.pageDimensions, slot.body, fonts, logoImage)];
+      pages = [
+        drawCover(
+          doc,
+          params.pageDimensions,
+          slot.body,
+          fonts,
+          logoImage,
+          params.quoteReference,
+          params.quoteDateStr,
+        ),
+      ];
     } else if (
       slot.slotIndex === PRICING_SLOT_INDEX &&
       hasLineItems &&
@@ -1472,6 +1515,15 @@ export interface AssembleParams {
    * before calling.
    */
   targetOrientation?: "portrait" | "landscape";
+  /**
+   * Phase 4B Delivery E.4.3 — quote reference (e.g. "Q-1234") and
+   * formatted date string (e.g. "30 April 2026") for rendering on
+   * the Title Page slot. Caller resolves these from the quote record
+   * and current date. Both optional; drawCover renders gracefully
+   * when absent.
+   */
+  quoteReference?: string;
+  quoteDateStr?: string;
 }
 
 /**
@@ -1535,6 +1587,8 @@ export async function assembleBrandedProposal(
     companyLogoBytes: params.companyLogoBytes,
     companyLogoFormat: params.companyLogoFormat,
     brandPrimaryHex: params.brandPrimaryHex,
+    quoteReference: params.quoteReference,
+    quoteDateStr: params.quoteDateStr,
   });
 
   // Step 3: assemble final PDF

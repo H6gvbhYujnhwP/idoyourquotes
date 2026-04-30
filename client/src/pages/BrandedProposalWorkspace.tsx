@@ -143,6 +143,10 @@ function downloadBase64Pdf(base64: string, filename: string) {
 // given slot — feeds the embed-card preview in the main pane.
 function describeEmbedTag(slotName: string): string {
   const lower = slotName.toLowerCase();
+  // Phase 4B Delivery E.4.3 — Cover slot is now an embed-source slot
+  // pointing at brochure page 1 verbatim. Distinct label so the
+  // workspace doesn't say "Brochure page" generically.
+  if (lower === "cover") return "Cover";
   if (lower.includes("about")) return "About Us";
   if (lower.includes("different") || lower.includes("why")) return "USPs / Why Choose Us";
   if (lower.includes("track")) return "Track Record / Case Studies";
