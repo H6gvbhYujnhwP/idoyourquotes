@@ -102,6 +102,10 @@ export const brochureRouter = router({
       pageCount: orgAny.brochurePageCount ?? null,
       extractedAt: orgAny.brochureExtractedAt ?? null,
       knowledge: (orgAny.brochureKnowledge ?? null) as BrochureKnowledge | null,
+      // Phase 4B Delivery E.4 — orientation choice for branded
+      // proposal renders. UI reads this to populate the selector.
+      proposalOrientation:
+        (orgAny.proposalOrientation as string | null | undefined) ?? "auto",
     };
   }),
 
@@ -288,4 +292,40 @@ export const brochureRouter = router({
       thinness: isBrochureThin(knowledge),
     };
   }),
+  /**
+   * Phase 4B Delivery E.4 — set the org's proposal orientation
+   * preference. Affects all subsequent Tile 3 Branded Proposal
+   * renders. Existing renders are unaffected (proposals are
+   * generated on demand, not stored).
+   *
+   * Accepts 'auto' | 'portrait' | 'landscape'. 'auto' currently
+   * resolves to portrait (matching the E.1 default behaviour); the
+   * value is preserved as 'auto' rather than 'portrait' so a future
+   * iteration can change auto's resolution (e.g. detect from brochure
+   * shape) without rewriting everyone's stored preference.
+   *
+   * Tier-gated to Pro/Team — same as upload/reExtract.
+   */
+  setProposalOrientation: protectedProcedure
+    .input(
+      z.object({
+        orientation: z.enum(["auto", "portrait", "landscape"]),
+      }),
+    )
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .mutation(async ({ ctx, input }: { ctx: any; input: { orientation: "auto" | "portrait" | "landscape" } }) => {
+      const org = await getUserPrimaryOrg(ctx.user.id);
+      if (!org) throw new Error("No organisation found");
+
+      const tierCheck = checkTierAllowed((org as any).subscriptionTier);
+      if (!tierCheck.allowed) {
+        throw new Error(tierCheck.message);
+      }
+
+      await updateOrganization(org.id, {
+        proposalOrientation: input.orientation,
+      } as any);
+
+      return { orientation: input.orientation };
+    }),
 });

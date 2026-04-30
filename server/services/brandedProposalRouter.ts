@@ -435,12 +435,37 @@ export const brandedProposalRouter = router({
       // appearance — title and subline only).
       const logo = await fetchAndNormaliseLogo(orgAny.companyLogo);
 
+      // Phase 4B Delivery E.4 — resolve brand accent colour and
+      // proposal orientation from the org record. Both are best-effort:
+      // the assembler validates and falls back gracefully if either
+      // is missing or unrecognised.
+      //
+      // Brand colour fallback chain mirrors the existing brandedProposal
+      // renderer (Tile 2): the AI-extracted colour wins when present
+      // (subjective brand identity), falling back to the logo-pixel
+      // extracted colour, falling back to undefined (assembler then
+      // uses the original dark-navy ink).
+      const brandPrimaryHex: string | undefined =
+        orgAny.brandExtractedPrimaryColor ||
+        orgAny.brandPrimaryColor ||
+        undefined;
+
+      // proposalOrientation accepts 'auto' | 'portrait' | 'landscape'
+      // at the schema level. 'auto' currently maps to 'portrait' (the
+      // E.1 default — A4 portrait regardless of brochure shape). Any
+      // unexpected value also maps to 'portrait' as a safe default.
+      const orientationRaw = orgAny.proposalOrientation as string | null | undefined;
+      const targetOrientation: "portrait" | "landscape" =
+        orientationRaw === "landscape" ? "landscape" : "portrait";
+
       const pdfBytes = await assembleBrandedProposal({
         brochurePdfBytes: brochureBytes,
         slots: input.slots as ChapterSlot[],
         quoteContext,
         companyLogoBytes: logo?.bytes,
         companyLogoFormat: logo?.format,
+        brandPrimaryHex,
+        targetOrientation,
       });
 
       // Build a sensible filename: "<client-name> Proposal <ref>.pdf"

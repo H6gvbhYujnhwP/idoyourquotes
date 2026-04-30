@@ -106,16 +106,31 @@ const A4_WIDTH_PT = 595;   // 210 mm at 72 dpi
 const A4_HEIGHT_PT = 842;  // 297 mm at 72 dpi
 
 /**
- * Decide the target page size for the rendered proposal. Phase 4B
- * Delivery E (revised): always A4 portrait, regardless of brochure
- * orientation. The brochure's first-page dimensions are accepted as
- * a parameter so a future iteration can switch behaviour per-org or
- * per-quote without changing the call sites.
+ * Decide the target page size for the rendered proposal.
+ *
+ * History:
+ *   E   — initially returned orientation-matched A4
+ *   E.1 — always returned A4 portrait regardless of brochure shape
+ *   E.4 — accepts an orientation choice from the caller. The org
+ *         setting is read in the router; the assembler is just
+ *         told 'portrait' or 'landscape'. Defaults to portrait so
+ *         existing call sites stay correct.
+ *
+ * Why this is per-org rather than auto-detected:
+ *   Customers receiving a quote / proposal expect a portrait business
+ *   document by convention. A landscape proposal feels like a deck.
+ *   But if the supplier's brochure is landscape and they want their
+ *   narrative pages to match, they should be able to opt in. Hence
+ *   the per-org override.
  */
 function computeTargetDimensions(
   _brochureWidth: number,
   _brochureHeight: number,
+  orientation: "portrait" | "landscape" = "portrait",
 ): PageDimensions {
+  if (orientation === "landscape") {
+    return { width: A4_HEIGHT_PT, height: A4_WIDTH_PT };
+  }
   return { width: A4_WIDTH_PT, height: A4_HEIGHT_PT };
 }
 
@@ -181,11 +196,103 @@ function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): 
   return lines;
 }
 
+// ─── Brand-colour resolution (Phase 4B Delivery E.4) ─────────────────
+//
+// The branded proposal pulls in the supplier's brand primary colour
+// for narrative chapter titles, the underline beneath those titles,
+// and the pricing chapter's accent (section heads + totals strip).
+// This makes the narrative pages visually cohere with the brochure
+// they sit between.
+//
+// The colour is resolved by the caller (router) from
+// org.brand_extracted_primary_color (preferred — populated by the
+// AI brand-extraction pipeline) falling back to org.brand_primary_color
+// (logo-pixel extraction). Either may be missing, malformed, or too
+// light to read on a white background. We defend against all three.
+//
+// Fallback chain at draw time:
+//   1. Caller supplied a hex string → parse it.
+//   2. Parsed colour passes the readability check (luminance ≤ 0.6
+//      against white) → use it.
+//   3. Otherwise → fall back to the original dark-navy ink.
+//
+// We don't try to "fix" a too-pale colour by darkening it — that
+// produces unpredictable visual results. Better to fall back cleanly.
+
+interface RGB01 {
+  r: number; // 0-1
+  g: number; // 0-1
+  b: number; // 0-1
+}
+
+/**
+ * Parse a hex colour like "#1A2B3C" or "1A2B3C" or "#abc" (3-char
+ * shorthand) into 0-1 floats. Returns null for anything malformed.
+ */
+function parseHexColour(hex: string | null | undefined): RGB01 | null {
+  if (!hex) return null;
+  let h = hex.trim().replace(/^#/, "");
+  if (h.length === 3) {
+    // Expand #abc → #aabbcc
+    h = h
+      .split("")
+      .map((c) => c + c)
+      .join("");
+  }
+  if (h.length !== 6) return null;
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return null;
+  const r = parseInt(h.slice(0, 2), 16) / 255;
+  const g = parseInt(h.slice(2, 4), 16) / 255;
+  const b = parseInt(h.slice(4, 6), 16) / 255;
+  return { r, g, b };
+}
+
+/**
+ * WCAG-style relative luminance, returned in 0-1. Used to decide
+ * whether the colour reads on white. Standard formula uses sRGB
+ * gamma-corrected channel weights; we use the simple 0.299/0.587/0.114
+ * approximation here because we only need a rough cutoff, not a
+ * contrast-ratio compliance check.
+ */
+function relativeLuminance(c: RGB01): number {
+  return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
+}
+
+/**
+ * Convert a parsed RGB01 to pdf-lib's rgb() ink. Tiny shim for
+ * readability at call sites.
+ */
+function toRgbInk(c: RGB01) {
+  return rgb(c.r, c.g, c.b);
+}
+
+/**
+ * Resolve the brand accent colour for a draw operation.
+ * Returns the parsed RGB01 if usable on white, null if missing /
+ * malformed / too pale. Callers fall back to their own default ink.
+ */
+function resolveBrandAccent(brandPrimaryHex: string | null | undefined): RGB01 | null {
+  const parsed = parseHexColour(brandPrimaryHex);
+  if (!parsed) return null;
+  // 0.78 is a deliberately permissive ceiling. Most brand colours
+  // pass; only very pale yellows / pinks / mints are caught and
+  // diverted to fallback. A stricter 0.6 threshold would fall back
+  // for many legitimate mid-tone brand colours.
+  if (relativeLuminance(parsed) > 0.78) return null;
+  return parsed;
+}
+
 // ─── Per-chapter renderers ───────────────────────────────────────────
 
 /**
  * Draw a normal chapter (title + multi-paragraph body) across as many
  * pages as needed. Returns the array of pages added.
+ *
+ * Phase 4B Delivery E.4 — accepts an optional brand accent colour
+ * (already validated by resolveBrandAccent in the caller). When
+ * present, it tints the chapter title and the underline beneath it.
+ * When absent, falls back to the original dark-navy ink + grey
+ * underline so legacy orgs render exactly as before.
  */
 function drawChapter(
   doc: PDFDocument,
@@ -193,24 +300,32 @@ function drawChapter(
   title: string,
   body: string,
   fonts: { regular: PDFFont; bold: PDFFont },
+  brandAccent?: RGB01 | null,
 ): PDFPage[] {
   const layout = computeLayout(dim);
   const pages: PDFPage[] = [];
 
   // Fixed pt sizes for A4 portrait business documents
-  // (Phase 4B Delivery E.2). Previously these were
-  // dim.height * 0.045 (title) and dim.height * 0.024 (body), which
-  // doubled when E.1 moved narrative pages from A5-landscape height
-  // (~420pt) to A4-portrait height (842pt). Symptoms in production:
-  // chapter titles cut off mid-word ("Understanding Your Requirem")
-  // and short chapters spilling onto unnecessary continuation pages.
-  const titleSize = 20;
-  const bodySize = 11;
+  // (Phase 4B Delivery E.4 — reduced one notch from E.2's 20/11
+  // after live testing showed narrative typography sat heavier than
+  // most brochures' body type, making narrative pages feel chunky
+  // next to embedded brochure pages). Previously 20/11. Earlier
+  // (pre-E.2) these were dim.height * 0.045 / 0.024 — see drawCover
+  // for the full E.2 rationale on why height-percentage scaling
+  // was wrong for forced A4 portrait.
+  const titleSize = 18;
+  const bodySize = 10;
   const lineHeight = bodySize * 1.55;
   const paragraphGap = bodySize * 0.7;
 
   const ink = rgb(0.10, 0.10, 0.13);
-  const titleInk = rgb(0.06, 0.06, 0.10);
+  const fallbackTitleInk = rgb(0.06, 0.06, 0.10);
+  const fallbackUnderlineInk = rgb(0.45, 0.45, 0.50);
+  // Brand accent if usable, otherwise fall back. Title and underline
+  // share a colour intentionally — keeps the chapter heading visually
+  // unified and makes the supplier's brand land harder.
+  const titleInk = brandAccent ? toRgbInk(brandAccent) : fallbackTitleInk;
+  const underlineInk = brandAccent ? toRgbInk(brandAccent) : fallbackUnderlineInk;
 
   const paragraphs = body
     .split(/\n\s*\n/)
@@ -253,7 +368,7 @@ function drawChapter(
     start: { x: layout.marginX, y },
     end: { x: layout.marginX + Math.min(layout.contentWidth * 0.35, 120), y },
     thickness: 0.75,
-    color: rgb(0.45, 0.45, 0.50),
+    color: underlineInk,
   });
   y -= titleSize * 0.5;
 
@@ -603,37 +718,46 @@ function drawPricingChapter(
   introBody: string,
   quoteContext: QuoteContext,
   fonts: { regular: PDFFont; bold: PDFFont },
+  brandAccent?: RGB01 | null,
 ): PDFPage[] {
   const layout = computeLayout(dim);
   const cols = buildColumns(layout);
   const pages: PDFPage[] = [];
 
   // Fixed pt sizes for A4 portrait pricing chapter
-  // (Phase 4B Delivery E.2). Previously these were:
+  // (Phase 4B Delivery E.4 — reduced one notch from E.2's 20/13/11/9.5
+  // after live testing showed narrative typography felt heavier than
+  // most brochures'). Earlier (pre-E.2) these were:
   //   titleSize:   dim.height * 0.045  → ~38pt on A4 portrait
   //   sectionSize: dim.height * 0.028  → ~24pt
   //   bodySize:    dim.height * 0.024  → ~20pt
   //   tableSize:   dim.height * 0.022  → ~19pt
-  // The table at 19pt cells was readable but visually dominant; on
-  // a busy quote it could spill across multiple pages unnecessarily.
-  // See drawChapter for the same fix's full rationale.
+  // See drawChapter for the full E.2 rationale.
   // Section heads are intentionally smaller than the chapter title
   // so they read as sub-sections within the chapter (one-off /
   // monthly recurring / annual / optional) rather than competing
   // with the chapter heading itself.
-  const titleSize = 20;
-  const sectionSize = 13;
-  const bodySize = 11;
-  const tableSize = 9.5;
+  const titleSize = 18;
+  const sectionSize = 12;
+  const bodySize = 10;
+  const tableSize = 9;
   const lineHeight = bodySize * 1.55;
   const tableLineHeight = tableSize * 1.6;
   const paragraphGap = bodySize * 0.7;
 
   const ink = rgb(0.10, 0.10, 0.13);
-  const titleInk = rgb(0.06, 0.06, 0.10);
+  const fallbackTitleInk = rgb(0.06, 0.06, 0.10);
   const mutedInk = rgb(0.45, 0.45, 0.50);
   const ruleColor = rgb(0.85, 0.85, 0.88);
-  const accentColor = rgb(0.05, 0.58, 0.53); // matches the brand teal
+  // Phase 4B Delivery E.4 — brand accent for chapter title and the
+  // section heads / totals strip. Was hardcoded teal (0.05, 0.58, 0.53)
+  // pre-E.4, marked as "matches the brand teal" but actually only
+  // matched Sweetbyte's brand. Now resolves from the supplier's own
+  // primary colour with a clean fallback.
+  const titleInk = brandAccent ? toRgbInk(brandAccent) : fallbackTitleInk;
+  const accentColor = brandAccent
+    ? toRgbInk(brandAccent)
+    : rgb(0.05, 0.58, 0.53); // legacy teal kept as the no-brand fallback
 
   // ── Page management ─────────────────────────────────────────────
   const newPage = (): PDFPage => {
@@ -1105,6 +1229,14 @@ async function renderNarrativePages(params: {
    * Required when companyLogoBytes is provided.
    */
   companyLogoFormat?: "png" | "jpeg";
+  /**
+   * Phase 4B Delivery E.4 — supplier brand primary colour as a hex
+   * string (e.g. "#FF6B35"). Resolved once via resolveBrandAccent
+   * and used to tint chapter titles, the underline, and the pricing
+   * accent. Optional and silently fallback-on-bad: missing, malformed,
+   * or too-pale colours produce the same render as pre-E.4.
+   */
+  brandPrimaryHex?: string;
 }): Promise<{
   narrativePdfBytes: Uint8Array;
   pageIndexBySlot: Map<number, number[]>;
@@ -1133,6 +1265,11 @@ async function renderNarrativePages(params: {
       logoImage = undefined;
     }
   }
+
+  // Phase 4B Delivery E.4 — resolve the brand accent once. resolveBrandAccent
+  // returns null for missing / malformed / too-pale colours; downstream
+  // drawers fall back gracefully.
+  const brandAccent = resolveBrandAccent(params.brandPrimaryHex);
 
   const pageIndexBySlot = new Map<number, number[]>();
   let runningIndex = 0;
@@ -1164,12 +1301,20 @@ async function renderNarrativePages(params: {
         slot.body,
         params.quoteContext,
         fonts,
+        brandAccent,
       );
     } else if (!slot.body || slot.body.trim().length === 0) {
       // Empty body = conditional slot the tender didn't trigger. Skip.
       continue;
     } else {
-      pages = drawChapter(doc, params.pageDimensions, slot.title, slot.body, fonts);
+      pages = drawChapter(
+        doc,
+        params.pageDimensions,
+        slot.title,
+        slot.body,
+        fonts,
+        brandAccent,
+      );
     }
 
     const indices: number[] = [];
@@ -1212,6 +1357,24 @@ export interface AssembleParams {
    */
   companyLogoBytes?: Uint8Array;
   companyLogoFormat?: "png" | "jpeg";
+  /**
+   * Phase 4B Delivery E.4 — supplier brand primary colour as a hex
+   * string (e.g. "#FF6B35"). Caller is responsible for resolving
+   * which org field to read from (extracted vs logo-pixel). The
+   * assembler validates and falls back if missing / malformed /
+   * too pale to read on white. Optional.
+   */
+  brandPrimaryHex?: string;
+  /**
+   * Phase 4B Delivery E.4 — page orientation for the rendered
+   * proposal. 'portrait' (default) keeps the existing A4 portrait
+   * behaviour. 'landscape' produces an A4 landscape proposal —
+   * narrative pages are laid out landscape and brochure pages
+   * letterbox onto landscape canvases. Caller resolves the org
+   * setting (with its 'auto' option) to one of the two values
+   * before calling.
+   */
+  targetOrientation?: "portrait" | "landscape";
 }
 
 /**
@@ -1248,7 +1411,11 @@ export async function assembleBrandedProposal(
     width: brochureWidth,
     height: brochureHeight,
   };
-  const targetDim = computeTargetDimensions(brochureWidth, brochureHeight);
+  const targetDim = computeTargetDimensions(
+    brochureWidth,
+    brochureHeight,
+    params.targetOrientation ?? "portrait",
+  );
 
   // If target equals source the dimensions match — fall back to the
   // original copyPages path (cheaper than embedPdf and avoids any
@@ -1262,12 +1429,15 @@ export async function assembleBrandedProposal(
   // line items rather than relying on the AI's prose alone.
   // Phase 4B Delivery E.3 — companyLogoBytes / companyLogoFormat flow
   // in so the cover can render the supplier's logo above the title.
+  // Phase 4B Delivery E.4 — brandPrimaryHex flows in so chapter titles,
+  // the underline, and the pricing accent pick up the supplier's brand.
   const { narrativePdfBytes, pageIndexBySlot } = await renderNarrativePages({
     slots: params.slots,
     pageDimensions: targetDim,
     quoteContext: params.quoteContext,
     companyLogoBytes: params.companyLogoBytes,
     companyLogoFormat: params.companyLogoFormat,
+    brandPrimaryHex: params.brandPrimaryHex,
   });
 
   // Step 3: assemble final PDF

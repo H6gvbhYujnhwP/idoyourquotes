@@ -60,6 +60,16 @@ export const organizations = pgTable("organizations", {
   // enum migration; server-side validates against the known values.
   proposalTemplate: text("proposal_template").default("modern").notNull(),
   coverStatStripEnabled: boolean("cover_stat_strip_enabled").default(true).notNull(),
+  // Phase 4B Delivery E.4 — page orientation for the Tile 3 Branded
+  // Proposal renderer. Three values:
+  //   'auto'      → A4 portrait (current default behaviour)
+  //   'portrait'  → A4 portrait (explicit)
+  //   'landscape' → A4 landscape (for orgs whose brochure is landscape
+  //                 and whose narrative pages should match)
+  // Stored as text so future values (e.g. 'a3') can be added without
+  // an enum migration. Server-side validates against the known set.
+  // Defaults to 'auto' so existing orgs see no behaviour change.
+  proposalOrientation: text("proposal_orientation").default("auto").notNull(),
   defaultTerms: text("default_terms"),
   billingEmail: varchar("billing_email", { length: 320 }),
   stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
