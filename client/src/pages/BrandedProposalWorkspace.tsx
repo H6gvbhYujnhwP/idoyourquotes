@@ -493,10 +493,10 @@ export default function BrandedProposalWorkspace() {
               <div className="flex flex-wrap gap-2">
                 {draftErrorIsBrochure ? (
                   <Button
-                    onClick={() => setLocation("/settings?tab=brochure")}
+                    onClick={() => setLocation("/settings?tab=branding")}
                   >
                     <BookOpen className="w-4 h-4 mr-1.5" />
-                    Go to Company Brochure
+                    Go to Branding settings
                   </Button>
                 ) : (
                   <Button
@@ -772,7 +772,7 @@ export default function BrandedProposalWorkspace() {
           </span>
           <button
             type="button"
-            onClick={() => setLocation("/settings?tab=brochure")}
+            onClick={() => setLocation("/settings?tab=branding")}
             className="inline-flex items-center gap-1 font-semibold hover:underline"
             style={{ color: brand.teal }}
           >

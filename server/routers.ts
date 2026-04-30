@@ -290,6 +290,13 @@ export const appRouter = router({
           if (input.companyAddress !== undefined) orgUpdate.companyAddress = input.companyAddress;
           if (input.companyPhone !== undefined) orgUpdate.companyPhone = input.companyPhone;
           if (input.companyEmail !== undefined) orgUpdate.companyEmail = input.companyEmail;
+          // Phase 4B Delivery E.6 — companyLogo mirrored to org so the
+          // Remove-logo path actually clears the org-level field too.
+          // Without this the renderer (which prefers org over user) keeps
+          // showing the old logo even after the user has hit Remove.
+          // uploadLogo already writes to both records on upload; this
+          // closes the gap on the remove path.
+          if (input.companyLogo !== undefined) orgUpdate.companyLogo = input.companyLogo;
           if (input.defaultTerms !== undefined) orgUpdate.defaultTerms = input.defaultTerms;
           // Trade-specific defaults
           if (defaultWorkingHoursStart !== undefined) orgUpdate.defaultWorkingHoursStart = defaultWorkingHoursStart;

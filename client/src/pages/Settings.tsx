@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase, Shield, Clock, PoundSterling, CreditCard, Users, Crown, AlertTriangle, Trash2, Mail, UserPlus, Check, ArrowRight, XCircle, RotateCcw, Download, Palette, Globe, CheckCircle2, AlertCircle, BookOpen } from "lucide-react";
+import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase, Shield, Clock, PoundSterling, CreditCard, Users, Crown, AlertTriangle, Trash2, Mail, UserPlus, Check, ArrowRight, XCircle, RotateCcw, Download, Palette, Globe, CheckCircle2, AlertCircle } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog,
@@ -297,12 +297,27 @@ export default function Settings() {
   // Tab state from URL params
   const [location, setLocation] = useLocation();
   const urlParams = new URLSearchParams(window.location.search);
-  const [activeTab, setActiveTab] = useState(urlParams.get('tab') || 'profile');
+  // Phase 4B Delivery E.6 — the dedicated Brochure tab was consolidated
+  // into the renamed "Your Branded Quotes" tab (the old branding tab).
+  // External links and bookmarks pointing at ?tab=brochure get aliased
+  // onto the new home so nothing breaks.
+  const rawTabParam = urlParams.get('tab') || 'profile';
+  const initialTab = rawTabParam === 'brochure' ? 'branding' : rawTabParam;
+  const [activeTab, setActiveTab] = useState(initialTab);
 
   const switchTab = (tab: string) => {
     setActiveTab(tab);
     window.history.replaceState(null, '', `/settings?tab=${tab}`);
   };
+
+  // Phase 4B Delivery E.6 — rewrite the URL once on mount when the
+  // alias was hit, so the user's address bar matches the canonical tab id.
+  useEffect(() => {
+    if (rawTabParam === 'brochure') {
+      window.history.replaceState(null, '', '/settings?tab=branding');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Phase 4A — while extraction is pending, re-invalidate orgProfile every
   // 5s so the status pill flips to ready/failed without the user refreshing.
@@ -329,8 +344,11 @@ export default function Settings() {
       <div className="flex gap-1 border-b">
         {[
           { id: 'profile', label: 'Profile', icon: User },
-          { id: 'branding', label: 'Proposal Branding', icon: Palette },
-          { id: 'brochure', label: 'Company Brochure', icon: BookOpen },
+          // Phase 4B Delivery E.6 — Proposal Branding renamed to "Your
+          // Branded Quotes" and absorbs what used to live on the
+          // dedicated Brochure tab (logo upload moves up from Profile,
+          // company brochure moves over from its retired tab).
+          { id: 'branding', label: 'Your Branded Quotes', icon: Palette },
           { id: 'billing', label: 'Billing', icon: CreditCard },
           { id: 'team', label: 'Team', icon: Users },
         ].map(tab => (
@@ -355,19 +373,13 @@ export default function Settings() {
       {/* Team Tab */}
       {activeTab === 'team' && <TeamTab />}
 
-      {/* Company Brochure Tab — Phase 4B Delivery B.
-          The brochure is stored at the org level and reused on every
-          Branded Proposal generation (Tile 3). Tab is visible to all
-          tiers but the upload/extract actions inside are gated to
-          Pro/Team — Solo/Trial users see a soft upgrade CTA instead. */}
-      {activeTab === 'brochure' && <BrochureSettingsTab />}
-
-      {/* Proposal Branding Tab — Phase 4A.
-          Holds the website URL alongside the existing logo upload (Profile
-          tab) — these two pieces are the brand evidence the AI extraction
-          pipeline consumes. Visible to all tiers so users can prepare
-          brand evidence before upgrading; the branded-output gate lands
-          at PDF-export time. */}
+      {/* Phase 4B Delivery E.6 — "Your Branded Quotes" tab.
+          Single home for everything that influences how a Branded
+          Proposal looks: logo (moved up from Profile), website URL,
+          company brochure (was its own tab), proposal design template,
+          cover stat-strip toggle. The extraction status pill at the
+          top reflects the brand-evidence pipeline (logo + website)
+          regardless of where the inputs were entered. */}
       {activeTab === 'branding' && (
       <>
       {/* Intro */}
@@ -377,12 +389,13 @@ export default function Settings() {
             <div className="min-w-0">
               <CardTitle className="flex items-center gap-2">
                 <Palette className="h-5 w-5" />
-                Proposal Branding
+                Your Branded Quotes
               </CardTitle>
               <CardDescription className="mt-1.5">
-                Your logo and website tell us what your brand looks like.
-                Add either or both — we'll use them to style Contract /
-                Tender and Project proposals to match your company.
+                Everything that affects how your Branded Proposals look —
+                logo, website, brochure, and design — lives here. Add
+                what you have; we'll use it to style proposals to match
+                your company.
               </CardDescription>
             </div>
             {/* Extraction status pill — reflects the background job that
@@ -453,27 +466,41 @@ export default function Settings() {
         )}
       </Card>
 
-      {/* Logo preview — edit surface stays on the Profile tab to keep
-          a single source of truth. */}
+      {/* Phase 4B Delivery E.6 — Company Logo upload.
+          Moved here from the Profile tab so all branding evidence lives
+          in one place. Same handlers (uploadLogo / handleRemoveLogo) —
+          identical write paths to user.companyLogo and
+          organizations.companyLogo. */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <ImageIcon className="h-5 w-5" />
-            Your Logo
+            Company Logo
           </CardTitle>
           <CardDescription>
-            Managed on the Profile tab so it stays in one place.
+            Your logo will appear on all quote PDFs and on the cover of
+            your Branded Proposals.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-6">
-            <div className="w-40 h-24 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted/50 overflow-hidden">
+          <div className="flex items-start gap-6">
+            {/* Logo Preview */}
+            <div className="w-40 h-24 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted/50 relative overflow-hidden">
               {companyLogo ? (
-                <img
-                  src={companyLogo}
-                  alt="Company Logo"
-                  className="max-w-full max-h-full object-contain p-2"
-                />
+                <>
+                  <img
+                    src={companyLogo}
+                    alt="Company Logo"
+                    className="max-w-full max-h-full object-contain p-2"
+                  />
+                  <button
+                    onClick={handleRemoveLogo}
+                    className="absolute top-1 right-1 p-1 bg-destructive text-destructive-foreground rounded-full hover:bg-destructive/90"
+                    title="Remove logo"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </>
               ) : (
                 <div className="text-center text-muted-foreground text-sm">
                   <ImageIcon className="h-8 w-8 mx-auto mb-1 opacity-50" />
@@ -481,13 +508,32 @@ export default function Settings() {
                 </div>
               )}
             </div>
-            <Button
-              variant="outline"
-              onClick={() => switchTab('profile')}
-            >
-              Manage logo on Profile
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
+
+            {/* Upload Button */}
+            <div className="space-y-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                onChange={handleLogoUpload}
+                className="hidden"
+              />
+              <Button
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadLogo.isPending}
+              >
+                {uploadLogo.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="mr-2 h-4 w-4" />
+                )}
+                Upload Logo
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                JPG, PNG, GIF, or WebP. Max 2MB.
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -533,6 +579,15 @@ export default function Settings() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Phase 4B Delivery E.6 — Company Brochure.
+          The dedicated Brochure tab was retired; the same component
+          renders here verbatim. Internal tier-gating (Pro/Team) and
+          all upload / extract / replace / delete handlers are
+          unchanged. Sits between brand evidence (logo / website) and
+          output styling (design template / stat strip) so the page
+          reads top-to-bottom as the proposal pipeline does. */}
+      <BrochureSettingsTab />
 
       {/* Phase 4A Delivery 17 — Proposal design picker.
           Compact 3-button row, one per design template (Modern / Structured
@@ -672,72 +727,12 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      {/* Company Logo */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ImageIcon className="h-5 w-5" />
-            Company Logo
-          </CardTitle>
-          <CardDescription>
-            Your logo will appear on all quote PDFs
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-start gap-6">
-            {/* Logo Preview */}
-            <div className="w-40 h-24 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted/50 relative overflow-hidden">
-              {companyLogo ? (
-                <>
-                  <img
-                    src={companyLogo}
-                    alt="Company Logo"
-                    className="max-w-full max-h-full object-contain p-2"
-                  />
-                  <button
-                    onClick={handleRemoveLogo}
-                    className="absolute top-1 right-1 p-1 bg-destructive text-destructive-foreground rounded-full hover:bg-destructive/90"
-                    title="Remove logo"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </>
-              ) : (
-                <div className="text-center text-muted-foreground text-sm">
-                  <ImageIcon className="h-8 w-8 mx-auto mb-1 opacity-50" />
-                  No logo
-                </div>
-              )}
-            </div>
-
-            {/* Upload Button */}
-            <div className="space-y-2">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/gif,image/webp"
-                onChange={handleLogoUpload}
-                className="hidden"
-              />
-              <Button
-                variant="outline"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploadLogo.isPending}
-              >
-                {uploadLogo.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Upload className="mr-2 h-4 w-4" />
-                )}
-                Upload Logo
-              </Button>
-              <p className="text-xs text-muted-foreground">
-                JPG, PNG, GIF, or WebP. Max 2MB.
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Phase 4B Delivery E.6 — Company Logo card relocated to the
+          "Your Branded Quotes" tab so all branding evidence (logo,
+          website, brochure, design) is in one place. The active
+          surface and handlers (uploadLogo, handleRemoveLogo) are
+          unchanged — they still live on this component, just rendered
+          from the other tab. */}
 
       {/* Company Details */}
       <Card>
