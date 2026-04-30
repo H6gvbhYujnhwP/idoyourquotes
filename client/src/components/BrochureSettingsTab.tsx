@@ -89,13 +89,10 @@ export default function BrochureSettingsTab() {
 
   const reExtractMut = trpc.brochure.reExtract.useMutation();
   const deleteMut = trpc.brochure.delete.useMutation();
-  // Phase 4B Delivery E.4 — orientation preference for Tile 3 renders.
-  const setOrientationMut = trpc.brochure.setProposalOrientation.useMutation();
 
   const [uploadOpen, setUploadOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [orientationSaving, setOrientationSaving] = useState<string | null>(null);
 
   const tier = subStatus.data?.tier;
   const tierAllowed = tier ? ALLOWED_TIERS.includes(tier) : false;
@@ -119,21 +116,6 @@ export default function BrochureSettingsTab() {
       setConfirmDelete(false);
     } catch (err: any) {
       setActionError(err?.message || "Delete failed.");
-    }
-  }
-
-  async function handleOrientationChange(
-    orientation: "auto" | "portrait" | "landscape",
-  ) {
-    setActionError(null);
-    setOrientationSaving(orientation);
-    try {
-      await setOrientationMut.mutateAsync({ orientation });
-      await utils.brochure.get.invalidate();
-    } catch (err: any) {
-      setActionError(err?.message || "Could not save orientation preference.");
-    } finally {
-      setOrientationSaving(null);
     }
   }
 
@@ -363,75 +345,6 @@ export default function BrochureSettingsTab() {
               {cleanPageCount} of {brochure.pageCount} pages can be embedded
               verbatim in proposals.
             </p>
-          </div>
-
-          {/* Phase 4B Delivery E.4 — proposal orientation preference.
-              Affects branded proposal renders only. Default 'auto'
-              produces an A4 portrait proposal regardless of brochure
-              shape (the safest default for tender / contract docs).
-              Suppliers with landscape brochures whose pages would
-              otherwise be letterboxed at small sizes can opt into a
-              landscape-throughout proposal. */}
-          <div className="border-t pt-4">
-            <p className="text-sm font-medium mb-1">Proposal orientation</p>
-            <p className="text-xs text-muted-foreground mb-3">
-              Controls how branded proposals are laid out. Most proposals
-              should stay portrait — landscape suits suppliers whose
-              brochure is landscape and whose narrative pages should match.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {[
-                {
-                  value: "auto" as const,
-                  label: "Portrait (default)",
-                  hint: "A4 portrait throughout",
-                },
-                {
-                  value: "portrait" as const,
-                  label: "Portrait (always)",
-                  hint: "Same as default for now",
-                },
-                {
-                  value: "landscape" as const,
-                  label: "Landscape",
-                  hint: "A4 landscape throughout",
-                },
-              ].map((opt) => {
-                const active =
-                  (brochure.proposalOrientation ?? "auto") === opt.value;
-                const saving = orientationSaving === opt.value;
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => handleOrientationChange(opt.value)}
-                    disabled={saving || reExtractBusy || deleteBusy || active}
-                    className={`text-left rounded-md border px-3 py-2 transition ${
-                      active
-                        ? "border-primary bg-primary/5"
-                        : "border-border hover:border-primary/50 hover:bg-muted/40"
-                    } ${
-                      saving || reExtractBusy || deleteBusy
-                        ? "opacity-60 cursor-not-allowed"
-                        : ""
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-medium">{opt.label}</p>
-                      {saving && (
-                        <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-                      )}
-                      {active && !saving && (
-                        <CheckCircle2 className="h-3.5 w-3.5 text-primary flex-shrink-0" />
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {opt.hint}
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
           </div>
 
           {/* Action error */}

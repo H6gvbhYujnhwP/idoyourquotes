@@ -402,6 +402,12 @@ export const brandedProposalRouter = router({
       z.object({
         quoteId: z.number(),
         slots: z.array(ChapterSlotSchema),
+        // Phase 4B Delivery E.4 (revised) — per-render orientation
+        // choice. Selected by the user on the Branded Proposal
+        // Workspace before clicking Render PDF. Optional — when
+        // missing or unrecognised, defaults to portrait (the E.1
+        // default).
+        orientation: z.enum(["portrait", "landscape"]).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -435,10 +441,9 @@ export const brandedProposalRouter = router({
       // appearance — title and subline only).
       const logo = await fetchAndNormaliseLogo(orgAny.companyLogo);
 
-      // Phase 4B Delivery E.4 — resolve brand accent colour and
-      // proposal orientation from the org record. Both are best-effort:
-      // the assembler validates and falls back gracefully if either
-      // is missing or unrecognised.
+      // Phase 4B Delivery E.4 — resolve brand accent colour from the
+      // org record. Best-effort: the assembler validates and falls
+      // back gracefully if missing / malformed / too pale.
       //
       // Brand colour fallback chain mirrors the existing brandedProposal
       // renderer (Tile 2): the AI-extracted colour wins when present
@@ -450,13 +455,11 @@ export const brandedProposalRouter = router({
         orgAny.brandPrimaryColor ||
         undefined;
 
-      // proposalOrientation accepts 'auto' | 'portrait' | 'landscape'
-      // at the schema level. 'auto' currently maps to 'portrait' (the
-      // E.1 default — A4 portrait regardless of brochure shape). Any
-      // unexpected value also maps to 'portrait' as a safe default.
-      const orientationRaw = orgAny.proposalOrientation as string | null | undefined;
+      // Phase 4B Delivery E.4 (revised) — orientation now arrives
+      // per-render from the workspace instead of being stored on the
+      // org. Default to portrait when not supplied.
       const targetOrientation: "portrait" | "landscape" =
-        orientationRaw === "landscape" ? "landscape" : "portrait";
+        input.orientation === "landscape" ? "landscape" : "portrait";
 
       const pdfBytes = await assembleBrandedProposal({
         brochurePdfBytes: brochureBytes,

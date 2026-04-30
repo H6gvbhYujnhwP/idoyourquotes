@@ -204,6 +204,13 @@ export default function BrandedProposalWorkspace() {
   const [isRendering, setIsRendering] = useState(false);
   const [renderRollingIdx, setRenderRollingIdx] = useState(0);
   const [draftRollingIdx, setDraftRollingIdx] = useState(0);
+  // Phase 4B Delivery E.4 — per-render page orientation. Default
+  // portrait — most proposals stay portrait by convention. Landscape
+  // is the opt-in choice for suppliers whose brochure is landscape
+  // and whose narrative pages should match.
+  const [renderOrientation, setRenderOrientation] = useState<
+    "portrait" | "landscape"
+  >("portrait");
 
   // Mount-once flag — prevents React 18 strict-mode double-invocation
   // (and any unintended re-mount) from firing the expensive draft call
@@ -393,7 +400,11 @@ export default function BrandedProposalWorkspace() {
     setIsRendering(true);
     setRenderRollingIdx(0);
     try {
-      const result = await renderPdf.mutateAsync({ quoteId, slots });
+      const result = await renderPdf.mutateAsync({
+        quoteId,
+        slots,
+        orientation: renderOrientation,
+      });
       const { base64, filename } = result as {
         base64: string;
         filename: string;
@@ -580,6 +591,34 @@ export default function BrandedProposalWorkspace() {
             <Info className="w-3 h-3" />
             Edits live in this session
           </span>
+          {/* Phase 4B Delivery E.4 — per-render page orientation
+              selector. Sits to the immediate left of the Render PDF
+              button so the choice and the action read together. Most
+              users never touch it (portrait default is fine for
+              tender / contract documents). Landscape suits suppliers
+              whose brochure is landscape and whose narrative pages
+              should match. */}
+          <label
+            className="hidden md:flex items-center gap-1.5 text-xs"
+          >
+            <span className="text-muted-foreground">Layout</span>
+            <select
+              value={renderOrientation}
+              onChange={(e) =>
+                setRenderOrientation(
+                  e.target.value as "portrait" | "landscape",
+                )
+              }
+              disabled={isRendering}
+              className="rounded-md border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{
+                borderColor: brand.border,
+              }}
+            >
+              <option value="portrait">Portrait</option>
+              <option value="landscape">Landscape</option>
+            </select>
+          </label>
           <Button
             onClick={handleRenderPdf}
             disabled={isRendering}
