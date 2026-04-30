@@ -31,6 +31,7 @@ import {
   type PDFPage,
   type PDFFont,
   type PDFEmbeddedPage,
+  type PDFImage,
 } from "pdf-lib";
 import type {
   ChapterSlot,
@@ -294,12 +295,20 @@ function drawChapter(
  * underline, supplier/client names below. Body string is parsed for
  * lines: line 1 = proposal title, line 2 = subline (e.g. "for X"),
  * lines 3+ = value statement.
+ *
+ * Phase 4B Delivery E.3 — accepts an optional pre-embedded company
+ * logo image. When present, the logo is drawn centred above the
+ * title in the empty band between the top margin and the title's
+ * top edge (which currently sits ~38% down the A4 portrait page,
+ * leaving ~80mm of vertical whitespace to play with). When absent,
+ * the cover renders exactly as before.
  */
 function drawCover(
   doc: PDFDocument,
   dim: PageDimensions,
   body: string,
   fonts: { regular: PDFFont; bold: PDFFont },
+  logoImage?: PDFImage,
 ): PDFPage {
   const page = doc.addPage([dim.width, dim.height]);
   const layout = computeLayout(dim);
@@ -326,7 +335,56 @@ function drawCover(
   const inkSecondary = rgb(0.30, 0.30, 0.35);
 
   const titleLines = wrapText(proposalTitle, fonts.bold, titleSize, layout.contentWidth);
-  let y = dim.height * 0.62;
+  const titleBaselineY = dim.height * 0.62;
+
+  // ── Logo (Delivery E.3) ────────────────────────────────────────
+  // Draw the supplier's company logo centred horizontally above
+  // the title, vertically centred within the band between the top
+  // margin and the title's visual top edge. Sized at ~32mm tall
+  // (90pt) by default, capped on width for banner-shaped logos.
+  // Aspect ratio always preserved.
+  if (logoImage) {
+    const titleVisualTopY = titleBaselineY + titleSize; // approx top of cap
+    const bandTopY = layout.contentTop;                 // top margin line
+    const bandBottomY = titleVisualTopY + 24;           // 24pt breathing gap above title
+
+    const maxLogoH = 90;                                // ~32 mm
+    const maxLogoW = Math.min(220, layout.contentWidth * 0.5); // ~78 mm cap
+
+    const srcW = logoImage.width;
+    const srcH = logoImage.height;
+    const aspect = srcW / srcH;
+
+    let logoH = maxLogoH;
+    let logoW = maxLogoH * aspect;
+    if (logoW > maxLogoW) {
+      logoW = maxLogoW;
+      logoH = maxLogoW / aspect;
+    }
+    // Defensive: never enlarge a small logo beyond its natural size.
+    if (logoW > srcW && logoH > srcH) {
+      logoW = srcW;
+      logoH = srcH;
+    }
+
+    const bandHeight = bandTopY - bandBottomY;
+    if (bandHeight >= logoH) {
+      const logoBottomY = bandBottomY + (bandHeight - logoH) / 2;
+      const logoLeftX = (dim.width - logoW) / 2;
+      page.drawImage(logoImage, {
+        x: logoLeftX,
+        y: logoBottomY,
+        width: logoW,
+        height: logoH,
+      });
+    }
+    // If the band can't accommodate the logo at default size (would
+    // only happen on a very different page geometry), silently skip
+    // rather than overlapping the title. The cover still renders
+    // cleanly without the logo.
+  }
+
+  let y = titleBaselineY;
   for (const line of titleLines) {
     page.drawText(line, {
       x: layout.marginX,
@@ -1034,6 +1092,19 @@ async function renderNarrativePages(params: {
   slots: ChapterSlot[];
   pageDimensions: PageDimensions;
   quoteContext?: QuoteContext;
+  /**
+   * Phase 4B Delivery E.3 — supplier company logo bytes. Already
+   * normalised to PNG or JPEG by the caller (or absent). The bytes
+   * are embedded once here and the resulting PDFImage is handed to
+   * drawCover. Optional — when missing, the cover renders without
+   * a logo and behaves exactly as it did pre-E.3.
+   */
+  companyLogoBytes?: Uint8Array;
+  /**
+   * 'png' | 'jpeg' — tells us which pdf-lib embed function to use.
+   * Required when companyLogoBytes is provided.
+   */
+  companyLogoFormat?: "png" | "jpeg";
 }): Promise<{
   narrativePdfBytes: Uint8Array;
   pageIndexBySlot: Map<number, number[]>;
@@ -1042,6 +1113,26 @@ async function renderNarrativePages(params: {
   const regular = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const fonts = { regular, bold };
+
+  // Embed the logo once, defensively. Any failure here is logged
+  // and downgraded to "no logo" rather than failing the whole
+  // render — a corrupt or unexpectedly-formatted logo file must
+  // never block a paid customer's proposal.
+  let logoImage: PDFImage | undefined = undefined;
+  if (params.companyLogoBytes && params.companyLogoFormat) {
+    try {
+      logoImage =
+        params.companyLogoFormat === "png"
+          ? await doc.embedPng(params.companyLogoBytes)
+          : await doc.embedJpg(params.companyLogoBytes);
+    } catch (err) {
+      console.warn(
+        "[brandedProposalAssembler] Failed to embed company logo, rendering without it:",
+        err,
+      );
+      logoImage = undefined;
+    }
+  }
 
   const pageIndexBySlot = new Map<number, number[]>();
   let runningIndex = 0;
@@ -1059,7 +1150,7 @@ async function renderNarrativePages(params: {
 
     let pages: PDFPage[];
     if (slot.slotName === "Cover") {
-      pages = [drawCover(doc, params.pageDimensions, slot.body, fonts)];
+      pages = [drawCover(doc, params.pageDimensions, slot.body, fonts, logoImage)];
     } else if (
       slot.slotIndex === PRICING_SLOT_INDEX &&
       hasLineItems &&
@@ -1109,6 +1200,18 @@ export interface AssembleParams {
    * placeholder.
    */
   quoteContext?: QuoteContext;
+  /**
+   * Phase 4B Delivery E.3 — supplier company logo bytes for the cover.
+   * Caller is responsible for fetching from storage AND for normalising
+   * to PNG or JPEG (sharp does this for non-PNG/JPEG uploads such as
+   * SVG, WEBP). companyLogoFormat tells us which embed function to use.
+   *
+   * Both fields optional. When absent, the cover renders without a
+   * logo (same as it did pre-E.3). Any embed failure is also downgraded
+   * to "no logo" — a corrupt logo file never blocks the render.
+   */
+  companyLogoBytes?: Uint8Array;
+  companyLogoFormat?: "png" | "jpeg";
 }
 
 /**
@@ -1157,10 +1260,14 @@ export async function assembleBrandedProposal(
   // Phase 4B Delivery D Phase 3 — quoteContext flows in so slot 15
   // (Pricing Summary) can draw the structured pricing table from the
   // line items rather than relying on the AI's prose alone.
+  // Phase 4B Delivery E.3 — companyLogoBytes / companyLogoFormat flow
+  // in so the cover can render the supplier's logo above the title.
   const { narrativePdfBytes, pageIndexBySlot } = await renderNarrativePages({
     slots: params.slots,
     pageDimensions: targetDim,
     quoteContext: params.quoteContext,
+    companyLogoBytes: params.companyLogoBytes,
+    companyLogoFormat: params.companyLogoFormat,
   });
 
   // Step 3: assemble final PDF

@@ -28,6 +28,7 @@
  */
 
 import { z } from "zod";
+import sharp from "sharp";
 import { router, protectedProcedure } from "../_core/trpc";
 import {
   getUserPrimaryOrg,
@@ -163,6 +164,93 @@ const ChapterSlotSchema = z.union([
     body: z.string(),
   }),
 ]);
+
+// ─── Logo fetch (Phase 4B Delivery E.3) ──────────────────────────────
+//
+// The supplier's company logo from Settings → Company Profile is
+// embedded in the proposal cover. Logos are stored on R2 (uploaded
+// via the uploadLogo tRPC mutation in routers.ts, which puts them in
+// /api/file/{key} format).
+//
+// pdf-lib only supports PNG and JPEG natively. For any other format
+// (SVG, WEBP, GIF, AVIF…) we run the bytes through sharp to convert
+// to PNG before handing them to the assembler. Sharp is already a
+// runtime dependency used by the colour extractor.
+//
+// All paths are best-effort. If the logo fetch fails, the file is
+// missing or corrupt, or sharp can't decode it, we return null and
+// the cover renders without a logo. Never block the render.
+
+interface LogoBytes {
+  bytes: Uint8Array;
+  format: "png" | "jpeg";
+}
+
+/**
+ * Detect image format from the first few bytes by magic number.
+ * PNG: 89 50 4E 47    JPEG: FF D8 FF
+ * Returns null for anything else (we'll feed those through sharp).
+ */
+function detectImageFormat(bytes: Uint8Array): "png" | "jpeg" | null {
+  if (bytes.length < 4) return null;
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+    return "png";
+  }
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "jpeg";
+  }
+  return null;
+}
+
+async function fetchAndNormaliseLogo(
+  rawLogoUrl: string | null | undefined,
+): Promise<LogoBytes | null> {
+  if (!rawLogoUrl) return null;
+  // Logos uploaded via Settings always land at /api/file/{key}. We
+  // only support that format here — external URLs (legacy seed data,
+  // manual DB edits) are skipped rather than risking an unbounded
+  // outbound fetch from the render endpoint.
+  if (!rawLogoUrl.startsWith("/api/file/")) {
+    console.warn(
+      "[brandedProposalRouter] Logo URL is not /api/file/{key}, skipping cover logo:",
+      rawLogoUrl,
+    );
+    return null;
+  }
+  const key = rawLogoUrl.slice("/api/file/".length);
+
+  let buffer: Buffer;
+  try {
+    buffer = await getFileBuffer(key);
+  } catch (err) {
+    console.warn(
+      "[brandedProposalRouter] Failed to fetch logo bytes from R2, rendering without logo:",
+      err,
+    );
+    return null;
+  }
+
+  const bytes = new Uint8Array(buffer);
+  const detected = detectImageFormat(bytes);
+  if (detected) {
+    return { bytes, format: detected };
+  }
+
+  // Format we can't embed directly. Try sharp → PNG. Handles SVG,
+  // WEBP, GIF, AVIF, TIFF and a few others. Any failure here means
+  // the logo is genuinely unrenderable; we skip and the cover still
+  // ships without it.
+  try {
+    const png = await sharp(buffer).png().toBuffer();
+    return { bytes: new Uint8Array(png), format: "png" };
+  } catch (err) {
+    console.warn(
+      "[brandedProposalRouter] sharp could not normalise logo to PNG, rendering without logo:",
+      err,
+    );
+    return null;
+  }
+}
 
 // ─── Router ──────────────────────────────────────────────────────────
 
@@ -341,10 +429,18 @@ export const brandedProposalRouter = router({
       // slot 15 (Pricing Summary).
       const quoteContext = await gatherQuoteContext(quote, input.quoteId);
 
+      // Phase 4B Delivery E.3 — fetch the supplier company logo for
+      // the cover. Best-effort. Any failure is logged and the render
+      // proceeds without the logo (cover then matches its pre-E.3
+      // appearance — title and subline only).
+      const logo = await fetchAndNormaliseLogo(orgAny.companyLogo);
+
       const pdfBytes = await assembleBrandedProposal({
         brochurePdfBytes: brochureBytes,
         slots: input.slots as ChapterSlot[],
         quoteContext,
+        companyLogoBytes: logo?.bytes,
+        companyLogoFormat: logo?.format,
       });
 
       // Build a sensible filename: "<client-name> Proposal <ref>.pdf"
