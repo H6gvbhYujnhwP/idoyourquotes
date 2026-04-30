@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase, Shield, Clock, PoundSterling, CreditCard, Users, Crown, AlertTriangle, Trash2, Mail, UserPlus, Check, ArrowRight, XCircle, RotateCcw, Download, Palette, Globe, CheckCircle2, AlertCircle } from "lucide-react";
+import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase, Shield, Clock, PoundSterling, CreditCard, Users, Crown, AlertTriangle, Trash2, Mail, UserPlus, Check, ArrowRight, XCircle, RotateCcw, Download, Palette, CheckCircle2, AlertCircle } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog,
@@ -71,12 +71,11 @@ export default function Settings() {
   const [surfaceTreatment, setSurfaceTreatment] = useState("");
   const [returnVisitRate, setReturnVisitRate] = useState("");
 
-  // Phase 4A — Proposal Branding tab state.
-  // companyWebsite is org-scoped; persisted via the dedicated
-  // auth.updateBrandSettings mutation, separate from the main Save button
-  // on the Profile tab. Brochure input was retired in Delivery 13 — brand
-  // evidence is now logo + website only.
-  const [companyWebsite, setCompanyWebsite] = useState("");
+  // Phase 4B Delivery E.7 — companyWebsite UI retired. The column on
+  // organizations remains and still feeds the brand-extraction pipeline
+  // and the Tile-2 contact strip for websites already saved. The input
+  // was removed because the user-facing benefit didn't justify the
+  // friction; revisit when an About-Us-from-website extraction lands.
   // Status pill — read through orgProfile on each invalidation.
   type ExtractionStatus = "idle" | "pending" | "ready" | "failed";
   const [extractionStatus, setExtractionStatus] = useState<ExtractionStatus>("idle");
@@ -139,7 +138,9 @@ export default function Settings() {
       if (org.defaultSurfaceTreatment) setSurfaceTreatment(org.defaultSurfaceTreatment);
       if (org.defaultReturnVisitRate) setReturnVisitRate(org.defaultReturnVisitRate);
       // Phase 4A — brand evidence
-      setCompanyWebsite(org.companyWebsite || "");
+      // Phase 4B Delivery E.7 — companyWebsite hydration removed; the
+      // input no longer renders. Existing values stay in the database
+      // for the renderer and extraction pipeline to read.
       // Phase 4A — extraction status pill
       const rawStatus = (org.brandExtractionStatus || "idle") as string;
       const allowed: ExtractionStatus[] = ["idle", "pending", "ready", "failed"];
@@ -272,12 +273,9 @@ export default function Settings() {
     toast.success("Logo removed");
   };
 
-  // Phase 4A — Proposal Branding handlers.
-  const handleSaveBrandSettings = () => {
-    updateBrandSettings.mutate({
-      companyWebsite: companyWebsite,
-    });
-  };
+  // Phase 4B Delivery E.7 — handleSaveBrandSettings removed alongside
+  // the Company Website card. Template / stat-strip toggles below
+  // continue to use updateBrandSettings directly.
 
   // Phase 4A Delivery 17 — proposal design template + stat strip toggle.
   // Saved via the same updateBrandSettings mutation (server accepts all
@@ -538,55 +536,24 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      {/* Company Website */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Globe className="h-5 w-5" />
-            Company Website
-          </CardTitle>
-          <CardDescription>
-            We'll use your website's style — colours, tone, imagery — as a
-            reference when building branded proposals.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="companyWebsite">Website URL</Label>
-            <Input
-              id="companyWebsite"
-              type="url"
-              placeholder="https://your-company.co.uk"
-              value={companyWebsite}
-              onChange={(e) => setCompanyWebsite(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              Don't worry about the https:// — we'll add it if you leave it off.
-            </p>
-          </div>
-          <div className="flex justify-end">
-            <Button
-              onClick={handleSaveBrandSettings}
-              disabled={updateBrandSettings.isPending}
-            >
-              {updateBrandSettings.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="mr-2 h-4 w-4" />
-              )}
-              Save Website
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Phase 4B Delivery E.7 — Company Website input retired from
+          the UI. The companyWebsite column, the updateBrandSettings
+          mutation, the brand-extraction pipeline (CSS colour scrape +
+          GPT-4o tone/feel call), and the renderer's website-cell
+          consumers all remain intact — websites already saved still
+          appear on Tile-2 contact strips and still feed colour
+          extraction. The input was removed because it created friction
+          without obvious user-facing pay-off; the field can come back
+          later as part of an About-Us-from-website extraction
+          delivery if that route is taken. */}
 
       {/* Phase 4B Delivery E.6 — Company Brochure.
           The dedicated Brochure tab was retired; the same component
           renders here verbatim. Internal tier-gating (Pro/Team) and
           all upload / extract / replace / delete handlers are
-          unchanged. Sits between brand evidence (logo / website) and
-          output styling (design template / stat strip) so the page
-          reads top-to-bottom as the proposal pipeline does. */}
+          unchanged. Sits between brand evidence (logo) and output
+          styling (design template / stat strip) so the page reads
+          top-to-bottom as the proposal pipeline does. */}
       <BrochureSettingsTab />
 
       {/* Phase 4A Delivery 17 — Proposal design picker.
