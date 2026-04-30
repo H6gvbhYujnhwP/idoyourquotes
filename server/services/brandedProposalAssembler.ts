@@ -285,14 +285,48 @@ function resolveBrandAccent(brandPrimaryHex: string | null | undefined): RGB01 |
 // ─── Per-chapter renderers ───────────────────────────────────────────
 
 /**
- * Draw a normal chapter (title + multi-paragraph body) across as many
- * pages as needed. Returns the array of pages added.
+ * State threaded between consecutive narrative chapters so a short
+ * chapter ending mid-page can let the next chapter continue on the
+ * same page below a separator instead of forcing a fresh page break.
  *
- * Phase 4B Delivery E.4 — accepts an optional brand accent colour
- * (already validated by resolveBrandAccent in the caller). When
- * present, it tints the chapter title and the underline beneath it.
- * When absent, falls back to the original dark-navy ink + grey
- * underline so legacy orgs render exactly as before.
+ * Phase 4B Delivery E.4.2 — added to consolidate whitespace. Earlier
+ * deliveries always started each chapter on a new page, which left
+ * lots of half-empty pages on a typical 17-chapter proposal.
+ */
+interface ChapterFlowState {
+  page: PDFPage;
+  /** Cursor y on `page` where the next chapter could start drawing. */
+  y: number;
+}
+
+interface DrawChapterResult {
+  pages: PDFPage[];
+  /** The actual page on which the chapter's last body line was drawn.
+   *  May be a flowed-onto page from the previous chapter (in which case
+   *  `pages` is empty), or the final page in `pages` if the chapter
+   *  spanned multiple. Caller uses this to thread flow state forward. */
+  lastPage: PDFPage;
+  /** Bottom y on lastPage after body draw — handed to the next
+   *  chapter's flowFrom so it can continue on the same page. */
+  endY: number;
+}
+
+/**
+ * Draw a normal chapter (title + multi-paragraph body) across as many
+ * pages as needed.
+ *
+ * Phase 4B Delivery E.4 — accepts an optional brand accent colour.
+ *
+ * Phase 4B Delivery E.4.2 — accepts an optional `flowFrom` state.
+ * When provided AND there is enough space remaining on that page for
+ * the chapter title plus a few lines of body, the chapter starts on
+ * that page below a thin grey separator rule. Otherwise drawChapter
+ * falls back to its original behaviour and starts a fresh page.
+ *
+ * Returns both the pages added (may be 0 if the chapter flowed
+ * entirely onto the prior page!) and the cursor y after the last
+ * body line, so the caller can flow the next chapter into the same
+ * page if room remains.
  */
 function drawChapter(
   doc: PDFDocument,
@@ -301,7 +335,8 @@ function drawChapter(
   body: string,
   fonts: { regular: PDFFont; bold: PDFFont },
   brandAccent?: RGB01 | null,
-): PDFPage[] {
+  flowFrom?: ChapterFlowState | null,
+): DrawChapterResult {
   const layout = computeLayout(dim);
   const pages: PDFPage[] = [];
 
@@ -321,6 +356,7 @@ function drawChapter(
   const ink = rgb(0.10, 0.10, 0.13);
   const fallbackTitleInk = rgb(0.06, 0.06, 0.10);
   const fallbackUnderlineInk = rgb(0.45, 0.45, 0.50);
+  const separatorRuleColor = rgb(0.85, 0.85, 0.88); // soft grey, deliberately neutral
   // Brand accent if usable, otherwise fall back. Title and underline
   // share a colour intentionally — keeps the chapter heading visually
   // unified and makes the supplier's brand land harder.
@@ -349,11 +385,43 @@ function drawChapter(
     });
   });
 
-  let currentPage = doc.addPage([dim.width, dim.height]);
-  pages.push(currentPage);
-  let y = layout.contentTop;
+  // ── Decide: flow onto previous page, or start fresh? ─────────────
+  // To flow we need room for the separator + title block + a useful
+  // chunk of body. If we'd squeeze on just the title with one line of
+  // body, that looks worse than a fresh page. Threshold below targets
+  // ~3 body lines minimum after the title block.
+  const separatorTopGap = 24;
+  const separatorBottomGap = 16;
+  const titleBlockHeight = titleSize * 1.6 + titleSize * 0.5; // title + underline gap
+  const minBodyHeight = 3 * lineHeight;
+  const flowMinSpace =
+    separatorTopGap + separatorBottomGap + titleBlockHeight + minBodyHeight;
 
-  // Title at top of first chapter page
+  let currentPage: PDFPage;
+  let y: number;
+
+  if (flowFrom && flowFrom.y - flowMinSpace > layout.contentBottom) {
+    // ── Flow path: continue on the prior chapter's page ──────────────
+    currentPage = flowFrom.page;
+    y = flowFrom.y;
+
+    // Visual separator: gap, thin rule across content width, gap.
+    y -= separatorTopGap;
+    currentPage.drawLine({
+      start: { x: layout.marginX, y },
+      end: { x: layout.marginX + layout.contentWidth, y },
+      thickness: 0.5,
+      color: separatorRuleColor,
+    });
+    y -= separatorBottomGap;
+  } else {
+    // ── Fresh-page path: original behaviour ──────────────────────────
+    currentPage = doc.addPage([dim.width, dim.height]);
+    pages.push(currentPage);
+    y = layout.contentTop;
+  }
+
+  // Title (same drawing logic regardless of flow vs fresh)
   currentPage.drawText(title, {
     x: layout.marginX,
     y: y - titleSize,
@@ -402,7 +470,7 @@ function drawChapter(
     y -= lineHeight;
   }
 
-  return pages;
+  return { pages, lastPage: currentPage, endY: y };
 }
 
 /**
@@ -1274,6 +1342,14 @@ async function renderNarrativePages(params: {
   const pageIndexBySlot = new Map<number, number[]>();
   let runningIndex = 0;
 
+  // Phase 4B Delivery E.4.2 — flow state for chapter consolidation.
+  // When a short narrative chapter ends mid-page, the next narrative
+  // chapter (if it's the immediately-following slot in slot order)
+  // can flow onto the same page below a thin separator instead of
+  // forcing a fresh page break. Reset to null whenever flow must
+  // break: cover, pricing chapter, or an embed slot in between.
+  let flowState: ChapterFlowState | null = null;
+
   // Slot 15 (Pricing Summary) gets the structured renderer when we
   // have line items to draw from. If lineItems is empty (legacy
   // quotes, partial data), fall back to the prose-only drawChapter
@@ -1283,10 +1359,19 @@ async function renderNarrativePages(params: {
     params.quoteContext.lineItems.length > 0;
 
   for (const slot of params.slots) {
-    if (slot.source !== "generate") continue;
+    if (slot.source !== "generate") {
+      // Embed slot — splits narrative. Break flow so the next narrative
+      // chapter starts on a fresh page (it'll render on a NEW narrative
+      // page in renderNarrativePages, then assembleBrandedProposal
+      // splices the brochure pages between them).
+      flowState = null;
+      continue;
+    }
 
     let pages: PDFPage[];
     if (slot.slotName === "Cover") {
+      // Cover is a hero layout — never flows into / out of.
+      flowState = null;
       pages = [drawCover(doc, params.pageDimensions, slot.body, fonts, logoImage)];
     } else if (
       slot.slotIndex === PRICING_SLOT_INDEX &&
@@ -1295,6 +1380,9 @@ async function renderNarrativePages(params: {
     ) {
       // Phase 4B Delivery D Phase 3 — structured pricing chapter.
       // The AI body is the intro prose; the table comes from the DB.
+      // Pricing manages its own pages via tables and section heads;
+      // doesn't share the flow model.
+      flowState = null;
       pages = drawPricingChapter(
         doc,
         params.pageDimensions,
@@ -1304,17 +1392,26 @@ async function renderNarrativePages(params: {
         brandAccent,
       );
     } else if (!slot.body || slot.body.trim().length === 0) {
-      // Empty body = conditional slot the tender didn't trigger. Skip.
+      // Empty body = conditional slot the tender didn't trigger. Skip
+      // without breaking flow — the previous chapter's flowState is
+      // still valid for whichever narrative chapter comes next.
       continue;
     } else {
-      pages = drawChapter(
+      // Phase 4B Delivery E.4.2 — narrative chapters flow consecutively.
+      // drawChapter checks if there's room on the previous chapter's
+      // last page and either continues there below a thin separator,
+      // or starts a fresh page. Threshold: title block + 3 body lines.
+      const result = drawChapter(
         doc,
         params.pageDimensions,
         slot.title,
         slot.body,
         fonts,
         brandAccent,
+        flowState,
       );
+      pages = result.pages;
+      flowState = { page: result.lastPage, y: result.endY };
     }
 
     const indices: number[] = [];
