@@ -33,7 +33,10 @@
  */
 
 import { invokeClaude } from "../_core/claude";
-import type { BrochureKnowledge } from "../services/brochureExtractor";
+import {
+  normalizeKnowledge,
+  type BrochureKnowledge,
+} from "../services/brochureExtractor";
 
 // ─── Public types ────────────────────────────────────────────────────
 
@@ -583,20 +586,77 @@ export async function generateBrandedProposalDraft(params: {
    */
   quoteContext?: QuoteContext;
 }): Promise<BrandedProposalDraft> {
+  // Phase 4B Delivery E.5 — normalise into the canonical multi-tag
+  // shape on entry. Old single-tag data on disk is folded into the
+  // tags array form so the slot picker and facts aggregation only
+  // see one shape.
+  const knowledge = normalizeKnowledge(params.brochureKnowledge);
+
   // ── Phase 1: deterministic slot-to-page pairing ───────────────────
+  //
+  // Phase 4B Delivery E.5 — two-pass allocation. Pass 1 walks every
+  // embed-or-generate slot looking for a clean unused page whose
+  // PRIMARY tag (tags[0]) matches. Pass 2 then walks the slots that
+  // pass 1 didn't fill, accepting a page where the slot's tag appears
+  // ANYWHERE in the page's tags array (i.e. as a secondary tag). This
+  // ensures pages are allocated to their best-fit slot first — a
+  // dedicated About page wins the About slot over a service page that
+  // happens to carry "about" as a secondary tag, even when the service
+  // page comes earlier in the brochure.
   const slotPlan: Array<
     | {
         type: "embed";
         slotIndex: number;
         slotName: string;
         brochurePageNumber: number;
-        tag: string;
+        tags: string[];
       }
     | { type: "generate"; def: SlotDef }
   > = [];
 
   const usedPages = new Set<number>();
+  // Cover slot always embeds page 1, regardless of its classification.
+  // Reserving the page up front prevents pass 1 / pass 2 from
+  // accidentally allocating page 1 to another slot if it happens to
+  // carry a secondary "about" or "usp" tag.
+  usedPages.add(1);
 
+  const cleanClassifications = knowledge.classifications.filter(
+    (c) => c.clarity === "clean",
+  );
+  const slotMatches = new Map<number, BrochureKnowledge["classifications"][number]>();
+
+  // Pass 1: primary-tag matches
+  for (const def of SLOT_DEFS) {
+    if (def.fillerType !== "embed-or-generate") continue;
+    const match = cleanClassifications.find(
+      (c) =>
+        !usedPages.has(c.pageNumber) &&
+        c.tags.length > 0 &&
+        def.preferredTags.includes(c.tags[0]),
+    );
+    if (match) {
+      usedPages.add(match.pageNumber);
+      slotMatches.set(def.slotIndex, match);
+    }
+  }
+
+  // Pass 2: any-tag fallback (secondary tags) for slots pass 1 left empty
+  for (const def of SLOT_DEFS) {
+    if (def.fillerType !== "embed-or-generate") continue;
+    if (slotMatches.has(def.slotIndex)) continue;
+    const match = cleanClassifications.find(
+      (c) =>
+        !usedPages.has(c.pageNumber) &&
+        c.tags.some((t) => def.preferredTags.includes(t)),
+    );
+    if (match) {
+      usedPages.add(match.pageNumber);
+      slotMatches.set(def.slotIndex, match);
+    }
+  }
+
+  // Build the final slotPlan in SLOT_DEFS order using the match map.
   for (const def of SLOT_DEFS) {
     if (def.fillerType === "always-embed-first-page") {
       // Phase 4B Delivery E.4.3 — Cover slot. Brochure page 1 is
@@ -604,13 +664,12 @@ export async function generateBrandedProposalDraft(params: {
       // extractor classified that page (some brochures don't
       // self-identify their first page as "cover" but it's still
       // the cover by convention).
-      usedPages.add(1);
       slotPlan.push({
         type: "embed",
         slotIndex: def.slotIndex,
         slotName: def.slotName,
         brochurePageNumber: 1,
-        tag: "cover",
+        tags: ["cover"],
       });
       continue;
     }
@@ -620,21 +679,14 @@ export async function generateBrandedProposalDraft(params: {
       continue;
     }
 
-    const match = params.brochureKnowledge.classifications.find(
-      (c: BrochureKnowledge["classifications"][number]) =>
-        c.clarity === "clean" &&
-        def.preferredTags.includes(c.tag) &&
-        !usedPages.has(c.pageNumber),
-    );
-
+    const match = slotMatches.get(def.slotIndex);
     if (match) {
-      usedPages.add(match.pageNumber);
       slotPlan.push({
         type: "embed",
         slotIndex: def.slotIndex,
         slotName: def.slotName,
         brochurePageNumber: match.pageNumber,
-        tag: match.tag,
+        tags: match.tags,
       });
     } else {
       slotPlan.push({ type: "generate", def });
@@ -650,20 +702,28 @@ export async function generateBrandedProposalDraft(params: {
     .filter((s) => s.type === "embed")
     .map(
       (s: any) =>
-        `  - Slot ${s.slotIndex} (${s.slotName}) is filled by embedding brochure page ${s.brochurePageNumber} (tag: ${s.tag}). Do NOT regenerate this content in adjacent chapters.`,
+        `  - Slot ${s.slotIndex} (${s.slotName}) is filled by embedding brochure page ${s.brochurePageNumber} (tags: ${s.tags.join("/")}). Do NOT regenerate this content in adjacent chapters.`,
     )
     .join("\n");
 
-  const factsByTag: Record<string, string[]> = {};
-  for (const c of params.brochureKnowledge.classifications) {
+  // Phase 4B Delivery E.5 — facts contribute to every tag bucket the
+  // page belongs to. A page tagged ["service", "about"] with fact
+  // "over 40 years" makes that fact available under both SERVICE and
+  // ABOUT prompt categories. Set-based dedupe within each bucket
+  // prevents the same fact appearing twice when multiple pages share
+  // a tag.
+  const factsByTagDraft: Record<string, Set<string>> = {};
+  for (const c of knowledge.classifications) {
     if (c.facts.length === 0) continue;
-    if (!factsByTag[c.tag]) factsByTag[c.tag] = [];
-    factsByTag[c.tag].push(...c.facts);
+    for (const tag of c.tags) {
+      if (!factsByTagDraft[tag]) factsByTagDraft[tag] = new Set<string>();
+      for (const f of c.facts) factsByTagDraft[tag].add(f);
+    }
   }
-  const factsBlock = Object.entries(factsByTag)
+  const factsBlock = Object.entries(factsByTagDraft)
     .map(
       ([tag, facts]) =>
-        `${tag.toUpperCase()}:\n${facts.map((f) => `  - ${f}`).join("\n")}`,
+        `${tag.toUpperCase()}:\n${Array.from(facts).map((f) => `  - ${f}`).join("\n")}`,
     )
     .join("\n\n");
 
@@ -737,7 +797,7 @@ ${slotInstructions}`;
       const reason =
         s.slotName === "Cover"
           ? "Page 1 of your brochure is the proposal cover"
-          : `Brochure page ${s.brochurePageNumber} classified as "${s.tag}" with clean clarity`;
+          : `Brochure page ${s.brochurePageNumber} classified as "${s.tags.join("/")}" with clean clarity`;
       return {
         slotIndex: s.slotIndex,
         slotName: s.slotName,
@@ -802,6 +862,9 @@ export async function regenerateSingleChapter(params: {
     throw new Error(`No slot definition for index ${params.slotIndex}`);
   }
 
+  // Phase 4B Delivery E.5 — normalise to multi-tag shape on entry.
+  const knowledge = normalizeKnowledge(params.brochureKnowledge);
+
   // Build context about what other slots contain (so the regenerated
   // chapter doesn't conflict). Just titles + a one-line summary.
   const otherSlotsContext = params.currentSlots
@@ -815,16 +878,21 @@ export async function regenerateSingleChapter(params: {
     })
     .join("\n");
 
-  const factsByTag: Record<string, string[]> = {};
-  for (const c of params.brochureKnowledge.classifications) {
+  // Phase 4B Delivery E.5 — same multi-tag aggregation as the draft
+  // path. A fact appears under every tag its page belongs to, deduped
+  // within each bucket.
+  const factsByTagRegen: Record<string, Set<string>> = {};
+  for (const c of knowledge.classifications) {
     if (c.facts.length === 0) continue;
-    if (!factsByTag[c.tag]) factsByTag[c.tag] = [];
-    factsByTag[c.tag].push(...c.facts);
+    for (const tag of c.tags) {
+      if (!factsByTagRegen[tag]) factsByTagRegen[tag] = new Set<string>();
+      for (const f of c.facts) factsByTagRegen[tag].add(f);
+    }
   }
-  const factsBlock = Object.entries(factsByTag)
+  const factsBlock = Object.entries(factsByTagRegen)
     .map(
       ([tag, facts]) =>
-        `${tag.toUpperCase()}:\n${facts.map((f) => `  - ${f}`).join("\n")}`,
+        `${tag.toUpperCase()}:\n${Array.from(facts).map((f) => `  - ${f}`).join("\n")}`,
     )
     .join("\n\n");
 

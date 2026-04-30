@@ -181,11 +181,24 @@ export const organizations = pgTable("organizations", {
   brochureHash: varchar("brochure_hash", { length: 64 }),
   brochureExtractedAt: timestamp("brochure_extracted_at"),
   brochureDeletedAt: timestamp("brochure_deleted_at"),
+  // Phase 4B Delivery E.5 — multi-tag brochure pages. A page can
+  // legitimately belong to multiple categories (e.g. a Hardware Support
+  // page that opens with corporate-history prose is both a "service"
+  // page and an "about" contributor). The `tags` array carries every
+  // category the page qualifies for; the FIRST entry is the page's
+  // primary identity (preferred by the slot picker's first pass), the
+  // rest are secondary fallbacks.
+  //
+  // Backwards compatibility: old data on disk still has the singular
+  // `tag` field — callers run brochureKnowledge through the
+  // normalizeKnowledge helper in services/brochureExtractor before
+  // reading classifications, which folds either shape into the array
+  // form. Old data converts naturally on next Re-extract / Replace.
   brochureKnowledge: json("brochure_knowledge").$type<{
     pageCount: number;
     classifications: Array<{
       pageNumber: number;
-      tag:
+      tags: Array<
         | "cover"
         | "contents"
         | "about"
@@ -194,7 +207,8 @@ export const organizations = pgTable("organizations", {
         | "service"
         | "testimonial"
         | "contact"
-        | "other";
+        | "other"
+      >;
       clarity: "clean" | "partial";
       facts: string[];
     }>;

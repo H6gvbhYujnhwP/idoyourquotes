@@ -212,24 +212,70 @@ export default function BrochureSettingsTab() {
 
   // ── Has brochure state ────────────────────────────────────────────
   const knowledge = brochure.knowledge as any;
-  const classifications = knowledge?.classifications || [];
+  const rawClassifications = knowledge?.classifications || [];
 
-  // Aggregate tag counts for the "what we extracted" breakdown
+  // Phase 4B Delivery E.5 — read shim. The brochure get/upload-skip
+  // endpoints return the JSON exactly as stored, which may be the old
+  // single-tag shape (`tag: "service"`) or the new multi-tag shape
+  // (`tags: ["service", "about"]`). Fold either into a uniform tags
+  // array so the rest of this component only deals with one shape.
+  const classifications: Array<{
+    pageNumber: number;
+    tags: string[];
+    clarity: string;
+    facts: string[];
+  }> = rawClassifications.map((c: any) => {
+    let tags: string[];
+    if (Array.isArray(c?.tags) && c.tags.length > 0) {
+      tags = c.tags.filter((t: any) => typeof t === "string");
+    } else if (typeof c?.tag === "string") {
+      tags = [c.tag];
+    } else {
+      tags = ["other"];
+    }
+    if (tags.length === 0) tags = ["other"];
+    return {
+      pageNumber: c?.pageNumber ?? 0,
+      tags,
+      clarity: c?.clarity ?? "partial",
+      facts: Array.isArray(c?.facts) ? c.facts : [],
+    };
+  });
+
+  // Aggregate tag counts for the "what we extracted" breakdown. A
+  // multi-tag page contributes to every tile its tags include, so the
+  // user sees pages with secondary tags counted under those categories
+  // (e.g. a service page tagged ["service", "about"] adds 1 to both
+  // Services and About counts). The footer note acknowledges that a
+  // page can appear in more than one tile.
   const tagCounts = new Map<string, number>();
   const tagFactCounts = new Map<string, number>();
+  let multiTagPageCount = 0;
   for (const c of classifications) {
-    tagCounts.set(c.tag, (tagCounts.get(c.tag) || 0) + 1);
-    tagFactCounts.set(c.tag, (tagFactCounts.get(c.tag) || 0) + (c.facts?.length || 0));
+    if (c.tags.length > 1) multiTagPageCount += 1;
+    for (const tag of c.tags) {
+      tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+      tagFactCounts.set(tag, (tagFactCounts.get(tag) || 0) + (c.facts?.length || 0));
+    }
   }
-  const totalFacts = Array.from(tagFactCounts.values()).reduce((a, b) => a + b, 0);
-  const cleanPageCount = classifications.filter((c: any) => c.clarity === "clean").length;
+  const totalFacts = classifications.reduce(
+    (acc, c) => acc + (c.facts?.length || 0),
+    0,
+  );
+  const cleanPageCount = classifications.filter(
+    (c) => c.clarity === "clean",
+  ).length;
 
-  // Detect thinness for the inline warning
+  // Detect thinness for the inline warning. A page tagged ["service",
+  // "about"] now satisfies the About check via its secondary tag —
+  // this is exactly the multi-tag improvement: service-catalogue
+  // brochures stop being flagged as thin once their service pages
+  // pick up a secondary about tag during extraction.
   const hasAbout = classifications.some(
-    (c: any) => c.clarity === "clean" && c.tag === "about",
+    (c) => c.clarity === "clean" && c.tags.includes("about"),
   );
   const hasUsp = classifications.some(
-    (c: any) => c.clarity === "clean" && c.tag === "usp",
+    (c) => c.clarity === "clean" && c.tags.includes("usp"),
   );
   const thinReasons: string[] = [];
   if (!hasAbout) thinReasons.push("No clear About Us page found");
@@ -344,6 +390,13 @@ export default function BrochureSettingsTab() {
             <p className="text-xs text-muted-foreground mt-2">
               {cleanPageCount} of {brochure.pageCount} pages can be embedded
               verbatim in proposals.
+              {multiTagPageCount > 0 && (
+                <>
+                  {" "}
+                  {multiTagPageCount} page{multiTagPageCount === 1 ? "" : "s"}
+                  {" "}span more than one category and {multiTagPageCount === 1 ? "is" : "are"} counted in each.
+                </>
+              )}
             </p>
           </div>
 

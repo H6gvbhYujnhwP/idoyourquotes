@@ -54,7 +54,13 @@ export type BrochurePageClarity = "clean" | "partial";
 
 export interface BrochurePageClassification {
   pageNumber: number;
-  tag: BrochurePageTag;
+  /**
+   * Phase 4B Delivery E.5 — ordered array of tags. The FIRST tag is
+   * the page's primary identity; additional tags are secondary
+   * categories the page also qualifies for. Always at least one entry
+   * (defaults to ["other"] for unrecognised data).
+   */
+  tags: BrochurePageTag[];
   clarity: BrochurePageClarity;
   facts: string[];
 }
@@ -82,6 +88,72 @@ const VALID_TAGS: BrochurePageTag[] = [
   "contact",
   "other",
 ];
+
+// ─── Multi-tag read shim — Phase 4B Delivery E.5 ─────────────────────
+//
+// brochureKnowledge stored before this delivery has the singular `tag`
+// field per classification. New extractions write the `tags` array.
+// The shim folds either shape into the array form so callers (engine,
+// settings tab via the upload-skip path, isBrochureThin) only see the
+// new shape. Old data converts naturally next time the user clicks
+// Re-extract or replaces the brochure — no migration needed.
+//
+// Defensive against partial / malformed data: invalid tag strings are
+// dropped, the array is capped at 3 entries (sane upper bound on
+// secondary tags), and an empty result falls back to ["other"] so the
+// engine never sees a zero-length tags array.
+
+function normalizeClassification(
+  raw: any,
+  fallbackPageNumber: number,
+): BrochurePageClassification {
+  const pageNumber =
+    typeof raw?.pageNumber === "number" ? raw.pageNumber : fallbackPageNumber;
+
+  let tags: BrochurePageTag[];
+  if (Array.isArray(raw?.tags)) {
+    tags = raw.tags
+      .filter(
+        (t: any): t is BrochurePageTag =>
+          typeof t === "string" && (VALID_TAGS as string[]).includes(t),
+      )
+      .slice(0, 3);
+  } else if (
+    typeof raw?.tag === "string" &&
+    (VALID_TAGS as string[]).includes(raw.tag)
+  ) {
+    tags = [raw.tag as BrochurePageTag];
+  } else {
+    tags = [];
+  }
+  if (tags.length === 0) tags = ["other"];
+
+  const clarity: BrochurePageClarity =
+    raw?.clarity === "clean" ? "clean" : "partial";
+
+  const facts = Array.isArray(raw?.facts)
+    ? raw.facts.filter((f: any) => typeof f === "string").slice(0, 5)
+    : [];
+
+  return { pageNumber, tags, clarity, facts };
+}
+
+/**
+ * Normalise a stored brochureKnowledge value (from
+ * organizations.brochureKnowledge) into the canonical multi-tag shape
+ * the engine and the thinness check expect. Tolerates the old single-
+ * tag shape, missing fields, and outright nulls.
+ */
+export function normalizeKnowledge(raw: any): BrochureKnowledge {
+  const pageCount =
+    typeof raw?.pageCount === "number" ? raw.pageCount : 0;
+  const classifications = Array.isArray(raw?.classifications)
+    ? raw.classifications.map((c: any, idx: number) =>
+        normalizeClassification(c, idx + 1),
+      )
+    : [];
+  return { pageCount, classifications };
+}
 
 interface PerPageText {
   pageNumber: number;
@@ -198,19 +270,30 @@ export async function extractBrochureKnowledge(
   const system = `You are classifying pages of a company marketing brochure for use in a proposal generator.
 
 For each page, return:
-1. "tag": one of these exact strings:
+1. "tags": an ORDERED ARRAY of 1–3 tag strings. The FIRST tag is the page's PRIMARY identity (what the page is mostly about). Additional tags are SECONDARY — only include them when the page strongly qualifies for that category in addition to its primary purpose.
+
+   Tag vocabulary (use these exact strings only):
    - "cover": title page, company name with logo as the dominant element
    - "contents": table of contents / index page
-   - "about": About Us page — company history, founding, who we are
-   - "usp": Why Choose Us / What Makes Us Different / unique selling points
-   - "track-record": stats, social proof, customer satisfaction metrics
-   - "service": describes a specific service offering (IT support, cyber security, backup, etc.)
-   - "testimonial": customer quotes, reviews, case studies
+   - "about": About Us — company history, founding, who we are, where we operate, longevity statements
+   - "usp": Why Choose Us / What Makes Us Different / explicit unique selling points
+   - "track-record": stats, social proof, customer counts, satisfaction metrics
+   - "service": describes a specific service offering (IT support, cyber security, backup, cleaning rota, pest treatment, etc.)
+   - "testimonial": customer quotes, reviews, named case studies
    - "contact": contact details / get in touch / where to find us
-   - "other": anything that doesn't clearly fit above
+   - "other": anything that doesn't clearly fit the above
+
+When to use SECONDARY tags:
+   - A service page that OPENS with corporate-history prose ("Acme has been providing managed IT for over 40 years") → tags: ["service", "about"]. Primary "service" because the body describes a service; "about" earned because the opening paragraph is genuine company-positioning content.
+   - A service page that prominently quotes customer counts or satisfaction metrics as marketing material ("trusted by 1,200 customers", "98% retention") → tags: ["service", "track-record"].
+   - A service page that opens with explicit differentiators against competitors ("unlike other providers, we offer…") → tags: ["service", "usp"].
+   - A pure About Us page that describes no specific service → tags: ["about"]. ONE tag only.
+   - A pure service page with no company-history, no customer metrics, no differentiator claims → tags: ["service"]. ONE tag only.
+
+Do NOT add secondary tags speculatively. "Could conceivably help the About slot" is not enough — there must be a concrete positioning paragraph, named metric, or explicit differentiator on the page itself. Most pages will have ONE tag. Multi-tagging is the exception, not the default.
 
 2. "clarity": one of:
-   - "clean": the page is a self-contained marketing page about ONE topic, suitable for embedding verbatim in a proposal
+   - "clean": the page is a self-contained marketing page, suitable for embedding verbatim in a proposal
    - "partial": the page has mixed content, multiple topics, or is too cluttered for a clean embed
 
 3. "facts": array of up to 5 short factual claims explicitly stated on this page that would matter in a proposal (e.g., "25+ years experience", "98.8% SLA adherence", "based in Rayleigh, Essex"). Empty array if no clear factual claims.
@@ -218,7 +301,7 @@ For each page, return:
 Return ONLY valid JSON in this exact shape, no preamble, no fences:
 {
   "classifications": [
-    { "pageNumber": 1, "tag": "cover", "clarity": "clean", "facts": [] },
+    { "pageNumber": 1, "tags": ["cover"], "clarity": "clean", "facts": [] },
     ...
   ]
 }`;
@@ -234,18 +317,13 @@ Return ONLY valid JSON in this exact shape, no preamble, no fences:
 
   const parsed = extractJson<{ classifications: any[] }>(result.content);
 
-  // Defensive validation — reject bad tags/clarity rather than crash.
-  // Worst case for an unrecognised tag is "other" (the fallback chain
-  // in the engine treats "other" as not-embeddable).
+  // Defensive validation — bad shapes are rescued by normalizeClassification
+  // (drops invalid tags, falls back to ["other"], caps at 3 secondary
+  // tags, defaults to "partial" clarity, etc.). Worst case for an
+  // unrecognised tag is "other" — the engine treats "other" as not
+  // matching any slot's preferredTags so the page is left unembedded.
   const classifications: BrochurePageClassification[] = (parsed.classifications || []).map(
-    (c, idx) => ({
-      pageNumber: typeof c.pageNumber === "number" ? c.pageNumber : idx + 1,
-      tag: VALID_TAGS.includes(c.tag) ? (c.tag as BrochurePageTag) : "other",
-      clarity: c.clarity === "clean" ? "clean" : ("partial" as BrochurePageClarity),
-      facts: Array.isArray(c.facts)
-        ? c.facts.filter((f: any) => typeof f === "string").slice(0, 5)
-        : [],
-    }),
+    (c, idx) => normalizeClassification(c, idx + 1),
   );
 
   return {
@@ -267,18 +345,27 @@ export async function hashBrochureFile(pdfBuffer: Buffer): Promise<string> {
 /**
  * Quick "is this brochure thin?" check used by the upload endpoint to
  * surface the soft hard-block in the UI. A thin brochure has fewer
- * than 4 clean pages with non-empty facts, OR no clean "about" or
- * "usp" page at all. The user can override and continue anyway —
+ * than 3 clean pages with non-empty facts, OR no clean page tagged
+ * "about" (primary or secondary), OR no clean page tagged "usp"
+ * (primary or secondary). The user can override and continue anyway —
  * see the modal in Delivery B.
+ *
+ * Phase 4B Delivery E.5 — accepts either the new multi-tag shape or
+ * the legacy single-tag shape on disk. Internally normalises before
+ * checking, so a service page carrying "about" as a secondary tag now
+ * counts as an About contributor (the whole point of the multi-tag
+ * change — Syscom-style service-catalogue brochures stop being flagged
+ * as thin once their service pages pick up secondary about tags).
  */
-export function isBrochureThin(knowledge: BrochureKnowledge): {
+export function isBrochureThin(rawKnowledge: any): {
   thin: boolean;
   reasons: string[];
 } {
+  const knowledge = normalizeKnowledge(rawKnowledge);
   const reasons: string[] = [];
   const cleanPages = knowledge.classifications.filter((c) => c.clarity === "clean");
-  const hasAbout = cleanPages.some((c) => c.tag === "about");
-  const hasUsp = cleanPages.some((c) => c.tag === "usp");
+  const hasAbout = cleanPages.some((c) => c.tags.includes("about"));
+  const hasUsp = cleanPages.some((c) => c.tags.includes("usp"));
 
   if (!hasAbout) reasons.push("No clear About Us page found");
   if (!hasUsp) reasons.push("No clear Why Choose Us / USP page found");
