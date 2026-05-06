@@ -48,6 +48,8 @@ import { getDemoQuoteForSector } from "./demoQuotes";
 import {
   getQuotesByUserId,
   getQuotesByOrgId,
+  getQuotesByOrgIdWithProfit,
+  getQuotesByUserIdWithProfit,
   getQuoteById,
   getQuoteByIdAndOrg,
   createQuote,
@@ -444,14 +446,17 @@ export const appRouter = router({
   // ============ QUOTES ============
   quotes: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      // Get user's primary organization
+      // Phase 4B Delivery E.9 — list now returns each quote with two
+      // extra aggregate fields, totalCost and totalProfit, computed
+      // by a LEFT JOIN against quote_line_items. Single round-trip,
+      // SUM in SQL — same shape as the Total column on the dashboard.
+      // No other client surface consumes quotes.list (verified) so
+      // adding fields to the return type doesn't ripple.
       const org = await getUserPrimaryOrg(ctx.user.id);
       if (org) {
-        // Use org-based access for multi-tenant isolation
-        return getQuotesByOrgId(org.id);
+        return getQuotesByOrgIdWithProfit(org.id);
       }
-      // Fallback to user-based access for users without orgs (legacy)
-      return getQuotesByUserId(ctx.user.id);
+      return getQuotesByUserIdWithProfit(ctx.user.id);
     }),
 
     get: protectedProcedure
@@ -1778,6 +1783,12 @@ IMPORTANT: Address the email greeting using the first name only (e.g. "Hi ${gree
         quantity: z.string().optional(),
         unit: z.string().optional(),
         rate: z.string().optional(),
+        // Phase 4B Delivery E.9 — buy-in cost. Optional because not
+        // every line has a known cost (manual rows start blank, AI
+        // rows seed from the catalog if a match exists). String to
+        // match the rest of this shape — the underlying column is
+        // decimal and the helper accepts strings unchanged.
+        costPrice: z.string().optional(),
         pricingType: z.enum(['standard', 'monthly', 'optional', 'annual']).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
@@ -1796,6 +1807,9 @@ IMPORTANT: Address the email greeting using the first name only (e.g. "Hi ${gree
           unit: input.unit || "each",
           rate: input.rate || "0.00",
           total,
+          // Pass through; null is fine on the DB side (column is
+          // nullable) and the workspace shows a dash when empty.
+          costPrice: input.costPrice ?? null,
           pricingType: input.pricingType || "standard",
         });
 
@@ -1813,6 +1827,13 @@ IMPORTANT: Address the email greeting using the first name only (e.g. "Hi ${gree
         quantity: z.string().optional(),
         unit: z.string().optional(),
         rate: z.string().optional(),
+        // Phase 4B Delivery E.9 — buy-in cost editable from the
+        // workspace. The auto-save path (saveLineItem) already sends
+        // arbitrary patches forward; before this addition the Zod
+        // validator silently dropped costPrice from anyone who tried
+        // to send it. Empty-string normalised to null so a user can
+        // clear a previously-set cost.
+        costPrice: z.string().optional(),
         sortOrder: z.number().optional(),
         pricingType: z.enum(['standard', 'monthly', 'optional', 'annual']).optional(),
       }))
@@ -1822,6 +1843,14 @@ IMPORTANT: Address the email greeting using the first name only (e.g. "Hi ${gree
         if (!quote) throw new Error("Quote not found");
 
         const { id, quoteId, ...data } = input;
+
+        // Phase 4B Delivery E.9 — empty string from the input field
+        // means "clear the cost", not "save the empty string". The
+        // DB column is decimal and accepts null; mapping happens here
+        // so the helper stays a pure pass-through.
+        if (data.costPrice !== undefined && data.costPrice.trim() === "") {
+          (data as any).costPrice = null;
+        }
 
         // Recalculate total if quantity or rate changed
         if (data.quantity !== undefined || data.rate !== undefined) {

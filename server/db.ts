@@ -375,6 +375,82 @@ export async function getQuotesByOrgId(orgId: number): Promise<Quote[]> {
   return db.select().from(quotes).where(eq(quotes.orgId, orgId)).orderBy(desc(quotes.updatedAt));
 }
 
+// ─── Phase 4B Delivery E.9 — aggregating list helpers ────────────────
+//
+// The dashboard's quote list needs profit and cost figures alongside
+// each row. Rather than loading every quote's line items on the client,
+// these helpers run a LEFT JOIN with SUM in SQL and return one row per
+// quote with the extras attached.
+//
+// Why LEFT JOIN: a brand-new quote with zero line items still appears
+// in the list, with totalCost=0 and totalProfit=0, exactly as it shows
+// today.
+//
+// Why COALESCE on cost_price: AI-generated lines and lines added before
+// E.9 may have null cost_price. Treat null as zero for aggregation —
+// missing cost is rendered as a dash on the workspace anyway, and a
+// null cost contributing zero to totalCost is the only sensible
+// arithmetic. The profit calc therefore becomes (rate - 0) * qty for
+// rows without a cost, i.e. the full sell amount counts as profit. The
+// dashboard will reflect that, which is the right answer until the
+// user enters costs for those rows.
+//
+// Returned shape: Quote & { totalCost: string; totalProfit: string }.
+// Strings rather than numbers because pg returns numerics as strings
+// and the dashboard already handles strings throughout (parseFloat
+// pattern matches quote.total and the row-total formatter).
+
+import { sql } from "drizzle-orm";
+
+export type QuoteWithProfit = Quote & {
+  totalCost: string;
+  totalProfit: string;
+};
+
+async function getQuotesWithProfit(
+  whereClause: ReturnType<typeof eq>,
+): Promise<QuoteWithProfit[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  // Drizzle's SQL helper builds the aggregate columns. The two SUMs
+  // wrap COALESCE(cost_price, 0) so null costs don't poison the sum
+  // (one null in PG SUM returns null for the whole group). cast(... as
+  // numeric) returns a string, matching the existing decimal columns.
+  const rows = await db
+    .select({
+      // Spread every column on the quotes table so the returned shape
+      // is a full Quote plus the two extras. Drizzle infers types
+      // through the SQL builder.
+      quote: quotes,
+      totalCost: sql<string>`COALESCE(SUM(COALESCE(${quoteLineItems.costPrice}, 0) * ${quoteLineItems.quantity}), 0)::text`,
+      totalProfit: sql<string>`COALESCE(SUM((${quoteLineItems.rate} - COALESCE(${quoteLineItems.costPrice}, 0)) * ${quoteLineItems.quantity}), 0)::text`,
+    })
+    .from(quotes)
+    .leftJoin(quoteLineItems, eq(quoteLineItems.quoteId, quotes.id))
+    .where(whereClause)
+    .groupBy(quotes.id)
+    .orderBy(desc(quotes.updatedAt));
+
+  return rows.map((r: typeof rows[number]) => ({
+    ...(r.quote as Quote),
+    totalCost: r.totalCost,
+    totalProfit: r.totalProfit,
+  }));
+}
+
+export async function getQuotesByOrgIdWithProfit(
+  orgId: number,
+): Promise<QuoteWithProfit[]> {
+  return getQuotesWithProfit(eq(quotes.orgId, orgId));
+}
+
+export async function getQuotesByUserIdWithProfit(
+  userId: number,
+): Promise<QuoteWithProfit[]> {
+  return getQuotesWithProfit(eq(quotes.userId, userId));
+}
+
 export async function getQuoteById(quoteId: number, userId: number): Promise<Quote | undefined> {
   const db = await getDb();
   if (!db) return undefined;

@@ -514,6 +514,15 @@ export default function QuoteWorkspace() {
     let monthly = 0;
     let annual = 0;
     let optional = 0;
+    // Phase 4B Delivery E.9 — same buckets again for profit. A line's
+    // profit is (rate - costPrice) * quantity; lines without a cost
+    // contribute nothing here (treated as not-yet-priced rather than
+    // "100% margin"). Optional lines are kept separate so they don't
+    // inflate the headline figure.
+    let oneOffProfit = 0;
+    let monthlyProfit = 0;
+    let annualProfit = 0;
+    let optionalProfit = 0;
     for (const li of lineItems) {
       const total =
         parseNum(li.total) || parseNum(li.quantity) * parseNum(li.rate);
@@ -522,8 +531,28 @@ export default function QuoteWorkspace() {
       else if (pt === "annual") annual += total;
       else if (pt === "optional") optional += total;
       else oneOff += total;
+
+      const cost = parseNum((li as any).costPrice);
+      if (cost > 0) {
+        const qty = parseNum(li.quantity);
+        const rate = parseNum(li.rate);
+        const profit = (rate - cost) * qty;
+        if (pt === "monthly") monthlyProfit += profit;
+        else if (pt === "annual") annualProfit += profit;
+        else if (pt === "optional") optionalProfit += profit;
+        else oneOffProfit += profit;
+      }
     }
-    return { oneOff, monthly, annual, optional };
+    return {
+      oneOff,
+      monthly,
+      annual,
+      optional,
+      oneOffProfit,
+      monthlyProfit,
+      annualProfit,
+      optionalProfit,
+    };
   }, [lineItems]);
 
   // ── Highlighting derived sets ──
@@ -2416,7 +2445,18 @@ function EmptyStatePanel({
 interface EditorPanelProps {
   lineItems: LineItem[];
   catalogItems: CatalogItemRef[];
-  totals: { oneOff: number; monthly: number; annual: number; optional: number };
+  totals: {
+    oneOff: number;
+    monthly: number;
+    annual: number;
+    optional: number;
+    // Phase 4B Delivery E.9 — same buckets for profit. Computed in
+    // the parent's totals memo and passed through unchanged.
+    oneOffProfit: number;
+    monthlyProfit: number;
+    annualProfit: number;
+    optionalProfit: number;
+  };
   activeLineItemId: number | null;
   highlightedLineItemIds: Set<number>;
   onLineItemClick: (id: number) => void;
@@ -2510,6 +2550,19 @@ function EditorPanel({
     return parts.length > 0 ? `${parts.join(" + ")} · Ex VAT` : "No totals yet";
   }, [totals]);
 
+  // Phase 4B Delivery E.9 — profit pill string, mirroring the same
+  // pricing-type breakdown as totalsSummary so the user reads them as
+  // a pair. Returns null when there's no profit data — the green card
+  // simply omits the row rather than showing "£0 profit", which would
+  // be misleading on quotes where no costs have been entered yet.
+  const profitSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (totals.oneOffProfit > 0) parts.push(`${fmtGBP(totals.oneOffProfit)}`);
+    if (totals.monthlyProfit > 0) parts.push(`${fmtGBP(totals.monthlyProfit)}/mo`);
+    if (totals.annualProfit > 0) parts.push(`${fmtGBP(totals.annualProfit)}/yr`);
+    return parts.length > 0 ? `${parts.join(" + ")} profit` : null;
+  }, [totals]);
+
   return (
     // Phase 4A Delivery 38.1 — the wrapper used to be h-full +
     // overflow-hidden with a flex-1 overflow-y-auto inside. That
@@ -2591,6 +2644,20 @@ function EditorPanel({
           >
             {totalsSummary}
           </div>
+          {/* Phase 4B Delivery E.9 — profit pill. Sits directly below
+              the totals line so the eye reads "what we're charging"
+              and "what we're earning" together. Green text makes it
+              quickly distinguishable from the bolder totals figure
+              above. Hidden when there's no cost data yet. */}
+          {profitSummary && (
+            <div
+              className="text-[12px] font-semibold mt-1"
+              style={{ color: "#15803d" }}
+              title="Internal — not shown on customer PDF"
+            >
+              of which {profitSummary}
+            </div>
+          )}
           {totals.optional > 0 && (
             <div
               className="text-[11px] mt-0.5"
@@ -2840,13 +2907,32 @@ function LineItemsTable({
               backgroundColor: "#fafbfc",
             }}
           >
-            <th className="text-left px-2 py-2 w-[10%]">Catalog</th>
-            <th className="text-left px-4 py-2 w-[30%]">Line item</th>
-            <th className="text-right px-2 py-2 w-[10%]">Qty</th>
-            <th className="text-left px-2 py-2 w-[10%]">Unit</th>
-            <th className="text-right px-2 py-2 w-[12%]">Rate</th>
-            <th className="text-right px-2 py-2 w-[12%]">Total</th>
-            <th className="text-left px-2 py-2 w-[12%]">Type</th>
+            {/* Phase 4B Delivery E.9 — column widths rebalanced to fit
+                two new internal columns at the end. The customer-facing
+                block (Catalog → Type) keeps the same visual weight as
+                before; COST and PROFIT sit after Type with a dashed
+                left-border on COST as the visual boundary marker. The
+                grid totals to 100%: 9+24+8+8+10+10+10+9+8+4. */}
+            <th className="text-left px-2 py-2 w-[9%]">Catalog</th>
+            <th className="text-left px-4 py-2 w-[24%]">Line item</th>
+            <th className="text-right px-2 py-2 w-[8%]">Qty</th>
+            <th className="text-left px-2 py-2 w-[8%]">Unit</th>
+            <th className="text-right px-2 py-2 w-[10%]">Rate</th>
+            <th className="text-right px-2 py-2 w-[10%]">Total</th>
+            <th className="text-left px-2 py-2 w-[10%]">Type</th>
+            <th
+              className="text-right px-2 py-2 w-[9%]"
+              style={{ borderLeft: `1px dashed ${brand.borderLight}` }}
+              title="Internal — not shown on customer PDF"
+            >
+              Cost
+            </th>
+            <th
+              className="text-right px-2 py-2 w-[8%]"
+              title="Internal — not shown on customer PDF"
+            >
+              Profit
+            </th>
             <th className="w-[4%]" />
           </tr>
         </thead>
@@ -3036,6 +3122,59 @@ function LineItemRow({
             </SelectContent>
           </Select>
         </div>
+      </td>
+      {/* Phase 4B Delivery E.9 — COST cell. Editable buy-in per unit.
+          Empty string clears the cost (server normalises blank to
+          null). Dashed left border marks the customer/internal
+          boundary, mirroring the header. Stops click propagation so
+          editing the cost doesn't toggle the row's active state. */}
+      <td
+        className="px-2 py-2 text-right"
+        style={{ borderLeft: `1px dashed ${brand.borderLight}` }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <RowCellInput
+          value={(row as any).costPrice ?? ""}
+          onSave={(v) => onSave(row.id, { costPrice: v })}
+          align="right"
+          inputMode="decimal"
+          placeholder="—"
+        />
+      </td>
+      {/* Phase 4B Delivery E.9 — PROFIT cell. Derived live from rate,
+          cost and quantity. Margin % below the £ amount. When cost is
+          missing or zero, shows a muted dash rather than an inflated
+          "100% margin" figure that would mislead the user. */}
+      <td className="px-2 py-2 text-right text-sm">
+        {(() => {
+          const cost = parseNum((row as any).costPrice);
+          const rate = parseNum(row.rate);
+          const qty = parseNum(row.quantity);
+          if (!cost || cost <= 0 || !qty) {
+            return (
+              <span style={{ color: brand.navyMuted }}>—</span>
+            );
+          }
+          const profitPerUnit = rate - cost;
+          const totalProfit = profitPerUnit * qty;
+          const marginPct = rate > 0 ? (profitPerUnit / rate) * 100 : 0;
+          return (
+            <div>
+              <div
+                className="font-semibold"
+                style={{ color: totalProfit >= 0 ? "#15803d" : "#b91c1c" }}
+              >
+                {fmtGBP(totalProfit)}
+              </div>
+              <div
+                className="text-[10px] mt-0.5"
+                style={{ color: brand.navyMuted }}
+              >
+                {marginPct.toFixed(1)}%
+              </div>
+            </div>
+          );
+        })()}
       </td>
       <td className="px-2 py-2">
         <div

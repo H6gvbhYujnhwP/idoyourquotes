@@ -596,6 +596,36 @@ export default function Dashboard() {
                 >
                   Total
                 </th>
+                {/* Phase 4B Delivery E.9 — internal-only profit + margin
+                    columns. Sourced from the quotes.list aggregating
+                    helper which LEFT JOINs line items and SUMs in SQL.
+                    Plain text, no threshold colouring (per spec). */}
+                <th
+                  className="text-right px-4 py-2.5"
+                  style={{
+                    fontSize: "0.625rem",
+                    fontWeight: 500,
+                    letterSpacing: "0.05em",
+                    textTransform: "uppercase",
+                    color: "var(--brand-text-tertiary)",
+                  }}
+                  title="Internal — sum of (rate − cost) × qty across all lines"
+                >
+                  Profit
+                </th>
+                <th
+                  className="text-right px-4 py-2.5"
+                  style={{
+                    fontSize: "0.625rem",
+                    fontWeight: 500,
+                    letterSpacing: "0.05em",
+                    textTransform: "uppercase",
+                    color: "var(--brand-text-tertiary)",
+                  }}
+                  title="Profit ÷ revenue across all lines"
+                >
+                  Margin
+                </th>
                 <th
                   className="text-right px-4 py-2.5"
                   style={{
@@ -738,6 +768,57 @@ export default function Dashboard() {
                         </div>
                       ))}
                     </td>
+
+                    {/* Phase 4B Delivery E.9 — Profit + Margin cells.
+                        Sourced from the totalProfit and totalCost
+                        aggregates the list helper now returns.
+                        Revenue for the margin denominator is the sum
+                        of all line totals (including monthly + annual
+                        + one-off) — same scope as totalProfit so the
+                        % is internally consistent. Shows a muted dash
+                        when no costs are entered. */}
+                    {(() => {
+                      const profit = parseFloat(
+                        ((quote as any).totalProfit as string) || "0",
+                      );
+                      const cost = parseFloat(
+                        ((quote as any).totalCost as string) || "0",
+                      );
+                      const revenue = profit + cost;
+                      const hasCost = cost > 0;
+                      const marginPct =
+                        hasCost && revenue > 0 ? (profit / revenue) * 100 : null;
+                      return (
+                        <>
+                          <td className="px-4 py-3 text-right">
+                            {hasCost ? (
+                              <span
+                                style={{
+                                  fontWeight: 500,
+                                  color: "var(--brand-text-primary)",
+                                }}
+                              >
+                                £{formatGBP(profit)}
+                              </span>
+                            ) : (
+                              <span
+                                style={{ color: "var(--brand-text-tertiary)" }}
+                              >
+                                —
+                              </span>
+                            )}
+                          </td>
+                          <td
+                            className="px-4 py-3 text-right text-xs"
+                            style={{ color: "var(--brand-text-secondary)" }}
+                          >
+                            {marginPct === null
+                              ? "—"
+                              : `${marginPct.toFixed(1)}%`}
+                          </td>
+                        </>
+                      );
+                    })()}
 
                     {/* Updated */}
                     <td

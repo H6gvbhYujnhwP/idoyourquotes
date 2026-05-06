@@ -394,6 +394,19 @@ export const quoteLineItems = pgTable("quote_line_items", {
   phaseId: varchar("phase_id", { length: 50 }),
   category: varchar("category", { length: 100 }),
   pricingType: varchar("pricing_type", { length: 20 }).default("standard"),
+  // Phase 4B Delivery E.9 — sync with drizzle/schema.ts. The deployed
+  // database already had these columns (cost_price feeds AI-generated
+  // line items via the catalog-cost prompt and now feeds the workspace
+  // PROFIT column). shared/schema.ts had drifted; this block restores
+  // the dual-schema parity called out in the session handover.
+  costPrice: decimal("cost_price", { precision: 12, scale: 2 }),
+  itemName: varchar("item_name", { length: 255 }),
+  isPassthrough: boolean("is_passthrough").default(false).notNull(),
+  evidenceCategory: varchar("evidence_category", { length: 100 }),
+  isSubstitutable: boolean("is_substitutable"),
+  isEstimated: boolean("is_estimated").default(false).notNull(),
+  isOptional: boolean("is_optional").default(false).notNull(),
+  sourceInputIds: json("source_input_ids").$type<number[]>(),
 });
 
 export type QuoteLineItem = typeof quoteLineItems.$inferSelect;
