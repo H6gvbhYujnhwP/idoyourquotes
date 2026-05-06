@@ -485,11 +485,27 @@ export const brandedProposalRouter = router({
         quoteDateStr: quoteDateStrForTitle,
       });
 
-      // Build a sensible filename: "<client-name> Proposal <ref>.pdf"
+      // Phase 4B Delivery E.8 — branded PDF filename. Format is
+      // "<quote title> <today's date>.pdf", with the date in the same
+      // long-form style the proposal title page uses ("30 April 2026")
+      // for visual consistency. Falls back to the client name, then to
+      // a generic "Proposal" label if neither title nor client name is
+      // set on the quote. The Q-reference is no longer in the
+      // filename — it sits on the title page inside the PDF instead,
+      // so the filename stays human-readable. Sanitisation strips
+      // anything other than letters, digits, spaces, hyphens and
+      // underscores; spaces collapse to single underscores.
       const quoteAny = quote as any;
-      const clientName = quoteAny.clientName?.trim() || "Proposal";
-      const reference = quoteAny.reference?.trim() || `Q-${quote.id}`;
-      const safeName = `${clientName} ${reference}`
+      const titleSource: string =
+        (quoteAny.title?.trim() as string) ||
+        (quoteAny.clientName?.trim() as string) ||
+        "Proposal";
+      const todayLabel: string = new Date().toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
+      const safeName = `${titleSource} ${todayLabel}`
         .replace(/[^a-zA-Z0-9 \-_]/g, "")
         .replace(/\s+/g, "_");
       const filename = `${safeName}.pdf`;

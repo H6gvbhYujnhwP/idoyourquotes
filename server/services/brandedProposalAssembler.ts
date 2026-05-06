@@ -136,11 +136,19 @@ function computeTargetDimensions(
 
 /**
  * Draw a brochure page (already embedded into the final doc via
- * embedPdf) onto a fresh target-sized page, centred at the brochure
- * page's native dimensions. NEVER upscales — that would soften any
- * raster content (icons, logos, photos) that the brochure includes.
- * If the brochure page is larger than the target (rare), scales DOWN
- * preserving aspect ratio.
+ * embedPdf) onto a fresh target-sized page, scaling to fit the
+ * target while preserving aspect ratio. Centred on the target page.
+ *
+ * Phase 4B Delivery E.8 — switched from no-upscale-only to
+ * scale-to-fit-both-ways. The previous rule kept brochure pages at
+ * native size when they were smaller than the target, which left
+ * visible whitespace around small-format brochures (A5 landscape
+ * brochures inside an A4 landscape proposal letterboxed by ~30% on
+ * each axis). Scaling up to fill A4 from A5 is a 1.41× factor —
+ * small enough that vector content (text, shapes) is unchanged and
+ * raster content (logos, photos) softens only marginally. The
+ * trade-off favours a full-bleed feel over preserving every pixel
+ * of the source raster at 1:1.
  */
 function drawBrochurePageLetterboxed(
   targetPage: PDFPage,
@@ -150,18 +158,15 @@ function drawBrochurePageLetterboxed(
   targetWidth: number,
   targetHeight: number,
 ) {
-  let drawWidth = sourceWidth;
-  let drawHeight = sourceHeight;
-
-  // Down-scale only — never enlarge. preserves aspect ratio.
-  if (sourceWidth > targetWidth || sourceHeight > targetHeight) {
-    const scale = Math.min(
-      targetWidth / sourceWidth,
-      targetHeight / sourceHeight,
-    );
-    drawWidth = sourceWidth * scale;
-    drawHeight = sourceHeight * scale;
-  }
+  // Scale to fit the target on the smaller-axis ratio, preserving
+  // aspect. Works in both directions: brochure larger than target
+  // (scales down) and brochure smaller than target (scales up).
+  const scale = Math.min(
+    targetWidth / sourceWidth,
+    targetHeight / sourceHeight,
+  );
+  const drawWidth = sourceWidth * scale;
+  const drawHeight = sourceHeight * scale;
 
   const offsetX = (targetWidth - drawWidth) / 2;
   const offsetY = (targetHeight - drawHeight) / 2;
