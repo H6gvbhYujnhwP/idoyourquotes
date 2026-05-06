@@ -533,7 +533,18 @@ export default function QuoteWorkspace() {
       else oneOff += total;
 
       const cost = parseNum((li as any).costPrice);
-      if (cost > 0) {
+      // Phase 4B Delivery E.11 — null/missing means "skip this line"
+      // (the user hasn't entered a cost yet, so no profit can be
+      // computed). An EXPLICIT zero is a real value — passthrough or
+      // genuinely free buy-in — and contributes (rate − 0) × qty as
+      // profit. The raw value test below distinguishes the two cases
+      // before parseNum collapses null/undefined/empty into 0.
+      const costRaw = (li as any).costPrice;
+      const hasCost =
+        costRaw !== null &&
+        costRaw !== undefined &&
+        String(costRaw).trim() !== "";
+      if (hasCost) {
         const qty = parseNum(li.quantity);
         const rate = parseNum(li.rate);
         const profit = (rate - cost) * qty;
@@ -3142,19 +3153,29 @@ function LineItemRow({
         />
       </td>
       {/* Phase 4B Delivery E.9 — PROFIT cell. Derived live from rate,
-          cost and quantity. Margin % below the £ amount. When cost is
-          missing or zero, shows a muted dash rather than an inflated
-          "100% margin" figure that would mislead the user. */}
+          cost and quantity. Margin % below the £ amount.
+          Phase 4B Delivery E.11 — distinguish null/missing from an
+          explicit zero. A row with no cost entered (null) shows a
+          muted dash; a row with cost explicitly set to 0 (passthrough,
+          or genuinely free buy-in) calculates profit normally and
+          shows 100% margin. The previous logic treated both as "no
+          cost" and refused to calculate, which was wrong for £0
+          entries the user had deliberately made. */}
       <td className="px-2 py-2 text-right text-sm">
         {(() => {
-          const cost = parseNum((row as any).costPrice);
-          const rate = parseNum(row.rate);
+          const costRaw = (row as any).costPrice;
+          const hasCost =
+            costRaw !== null &&
+            costRaw !== undefined &&
+            String(costRaw).trim() !== "";
           const qty = parseNum(row.quantity);
-          if (!cost || cost <= 0 || !qty) {
+          if (!hasCost || !qty) {
             return (
               <span style={{ color: brand.navyMuted }}>—</span>
             );
           }
+          const cost = parseNum(costRaw);
+          const rate = parseNum(row.rate);
           const profitPerUnit = rate - cost;
           const totalProfit = profitPerUnit * qty;
           const marginPct = rate > 0 ? (profitPerUnit / rate) * 100 : 0;

@@ -776,7 +776,15 @@ export default function Dashboard() {
                         of all line totals (including monthly + annual
                         + one-off) — same scope as totalProfit so the
                         % is internally consistent. Shows a muted dash
-                        when no costs are entered. */}
+                        when no costs are entered.
+                        Phase 4B Delivery E.11 — "any costs entered"
+                        is now decided by linesWithCost, an aggregate
+                        count of lines where cost_price IS NOT NULL.
+                        Previously we used totalCost > 0, which
+                        falsely hid profit/margin on quotes where every
+                        line is genuinely passthrough (cost = 0
+                        explicitly). With linesWithCost, a passthrough-
+                        only quote correctly shows 100% margin. */}
                     {(() => {
                       const profit = parseFloat(
                         ((quote as any).totalProfit as string) || "0",
@@ -784,8 +792,10 @@ export default function Dashboard() {
                       const cost = parseFloat(
                         ((quote as any).totalCost as string) || "0",
                       );
+                      const linesWithCost =
+                        ((quote as any).linesWithCost as number) || 0;
                       const revenue = profit + cost;
-                      const hasCost = cost > 0;
+                      const hasCost = linesWithCost > 0;
                       const marginPct =
                         hasCost && revenue > 0 ? (profit / revenue) * 100 : null;
                       return (

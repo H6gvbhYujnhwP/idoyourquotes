@@ -405,6 +405,14 @@ import { sql } from "drizzle-orm";
 export type QuoteWithProfit = Quote & {
   totalCost: string;
   totalProfit: string;
+  // Phase 4B Delivery E.11 — number of line items on this quote that
+  // have an explicit cost_price (NOT null). The dashboard uses this
+  // to tell "no cost data anywhere" apart from "every line is at £0
+  // explicitly". Without this, a passthrough-only quote (every line
+  // genuinely has zero buy-in) would render a dash because
+  // totalCost = 0, and we couldn't distinguish that from a quote
+  // where no costs have been entered at all.
+  linesWithCost: number;
 };
 
 async function getQuotesWithProfit(
@@ -417,6 +425,8 @@ async function getQuotesWithProfit(
   // wrap COALESCE(cost_price, 0) so null costs don't poison the sum
   // (one null in PG SUM returns null for the whole group). cast(... as
   // numeric) returns a string, matching the existing decimal columns.
+  // The third aggregate counts lines where cost_price IS NOT NULL —
+  // see linesWithCost in QuoteWithProfit for why.
   const rows = await db
     .select({
       // Spread every column on the quotes table so the returned shape
@@ -425,6 +435,7 @@ async function getQuotesWithProfit(
       quote: quotes,
       totalCost: sql<string>`COALESCE(SUM(COALESCE(${quoteLineItems.costPrice}, 0) * ${quoteLineItems.quantity}), 0)::text`,
       totalProfit: sql<string>`COALESCE(SUM((${quoteLineItems.rate} - COALESCE(${quoteLineItems.costPrice}, 0)) * ${quoteLineItems.quantity}), 0)::text`,
+      linesWithCost: sql<number>`COALESCE(SUM(CASE WHEN ${quoteLineItems.costPrice} IS NOT NULL THEN 1 ELSE 0 END), 0)::int`,
     })
     .from(quotes)
     .leftJoin(quoteLineItems, eq(quoteLineItems.quoteId, quotes.id))
@@ -436,6 +447,7 @@ async function getQuotesWithProfit(
     ...(r.quote as Quote),
     totalCost: r.totalCost,
     totalProfit: r.totalProfit,
+    linesWithCost: r.linesWithCost,
   }));
 }
 
