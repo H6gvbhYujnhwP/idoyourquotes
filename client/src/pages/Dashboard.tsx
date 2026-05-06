@@ -235,10 +235,18 @@ export default function Dashboard() {
     | string
     | null
     | undefined;
+  // Phase 4B Delivery E.12 — banner now shows for all seedable-sector
+  // users until they dismiss it, regardless of catalogue state. Was
+  // previously gated to "catalogItems?.length === 0", which meant new
+  // users who registered with a successfully auto-seeded sector
+  // (every GTM sector seeds at registration) never saw any prompt to
+  // tailor their starter catalogue before their first quote — the
+  // gap that motivated this delivery. Tailoring (rates, buy-in
+  // costs, descriptions) is the lever that turns a generic AI quote
+  // into one that actually reflects the user's pricing.
   const showSeedNudge =
     !!userSector &&
     SEEDABLE_SECTORS.includes(userSector) &&
-    catalogItems?.length === 0 &&
     !nudgeDismissed;
 
   const deleteQuote = trpc.quotes.delete.useMutation({
@@ -370,7 +378,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Seed-catalog nudge (dismissible, restyled) ─────────── */}
+      {/* ── Catalogue-tailoring nudge (Phase 4B Delivery E.12) ─── */}
       {showSeedNudge && (
         <div
           className="rounded-lg border flex items-start gap-3 py-4 px-5"
@@ -390,18 +398,23 @@ export default function Dashboard() {
               className="font-medium mb-0.5"
               style={{ color: "var(--brand-text-primary)" }}
             >
-              Kick-start your catalogue
+              Better catalogue, better first quote
             </div>
             <p
               className="text-sm"
               style={{ color: "var(--brand-text-secondary)" }}
             >
-              Load a starter catalogue of UK market-anchored products and
-              services for your sector. All prices are fully editable, and
-              catalogue items flow straight into new quotes.
+              We've set up a starter catalogue for your sector — review the
+              rates, add your buy-in costs, and your AI-generated quotes will
+              land much closer to ready-to-send.
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {/* Single dynamic CTA. handleSeedNudgeClick navigates to
+                /catalog?seed=1 — the Catalog page reads the seed=1 param
+                and triggers the starter-catalogue load when the catalogue
+                is empty, otherwise it just shows the page. So the same
+                handler covers both states; only the label changes. */}
             <Button
               onClick={handleSeedNudgeClick}
               size="sm"
@@ -412,21 +425,9 @@ export default function Dashboard() {
               }}
             >
               <Sparkles className="mr-2 h-4 w-4" />
-              Load Starter Catalogue
-            </Button>
-            <Button
-              onClick={handleLoadExampleQuote}
-              size="sm"
-              variant="outline"
-              disabled={seedDemoForSector.isPending}
-              style={{
-                borderColor: "var(--brand-teal-border)",
-                color: "var(--brand-teal-dark)",
-                background: "#ffffff",
-              }}
-            >
-              <FileText className="mr-2 h-4 w-4" />
-              {seedDemoForSector.isPending ? "Loading…" : "Load Example Quote"}
+              {catalogItems?.length === 0
+                ? "Load Starter Catalogue"
+                : "Open Catalogue"}
             </Button>
             <Button
               variant="ghost"
