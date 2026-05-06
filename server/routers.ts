@@ -5251,6 +5251,25 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
 
           console.log(`[generateDraft] Line item source: ${useQdsItems ? "QDS direct (" + qdsLineItems.length + " items)" : "AI generated (" + itemsToCreate.length + " items)"}`);
 
+          // Phase 4B Delivery E.10 — catalog cost auto-fill. Build a
+          // name-keyed lookup of the catalog items already in scope
+          // (loaded earlier for the AI prompt). When a generated line
+          // matches a catalog item by name AND the AI didn't supply a
+          // costPrice itself, copy the cost from the catalog so the
+          // workspace's Buy-in Cost column is populated automatically
+          // and the Profit cell calculates without manual entry.
+          //
+          // Match key is the lowercased trimmed name. The fallback
+          // chain on costPrice is: AI-supplied → catalog-matched →
+          // null. Lines that don't match any catalog still write
+          // null, surfacing as a dash in the workspace exactly as
+          // before — no false data invented.
+          const catalogByName = new Map<string, typeof catalogItems[number]>();
+          for (const c of catalogItems || []) {
+            const key = (c.name || "").toLowerCase().trim();
+            if (key) catalogByName.set(key, c);
+          }
+
           for (let i = 0; i < itemsToCreate.length; i++) {
             const item = itemsToCreate[i];
             const quantity = parseFloat(String(item.quantity)) || 1;
@@ -5300,7 +5319,24 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
               phaseId: isComprehensive && (item as any).phase ? (item as any).phase : undefined,
               category: isComprehensive && (item as any).category ? (item as any).category : undefined,
               pricingType,
-              costPrice: (item as any).costPrice ?? null,
+              // Phase 4B Delivery E.10 — costPrice fallback chain.
+              // 1. AI explicitly supplied → use it.
+              // 2. Otherwise look up the catalog by item name and use
+              //    the catalog's cost_price if a match exists.
+              // 3. Otherwise null (workspace shows a dash).
+              costPrice: (() => {
+                const aiSupplied = (item as any).costPrice;
+                if (aiSupplied !== undefined && aiSupplied !== null) {
+                  return aiSupplied;
+                }
+                const lookupKey = itemName
+                  ? String(itemName).toLowerCase().trim()
+                  : "";
+                const matched = lookupKey
+                  ? catalogByName.get(lookupKey)
+                  : undefined;
+                return matched?.costPrice ?? null;
+              })(),
               // Beta-2 provenance — populated at creation time so Chunk 3's
               // chips / hover pills find real data on every row regardless
               // of how the row was produced (engine QDS, engine labour /

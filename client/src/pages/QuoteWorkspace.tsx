@@ -2925,7 +2925,7 @@ function LineItemsTable({
               style={{ borderLeft: `1px dashed ${brand.borderLight}` }}
               title="Internal — not shown on customer PDF"
             >
-              Cost
+              Buy-in Cost
             </th>
             <th
               className="text-right px-2 py-2 w-[8%]"
