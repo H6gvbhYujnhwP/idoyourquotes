@@ -29,7 +29,7 @@ import {
   type SubscriptionTier,
 } from "./stripe";
 import { getUserPrimaryOrg, getOrgMembersByOrgId, getUserByEmail, getUserById, addOrgMember, getDb, updateOrganization, deleteAllOrgData } from "../db";
-import { sendLimitWarningEmail, sendTierChangeEmail, sendCancellationEmail, sendAccountDeletedEmail, sendExitSurveyToSupport, sendTeamInviteEmail, sendOrgClosedEmail } from "./emailService";
+import { sendLimitWarningEmail, sendTierChangeEmail, sendCancellationEmail, sendAccountDeletedEmail, sendExitSurveyToSupport, sendTeamInviteEmail, sendOrgClosedEmail, sendPasswordResetEmail } from "./emailService";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
@@ -462,25 +462,46 @@ export const subscriptionRouter = router({
         case 'create_quote': {
           const check = canCreateQuote(org as any);
 
-          // Send email warning at 80% or 100% of limit
+          // Send email warning at 80% or 100% of limit.
+          //
+          // E.21 (May 2026) — dedupe guard added. Previously this fired the
+          // email every time the front-end called canPerform with usage at
+          // 80%+, which is on every quote-list refresh and dashboard load —
+          // turning a friendly nudge into inbox spam. We now use the same
+          // _emailFlags pattern that routers.ts (createQuote) uses. The flag
+          // is cleared on `invoice.payment_succeeded` so emails fire fresh
+          // each billing period.
           if (check.usage && check.usage.max > 0) {
             const pct = check.usage.percentUsed;
-            // Only email once per threshold — use a simple flag in metadata
-            // For now, fire at 80% and 100% 
             if (pct >= 80) {
-              const suggestion = getUpgradeSuggestion(tier, 'quotes');
-              sendLimitWarningEmail({
-                to: (org as any).billingEmail || ctx.user.email,
-                name: ctx.user.name || undefined,
-                limitType: 'quotes',
-                currentUsage: check.usage.current,
-                maxAllowed: check.usage.max,
-                currentTierName: TIER_CONFIG[tier]?.name || tier,
-                suggestedTierName: suggestion?.tierName,
-                suggestedTierPrice: suggestion?.price,
-                newLimit: suggestion?.newLimit,
-                isHardLimit: pct >= 100,
-              }).catch(err => console.error('[Subscription] Failed to send limit email:', err));
+              const dayWorkRates = ((org as any).defaultDayWorkRates || {}) as Record<string, any>;
+              const emailFlags = dayWorkRates._emailFlags || {};
+              const isHardLimit = pct >= 100;
+              const flagKey = isHardLimit ? 'limitReachedSent' : 'limitApproachingSent';
+
+              if (!emailFlags[flagKey]) {
+                const suggestion = getUpgradeSuggestion(tier, 'quotes');
+                sendLimitWarningEmail({
+                  to: (org as any).billingEmail || ctx.user.email,
+                  name: ctx.user.name || undefined,
+                  limitType: 'quotes',
+                  currentUsage: check.usage.current,
+                  maxAllowed: check.usage.max,
+                  currentTierName: TIER_CONFIG[tier]?.name || tier,
+                  suggestedTierName: suggestion?.tierName,
+                  suggestedTierPrice: suggestion?.price,
+                  newLimit: suggestion?.newLimit,
+                  isHardLimit,
+                }).then((sent) => {
+                  if (!sent) return;
+                  // Mark flag so we don't send again this billing period.
+                  // The clear happens on invoice.payment_succeeded in stripe.ts.
+                  const updatedFlags = { ...emailFlags, [flagKey]: new Date().toISOString() };
+                  const updatedRates = { ...dayWorkRates, _emailFlags: updatedFlags };
+                  updateOrganization(org.id, { defaultDayWorkRates: updatedRates } as any)
+                    .catch(err => console.error('[Subscription] Failed to save limit email flag:', err));
+                }).catch(err => console.error('[Subscription] Failed to send limit email:', err));
+              }
             }
           }
 
@@ -494,19 +515,37 @@ export const subscriptionRouter = router({
           const check = canAddTeamMember(org as any, members.length);
 
           if (!check.allowed) {
+            // E.21 (May 2026) — dedupe guard added. Previously this fired
+            // the email every time the front-end queried canPerform on a
+            // team-tier org already at its seat limit. New flag
+            // `limitUsersReachedSent` lives in the same _emailFlags blob
+            // and is cleared alongside the quote flags on
+            // invoice.payment_succeeded.
+            const dayWorkRates = ((org as any).defaultDayWorkRates || {}) as Record<string, any>;
+            const emailFlags = dayWorkRates._emailFlags || {};
+            const flagKey = 'limitUsersReachedSent';
             const suggestion = getUpgradeSuggestion(tier, 'users');
-            sendLimitWarningEmail({
-              to: (org as any).billingEmail || ctx.user.email,
-              name: ctx.user.name || undefined,
-              limitType: 'users',
-              currentUsage: members.length,
-              maxAllowed: (org as any).maxUsers || 1,
-              currentTierName: TIER_CONFIG[tier]?.name || tier,
-              suggestedTierName: suggestion?.tierName,
-              suggestedTierPrice: suggestion?.price,
-              newLimit: suggestion?.newLimit,
-              isHardLimit: true,
-            }).catch(err => console.error('[Subscription] Failed to send limit email:', err));
+
+            if (!emailFlags[flagKey]) {
+              sendLimitWarningEmail({
+                to: (org as any).billingEmail || ctx.user.email,
+                name: ctx.user.name || undefined,
+                limitType: 'users',
+                currentUsage: members.length,
+                maxAllowed: (org as any).maxUsers || 1,
+                currentTierName: TIER_CONFIG[tier]?.name || tier,
+                suggestedTierName: suggestion?.tierName,
+                suggestedTierPrice: suggestion?.price,
+                newLimit: suggestion?.newLimit,
+                isHardLimit: true,
+              }).then((sent) => {
+                if (!sent) return;
+                const updatedFlags = { ...emailFlags, [flagKey]: new Date().toISOString() };
+                const updatedRates = { ...dayWorkRates, _emailFlags: updatedFlags };
+                updateOrganization(org.id, { defaultDayWorkRates: updatedRates } as any)
+                  .catch(err => console.error('[Subscription] Failed to save users limit flag:', err));
+              }).catch(err => console.error('[Subscription] Failed to send limit email:', err));
+            }
 
             return { ...check, upgradeSuggestion: suggestion };
           }
@@ -747,13 +786,20 @@ export const subscriptionRouter = router({
         .set({ emailVerificationToken: newToken, emailVerificationSentAt: new Date() })
         .where(eq(users.id, BigInt(target.userId) as any));
 
-      // Reuse the team invite email — subject and body are appropriate for both
-      // initial invite and password reset (both say "set your password")
-      const inviterName = ctx.user.name || ctx.user.email;
+      // E.21 (May 2026) — password resets get their own dedicated email
+      // template now. The previous code reused sendTeamInviteEmail, which
+      // greeted the existing team member with "You've been invited to
+      // {orgName}" and "set your password and activate your account" —
+      // both wrong for a password reset on an active user. The new
+      // sendPasswordResetEmail template explains who reset it (admin /
+      // owner name), provides the same set-password link (the token
+      // mechanism is shared with the team-invite flow), and uses the
+      // same 7-day expiry.
+      const resetByName = ctx.user.name || ctx.user.email;
       const orgName = (org as any).companyName || org.name || "your team";
-      await sendTeamInviteEmail({
+      await sendPasswordResetEmail({
         to: targetUser.email,
-        inviterName,
+        resetByName,
         orgName,
         token: newToken,
       });

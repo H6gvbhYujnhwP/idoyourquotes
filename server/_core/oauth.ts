@@ -3,7 +3,7 @@ import type { Express, Request, Response } from "express";
 import { getSessionCookieOptions } from "./cookies";
 import { sdk } from "./sdk";
 import { sendVerificationEmail, sendWelcomeEmail } from "../services/emailService";
-import { getDb } from "../db";
+import { getDb, getUserPrimaryOrg } from "../db";
 import crypto from "crypto";
 
 // Free email providers — treat each address as its own domain for trial limits
@@ -264,10 +264,53 @@ export function registerOAuthRoutes(app: Express) {
 
       console.log(`[Auth] Email verified for user ${user.id} (${user.email})`);
 
-      // Send welcome email (non-blocking)
+      // Send welcome email (non-blocking).
+      //
+      // E.21 (May 2026) — the welcome email is now state-aware. We look
+      // up the user's primary org to decide which copy to send:
+      //
+      //   - paid-active : org is on a paid tier with active/trialing
+      //                   status (user paid for a plan before clicking
+      //                   the verification link)
+      //   - trial-active: org is on the trial tier with trialEndsAt
+      //                   in the future (the standard happy path)
+      //   - no-trial    : org is on the trial tier but trialEndsAt has
+      //                   already passed — typically the E.18
+      //                   "domain previously used" path where
+      //                   trialEndsAt was set equal to trialStartsAt
+      //
+      // Failure to look up the org is non-fatal — we fall through to
+      // 'trial-active' as a sensible default rather than crash the
+      // verification flow.
+      let welcomeState: 'trial-active' | 'paid-active' | 'no-trial' = 'trial-active';
+      let welcomeTierName: string | undefined;
+      try {
+        const primaryOrg = await getUserPrimaryOrg(user.id);
+        if (primaryOrg) {
+          const orgAny = primaryOrg as any;
+          const tier = (orgAny.subscriptionTier || 'trial') as string;
+          const status = (orgAny.subscriptionStatus || 'trialing') as string;
+          const trialEndsAt = orgAny.trialEndsAt ? new Date(orgAny.trialEndsAt) : null;
+
+          if (tier !== 'trial' && (status === 'active' || status === 'trialing')) {
+            welcomeState = 'paid-active';
+            // Capitalise tier label for the subject + body (e.g. "Pro")
+            welcomeTierName = tier.charAt(0).toUpperCase() + tier.slice(1);
+          } else if (tier === 'trial' && trialEndsAt && trialEndsAt.getTime() > Date.now()) {
+            welcomeState = 'trial-active';
+          } else {
+            welcomeState = 'no-trial';
+          }
+        }
+      } catch (lookupErr) {
+        console.error("[Auth] Failed to resolve welcome email state — defaulting to trial-active:", lookupErr);
+      }
+
       sendWelcomeEmail({
         to: user.email,
         name: user.name || undefined,
+        state: welcomeState,
+        tierName: welcomeTierName,
       }).catch(err => console.error("[Auth] Failed to send welcome email:", err));
 
       // Redirect to dashboard with success

@@ -46,6 +46,28 @@ async function processScheduledEmails(): Promise<void> {
       const trialStart = orgAny.trialStartsAt ? new Date(orgAny.trialStartsAt) : null;
       if (!trialStart) continue;
 
+      // E.21 (May 2026) — Skip orgs that registered via the E.18
+      // "domain previously used → no trial" path. For those orgs,
+      // createUser sets trialEndsAt equal to the registration moment
+      // (= trialStartsAt), so the trial window is effectively zero
+      // length. Without this guard the scheduler would fire a
+      // "trial ends in 1 day" reminder 12 days after registration to
+      // a user who never actually had a trial — and a generic Day 3
+      // check-in encouraging them to "try uploading a tender document"
+      // when they can't because they need to subscribe first. We
+      // detect zero-length trials by checking trialEndsAt is on or
+      // before trialStartsAt + 1 hour (the +1 hour is slack to
+      // handle any minor clock skew or DB timestamp rounding).
+      const trialEnd = orgAny.trialEndsAt ? new Date(orgAny.trialEndsAt) : null;
+      if (trialEnd) {
+        const trialWindowMs = trialEnd.getTime() - trialStart.getTime();
+        const ONE_HOUR_MS = 60 * 60 * 1000;
+        if (trialWindowMs <= ONE_HOUR_MS) {
+          // Zero-length trial — skip both check-in and reminder.
+          continue;
+        }
+      }
+
       const daysSinceStart = (Date.now() - trialStart.getTime()) / (1000 * 60 * 60 * 24);
       
       // Track sent emails in the org's metadata
@@ -107,8 +129,8 @@ async function processScheduledEmails(): Promise<void> {
 
       // Day 12 trial reminder (send between day 12 and day 13)
       if (daysSinceStart >= 12 && daysSinceStart < 13 && !emailFlags.trialReminderSent) {
-        const trialEnd = orgAny.trialEndsAt ? new Date(orgAny.trialEndsAt) : null;
-        const daysLeft = trialEnd ? Math.ceil((trialEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 2;
+        const trialEndForReminder = orgAny.trialEndsAt ? new Date(orgAny.trialEndsAt) : null;
+        const daysLeft = trialEndForReminder ? Math.ceil((trialEndForReminder.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 2;
 
         console.log(`[EmailScheduler] Sending trial reminder to ${owner.email} (${daysLeft} days left)`);
         const sent = await sendTrialExpiryReminder({

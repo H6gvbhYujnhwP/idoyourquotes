@@ -3,7 +3,12 @@
  * Handles checkout, webhooks, upgrades, downgrades, and tier management
  */
 import Stripe from 'stripe';
-import { updateOrganization, getOrganizationById } from '../db';
+import { updateOrganization, getOrganizationById, getOrgMembersByOrgId, getUserById } from '../db';
+import {
+  sendSubscriptionActivatedEmail,
+  sendPaymentFailedEmail,
+  sendSubscriptionEndedEmail,
+} from './emailService';
 
 // ============ CONFIG ============
 
@@ -434,6 +439,31 @@ export async function listPaidInvoices(params: {
 // ============ WEBHOOK HANDLER ============
 
 /**
+ * E.21 (May 2026) — small helper used by the webhook handlers to look
+ * up the org owner's email address and display name so the new
+ * customer-facing emails (subscription activated, payment failed,
+ * subscription ended) have somewhere to send to. Falls back to the
+ * org's billingEmail field if it's set, otherwise the owner's login
+ * email. Returns null if no owner can be resolved — caller should skip
+ * sending rather than throw.
+ */
+async function getOrgOwnerContact(orgId: number): Promise<{ email: string; name: string | null } | null> {
+  const members = await getOrgMembersByOrgId(orgId);
+  const ownerMembership = members.find(m => m.role === 'owner');
+  if (!ownerMembership) return null;
+
+  const owner = await getUserById(Number(ownerMembership.userId));
+  if (!owner) return null;
+
+  const org = await getOrganizationById(orgId);
+  const billingEmail = (org as any)?.billingEmail as string | null | undefined;
+  return {
+    email: billingEmail || owner.email,
+    name: owner.name || null,
+  };
+}
+
+/**
  * Process Stripe webhook events
  */
 export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
@@ -456,6 +486,36 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
       if (subscriptionId) {
         const subscription = await stripe.subscriptions.retrieve(subscriptionId);
         await activateSubscription(orgId, tier, subscription);
+
+        // E.21 (May 2026) — fire the subscription-activated email so the
+        // customer gets a confirmation that their payment succeeded and
+        // their plan is live. Previously this webhook updated the DB
+        // silently and the user got no payment confirmation. The email
+        // is sent fire-and-forget; failure to send doesn't break the
+        // activation.
+        const config = TIER_CONFIG[tier];
+        // Cast: SDK types are newer than our pinned API version and omit
+        // current_period_end on the response wrapper, though the API does
+        // return it at runtime (same skew the rest of this file works
+        // around with `(subscription as any).current_period_*` casts).
+        const periodEnd = (subscription as any).current_period_end as number | undefined;
+        getOrgOwnerContact(orgId)
+          .then(contact => {
+            if (!contact) {
+              console.warn(`[Stripe Webhook] No owner contact resolved for org=${orgId} — skipping subscription activated email`);
+              return;
+            }
+            return sendSubscriptionActivatedEmail({
+              to: contact.email,
+              name: contact.name || undefined,
+              tierName: config.name,
+              monthlyPrice: Math.round(config.monthlyPrice / 100),
+              maxQuotesPerMonth: config.maxQuotesPerMonth,
+              maxUsers: config.maxUsers,
+              nextBillingDate: periodEnd ? new Date(periodEnd * 1000) : null,
+            });
+          })
+          .catch(err => console.error(`[Stripe Webhook] Failed to send subscription activated email for org=${orgId}:`, err));
       }
       break;
     }
@@ -584,6 +644,25 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
         return;
       }
 
+      // E.21 (May 2026) — capture the cancel-at-period-end flag BEFORE
+      // updateOrganization overwrites it. We use this flag to dedupe the
+      // new subscription-ended email against the user-initiated cancel
+      // path (server/services/subscriptionRouter.ts cancel mutation).
+      //
+      //   wasUserCancelled === true  → user clicked Cancel earlier in
+      //     the app, sendCancellationEmail already fired from the cancel
+      //     endpoint at click time. Skip the new ended email — they
+      //     already know.
+      //
+      //   wasUserCancelled === false → Stripe deleted the subscription
+      //     on its own (most commonly after exhausting retries on a
+      //     failed payment). User got the payment-failed email at the
+      //     first failure but nothing telling them the subscription has
+      //     now actually ended. Send the new ended email.
+      const wasUserCancelled = !!(org as any)?.subscriptionCancelAtPeriodEnd;
+      const previousTier = ((org as any)?.subscriptionTier || 'trial') as SubscriptionTier;
+      const previousTierName = TIER_CONFIG[previousTier]?.name || previousTier;
+
       // Downgrade to trial-like state (read-only — can view but not create)
       await updateOrganization(orgId, {
         subscriptionTier: 'trial',
@@ -595,6 +674,26 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
         maxQuotesPerMonth: 0, // No new quotes when canceled
         maxCatalogItems: 100,
       } as any);
+
+      // Email the owner only if this wasn't a user-initiated cancel
+      // (in which case sendCancellationEmail already fired earlier).
+      if (!wasUserCancelled) {
+        getOrgOwnerContact(orgId)
+          .then(contact => {
+            if (!contact) {
+              console.warn(`[Stripe Webhook] No owner contact resolved for org=${orgId} — skipping subscription ended email`);
+              return;
+            }
+            return sendSubscriptionEndedEmail({
+              to: contact.email,
+              name: contact.name || undefined,
+              tierName: previousTierName,
+            });
+          })
+          .catch(err => console.error(`[Stripe Webhook] Failed to send subscription ended email for org=${orgId}:`, err));
+      } else {
+        console.log(`[Stripe Webhook] Skipping ended email for org=${orgId} — user-initiated cancel already emailed`);
+      }
       break;
     }
 
@@ -610,12 +709,15 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
       console.log(`[Stripe Webhook] Payment succeeded: org=${orgId}`);
 
       // Reset monthly quote count on successful payment
-      // Also clear limit email flags so they can fire again next billing period
+      // Also clear limit email flags so they can fire again next billing period.
+      // E.21 (May 2026) — limitUsersReachedSent flag added to the clear list
+      // so the team-seat limit email can also fire fresh each billing period.
       const existingOrg = await getOrganizationById(orgId);
       const dayWorkRates = ((existingOrg as any)?.defaultDayWorkRates || {}) as Record<string, any>;
       const emailFlags = { ...(dayWorkRates._emailFlags || {}) };
       delete emailFlags.limitApproachingSent;
       delete emailFlags.limitReachedSent;
+      delete emailFlags.limitUsersReachedSent;
       const updatedRates = { ...dayWorkRates, _emailFlags: emailFlags };
 
       await updateOrganization(orgId, {
@@ -641,6 +743,28 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
       await updateOrganization(orgId, {
         subscriptionStatus: 'past_due',
       } as any);
+
+      // E.21 (May 2026) — fire the payment-failed email so the user
+      // knows their card was declined. Stripe's smart retry schedule
+      // will attempt the charge again over the next few days; the
+      // email points the user at the billing portal so they can fix
+      // the card sooner if they want to.
+      const tierFromSub = (subscription.metadata?.tier as SubscriptionTier) ||
+        getTierByPriceId(subscription.items.data[0]?.price.id || '');
+      const tierLabel = tierFromSub ? (TIER_CONFIG[tierFromSub]?.name || tierFromSub) : 'paid';
+      getOrgOwnerContact(orgId)
+        .then(contact => {
+          if (!contact) {
+            console.warn(`[Stripe Webhook] No owner contact resolved for org=${orgId} — skipping payment failed email`);
+            return;
+          }
+          return sendPaymentFailedEmail({
+            to: contact.email,
+            name: contact.name || undefined,
+            tierName: tierLabel,
+          });
+        })
+        .catch(err => console.error(`[Stripe Webhook] Failed to send payment failed email for org=${orgId}:`, err));
       break;
     }
   }

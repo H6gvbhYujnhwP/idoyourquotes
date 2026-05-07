@@ -100,19 +100,85 @@ export async function sendVerificationEmail(params: {
 }
 
 /**
- * Send welcome email after verification
+ * Send welcome email after a user verifies their email address.
+ *
+ * E.21 (May 2026) — this email is now state-aware. The previous version
+ * unconditionally said "your 14-day trial is active!" regardless of the
+ * org's actual subscription state, which was a lie for users who came
+ * through the E.18 "domain previously used → no trial" path, and was
+ * misleading for users who paid for a plan before verifying their email.
+ *
+ * Three branches now, decided by the caller in oauth.ts based on the
+ * user's primary org state at verification time:
+ *
+ *   - 'trial-active' — org is on the trial tier with trialEndsAt in the
+ *     future. Original copy. Most common case.
+ *
+ *   - 'paid-active' — org is on a paid tier (solo/pro/team) with active
+ *     or trialing status. Happens when the user pays for a plan via
+ *     Stripe checkout BEFORE clicking the verification link in their
+ *     email. Copy reflects "your {tierName} plan is live".
+ *
+ *   - 'no-trial' — org is on the trial tier but trialEndsAt has passed
+ *     (or was set equal to trialStartsAt by the no-trial path). Copy
+ *     directs the user to /pricing to choose a plan; no trial language.
+ *
+ * The default is 'trial-active' for backwards compatibility with any
+ * caller that doesn't specify state.
  */
 export async function sendWelcomeEmail(params: {
   to: string;
   name?: string;
+  state?: 'trial-active' | 'paid-active' | 'no-trial';
+  tierName?: string; // Used when state === 'paid-active' (e.g. "Pro", "Solo", "Team")
 }): Promise<boolean> {
   const firstName = params.name?.split(' ')[0] || 'there';
+  const state = params.state || 'trial-active';
+
+  // ── Subject + body content per state ──
+  let subject: string;
+  let headline: string;
+  let bodyTop: string;
+  let bodyBottom: string;
+  let ctaText: string;
+  let ctaUrl: string;
+
+  if (state === 'paid-active') {
+    const tier = params.tierName || 'paid';
+    subject = `Welcome to IdoYourQuotes — your ${tier} plan is live`;
+    headline = `You're all set, ${firstName}!`;
+    bodyTop = `Your email is verified and your <strong>${tier} plan</strong> is active. You've got full access to everything your plan unlocks — start quoting whenever you're ready.`;
+    bodyBottom = `If you'd like to review what's included or change plans, you can do that any time from the Billing section in your settings.`;
+    ctaText = 'Go to Dashboard';
+    ctaUrl = `${APP_URL}/dashboard`;
+  } else if (state === 'no-trial') {
+    subject = 'Welcome to IdoYourQuotes — choose a plan to get started';
+    headline = `Email verified, ${firstName}`;
+    bodyTop = `Your email is verified. To start creating quotes, choose a plan that suits you.`;
+    bodyBottom = `Plans start from <strong>£59/month</strong>. You can switch or cancel any time.`;
+    ctaText = 'Choose a Plan';
+    ctaUrl = `${APP_URL}/pricing`;
+  } else {
+    // 'trial-active' — original copy
+    subject = 'Welcome to IdoYourQuotes — your 14-day trial is active!';
+    headline = `Welcome, ${firstName}!`;
+    bodyTop = `Your email is verified and your <strong>14-day free trial</strong> is now active. You've got full access to all features — no credit card needed.`;
+    bodyBottom = `Only enter card details after 14 days if you're happy — we know you'll love it.`;
+    ctaText = 'Go to Dashboard';
+    ctaUrl = `${APP_URL}/dashboard`;
+  }
+
+  // Quick-start panel only shown for trial-active and paid-active (i.e. when
+  // the user can actually start quoting). For no-trial, the user has to pick
+  // a plan first, so we don't dangle "create a quote" instructions in front
+  // of them.
+  const showQuickStart = state !== 'no-trial';
 
   try {
     const { error } = await resend.emails.send({
       from: FROM_EMAIL,
       to: params.to,
-      subject: 'Welcome to IdoYourQuotes — your 14-day trial is active!',
+      subject,
       html: `
 <!DOCTYPE html>
 <html>
@@ -129,21 +195,22 @@ export async function sendWelcomeEmail(params: {
 
     <div style="background: white; border-radius: 12px; padding: 32px; border: 1px solid #e2e8f0;">
       <h1 style="font-size: 22px; font-weight: 700; color: #1a2b4a; margin: 0 0 16px;">
-        Welcome, ${firstName}!
+        ${headline}
       </h1>
       <p style="font-size: 15px; color: #475569; line-height: 1.6; margin: 0 0 16px;">
-        Your email is verified and your <strong>14-day free trial</strong> is now active. You've got full access to all features — no credit card needed.
+        ${bodyTop}
       </p>
       <p style="font-size: 15px; color: #475569; line-height: 1.6; margin: 0 0 24px;">
-        Only enter card details after 14 days if you're happy — we know you'll love it.
+        ${bodyBottom}
       </p>
       
       <div style="text-align: center; margin: 28px 0;">
-        <a href="${APP_URL}/dashboard" style="display: inline-block; background-color: #1a2b4a; color: white; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 8px;">
-          Go to Dashboard
+        <a href="${ctaUrl}" style="display: inline-block; background-color: #1a2b4a; color: white; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 8px;">
+          ${ctaText}
         </a>
       </div>
 
+      ${showQuickStart ? `
       <div style="background: #f0fdfa; border-radius: 8px; padding: 16px; margin-top: 16px;">
         <p style="font-size: 13px; color: #0d9488; font-weight: 600; margin: 0 0 8px;">Quick start:</p>
         <p style="font-size: 13px; color: #475569; line-height: 1.6; margin: 0;">
@@ -152,7 +219,7 @@ export async function sendWelcomeEmail(params: {
           3. Let AI interpret and generate your quote<br>
           4. Review, edit, and send
         </p>
-      </div>
+      </div>` : ''}
     </div>
 
     <div style="text-align: center; margin-top: 24px;">
@@ -170,7 +237,7 @@ export async function sendWelcomeEmail(params: {
       return false;
     }
 
-    console.log(`[Email] Welcome sent to ${params.to}`);
+    console.log(`[Email] Welcome (${state}) sent to ${params.to}`);
     return true;
   } catch (err) {
     console.error('[Email] Welcome send error:', err);
@@ -259,6 +326,14 @@ export async function sendCheckInEmail(params: {
 
 /**
  * Send trial expiry reminder (2 days before)
+ *
+ * E.21 (May 2026) — feature bullet list cleaned up. The previous version
+ * listed "Electrical symbol counting & takeoff" as a headline feature,
+ * which is content for the permanently-deleted electrical sector. The
+ * platform's active sectors are IT Services, Commercial Cleaning,
+ * Website & Digital Marketing, and Pest Control — none of those would
+ * recognise that bullet, so it's been replaced with sector-agnostic
+ * features that apply to every plan.
  */
 export async function sendTrialExpiryReminder(params: {
   to: string;
@@ -313,9 +388,9 @@ export async function sendTrialExpiryReminder(params: {
         <p style="font-size: 13px; color: #0d9488; font-weight: 600; margin: 0 0 8px;">What you get:</p>
         <p style="font-size: 13px; color: #475569; line-height: 1.8; margin: 0;">
           ✓ AI-powered document interpretation<br>
-          ✓ Electrical symbol counting &amp; takeoff<br>
-          ✓ Professional quote generation<br>
-          ✓ PDF export &amp; email proposals<br>
+          ✓ Automatic quote line-item generation<br>
+          ✓ Branded proposal PDFs with your logo<br>
+          ✓ Catalogue, pricing &amp; team collaboration<br>
           ✓ All your existing data kept safe
         </p>
       </div>
@@ -582,6 +657,320 @@ export async function sendTierChangeEmail(params: {
     return true;
   } catch (err) {
     console.error('[Email] Tier change send error:', err);
+    return false;
+  }
+}
+
+/**
+ * Send subscription-activated confirmation email after a first paid checkout.
+ *
+ * E.21 (May 2026) — fires from the Stripe `checkout.session.completed`
+ * webhook handler in stripe.ts when a user transitions from trial (or
+ * no-trial) to a paid plan. Previously the platform updated the database
+ * silently and the user got no payment confirmation — they'd see the
+ * trial-welcome email at email-verification time but nothing telling
+ * them their subscription succeeded. The existing `sendTierChangeEmail`
+ * is for paid-tier-to-paid-tier upgrades inside the app and doesn't
+ * cover the trial-to-first-paid transition.
+ *
+ * Distinct from the post-verification welcome email so each milestone
+ * (verification, payment) gets its own confirmation. If the user pays
+ * before verifying, they'll get this email at checkout and then a
+ * paid-active welcome email at verification — both are appropriate.
+ */
+export async function sendSubscriptionActivatedEmail(params: {
+  to: string;
+  name?: string;
+  tierName: string;
+  monthlyPrice: number; // pounds (e.g. 99 for £99)
+  maxQuotesPerMonth: number; // -1 means unlimited
+  maxUsers: number;
+  nextBillingDate: Date | string | null;
+}): Promise<boolean> {
+  const firstName = params.name?.split(' ')[0] || 'there';
+  const quotesLabel = params.maxQuotesPerMonth === -1 ? 'Unlimited' : String(params.maxQuotesPerMonth);
+  const nextBillingStr = params.nextBillingDate
+    ? new Date(params.nextBillingDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+    : 'next month';
+
+  try {
+    const { error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: params.to,
+      subject: `Welcome to ${params.tierName} — your subscription is active`,
+      html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f8fafc;">
+  <div style="max-width: 480px; margin: 0 auto; padding: 40px 20px;">
+
+    <div style="text-align: center; margin-bottom: 32px;">
+      <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png" alt="IdoYourQuotes" style="height: 48px;" />
+    </div>
+
+    <div style="background: white; border-radius: 12px; padding: 32px; border: 1px solid #e2e8f0;">
+      <div style="background: #f0fdfa; border-radius: 8px; padding: 12px 16px; margin-bottom: 24px;">
+        <p style="font-size: 14px; font-weight: 600; color: #065f46; margin: 0;">
+          🎉 ${params.tierName} subscription confirmed
+        </p>
+      </div>
+
+      <h1 style="font-size: 22px; font-weight: 700; color: #1a2b4a; margin: 0 0 16px;">
+        You're all set, ${firstName}!
+      </h1>
+      <p style="font-size: 15px; color: #475569; line-height: 1.6; margin: 0 0 24px;">
+        Thanks for subscribing to IdoYourQuotes. Your <strong>${params.tierName}</strong> plan is active immediately and your account is fully unlocked.
+      </p>
+
+      <div style="background: #f8fafc; border-radius: 8px; padding: 16px;">
+        <p style="font-size: 13px; color: #1a2b4a; font-weight: 600; margin: 0 0 12px;">Your ${params.tierName} plan:</p>
+        <table style="width: 100%; font-size: 13px; color: #475569;">
+          <tr><td style="padding: 4px 0;">Monthly quotes</td><td style="padding: 4px 0; text-align: right; font-weight: 600;">${quotesLabel}</td></tr>
+          <tr><td style="padding: 4px 0;">Team members</td><td style="padding: 4px 0; text-align: right; font-weight: 600;">Up to ${params.maxUsers}</td></tr>
+          <tr><td style="padding: 4px 0;">Price</td><td style="padding: 4px 0; text-align: right; font-weight: 600;">£${params.monthlyPrice}/month + VAT</td></tr>
+          <tr><td style="padding: 4px 0;">Next billing date</td><td style="padding: 4px 0; text-align: right; font-weight: 600;">${nextBillingStr}</td></tr>
+        </table>
+      </div>
+
+      <div style="background: #f0fdfa; border-radius: 8px; padding: 16px; margin-top: 16px;">
+        <p style="font-size: 13px; color: #0d9488; font-weight: 600; margin: 0 0 8px;">What's unlocked:</p>
+        <p style="font-size: 13px; color: #475569; line-height: 1.8; margin: 0;">
+          ✓ AI-powered document interpretation<br>
+          ✓ Automatic quote line-item generation<br>
+          ✓ Branded proposal PDFs with your logo<br>
+          ✓ Catalogue, pricing &amp; team collaboration<br>
+          ✓ Priority email support
+        </p>
+      </div>
+
+      <div style="text-align: center; margin: 28px 0;">
+        <a href="${APP_URL}/dashboard" style="display: inline-block; background-color: #1a2b4a; color: white; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 8px;">
+          Go to Dashboard
+        </a>
+      </div>
+
+      <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 24px;">
+        <p style="font-size: 13px; color: #64748b; margin: 0 0 4px; font-weight: 600;">Need to manage your subscription?</p>
+        <p style="font-size: 13px; color: #64748b; margin: 0;">
+          You can change plan, update payment details or cancel any time from <a href="${APP_URL}/settings?tab=billing" style="color: #0d9488; text-decoration: none; font-weight: 600;">Billing settings</a>.
+        </p>
+      </div>
+    </div>
+
+    <div style="text-align: center; margin-top: 24px;">
+      <p style="font-size: 12px; color: #94a3b8;">
+        &copy; ${new Date().getFullYear()} IdoYourQuotes. All rights reserved.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`,
+    });
+
+    if (error) {
+      console.error('[Email] Subscription activated send failed:', error);
+      return false;
+    }
+
+    console.log(`[Email] Subscription activated (${params.tierName}) sent to ${params.to}`);
+    return true;
+  } catch (err) {
+    console.error('[Email] Subscription activated send error:', err);
+    return false;
+  }
+}
+
+/**
+ * Send payment-failed email when Stripe reports an unsuccessful charge.
+ *
+ * E.21 (May 2026) — wired into the `invoice.payment_failed` Stripe
+ * webhook handler. Previously the platform silently flipped the org to
+ * past_due status, blocking quote creation, but the user got no email.
+ * They'd hit a wall the next time they tried to use the app with no
+ * idea their card had been declined.
+ *
+ * Stripe automatically retries failed payments according to the
+ * platform's smart retry schedule, so the body tells the user that
+ * retries will happen and points them at the billing portal to update
+ * their card if they want to fix it sooner.
+ */
+export async function sendPaymentFailedEmail(params: {
+  to: string;
+  name?: string;
+  tierName: string;
+}): Promise<boolean> {
+  const firstName = params.name?.split(' ')[0] || 'there';
+
+  try {
+    const { error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: params.to,
+      subject: `Action needed — your IdoYourQuotes payment didn't go through`,
+      html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f8fafc;">
+  <div style="max-width: 480px; margin: 0 auto; padding: 40px 20px;">
+
+    <div style="text-align: center; margin-bottom: 32px;">
+      <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png" alt="IdoYourQuotes" style="height: 48px;" />
+    </div>
+
+    <div style="background: white; border-radius: 12px; padding: 32px; border: 1px solid #e2e8f0;">
+      <div style="background: #fef2f2; border-radius: 8px; padding: 12px 16px; margin-bottom: 24px;">
+        <p style="font-size: 14px; font-weight: 600; color: #991b1b; margin: 0;">
+          ⚠️ Payment unsuccessful
+        </p>
+      </div>
+
+      <h1 style="font-size: 22px; font-weight: 700; color: #1a2b4a; margin: 0 0 16px;">
+        Hi ${firstName}, your last payment didn't go through
+      </h1>
+      <p style="font-size: 15px; color: #475569; line-height: 1.6; margin: 0 0 16px;">
+        We couldn't process the latest payment for your <strong>${params.tierName}</strong> subscription. This often happens when a card has expired, the billing address has changed, or there are insufficient funds.
+      </p>
+      <p style="font-size: 15px; color: #475569; line-height: 1.6; margin: 0 0 16px;">
+        We'll automatically retry the charge over the next few days. Until the payment succeeds your account is in <strong>past-due</strong> mode and you won't be able to create new quotes.
+      </p>
+      <p style="font-size: 15px; color: #475569; line-height: 1.6; margin: 0 0 24px;">
+        To fix this immediately, update your payment details from your Billing settings.
+      </p>
+
+      <div style="text-align: center; margin: 28px 0;">
+        <a href="${APP_URL}/settings?tab=billing" style="display: inline-block; background-color: #0d9488; color: white; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 8px;">
+          Update Payment Method
+        </a>
+      </div>
+
+      <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 24px;">
+        <p style="font-size: 13px; color: #64748b; margin: 0 0 4px; font-weight: 600;">Need help?</p>
+        <p style="font-size: 13px; color: #64748b; margin: 0;">
+          Email us at ${SUPPORT_MAILTO} and we'll get you back up and running.
+        </p>
+      </div>
+    </div>
+
+    <div style="text-align: center; margin-top: 24px;">
+      <p style="font-size: 12px; color: #94a3b8;">
+        &copy; ${new Date().getFullYear()} IdoYourQuotes. All rights reserved.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`,
+    });
+
+    if (error) {
+      console.error('[Email] Payment failed send failed:', error);
+      return false;
+    }
+
+    console.log(`[Email] Payment failed sent to ${params.to}`);
+    return true;
+  } catch (err) {
+    console.error('[Email] Payment failed send error:', err);
+    return false;
+  }
+}
+
+/**
+ * Send subscription-ended email when Stripe finally deletes a
+ * subscription (e.g. after repeated payment failure).
+ *
+ * E.21 (May 2026) — wired into the `customer.subscription.deleted`
+ * Stripe webhook handler. The handler dedupes against user-initiated
+ * cancellations: if `subscriptionCancelAtPeriodEnd` was already true at
+ * the moment of deletion, the user clicked Cancel earlier and already
+ * got `sendCancellationEmail` from the cancel endpoint. In that case
+ * this email is suppressed. If the flag was false, Stripe deleted the
+ * subscription on its own (most commonly after exhausting retries on a
+ * failed payment) and the user has had no email — this template fills
+ * that gap.
+ */
+export async function sendSubscriptionEndedEmail(params: {
+  to: string;
+  name?: string;
+  tierName: string;
+}): Promise<boolean> {
+  const firstName = params.name?.split(' ')[0] || 'there';
+
+  try {
+    const { error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: params.to,
+      subject: `Your IdoYourQuotes subscription has ended`,
+      html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f8fafc;">
+  <div style="max-width: 480px; margin: 0 auto; padding: 40px 20px;">
+
+    <div style="text-align: center; margin-bottom: 32px;">
+      <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png" alt="IdoYourQuotes" style="height: 48px;" />
+    </div>
+
+    <div style="background: white; border-radius: 12px; padding: 32px; border: 1px solid #e2e8f0;">
+      <div style="background: #fef3c7; border-radius: 8px; padding: 12px 16px; margin-bottom: 24px;">
+        <p style="font-size: 14px; font-weight: 600; color: #92400e; margin: 0;">
+          ℹ️ Subscription ended
+        </p>
+      </div>
+
+      <h1 style="font-size: 22px; font-weight: 700; color: #1a2b4a; margin: 0 0 16px;">
+        Hi ${firstName}, your subscription has ended
+      </h1>
+      <p style="font-size: 15px; color: #475569; line-height: 1.6; margin: 0 0 16px;">
+        Your <strong>${params.tierName}</strong> subscription has been ended and your account is now in <strong>read-only</strong> mode. This usually happens when a payment couldn't be collected after several retries.
+      </p>
+      <p style="font-size: 15px; color: #475569; line-height: 1.6; margin: 0 0 24px;">
+        Your existing quotes, catalogue items and team data are still safe — you can log in to view them. To start creating new quotes again, choose a plan and we'll pick up exactly where you left off.
+      </p>
+
+      <div style="text-align: center; margin: 28px 0;">
+        <a href="${APP_URL}/pricing" style="display: inline-block; background-color: #0d9488; color: white; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 8px;">
+          Choose a Plan
+        </a>
+      </div>
+
+      <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 24px;">
+        <p style="font-size: 13px; color: #64748b; margin: 0 0 4px; font-weight: 600;">Think this happened by mistake?</p>
+        <p style="font-size: 13px; color: #64748b; margin: 0;">
+          Email us at ${SUPPORT_MAILTO} and we'll help sort it out.
+        </p>
+      </div>
+    </div>
+
+    <div style="text-align: center; margin-top: 24px;">
+      <p style="font-size: 12px; color: #94a3b8;">
+        &copy; ${new Date().getFullYear()} IdoYourQuotes. All rights reserved.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`,
+    });
+
+    if (error) {
+      console.error('[Email] Subscription ended send failed:', error);
+      return false;
+    }
+
+    console.log(`[Email] Subscription ended sent to ${params.to}`);
+    return true;
+  } catch (err) {
+    console.error('[Email] Subscription ended send error:', err);
     return false;
   }
 }
@@ -971,6 +1360,105 @@ export async function sendTeamInviteEmail(params: {
     return true;
   } catch (err) {
     console.error('[Email] Team invite send error:', err);
+    return false;
+  }
+}
+
+/**
+ * Send password-reset email to an existing team member when an owner
+ * or admin resets their password from the admin panel.
+ *
+ * E.21 (May 2026) — previously the platform reused the team-invite
+ * email for password resets. The subject ("You've been invited to X")
+ * and body ("set your password and activate your account") are both
+ * wrong for an existing active user — this template gives password
+ * resets their own copy: "your password has been reset by {resetByName},
+ * click here to set a new one". Same expiry (7 days) and same set-password
+ * endpoint as team invites since the token mechanism is shared.
+ */
+export async function sendPasswordResetEmail(params: {
+  to: string;
+  resetByName: string;
+  orgName: string;
+  token: string;
+}): Promise<boolean> {
+  const setPasswordUrl = `${APP_URL}/set-password?token=${params.token}`;
+
+  try {
+    const { error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: params.to,
+      subject: `Your IdoYourQuotes password has been reset`,
+      html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f8fafc;">
+  <div style="max-width: 480px; margin: 0 auto; padding: 40px 20px;">
+
+    <div style="text-align: center; margin-bottom: 32px;">
+      <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png" alt="IdoYourQuotes" style="height: 48px; width: auto; max-width: 180px;" />
+    </div>
+
+    <div style="background: white; border-radius: 12px; padding: 32px; border: 1px solid #e2e8f0;">
+      <h1 style="font-size: 22px; font-weight: 700; color: #1a2b4a; margin: 0 0 16px;">
+        Your password has been reset
+      </h1>
+      <p style="font-size: 15px; color: #475569; line-height: 1.6; margin: 0 0 16px;">
+        <strong>${params.resetByName}</strong> has reset your IdoYourQuotes password for the <strong>${params.orgName}</strong> team. Your old password no longer works.
+      </p>
+      <p style="font-size: 15px; color: #475569; line-height: 1.6; margin: 0 0 24px;">
+        Click the button below to set a new password and get back in.
+      </p>
+
+      <div style="text-align: center; margin: 28px 0;">
+        <a href="${setPasswordUrl}" style="display: inline-block; background-color: #0d9488; color: white; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 8px;">
+          Set New Password
+        </a>
+      </div>
+
+      <p style="font-size: 13px; color: #94a3b8; line-height: 1.5; margin: 0 0 16px;">
+        Or copy and paste this link into your browser:
+      </p>
+      <p style="font-size: 12px; color: #0d9488; word-break: break-all; margin: 0 0 24px;">
+        ${setPasswordUrl}
+      </p>
+
+      <div style="background: #fefce8; border: 1px solid #fde047; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px;">
+        <p style="font-size: 12px; color: #713f12; margin: 0;">
+          <strong>&#9993; Tip:</strong> If you don't see this email in your inbox, please check your <strong>junk or spam folder</strong> and mark it as safe.
+        </p>
+      </div>
+
+      <div style="border-top: 1px solid #e2e8f0; padding-top: 16px;">
+        <p style="font-size: 12px; color: #94a3b8; margin: 0;">
+          This link expires in 7 days. If you didn't expect this password reset, contact your team owner — and email us at ${SUPPORT_MAILTO} if you think something's wrong.
+        </p>
+      </div>
+    </div>
+
+    <div style="text-align: center; margin-top: 24px;">
+      <p style="font-size: 12px; color: #94a3b8;">
+        &copy; ${new Date().getFullYear()} IdoYourQuotes. All rights reserved.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`,
+    });
+
+    if (error) {
+      console.error('[Email] Password reset send failed:', error);
+      return false;
+    }
+
+    console.log(`[Email] Password reset sent to ${params.to}`);
+    return true;
+  } catch (err) {
+    console.error('[Email] Password reset send error:', err);
     return false;
   }
 }
