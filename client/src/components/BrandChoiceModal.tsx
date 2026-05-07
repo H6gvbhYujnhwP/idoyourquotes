@@ -134,8 +134,21 @@ export default function BrandChoiceModal({
 }: BrandChoiceModalProps) {
   // Read current org state — used to decide which face of the branding
   // strip to show (info vs inline-setup).
+  //
+  // E.20 (May 2026): poll every 2 seconds while the brand extraction is
+  // still pending on the server. Without this, opening the modal during
+  // the brief window when extraction is running locks "pending" into
+  // React Query's cache forever — the modal would render "Refining…"
+  // until the user manually refreshes the page, even after the server
+  // finished extraction. With polling, the modal flips automatically
+  // from "Refining…" to ready as soon as the server's status flips.
+  // Polling stops the moment status becomes "ready" or anything else.
   const { data: orgProfile } = trpc.auth.orgProfile.useQuery(undefined, {
     enabled: open,
+    refetchInterval: (query) => {
+      const status = (query.state.data as any)?.brandExtractionStatus;
+      return status === "pending" ? 2000 : false;
+    },
   });
   const utils = trpc.useUtils();
   const [, setLocation] = useLocation();
