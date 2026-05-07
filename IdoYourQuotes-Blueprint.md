@@ -494,6 +494,22 @@ AI usage tracking for billing and analytics.
 | Org-Based Queries | ✅ | Filter quotes/catalog by org_id with fallback |
 | Team Management UI | ⏳ | Invite/manage team members (future) |
 
+### Phase 4 - Branded Proposals & Profit Visibility ✅ COMPLETE
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| Branded Proposal Pipeline (Tile 3) | ✅ | Brochure-aware proposals: brochure cover verbatim, formal Title Page, AI-generated narrative chapters wrapping embedded brochure pages |
+| Multi-Tag Brochure Classification | ✅ | Each brochure page carries a primary tag plus secondary tags; two-pass slot picker matches primary first, falls back to any-tag |
+| Branding Settings Consolidation | ✅ | "Your Branded Quotes" tab unifies Logo, Brochure, Design Template, Stat Strip toggle (Logo moved from Profile, Brochure absorbed from retired tab) |
+| Brochure Page Scaling | ✅ | Embedded brochure pages scale to fill the proposal page (was no-upscale, leaving 30% letterbox on small-format brochures) |
+| Branded PDF Filename | ✅ | Format is `<quote title> <today's date>.pdf` matching the title-page date convention |
+| Buy-in Cost Column | ✅ | Editable per-line cost on the Quote Workspace, distinct from null (not entered) and explicit £0 (passthrough) |
+| Profit Column | ✅ | Live-derived £ amount and margin % per line; muted dash when no cost entered |
+| Quote Summary Profit Pill | ✅ | "of which £X profit" line on the green summary card, broken out by pricing type |
+| Dashboard Profit & Margin Columns | ✅ | Per-quote totals from a SQL-aggregating list helper (LEFT JOIN with SUM, single round-trip) |
+| Catalog Cost Auto-Fill | ✅ | AI-generated lines that match a catalog item by name auto-populate buy-in cost from the catalog |
+| Catalogue Tailoring Nudge | ✅ | Dashboard banner prompts seedable-sector users to tailor their starter catalogue before their first real quote |
+
 ### Future Phases
 
 | Phase | Features |
@@ -503,6 +519,7 @@ AI usage tracking for billing and analytics.
 | **Stripe Integration** | Subscription billing, overage charges |
 | **White-Label** | Partner mode, API access, "Powered by IdoYourQuotes" |
 | **Duplicate Quote** | Copy existing quote as starting point |
+| **Customer Service Bot** | AI-powered in-app support and email triage; data-aware help that knows the user's current quote, brochure, and recent activity |
 
 ---
 
@@ -910,6 +927,16 @@ All quote operations use `getQuoteWithOrgAccess()` helper:
 - [ ] AI credit packs for overage
 - [ ] Invoice generation
 
+### Q2/Q3 2026 - Customer Operations
+
+- [ ] AI-powered in-app help drawer with context awareness (knows current quote, brochure, page)
+- [ ] Email support inbox with AI triage and draft replies
+- [ ] Self-serve diagnosis ("your render of Q-187 looks wrong because…")
+- [ ] Onboarding tutor mode (walks new users through catalog tailoring before first quote)
+- [ ] Proactive contextual hints on risky actions (Re-generate, Delete brochure)
+- [ ] Human escalation path with conversation transcript
+- [ ] Cost / volume controls on the support LLM
+
 ### Q3 2026 - Quote Intelligence
 
 - [ ] Historical quote upload
@@ -934,6 +961,7 @@ All quote operations use `getQuoteWithOrgAccess()` helper:
 |---------|------|---------|
 | 1.0 | Feb 4, 2026 | Initial comprehensive blueprint |
 | 2.0 | Feb 5, 2026 | Updated with: PostgreSQL migration, Claude Vision integration, Word/Excel parsing, brand color extraction, quote deletion with file cleanup, real-time status polling, sign out redirect fix, YouTube video embed, 114 tests |
+| 3.0 | May 7, 2026 | Phase 4 documented complete: Branded Proposal pipeline (Tile 3), multi-tag brochure classification, branding tab consolidation, brochure scale-to-fit, branded PDF filename convention, Buy-in Cost / Profit columns on workspace and dashboard, catalog cost auto-fill, catalogue tailoring nudge. Customer Service Bot added to Future Phases / Future Roadmap as the next major theme alongside Q2 Pricing & Billing. |
 
 ---
 
