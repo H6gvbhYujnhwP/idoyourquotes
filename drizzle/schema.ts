@@ -634,3 +634,65 @@ export interface TechnicalReviewData {
 export type ComprehensiveQuote = Quote & {
   comprehensiveConfig: ComprehensiveConfig;
 };
+
+// ============ SUPPORT BOT (Phase 4B Delivery E.13) ============
+
+/**
+ * Phase 4B Delivery E.13 — in-app customer support bot tables.
+ * See shared/schema.ts for the canonical block; mirrored here per the
+ * dual-schema rule. DDL lives in drizzle/0026_add_support_tables.sql.
+ */
+export const supportThreadStatusEnum = pgEnum("support_thread_status", [
+  "open",
+  "escalated",
+  "resolved",
+]);
+
+export const supportMessageRoleEnum = pgEnum("support_message_role", [
+  "user",
+  "assistant",
+]);
+
+export const supportThreads = pgTable("support_threads", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  orgId: bigint("org_id", { mode: "number" }).notNull(),
+  userId: bigint("user_id", { mode: "number" }).notNull(),
+  status: supportThreadStatusEnum("status").default("open").notNull(),
+
+  startPagePath: text("start_page_path"),
+  lastPagePath: text("last_page_path"),
+
+  summary: text("summary"),
+
+  escalationContactName: varchar("escalation_contact_name", { length: 255 }),
+  escalationBusinessName: varchar("escalation_business_name", { length: 255 }),
+  escalationEmail: varchar("escalation_email", { length: 320 }),
+  escalationPhone: varchar("escalation_phone", { length: 50 }),
+
+  escalatedAt: timestamp("escalated_at"),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedByUserId: bigint("resolved_by_user_id", { mode: "number" }),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type SupportThread = typeof supportThreads.$inferSelect;
+export type InsertSupportThread = typeof supportThreads.$inferInsert;
+
+export const supportMessages = pgTable("support_messages", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  threadId: bigint("thread_id", { mode: "number" }).notNull(),
+  role: supportMessageRoleEnum("role").notNull(),
+  content: text("content").notNull(),
+
+  helpful: boolean("helpful"),
+
+  inputTokens: integer("input_tokens"),
+  outputTokens: integer("output_tokens"),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type SupportMessage = typeof supportMessages.$inferSelect;
+export type InsertSupportMessage = typeof supportMessages.$inferInsert;

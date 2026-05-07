@@ -740,3 +740,87 @@ export interface TechnicalReviewData {
 export type ComprehensiveQuote = Quote & {
   comprehensiveConfig: ComprehensiveConfig;
 };
+
+// ============ SUPPORT BOT (Phase 4B Delivery E.13) ============
+
+/**
+ * Phase 4B Delivery E.13 — in-app customer support bot tables.
+ *
+ * Two tables back the floating Help drawer and the admin Conversations
+ * view. See drizzle/0026_add_support_tables.sql for the matching DDL
+ * (run on the Render shell before this schema is in effect).
+ *
+ * support_threads — one row per conversation. Org-scoped (every query
+ *   filters by org_id) so a Team admin viewing the back-office cannot
+ *   see another tenant's transcripts. Lifecycle: open → escalated
+ *   (user pressed Email support, captured contact details) → resolved
+ *   (admin marked done from the back-office).
+ *
+ * support_messages — append-only message log. helpful captures the
+ *   per-message thumbs-up signal. Token usage is recorded on assistant
+ *   messages so we can audit cost without joining usage_logs.
+ */
+export const supportThreadStatusEnum = pgEnum("support_thread_status", [
+  "open",
+  "escalated",
+  "resolved",
+]);
+
+export const supportMessageRoleEnum = pgEnum("support_message_role", [
+  "user",
+  "assistant",
+]);
+
+export const supportThreads = pgTable("support_threads", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  orgId: bigint("org_id", { mode: "number" }).notNull(),
+  userId: bigint("user_id", { mode: "number" }).notNull(),
+  status: supportThreadStatusEnum("status").default("open").notNull(),
+
+  // Where the user was when they opened the drawer / last sent a
+  // message. Useful in the admin view to spot patterns (people stuck
+  // on a particular page).
+  startPagePath: text("start_page_path"),
+  lastPagePath: text("last_page_path"),
+
+  // Bot-drafted, user-editable summary captured at escalate-time.
+  // Used as the suffix on the escalation email subject.
+  summary: text("summary"),
+
+  // Captured at escalate-time. Defaults are pre-filled from user/org
+  // records but the user can edit before submitting.
+  escalationContactName: varchar("escalation_contact_name", { length: 255 }),
+  escalationBusinessName: varchar("escalation_business_name", { length: 255 }),
+  escalationEmail: varchar("escalation_email", { length: 320 }),
+  escalationPhone: varchar("escalation_phone", { length: 50 }),
+
+  escalatedAt: timestamp("escalated_at"),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedByUserId: bigint("resolved_by_user_id", { mode: "number" }),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type SupportThread = typeof supportThreads.$inferSelect;
+export type InsertSupportThread = typeof supportThreads.$inferInsert;
+
+export const supportMessages = pgTable("support_messages", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  threadId: bigint("thread_id", { mode: "number" }).notNull(),
+  role: supportMessageRoleEnum("role").notNull(),
+  content: text("content").notNull(),
+
+  // Per-message thumbs-up. NULL = not rated. TRUE = user clicked
+  // "This helped". A future thumbs-down would write FALSE.
+  helpful: boolean("helpful"),
+
+  // Token usage on assistant messages — NULL on user rows.
+  inputTokens: integer("input_tokens"),
+  outputTokens: integer("output_tokens"),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type SupportMessage = typeof supportMessages.$inferSelect;
+export type InsertSupportMessage = typeof supportMessages.$inferInsert;

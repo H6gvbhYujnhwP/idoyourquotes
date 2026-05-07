@@ -42,6 +42,7 @@ import { AlertTriangle, CreditCard, Crown, LogOut, Mail } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
+import SupportFloatingButton from "./SupportFloatingButton";
 import { Button } from "./ui/button";
 
 // Logo — kept on the Manus CDN for Alpha. Flagged in the handover as
@@ -228,6 +229,13 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
 
       {/* ── Main content ───────────────────────────────────────── */}
       <main className="flex-1 p-6">{children}</main>
+
+      {/* ── Support bot (Phase 4B Delivery E.13) ───────────────────
+          Floating Help button — bottom-right, fixed positioning, shown
+          on every authenticated page that's wrapped in DashboardLayout.
+          AdminPanel renders without DashboardLayout so the button does
+          not appear in the back-office, which is intentional. */}
+      <SupportFloatingButton />
     </div>
   );
 }

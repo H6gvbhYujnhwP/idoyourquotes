@@ -477,4 +477,236 @@ export const adminRouter = router({
         hardDeleted: input.hardDeleteUsers,
       };
     }),
+
+  // ─── Support bot conversations (Phase 4B Delivery E.13) ──────────
+  //
+  // Admin-only views over the support_threads / support_messages
+  // tables. Read-only listing + single-thread fetch + a status flip
+  // to "resolved" so an admin can clear a ticket out of the open
+  // queue once they've replied to the customer over email.
+
+  /**
+   * List support threads for the admin Conversations view. Filterable
+   * by status, paginated. Returns the thread row plus a small
+   * preview: the first user message and the last message of any role.
+   */
+  listSupportThreads: adminProcedure
+    .input(
+      z.object({
+        status: z.enum(["all", "open", "escalated", "resolved"]).optional().default("all"),
+        page: z.number().min(1).optional().default(1),
+        limit: z.number().min(1).max(100).optional().default(50),
+      }).optional(),
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { threads: [], total: 0 };
+
+      const { eq, desc, sql, and } = await import("drizzle-orm");
+      const { supportThreads, supportMessages, organizations, users } = await import(
+        "../../shared/schema"
+      );
+
+      const status = input?.status ?? "all";
+      const page = input?.page ?? 1;
+      const limit = input?.limit ?? 50;
+      const offset = (page - 1) * limit;
+
+      const whereClause = status === "all" ? undefined : eq(supportThreads.status, status);
+
+      // Total count for pagination
+      const [{ total }] = await db
+        .select({ total: sql<number>`COUNT(*)::int` })
+        .from(supportThreads)
+        .where(whereClause as any);
+
+      // Page of threads with org + user info joined in
+      const rows = await db
+        .select({
+          id: supportThreads.id,
+          orgId: supportThreads.orgId,
+          userId: supportThreads.userId,
+          status: supportThreads.status,
+          startPagePath: supportThreads.startPagePath,
+          lastPagePath: supportThreads.lastPagePath,
+          summary: supportThreads.summary,
+          escalationContactName: supportThreads.escalationContactName,
+          escalationBusinessName: supportThreads.escalationBusinessName,
+          escalationEmail: supportThreads.escalationEmail,
+          escalationPhone: supportThreads.escalationPhone,
+          escalatedAt: supportThreads.escalatedAt,
+          resolvedAt: supportThreads.resolvedAt,
+          createdAt: supportThreads.createdAt,
+          updatedAt: supportThreads.updatedAt,
+          orgName: organizations.name,
+          orgCompanyName: organizations.companyName,
+          orgTier: organizations.subscriptionTier,
+          userEmail: users.email,
+          userName: users.name,
+        })
+        .from(supportThreads)
+        .leftJoin(organizations, eq(supportThreads.orgId, organizations.id))
+        .leftJoin(users, eq(supportThreads.userId, users.id))
+        .where(whereClause as any)
+        .orderBy(desc(supportThreads.updatedAt))
+        .limit(limit)
+        .offset(offset);
+
+      // Pull message counts and last-message previews per thread.
+      // Done in one extra query rather than N+1.
+      type ThreadRow = (typeof rows)[number];
+      const threadIds = rows.map((r: ThreadRow) => r.id);
+      type Counts = Record<number, { msgCount: number; lastContent: string | null }>;
+      let counts: Counts = {};
+      if (threadIds.length > 0) {
+        const inList = sql.raw(threadIds.join(","));
+        const countRows: Array<{
+          threadId: number;
+          msgCount: number;
+          lastContent: string | null;
+        }> = await db.execute(sql`
+          SELECT
+            sm.thread_id AS "threadId",
+            COUNT(*)::int AS "msgCount",
+            (
+              SELECT content
+              FROM support_messages
+              WHERE thread_id = sm.thread_id
+              ORDER BY created_at DESC
+              LIMIT 1
+            ) AS "lastContent"
+          FROM support_messages sm
+          WHERE sm.thread_id IN (${inList})
+          GROUP BY sm.thread_id
+        `) as any;
+        counts = countRows.reduce<Counts>((acc, r) => {
+          acc[r.threadId] = { msgCount: r.msgCount, lastContent: r.lastContent };
+          return acc;
+        }, {});
+      }
+
+      const threads = rows.map((r: ThreadRow) => ({
+        ...r,
+        messageCount: counts[r.id]?.msgCount ?? 0,
+        lastMessagePreview:
+          counts[r.id]?.lastContent && counts[r.id].lastContent!.length > 200
+            ? counts[r.id].lastContent!.slice(0, 200) + "…"
+            : counts[r.id]?.lastContent ?? null,
+      }));
+
+      return { threads, total, page, limit };
+    }),
+
+  /**
+   * Fetch a single thread with its full message list. Org info and
+   * user info are joined in for the back-office panel header.
+   */
+  getSupportThread: adminProcedure
+    .input(z.object({ threadId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+
+      const { eq, asc } = await import("drizzle-orm");
+      const { supportThreads, supportMessages, organizations, users } = await import(
+        "../../shared/schema"
+      );
+
+      const [thread] = await db
+        .select({
+          id: supportThreads.id,
+          orgId: supportThreads.orgId,
+          userId: supportThreads.userId,
+          status: supportThreads.status,
+          startPagePath: supportThreads.startPagePath,
+          lastPagePath: supportThreads.lastPagePath,
+          summary: supportThreads.summary,
+          escalationContactName: supportThreads.escalationContactName,
+          escalationBusinessName: supportThreads.escalationBusinessName,
+          escalationEmail: supportThreads.escalationEmail,
+          escalationPhone: supportThreads.escalationPhone,
+          escalatedAt: supportThreads.escalatedAt,
+          resolvedAt: supportThreads.resolvedAt,
+          createdAt: supportThreads.createdAt,
+          updatedAt: supportThreads.updatedAt,
+          orgName: organizations.name,
+          orgCompanyName: organizations.companyName,
+          orgCompanyEmail: organizations.companyEmail,
+          orgCompanyPhone: organizations.companyPhone,
+          orgTier: organizations.subscriptionTier,
+          userEmail: users.email,
+          userName: users.name,
+          userSector: users.defaultTradeSector,
+        })
+        .from(supportThreads)
+        .leftJoin(organizations, eq(supportThreads.orgId, organizations.id))
+        .leftJoin(users, eq(supportThreads.userId, users.id))
+        .where(eq(supportThreads.id, input.threadId))
+        .limit(1);
+
+      if (!thread) throw new Error("Thread not found");
+
+      const messages = await db
+        .select()
+        .from(supportMessages)
+        .where(eq(supportMessages.threadId, thread.id))
+        .orderBy(asc(supportMessages.createdAt));
+
+      return { thread, messages };
+    }),
+
+  /**
+   * Mark a thread resolved from the admin view. Captures the admin
+   * user's id on the row so we know who closed it.
+   */
+  markSupportThreadResolved: adminProcedure
+    .input(
+      z.object({
+        threadId: z.number(),
+        resolved: z.boolean().default(true),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+
+      const { eq } = await import("drizzle-orm");
+      const { supportThreads } = await import("../../shared/schema");
+
+      // Re-opening simply moves it back to escalated (since most
+      // resolved threads got there via escalate). If the thread was
+      // never escalated, re-open as 'open'.
+      if (!input.resolved) {
+        const [existing] = await db
+          .select()
+          .from(supportThreads)
+          .where(eq(supportThreads.id, input.threadId))
+          .limit(1);
+        if (!existing) throw new Error("Thread not found");
+
+        const reopenStatus = existing.escalatedAt ? "escalated" : "open";
+        await db
+          .update(supportThreads)
+          .set({
+            status: reopenStatus,
+            resolvedAt: null,
+            resolvedByUserId: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(supportThreads.id, input.threadId));
+        return { ok: true, status: reopenStatus };
+      }
+
+      await db
+        .update(supportThreads)
+        .set({
+          status: "resolved",
+          resolvedAt: new Date(),
+          resolvedByUserId: ctx.user.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(supportThreads.id, input.threadId));
+
+      return { ok: true, status: "resolved" };
+    }),
 });

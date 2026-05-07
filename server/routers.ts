@@ -8,6 +8,7 @@ import { subscriptionRouter } from "./services/subscriptionRouter";
 import { adminRouter } from "./services/adminRouter";
 import { brochureRouter } from "./services/brochureRouter";
 import { brandedProposalRouter } from "./services/brandedProposalRouter";
+import { supportRouter } from "./services/supportRouter";
 import { canCreateQuote, canUseAIFeatures, canAddCatalogItem, getUpgradeSuggestion, TIER_CONFIG, type SubscriptionTier } from "./services/stripe";
 import { sendLimitWarningEmail } from "./services/emailService";
 import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured, getFileBuffer } from "./r2Storage";
@@ -4012,6 +4013,10 @@ Rules:
   //     tender, regenerate single chapters, render the final PDF.
   brochure: brochureRouter,
   brandedProposal: brandedProposalRouter,
+
+  // ============ SUPPORT BOT (Phase 4B Delivery E.13) ============
+  // In-app help drawer + escalation. See server/services/supportRouter.ts.
+  support: supportRouter,
 
   // ============ AI ASSISTANT ============
   ai: router({

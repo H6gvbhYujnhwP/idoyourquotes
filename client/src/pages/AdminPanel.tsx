@@ -16,7 +16,7 @@ import { brand } from "@/lib/brandTheme";
 import React, { useState } from "react";
 import {
   Search, Users, Building2, FileText, ChevronLeft, ChevronDown, ChevronRight, RotateCcw,
-  Shield, Clock, Hash, Eye, Calendar, Mail, ArrowUpDown, Trash2, UserX,
+  Shield, Clock, Hash, Eye, Calendar, Mail, ArrowUpDown, Trash2, UserX, MessageSquare, CheckCircle2,
 } from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────
@@ -834,6 +834,10 @@ function OrgDetail({ orgId, onBack }: { orgId: number; onBack: () => void }) {
 export default function AdminPanel() {
   const { user, loading } = useAuth();
   const [selectedOrgId, setSelectedOrgId] = useState<number | null>(null);
+  // Phase 4B Delivery E.13 — Conversations view (support threads).
+  // Sibling top-level view to the existing Organisations workflow.
+  const [activeView, setActiveView] = useState<"orgs" | "conversations">("orgs");
+  const [selectedThreadId, setSelectedThreadId] = useState<number | null>(null);
 
   const { data: stats } = trpc.admin.platformStats.useQuery(undefined, {
     enabled: !!(user && (user as any).role === "admin"),
@@ -891,12 +895,375 @@ export default function AdminPanel() {
       {/* Stats */}
       <StatsBar stats={stats} />
 
+      {/* Phase 4B Delivery E.13 — top-level view switcher.
+          Organisations is the historical default; Conversations is the
+          new support-thread back-office. Switching views clears any
+          selected sub-item so the user lands on the list pane. */}
+      <div style={{
+        display: "flex", gap: 4, marginBottom: 16, borderBottom: `1px solid ${brand.border}`,
+      }}>
+        {([
+          { id: "orgs" as const, label: "Organisations", icon: Building2 },
+          { id: "conversations" as const, label: "Conversations", icon: MessageSquare },
+        ]).map((tab) => {
+          const active = activeView === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setActiveView(tab.id);
+                setSelectedOrgId(null);
+                setSelectedThreadId(null);
+              }}
+              style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "10px 16px", fontSize: 13,
+                fontWeight: active ? 600 : 500,
+                color: active ? brand.teal : brand.navyMuted,
+                background: "transparent",
+                border: "none",
+                borderBottom: `2px solid ${active ? brand.teal : "transparent"}`,
+                cursor: "pointer",
+                marginBottom: -1,
+              }}
+            >
+              <tab.icon size={14} />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Content */}
-      {selectedOrgId ? (
-        <OrgDetail orgId={selectedOrgId} onBack={() => setSelectedOrgId(null)} />
+      {activeView === "orgs" ? (
+        selectedOrgId ? (
+          <OrgDetail orgId={selectedOrgId} onBack={() => setSelectedOrgId(null)} />
+        ) : (
+          <OrgList onSelectOrg={setSelectedOrgId} />
+        )
+      ) : selectedThreadId ? (
+        <SupportThreadDetail
+          threadId={selectedThreadId}
+          onBack={() => setSelectedThreadId(null)}
+        />
       ) : (
-        <OrgList onSelectOrg={setSelectedOrgId} />
+        <SupportThreadList onSelectThread={setSelectedThreadId} />
       )}
+    </div>
+  );
+}
+
+// ─── Support Conversations (Phase 4B Delivery E.13) ────────────
+
+function threadStatusBadge(
+  status: string,
+): { label: string; bg: string; text: string } {
+  switch (status) {
+    case "open": return { label: "Open", bg: brand.tealBg, text: "#065f46" };
+    case "escalated": return { label: "Escalated", bg: "#fef3c7", text: "#92400e" };
+    case "resolved": return { label: "Resolved", bg: "#dcfce7", text: "#166534" };
+    default: return { label: status, bg: "#f1f5f9", text: "#475569" };
+  }
+}
+
+function SupportThreadList({
+  onSelectThread,
+}: {
+  onSelectThread: (id: number) => void;
+}) {
+  const [statusFilter, setStatusFilter] = useState<"all" | "open" | "escalated" | "resolved">("all");
+  const [page, setPage] = useState(1);
+
+  const { data, isLoading, refetch } = trpc.admin.listSupportThreads.useQuery({
+    status: statusFilter,
+    page,
+    limit: 50,
+  });
+
+  const threads = (data?.threads || []) as any[];
+  const total = data?.total || 0;
+  const totalPages = Math.max(1, Math.ceil(total / 50));
+
+  return (
+    <div style={{
+      background: "white", borderRadius: 12, border: `1px solid ${brand.border}`,
+      overflow: "hidden",
+    }}>
+      {/* Filter pills */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "16px 20px", borderBottom: `1px solid ${brand.border}`,
+      }}>
+        <div style={{ display: "flex", gap: 6 }}>
+          {(["all", "open", "escalated", "resolved"] as const).map((s) => {
+            const active = statusFilter === s;
+            return (
+              <button
+                key={s}
+                onClick={() => { setStatusFilter(s); setPage(1); }}
+                style={{
+                  padding: "6px 12px", fontSize: 12, fontWeight: 500,
+                  borderRadius: 999,
+                  background: active ? brand.tealBg : "white",
+                  color: active ? brand.teal : brand.navyMuted,
+                  border: `1px solid ${active ? brand.tealBorder : brand.border}`,
+                  cursor: "pointer",
+                  textTransform: "capitalize",
+                }}
+              >
+                {s === "all" ? "All" : s}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ fontSize: 12, color: brand.navyMuted }}>
+          {total} thread{total === 1 ? "" : "s"}
+        </div>
+      </div>
+
+      {/* List */}
+      {isLoading ? (
+        <div style={{ padding: 40, textAlign: "center", color: brand.navyMuted, fontSize: 13 }}>
+          Loading…
+        </div>
+      ) : threads.length === 0 ? (
+        <div style={{ padding: 40, textAlign: "center", color: brand.navyMuted, fontSize: 13 }}>
+          <MessageSquare size={28} style={{ opacity: 0.3, marginBottom: 8 }} />
+          <div>No conversations {statusFilter !== "all" ? `with status "${statusFilter}"` : "yet"}.</div>
+        </div>
+      ) : (
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: "#f8fafc", borderBottom: `1px solid ${brand.border}` }}>
+              <th style={{ textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: brand.navyMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>User / Org</th>
+              <th style={{ textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: brand.navyMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Status</th>
+              <th style={{ textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: brand.navyMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Tier</th>
+              <th style={{ textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: brand.navyMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Messages</th>
+              <th style={{ textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: brand.navyMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Last preview</th>
+              <th style={{ textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: brand.navyMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Updated</th>
+            </tr>
+          </thead>
+          <tbody>
+            {threads.map((t) => {
+              const badge = threadStatusBadge(t.status);
+              return (
+                <tr
+                  key={t.id}
+                  onClick={() => onSelectThread(t.id)}
+                  style={{ borderBottom: `1px solid ${brand.border}`, cursor: "pointer" }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "#f8fafc"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "transparent"; }}
+                >
+                  <td style={{ padding: "12px 16px" }}>
+                    <div style={{ fontWeight: 500, color: brand.navy }}>{t.userName || t.userEmail || "—"}</div>
+                    <div style={{ fontSize: 12, color: brand.navyMuted }}>{t.orgCompanyName || t.orgName || "—"}</div>
+                  </td>
+                  <td style={{ padding: "12px 16px" }}>
+                    <span style={{
+                      display: "inline-block", padding: "3px 10px", fontSize: 11, fontWeight: 600,
+                      background: badge.bg, color: badge.text, borderRadius: 999,
+                    }}>{badge.label}</span>
+                  </td>
+                  <td style={{ padding: "12px 16px", color: brand.navyMuted, textTransform: "capitalize" }}>{t.orgTier || "—"}</td>
+                  <td style={{ padding: "12px 16px", color: brand.navyMuted }}>{t.messageCount}</td>
+                  <td style={{ padding: "12px 16px", color: brand.navyMuted, maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {t.lastMessagePreview || "—"}
+                  </td>
+                  <td style={{ padding: "12px 16px", color: brand.navyMuted, fontSize: 12, whiteSpace: "nowrap" }}>{timeAgo(t.updatedAt)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div style={{
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          padding: "12px 20px", borderTop: `1px solid ${brand.border}`, fontSize: 12,
+        }}>
+          <span style={{ color: brand.navyMuted }}>Page {page} of {totalPages}</span>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              style={{ padding: "4px 10px", borderRadius: 4, border: `1px solid ${brand.border}`, background: "white", cursor: page <= 1 ? "not-allowed" : "pointer", opacity: page <= 1 ? 0.5 : 1 }}
+            >Prev</button>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              style={{ padding: "4px 10px", borderRadius: 4, border: `1px solid ${brand.border}`, background: "white", cursor: page >= totalPages ? "not-allowed" : "pointer", opacity: page >= totalPages ? 0.5 : 1 }}
+            >Next</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SupportThreadDetail({
+  threadId,
+  onBack,
+}: {
+  threadId: number;
+  onBack: () => void;
+}) {
+  const { data, isLoading, refetch } = trpc.admin.getSupportThread.useQuery({ threadId });
+  const utils = trpc.useUtils();
+  const resolveMut = trpc.admin.markSupportThreadResolved.useMutation({
+    onSuccess: () => {
+      refetch();
+      utils.admin.listSupportThreads.invalidate();
+    },
+  });
+
+  if (isLoading || !data) {
+    return (
+      <div style={{ background: "white", padding: 40, borderRadius: 12, textAlign: "center", color: brand.navyMuted, fontSize: 13 }}>
+        Loading…
+      </div>
+    );
+  }
+
+  const t = data.thread as any;
+  const messages = data.messages as any[];
+  const badge = threadStatusBadge(t.status);
+  const isResolved = t.status === "resolved";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Back */}
+      <button
+        onClick={onBack}
+        style={{
+          alignSelf: "flex-start", display: "flex", alignItems: "center", gap: 6,
+          padding: "6px 12px", fontSize: 13, fontWeight: 500,
+          background: "white", border: `1px solid ${brand.border}`, borderRadius: 6,
+          color: brand.navy, cursor: "pointer",
+        }}
+      >
+        <ChevronLeft size={14} /> Back to conversations
+      </button>
+
+      {/* Header card */}
+      <div style={{
+        background: "white", padding: 20, borderRadius: 12, border: `1px solid ${brand.border}`,
+      }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 16 }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 700, color: brand.navy, margin: 0 }}>
+                Thread #{t.id}
+              </h2>
+              <span style={{
+                display: "inline-block", padding: "3px 10px", fontSize: 11, fontWeight: 600,
+                background: badge.bg, color: badge.text, borderRadius: 999,
+              }}>{badge.label}</span>
+            </div>
+            <div style={{ fontSize: 13, color: brand.navyMuted }}>
+              Started {formatDateTime(t.createdAt)} · last update {timeAgo(t.updatedAt)}
+            </div>
+          </div>
+          <button
+            onClick={() => resolveMut.mutate({ threadId: t.id, resolved: !isResolved })}
+            disabled={resolveMut.isPending}
+            style={{
+              padding: "8px 14px", fontSize: 13, fontWeight: 500, borderRadius: 6,
+              background: isResolved ? "white" : brand.teal,
+              color: isResolved ? brand.navy : "white",
+              border: isResolved ? `1px solid ${brand.border}` : "none",
+              cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 6,
+            }}
+          >
+            {isResolved ? <RotateCcw size={14} /> : <CheckCircle2 size={14} />}
+            {isResolved ? "Re-open" : "Mark resolved"}
+          </button>
+        </div>
+
+        {/* Context grid */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, fontSize: 13 }}>
+          <ContextField label="User">{t.userName || "—"}</ContextField>
+          <ContextField label="User email">
+            {t.userEmail ? <a href={`mailto:${t.userEmail}`} style={{ color: brand.teal }}>{t.userEmail}</a> : "—"}
+          </ContextField>
+          <ContextField label="Org">{t.orgCompanyName || t.orgName || "—"}</ContextField>
+          <ContextField label="Plan">{t.orgTier || "—"}</ContextField>
+          <ContextField label="Sector">{t.userSector || "—"}</ContextField>
+          <ContextField label="Started on">{t.startPagePath || "—"}</ContextField>
+          <ContextField label="Last on">{t.lastPagePath || "—"}</ContextField>
+        </div>
+
+        {/* Escalation block — only when escalated */}
+        {t.status !== "open" && t.escalationContactName && (
+          <div style={{
+            marginTop: 16, padding: 14, borderRadius: 8,
+            background: brand.tealBg, border: `1px solid ${brand.tealBorder}`,
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: brand.teal, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+              Escalation contact (captured {formatDateTime(t.escalatedAt)})
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8, fontSize: 13 }}>
+              <ContextField label="Name">{t.escalationContactName || "—"}</ContextField>
+              <ContextField label="Business">{t.escalationBusinessName || "—"}</ContextField>
+              <ContextField label="Email">
+                {t.escalationEmail ? <a href={`mailto:${t.escalationEmail}`} style={{ color: brand.teal }}>{t.escalationEmail}</a> : "—"}
+              </ContextField>
+              <ContextField label="Phone">{t.escalationPhone || "—"}</ContextField>
+            </div>
+            {t.summary && (
+              <div style={{ marginTop: 10, fontSize: 13, color: brand.navy }}>
+                <strong style={{ fontWeight: 500 }}>Summary: </strong>{t.summary}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Transcript */}
+      <div style={{
+        background: "white", padding: 20, borderRadius: 12, border: `1px solid ${brand.border}`,
+      }}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, color: brand.navy, margin: "0 0 12px" }}>
+          Transcript ({messages.length} message{messages.length === 1 ? "" : "s"})
+        </h3>
+        {messages.length === 0 ? (
+          <div style={{ color: brand.navyMuted, fontSize: 13 }}>No messages yet.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {messages.map((m) => (
+              <div key={m.id} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <div style={{ fontSize: 11, color: brand.navyMuted }}>
+                  <strong style={{ color: m.role === "user" ? brand.navy : brand.teal, fontWeight: 600 }}>
+                    {m.role === "user" ? "User" : "Bot"}
+                  </strong>
+                  {" · "}{formatDateTime(m.createdAt)}
+                  {m.helpful === true && <span style={{ marginLeft: 8, color: brand.teal }}>· marked helpful</span>}
+                </div>
+                <div style={{
+                  padding: "10px 14px", borderRadius: 8,
+                  background: m.role === "user" ? brand.tealBg : "#f8fafc",
+                  border: `1px solid ${m.role === "user" ? brand.tealBorder : brand.border}`,
+                  color: brand.navy, fontSize: 13, lineHeight: 1.5,
+                  whiteSpace: "pre-wrap",
+                }}>
+                  {m.content}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ContextField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: brand.navyMuted, marginBottom: 2 }}>{label}</div>
+      <div style={{ color: brand.navy, fontSize: 13 }}>{children}</div>
     </div>
   );
 }
