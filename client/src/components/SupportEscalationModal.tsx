@@ -109,7 +109,7 @@ export default function SupportEscalationModal({
     } catch (err: any) {
       setResult({
         kind: "error",
-        message: err?.message || "Failed to send. Try again, or email support@idoyourquotes.com directly.",
+        message: err?.message || "Failed to send. Try again in a moment — if it keeps failing, the team can be reached via the support email link in any of our welcome or trial emails.",
       });
     } finally {
       setSubmitting(false);

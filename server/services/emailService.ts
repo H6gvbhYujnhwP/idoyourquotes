@@ -9,6 +9,15 @@ const resend = new Resend(process.env.RESEND_API_KEY || '');
 const FROM_EMAIL = 'IdoYourQuotes <noreply@idoyourquotes.com>';
 const APP_URL = process.env.APP_URL || 'https://idoyourquotes.com';
 
+// Phase 4B Delivery E.13.2 — single source of truth for the support
+// inbox across both Resend customer-facing emails and the SMTP
+// escalation path (server/services/smtpMailer.ts reads the same env
+// var). Set on Render. Defaults to the @mail.idoyourquotes.com alias
+// because that's where the live mailbox sits — no Google Workspace
+// seat needed for support@idoyourquotes.com directly.
+const SUPPORT_INBOX = process.env.SUPPORT_INBOX || 'support@mail.idoyourquotes.com';
+const SUPPORT_MAILTO = `<a href="mailto:${SUPPORT_INBOX}" style="color: #0d9488; text-decoration: none;">${SUPPORT_INBOX}</a>`;
+
 /**
  * Send email verification link
  */
@@ -220,7 +229,7 @@ export async function sendCheckInEmail(params: {
       <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 24px;">
         <p style="font-size: 13px; color: #64748b; margin: 0 0 4px; font-weight: 600;">Need help?</p>
         <p style="font-size: 13px; color: #64748b; margin: 0;">
-          Email us at <a href="mailto:support@idoyourquotes.com" style="color: #0d9488; text-decoration: none;">support@idoyourquotes.com</a>
+          Email us at ${SUPPORT_MAILTO}
         </p>
       </div>
     </div>
@@ -314,7 +323,7 @@ export async function sendTrialExpiryReminder(params: {
       <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 24px;">
         <p style="font-size: 13px; color: #64748b; margin: 0 0 4px; font-weight: 600;">Questions?</p>
         <p style="font-size: 13px; color: #64748b; margin: 0;">
-          Email us at <a href="mailto:support@idoyourquotes.com" style="color: #0d9488; text-decoration: none;">support@idoyourquotes.com</a> — we're happy to help.
+          Email us at ${SUPPORT_MAILTO} — we're happy to help.
         </p>
       </div>
     </div>
@@ -442,7 +451,7 @@ export async function sendLimitWarningEmail(params: {
       <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 24px;">
         <p style="font-size: 13px; color: #64748b; margin: 0 0 4px; font-weight: 600;">Questions?</p>
         <p style="font-size: 13px; color: #64748b; margin: 0;">
-          Email us at <a href="mailto:support@idoyourquotes.com" style="color: #0d9488; text-decoration: none;">support@idoyourquotes.com</a>
+          Email us at ${SUPPORT_MAILTO}
         </p>
       </div>
     </div>
@@ -756,7 +765,7 @@ export async function sendExitSurveyToSupport(params: {
   try {
     const { error } = await resend.emails.send({
       from: FROM_EMAIL,
-      to: 'support@idoyourquotes.com',
+      to: SUPPORT_INBOX,
       subject: `Account Deleted — ${params.userName || params.userEmail} (${params.tier})`,
       html: `
 <!DOCTYPE html>

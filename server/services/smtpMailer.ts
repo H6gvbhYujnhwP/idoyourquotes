@@ -7,7 +7,9 @@
  * emails. This file is *only* for the support escalation path.
  *
  * From: john@mail.idoyourquotes.com (Google Workspace mailbox)
- * To:   support@idoyourquotes.com (where the team picks up tickets)
+ * To:   support@mail.idoyourquotes.com (alias on the existing John
+ *       Workspace user — inbound mail to the alias lands in the same
+ *       mailbox without needing a separate £7 seat)
  * Reply-To: the customer's email — so hitting Reply in the inbox goes
  *           straight back to the customer, no copy-paste, no missed
  *           addresses.
@@ -110,7 +112,7 @@ export async function sendEscalationEmail(params: EscalationEmailParams): Promis
   if (!transporter) return false;
 
   const fromAddress = process.env.SMTP_USER!;
-  const supportInbox = process.env.SUPPORT_INBOX || "support@idoyourquotes.com";
+  const supportInbox = process.env.SUPPORT_INBOX || "support@mail.idoyourquotes.com";
 
   const subject = formatSubject(params.tier, params.summary);
 
