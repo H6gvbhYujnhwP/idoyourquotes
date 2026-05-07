@@ -1541,7 +1541,7 @@ function generateElectricalQuoteHTML(data: PDFQuoteData): string {
   const companyName = organization?.name || user.companyName || user.name || "Your Company";
   const companyAddress = organization?.address || user.companyAddress || "";
   const companyEmail   = organization?.email   || user.email          || "";
-  const companyPhone   = organization?.phone   || user.phone          || "";
+  const companyPhone   = organization?.companyPhone || user.companyPhone   || "";
 
   const logoUrl = organization?.companyLogo || user.companyLogo || null;
   const logoHTML = logoUrl

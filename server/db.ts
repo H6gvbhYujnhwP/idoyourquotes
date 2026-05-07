@@ -179,10 +179,16 @@ export async function getUserPrimaryOrg(userId: number): Promise<Organization | 
   const db = await getDb();
   if (!db) return undefined;
 
-  // Get the first org where user is owner, or any org they belong to
+  // Pre-launch Hardening P1 (May 2026): order by createdAt DESC so the
+  // most recently joined membership wins. Previously this returned the
+  // OLDEST membership, which silently broke team invites for any user
+  // who already had a personal org — they'd log in to the team but see
+  // their old org's data. Auto-switching to the newest membership is the
+  // minimum surgical fix; a full org-switcher UI is on the Q1 Team
+  // Features roadmap.
   const [membership] = await db.select().from(orgMembers)
     .where(eq(orgMembers.userId, userId))
-    .orderBy(orgMembers.createdAt)
+    .orderBy(desc(orgMembers.createdAt))
     .limit(1);
 
   if (!membership) return undefined;

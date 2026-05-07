@@ -753,6 +753,91 @@ export async function sendAccountDeletedEmail(params: {
 }
 
 /**
+ * Send "org closed" email to non-owner team members when the team owner
+ * deletes the account. Pre-launch Hardening P1 (May 2026): previously
+ * other team members were left able to log in but landed on a cryptic
+ * "No organisation found" error because the org_members rows were wiped
+ * but their user accounts stayed active. Now they're deactivated and
+ * told what happened with this email.
+ */
+export async function sendOrgClosedEmail(params: {
+  to: string;
+  name?: string;
+  ownerName?: string;
+  orgName: string;
+}): Promise<boolean> {
+  const firstName = params.name?.split(' ')[0] || 'there';
+  const ownerLabel = params.ownerName?.trim() || 'The team owner';
+
+  try {
+    const { error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: params.to,
+      subject: `Your IdoYourQuotes team access has ended`,
+      html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f8fafc;">
+  <div style="max-width: 480px; margin: 0 auto; padding: 40px 20px;">
+
+    <div style="text-align: center; margin-bottom: 32px;">
+      <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png" alt="IdoYourQuotes" style="height: 48px;" />
+    </div>
+
+    <div style="background: white; border-radius: 12px; padding: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+      <h2 style="font-size: 20px; font-weight: 700; color: #1a2b4a; margin: 0 0 16px;">Hi ${firstName},</h2>
+
+      <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 16px;">
+        ${ownerLabel} has closed the IdoYourQuotes account for
+        <strong>${params.orgName}</strong>, which is the team you had access to.
+      </p>
+
+      <div style="background: #f8fafc; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+        <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #475569; line-height: 1.8;">
+          <li>Your team login no longer works</li>
+          <li>All quotes, documents and uploaded files belonging to this team have been permanently deleted</li>
+          <li>If you'd like to keep using IdoYourQuotes for your own work, you can sign up for a fresh account at any time</li>
+        </ul>
+      </div>
+
+      <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 16px;">
+        You can start a new account at
+        <a href="${APP_URL}" style="color: #0d9488; text-decoration: none; font-weight: 600;">idoyourquotes.com</a>.
+      </p>
+
+      <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0;">
+        If you think this happened by mistake, please contact your team owner directly — IdoYourQuotes can't restore a deleted account.
+      </p>
+    </div>
+
+    <div style="text-align: center; margin-top: 24px;">
+      <p style="font-size: 11px; color: #94a3b8;">
+        IdoYourQuotes · Helping tradespeople quote smarter
+      </p>
+    </div>
+  </div>
+</body>
+</html>`,
+    });
+
+    if (error) {
+      console.error('[Email] Org closed send failed:', error);
+      return false;
+    }
+
+    console.log(`[Email] Org closed email sent to ${params.to}`);
+    return true;
+  } catch (err) {
+    console.error('[Email] Org closed send error:', err);
+    return false;
+  }
+}
+
+/**
  * Send exit survey notification to support
  */
 export async function sendExitSurveyToSupport(params: {

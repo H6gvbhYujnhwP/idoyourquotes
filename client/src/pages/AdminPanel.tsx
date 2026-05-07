@@ -196,13 +196,13 @@ function OrgList({ onSelectOrg }: { onSelectOrg: (id: number) => void }) {
           <div style={{ display: "flex", gap: 8 }}>
             <button
               onClick={() => deleteUserMut.mutate({ userId: deletingUser.userId, orgId: deletingUser.orgId, hardDelete: hardDeleteUser })}
-              disabled={deleteUserMut.isLoading}
+              disabled={deleteUserMut.isPending}
               style={{
                 padding: "8px 16px", borderRadius: 6, border: "none",
                 background: "#dc2626", color: "white", cursor: "pointer",
                 fontSize: 13, fontWeight: 600,
               }}
-            >{deleteUserMut.isLoading ? "Deleting..." : "Delete User"}</button>
+            >{deleteUserMut.isPending ? "Deleting..." : "Delete User"}</button>
             <button
               onClick={() => { setDeletingUser(null); setHardDeleteUser(false); }}
               style={{
@@ -603,7 +603,7 @@ function OrgDetail({ orgId, onBack }: { orgId: number; onBack: () => void }) {
                 />
                 <button
                   onClick={() => resetPasswordMut.mutate({ userId: resetUserId, newPassword })}
-                  disabled={newPassword.length < 8 || resetPasswordMut.isLoading}
+                  disabled={newPassword.length < 8 || resetPasswordMut.isPending}
                   style={{
                     padding: "8px 16px", borderRadius: 6, border: "none",
                     background: newPassword.length >= 8 ? brand.navy : "#d1d5db",
@@ -649,7 +649,7 @@ function OrgDetail({ orgId, onBack }: { orgId: number; onBack: () => void }) {
                     const endOfDay = new Date(trialDate + "T23:59:59.000Z");
                     updateTrialMut.mutate({ orgId: org.id, trialEndsAt: endOfDay.toISOString() });
                   }}
-                  disabled={!trialDate || updateTrialMut.isLoading}
+                  disabled={!trialDate || updateTrialMut.isPending}
                   style={{
                     padding: "8px 16px", borderRadius: 6, border: "none",
                     background: trialDate ? brand.teal : "#d1d5db",
@@ -685,7 +685,7 @@ function OrgDetail({ orgId, onBack }: { orgId: number; onBack: () => void }) {
                     if (isNaN(val) || val < 0) return;
                     updateQuotaMut.mutate({ orgId: org.id, maxQuotesPerMonth: val });
                   }}
-                  disabled={!quotaValue || isNaN(parseInt(quotaValue)) || updateQuotaMut.isLoading}
+                  disabled={!quotaValue || isNaN(parseInt(quotaValue)) || updateQuotaMut.isPending}
                   style={{
                     padding: "8px 16px", borderRadius: 6, border: "none",
                     background: quotaValue && !isNaN(parseInt(quotaValue)) ? brand.teal : "#d1d5db",
@@ -722,7 +722,7 @@ function OrgDetail({ orgId, onBack }: { orgId: number; onBack: () => void }) {
                     if (!tierValue) return;
                     setTierMut.mutate({ orgId: org.id, tier: tierValue as any });
                   }}
-                  disabled={!tierValue || setTierMut.isLoading}
+                  disabled={!tierValue || setTierMut.isPending}
                   style={{
                     padding: "8px 16px", borderRadius: 6, border: "none",
                     background: tierValue ? brand.teal : "#d1d5db",
@@ -796,14 +796,14 @@ function OrgDetail({ orgId, onBack }: { orgId: number; onBack: () => void }) {
                       if (deleteConfirm !== "DELETE") return;
                       deleteOrgMut.mutate({ orgId: org.id, hardDeleteUsers });
                     }}
-                    disabled={deleteConfirm !== "DELETE" || deleteOrgMut.isLoading}
+                    disabled={deleteConfirm !== "DELETE" || deleteOrgMut.isPending}
                     style={{
                       flex: 1, padding: "10px 16px", borderRadius: 6, border: "none",
                       background: deleteConfirm === "DELETE" ? "#dc2626" : "#d1d5db",
                       color: "white", cursor: deleteConfirm === "DELETE" ? "pointer" : "default",
                       fontSize: 13, fontWeight: 700,
                     }}
-                  >{deleteOrgMut.isLoading ? "Deleting..." : "Permanently Delete Organisation"}</button>
+                  >{deleteOrgMut.isPending ? "Deleting..." : "Permanently Delete Organisation"}</button>
                   <button
                     onClick={() => { setShowDelete(false); setDeleteConfirm(""); setHardDeleteUsers(false); }}
                     style={{

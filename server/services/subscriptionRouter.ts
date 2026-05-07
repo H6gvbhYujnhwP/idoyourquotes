@@ -28,8 +28,8 @@ import {
   listPaidInvoices,
   type SubscriptionTier,
 } from "./stripe";
-import { getUserPrimaryOrg, getOrgMembersByOrgId, getUserByEmail, addOrgMember, getDb, updateOrganization, deleteAllOrgData } from "../db";
-import { sendLimitWarningEmail, sendTierChangeEmail, sendCancellationEmail, sendAccountDeletedEmail, sendExitSurveyToSupport, sendTeamInviteEmail } from "./emailService";
+import { getUserPrimaryOrg, getOrgMembersByOrgId, getUserByEmail, getUserById, addOrgMember, getDb, updateOrganization, deleteAllOrgData } from "../db";
+import { sendLimitWarningEmail, sendTierChangeEmail, sendCancellationEmail, sendAccountDeletedEmail, sendExitSurveyToSupport, sendTeamInviteEmail, sendOrgClosedEmail } from "./emailService";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
@@ -907,12 +907,23 @@ export const subscriptionRouter = router({
       }
 
       // 4. Delete org members
+      //
+      // Pre-launch Hardening P1 (May 2026): capture every member's user ID
+      // BEFORE we wipe the roster — we need to deactivate each of them and
+      // email each non-owner that the team was closed. Previously only the
+      // owner was deactivated, leaving other team members able to log in
+      // but landing on a cryptic "No organisation found" error.
+      const memberUserIds: number[] = members
+        .map(m => Number(m.userId))
+        .filter(id => Number.isFinite(id));
+      const nonOwnerUserIds: number[] = memberUserIds.filter(id => id !== ctx.user.id);
+
       const db = await getDb();
       if (db) {
         const { orgMembers } = await import("../../drizzle/schema");
         const { eq } = await import("drizzle-orm");
         await db.delete(orgMembers).where(eq(orgMembers.orgId, org.id));
-        console.log(`[DeleteAccount] Org members deleted`);
+        console.log(`[DeleteAccount] Org members deleted (${memberUserIds.length} captured for deactivation)`);
       }
 
       // 5. Soft-delete the org (mark inactive but preserve for anti-gaming domain check)
@@ -927,19 +938,50 @@ export const subscriptionRouter = router({
       } as any);
       console.log(`[DeleteAccount] Org ${org.id} soft-deleted`);
 
-      // 6. Deactivate the user account
-      if (db) {
+      // 6. Deactivate every member of the team — owner AND non-owners.
+      //
+      // Pre-launch Hardening P1 (May 2026): previously only ctx.user (the
+      // owner) was deactivated, which orphaned Team-tier members. Now we
+      // deactivate the whole roster captured in step 4.
+      if (db && memberUserIds.length > 0) {
         const { users } = await import("../../drizzle/schema");
-        const { eq } = await import("drizzle-orm");
-        await db.update(users).set({ isActive: false } as any).where(eq(users.id, ctx.user.id));
-        console.log(`[DeleteAccount] User ${ctx.user.id} deactivated`);
+        const { inArray } = await import("drizzle-orm");
+        await db.update(users)
+          .set({ isActive: false } as any)
+          .where(inArray(users.id, memberUserIds as any));
+        console.log(`[DeleteAccount] Deactivated ${memberUserIds.length} user accounts (owner + ${nonOwnerUserIds.length} team members)`);
       }
 
-      // 7. Send goodbye email to user (async)
+      // 7. Send goodbye email to the owner (async)
       sendAccountDeletedEmail({
         to: ctx.user.email,
         name: ctx.user.name || undefined,
       }).catch(err => console.error(`[DeleteAccount] Goodbye email failed:`, err));
+
+      // 7b. Send "team closed" email to each non-owner team member (async).
+      //
+      // Pre-launch Hardening P1 (May 2026): each remaining team member is
+      // told the team was closed by the owner so they don't try to log in
+      // and hit a cryptic error. We use the org's display name from before
+      // the [DELETED] prefix was applied above.
+      if (nonOwnerUserIds.length > 0) {
+        const closedOrgDisplayName: string = (org as any).companyName || org.name || 'your team';
+        const ownerDisplayName: string | undefined = ctx.user.name || undefined;
+        for (const memberId of nonOwnerUserIds) {
+          getUserById(memberId)
+            .then(memberUser => {
+              if (!memberUser?.email) return;
+              return sendOrgClosedEmail({
+                to: memberUser.email,
+                name: memberUser.name || undefined,
+                ownerName: ownerDisplayName,
+                orgName: closedOrgDisplayName,
+              });
+            })
+            .catch(err => console.error(`[DeleteAccount] Org-closed email failed for user ${memberId}:`, err));
+        }
+        console.log(`[DeleteAccount] Queued ${nonOwnerUserIds.length} org-closed emails`);
+      }
 
       // 8. Send exit survey to support (async)
       if (input.exitReason) {
