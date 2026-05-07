@@ -137,8 +137,8 @@ class SDKServer {
   /**
    * Register a new user
    */
-  async register(email: string, password: string, name?: string, companyName?: string, defaultTradeSector?: string): Promise<{ user: User; token: string } | null> {
-    const user = await db.createUser(email, password, name, companyName, defaultTradeSector);
+  async register(email: string, password: string, name?: string, companyName?: string, defaultTradeSector?: string, skipTrial?: boolean): Promise<{ user: User; token: string } | null> {
+    const user = await db.createUser(email, password, name, companyName, defaultTradeSector, skipTrial);
     if (!user) {
       return null; // User already exists
     }

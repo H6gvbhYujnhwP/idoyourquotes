@@ -91,8 +91,19 @@ export default function Register() {
         return;
       }
 
-      // Redirect to dashboard on success
-      window.location.href = "/dashboard";
+      // Redirect on success.
+      //
+      // Pre-launch Hardening (May 2026): when the API returns noTrial=true,
+      // the new org skipped the free trial because the business domain had
+      // been used previously. Sending them straight to /pricing with a flag
+      // is friendlier than dropping them on an empty dashboard with a red
+      // "Trial expired" banner. The Pricing page reads the URL flag and
+      // shows the one-line explanation.
+      if (data.noTrial) {
+        window.location.href = "/pricing?trial=skipped";
+      } else {
+        window.location.href = "/dashboard";
+      }
     } catch (err) {
       setError("An error occurred. Please try again.");
       setLoading(false);

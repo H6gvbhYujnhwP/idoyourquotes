@@ -357,10 +357,28 @@ export default function Pricing() {
     createCheckout.mutate({ tier: newSubTier });
   };
 
+  // Pre-launch Hardening (May 2026): when the user lands here from /register
+  // with ?trial=skipped, their business domain had been used for a previous
+  // trial, so the new org started with no free trial. Show a one-line banner
+  // explaining why they're on the pricing page rather than the dashboard.
+  const trialWasSkipped = typeof window !== "undefined"
+    && new URLSearchParams(window.location.search).get("trial") === "skipped";
+
   return (
     <div className="min-h-screen bg-white text-gray-900 font-sans antialiased">
       {/* Header — matches Home/Login/Register Manus styling */}
       <PublicHeader currentPage="pricing" />
+
+      {trialWasSkipped && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-3">
+          <div className="max-w-7xl mx-auto flex items-start gap-3">
+            <div className="text-amber-600 font-bold text-lg leading-none mt-0.5">!</div>
+            <div className="text-sm text-amber-900">
+              <strong>Welcome — your account is ready.</strong> Your business domain has previously trialled IdoYourQuotes, so this account starts without a free trial. Choose a plan below to begin quoting.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Hero band */}
       <section className="pub-hero-band text-white py-16 md:py-20 relative overflow-hidden">

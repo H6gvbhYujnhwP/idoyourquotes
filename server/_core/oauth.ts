@@ -15,9 +15,39 @@ const FREE_EMAIL_PROVIDERS = new Set([
 ]);
 
 /**
- * Check if an email domain already has a trial account
- * For business domains: one trial per domain (prevents john@company, jane@company)
- * For free email providers: no domain restriction (each person is different)
+ * Domains in the ANTI_GAMING_BYPASS_DOMAINS env var get a fresh trial
+ * every time, regardless of whether the domain has been seen before.
+ *
+ * Comma-separated list, e.g. "thegreenagents.co.uk,sweetbyte.co.uk".
+ * Set this in Render's environment for any domain you (the platform
+ * owner) use for testing the signup / trial flow.
+ *
+ * Empty / unset env var => no bypass, normal anti-gaming for every
+ * business domain.
+ */
+function getAntiGamingBypassDomains(): Set<string> {
+  const raw = process.env.ANTI_GAMING_BYPASS_DOMAINS;
+  if (!raw) return new Set();
+  return new Set(
+    raw.split(',').map(d => d.trim().toLowerCase()).filter(d => d.length > 0)
+  );
+}
+
+/**
+ * Check if an email domain already has a trial account.
+ *
+ * For business domains: previously we returned true and the register
+ * endpoint hard-rejected the signup. Now we still return true so the
+ * caller knows the domain has been used, but the register endpoint
+ * uses that signal to skip the free trial rather than reject — the
+ * user can still register, they just go straight to "must subscribe"
+ * with no trial period (trialEndsAt set to registration moment).
+ *
+ * For free email providers: no domain restriction (each gmail address
+ * is treated as its own business — trial-per-address).
+ *
+ * For domains listed in ANTI_GAMING_BYPASS_DOMAINS: always returns
+ * false so the caller grants a fresh 14-day trial (testing override).
  */
 async function isDomainTrialUsed(email: string): Promise<boolean> {
   const domain = email.toLowerCase().split('@')[1];
@@ -25,6 +55,13 @@ async function isDomainTrialUsed(email: string): Promise<boolean> {
 
   // Free email providers — skip domain check (allow multiple gmail signups etc.)
   if (FREE_EMAIL_PROVIDERS.has(domain)) return false;
+
+  // Owner-configured bypass list — always treat as fresh
+  const bypass = getAntiGamingBypassDomains();
+  if (bypass.has(domain)) {
+    console.log(`[Auth] Domain ${domain} is on ANTI_GAMING_BYPASS_DOMAINS — granting fresh trial`);
+    return false;
+  }
 
   const db = await getDb();
   if (!db) return false;
@@ -104,22 +141,30 @@ export function registerOAuthRoutes(app: Express) {
       return;
     }
 
-    // Anti-gaming: Check if business domain already has a trial
+    // Anti-gaming: check whether this business domain has been used before.
+    //
+    // Previous behaviour: hard-rejected signup with 409.
+    // New behaviour: still register, but skip the free trial — the new
+    // org's trialEndsAt is set to the registration moment, so the user
+    // lands on the "Trial expired — choose a plan" UX immediately.
+    //
+    // Free email providers (gmail etc.) and bypass-list domains return
+    // false here, so they get a fresh 14-day trial as normal.
+    let skipTrial = false;
     try {
-      const domainUsed = await isDomainTrialUsed(email);
-      if (domainUsed) {
-        res.status(409).json({ 
-          error: "An account from your organisation already exists. Ask your team admin to invite you instead." 
-        });
-        return;
+      skipTrial = await isDomainTrialUsed(email);
+      if (skipTrial) {
+        console.log(`[Auth] Domain previously used for ${email} — registering without free trial`);
       }
     } catch (err) {
-      console.error("[Auth] Domain check failed, proceeding:", err);
-      // Don't block registration if check fails
+      console.error("[Auth] Domain check failed, granting trial:", err);
+      // Don't block registration if check fails — better to over-grant a trial
+      // than to under-grant and reject a legitimate user.
+      skipTrial = false;
     }
 
     try {
-      const result = await sdk.register(email, password, name, companyName.trim(), defaultTradeSector);
+      const result = await sdk.register(email, password, name, companyName.trim(), defaultTradeSector, skipTrial);
       
       if (!result) {
         res.status(409).json({ error: "An account with this email already exists" });
@@ -160,6 +205,11 @@ export function registerOAuthRoutes(app: Express) {
           role: result.user.role,
         },
         requiresVerification: true,
+        // True when the new org was registered without a free trial because
+        // the business domain had been used previously. The client uses this
+        // to redirect to /pricing with an explanatory banner instead of
+        // dropping the user on an empty dashboard with a red expired bar.
+        noTrial: skipTrial,
       });
     } catch (error) {
       console.error("[Auth] Registration failed", error);

@@ -88,6 +88,17 @@ export async function createOrganization(data: {
   companyAddress?: string;
   companyPhone?: string;
   companyEmail?: string;
+  // Optional trial-end date. Used by the registration path to either:
+  //   - set a real 14-day trial date for first-time business signups
+  //     (without this, the org's trial_ends_at column is null and the
+  //     isTrialExpired check treats null as "already expired", silently
+  //     blocking the trial that the user thinks they just started)
+  //   - set the registration moment for second-time signups on a
+  //     domain that's been used before, immediately downgrading them
+  //     to "must subscribe" UX.
+  // Other callers (the one-time backfill at line 1170-ish) leave this
+  // undefined which preserves the previous null-default behaviour.
+  trialEndsAt?: Date | null;
 }): Promise<Organization> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -102,7 +113,8 @@ export async function createOrganization(data: {
     companyAddress: data.companyAddress,
     companyPhone: data.companyPhone,
     companyEmail: data.companyEmail,
-  }).returning();
+    trialEndsAt: data.trialEndsAt ?? null,
+  } as any).returning();
 
   return result;
 }
@@ -230,7 +242,7 @@ export async function getUsageByOrgId(orgId: number, limit = 100): Promise<Usage
 
 const SALT_ROUNDS = 12;
 
-export async function createUser(email: string, password: string, name?: string, companyName?: string, defaultTradeSector?: string): Promise<User | null> {
+export async function createUser(email: string, password: string, name?: string, companyName?: string, defaultTradeSector?: string, skipTrial?: boolean): Promise<User | null> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -256,12 +268,38 @@ export async function createUser(email: string, password: string, name?: string,
   // Priority: companyName > name > email prefix
   if (user) {
     const orgName = companyName || name || email.split('@')[0];
+
+    // Trial-end date logic (Pre-launch Hardening, May 2026):
+    //
+    //   - skipTrial=true (this domain has been used before — the
+    //     anti-gaming check matched): set trialEndsAt to right now,
+    //     so the new org is "trial expired" the moment it's created.
+    //     The user lands on the Pricing page via the noTrial flag in
+    //     the register response.
+    //
+    //   - skipTrial=false (genuine first-time signup, or free email
+    //     provider, or domain on the bypass list): give them a real
+    //     14-day trial by setting trialEndsAt to "now + 14 days".
+    //     Previously this column was left null, and isTrialExpired
+    //     treats null as "already expired" — silently blocking the
+    //     trial the user thinks they just started.
+    const trialEndsAt = skipTrial
+      ? new Date()
+      : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+
     const org = await createOrganization({
       name: orgName,
       billingEmail: email.toLowerCase(),
       companyName: companyName || undefined,
+      trialEndsAt,
     });
     await addOrgMember(org.id, user.id, "owner");
+
+    if (skipTrial) {
+      console.log(`[createUser] User ${user.id} registered without free trial (domain previously used) — org ${org.id}`);
+    } else {
+      console.log(`[createUser] User ${user.id} registered with 14-day trial ending ${trialEndsAt.toISOString()} — org ${org.id}`);
+    }
 
     // Seed starter catalog if a template exists for this sector.
     // Fail-safe: wrapped so seeding failures never block registration. The
