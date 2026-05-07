@@ -129,6 +129,15 @@ export async function invokeClaude(params: ClaudeInvokeParams): Promise<ClaudeIn
 // ── PDF Chunking Helpers ──────────────────────────────────────────────
 
 const MAX_PAGES_PER_CHUNK = 10; // ~10 pages keeps us well under 30K tokens
+
+// Phase 4B Delivery E.16 — hard upper bound on total pages, applied
+// at the top of both analyzePdfWithClaude and analyzePdfWithOpenAI.
+// Without this a customer could upload a 1000-page PDF and trigger
+// 100 sequential Claude API calls (~£3) on a single quote input.
+// Mirrors the existing brochure-pipeline page cap for consistency.
+// If a customer needs to process a longer document, they can split
+// it manually or upload sections separately.
+const MAX_TOTAL_PAGES = 30;
 const DELAY_BETWEEN_CHUNKS_MS = 5000; // 5 seconds between API calls
 const RETRY_DELAY_MS = 30000; // 30 seconds on rate limit before retry
 
@@ -264,6 +273,13 @@ export async function analyzePdfWithClaude(
   }
 
   console.log(`[PDF Extract] PDF has ${totalPages} pages`);
+
+  // E.16 — fail fast on oversized PDFs before spending any API time.
+  if (totalPages > MAX_TOTAL_PAGES) {
+    throw new Error(
+      `This PDF has ${totalPages} pages, which exceeds the ${MAX_TOTAL_PAGES}-page limit for AI processing. Please split the document into smaller files (up to ${MAX_TOTAL_PAGES} pages each) and upload them separately.`
+    );
+  }
 
   // Small PDF: send directly (no chunking needed)
   if (totalPages <= MAX_PAGES_PER_CHUNK) {
@@ -584,6 +600,26 @@ export async function analyzePdfWithOpenAI(
 
   const system = systemPrompt ||
     "You are a document analyzer specializing in construction, engineering, and technical documents. Extract all relevant information for quoting purposes.";
+
+  // E.16 — fail fast on oversized PDFs. We do a cheap upfront page
+  // count via pdf-lib (no API call); if it exceeds the cap we reject
+  // before kicking off text extraction, OCR fallback, or any chunked
+  // GPT-4o calls.
+  try {
+    const pdfDoc = await PDFDocument.load(pdfBuffer);
+    const upfrontPageCount = pdfDoc.getPageCount();
+    if (upfrontPageCount > MAX_TOTAL_PAGES) {
+      throw new Error(
+        `This PDF has ${upfrontPageCount} pages, which exceeds the ${MAX_TOTAL_PAGES}-page limit for AI processing. Please split the document into smaller files (up to ${MAX_TOTAL_PAGES} pages each) and upload them separately.`
+      );
+    }
+  } catch (err) {
+    // Re-throw the page-cap error; swallow other load errors and let
+    // the existing extraction pipeline below handle malformed PDFs.
+    if (err instanceof Error && err.message.includes("exceeds the")) {
+      throw err;
+    }
+  }
 
   // Stage 1: pdf-parse v2 (fast, no API call)
   let pdfText = "";

@@ -55,6 +55,21 @@ export function getProxyUrl(key: string): string {
  * @param folder      - Optional folder path (e.g., "quotes/123")
  * @returns Object with key and permanent proxy URL
  */
+/**
+ * Phase 4B Delivery E.16 — central file-size cap.
+ *
+ * Applied at the uploadToR2 helper because it's the single choke
+ * point every upload path passes through (quote inputs, brochure,
+ * logo). 25MB is generous for tender PDFs and brochures while
+ * preventing pathological 50MB JSON-body uploads from saturating
+ * R2 and triggering downstream AI processing on huge buffers.
+ *
+ * The Express body parser is set to 50MB so genuinely large
+ * payloads still arrive at the handler — this cap rejects them
+ * with a friendly error before they reach R2 or AI.
+ */
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25MB
+
 export async function uploadToR2(
   data: Buffer | Uint8Array | string,
   filename: string,
@@ -62,17 +77,27 @@ export async function uploadToR2(
   folder?: string
 ): Promise<{ key: string; url: string }> {
   const client = getS3Client();
-  
+
+  // Convert string to buffer if needed
+  const body = typeof data === "string" ? Buffer.from(data) : data;
+
+  // E.16 size cap. Calculated on the materialised buffer so all input
+  // shapes (Buffer / Uint8Array / string) are checked uniformly.
+  if (body.length > MAX_UPLOAD_BYTES) {
+    const sizeMb = (body.length / (1024 * 1024)).toFixed(1);
+    const capMb = MAX_UPLOAD_BYTES / (1024 * 1024);
+    throw new Error(
+      `File is too large (${sizeMb}MB). The maximum upload size is ${capMb}MB. Please compress the file or split it into smaller pieces.`
+    );
+  }
+
   // Generate unique key with folder structure
   const uniqueId = nanoid(10);
   const sanitizedFilename = filename.replace(/[^a-zA-Z0-9.-]/g, "_");
   const key = folder 
     ? `${folder}/${uniqueId}-${sanitizedFilename}`
     : `${uniqueId}-${sanitizedFilename}`;
-  
-  // Convert string to buffer if needed
-  const body = typeof data === "string" ? Buffer.from(data) : data;
-  
+
   const command = new PutObjectCommand({
     Bucket: R2_BUCKET_NAME,
     Key: key,

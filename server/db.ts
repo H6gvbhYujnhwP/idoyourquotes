@@ -747,9 +747,30 @@ export async function getInputsByQuoteId(quoteId: number): Promise<QuoteInput[]>
     .orderBy(desc(quoteInputs.createdAt));
 }
 
+/**
+ * Phase 4B Delivery E.16 — per-quote upload count cap.
+ *
+ * Applied at the createInput helper so every code path that adds a
+ * file/email/audio/etc. input to a quote inherits the protection.
+ * 20 inputs is generous for a real quote (a tender pack typically
+ * has a handful of supporting docs); the cap exists to prevent
+ * pathological repeat-uploads from triggering unbounded automatic
+ * AI processing.
+ */
+const MAX_INPUTS_PER_QUOTE = 20;
+
 export async function createInput(data: InsertQuoteInput): Promise<QuoteInput> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  // E.16 — count existing inputs and reject if at the cap.
+  // Counted via the existing helper to keep the query path uniform.
+  const existing = await getInputsByQuoteId(data.quoteId);
+  if (existing.length >= MAX_INPUTS_PER_QUOTE) {
+    throw new Error(
+      `This quote already has ${existing.length} files attached, which is the maximum (${MAX_INPUTS_PER_QUOTE}). Please remove some existing files before adding more.`
+    );
+  }
 
   const [result] = await db.insert(quoteInputs).values(data).returning();
   return result;

@@ -309,7 +309,18 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     responseFormat,
     response_format,
     temperature,
+    maxTokens,
+    max_tokens,
   } = params;
+
+  // Phase 4B Delivery E.16 — caller-supplied max_tokens cap.
+  // Previously this function destructured everything EXCEPT maxTokens
+  // and silently hardcoded a very large value (16384 OpenAI, 32768
+  // Anthropic). Callers passing a smaller cap (e.g. the support bot
+  // wanting 600-token replies) had it ignored, exposing us to runaway
+  // cost on prompt-injection-style requests. Now: caller's value wins
+  // when supplied, else the original conservative hardcoded ceiling.
+  const requestedMaxTokens = maxTokens ?? max_tokens;
 
   // Use different model based on API provider
   const model = isUsingOpenAI() ? "gpt-4o" : "gemini-2.5-flash";
@@ -335,13 +346,13 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
 
   // Only add thinking parameter for non-OpenAI APIs
   if (!isUsingOpenAI()) {
-    payload.max_tokens = 32768;
+    payload.max_tokens = requestedMaxTokens ?? 32768;
     payload.thinking = {
       "budget_tokens": 128
     };
   } else {
     // OpenAI uses max_tokens differently
-    payload.max_tokens = 16384;
+    payload.max_tokens = requestedMaxTokens ?? 16384;
   }
 
   const normalizedResponseFormat = normalizeResponseFormat({
