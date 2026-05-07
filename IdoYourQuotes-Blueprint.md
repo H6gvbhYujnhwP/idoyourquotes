@@ -1,8 +1,8 @@
 # IdoYourQuotes - Complete Product Blueprint
 
-**Version:** 2.0  
-**Last Updated:** February 5, 2026  
-**Status:** MVP Complete, Multi-Tenancy Complete, Production Live
+**Version:** 3.2  
+**Last Updated:** May 7, 2026  
+**Status:** MVP Complete, Multi-Tenancy Complete, Production Live, Pre-launch Hardening — P0 Security & Cost Shipped, P1/P2 Pending
 
 ---
 
@@ -912,6 +912,50 @@ All quote operations use `getQuoteWithOrgAccess()` helper:
 
 ## Future Roadmap
 
+### Pre-launch Hardening (May 2026 — block marketing launch on these)
+
+Identified during the deep code audit conducted alongside the customer support bot delivery (E.13). These items are launch-relevant — exposure increases significantly once marketing drives sign-ups.
+
+**Status (May 7, 2026):** Both P0 categories — App Security (E.15) and Cost Protection (E.16) — are now shipped. Remaining work is P1 customer-facing bugs and P2 code hygiene, plus the post-launch bot polish list.
+
+#### App Security (P0) — ✅ SHIPPED in E.15 (May 7, 2026)
+
+- [x] **Add rate limiting to all public endpoints.** Login, register, resend-verification, set-password. Currently no throttling — login brute-force is feasible (8-char passwords with no complexity rules), registration spam is unchecked, resend-verification can be hammered to spam an inbox. Recommended: 5 attempts per 15 minutes per IP with a lockout window after threshold. Express-rate-limit or similar. _Shipped: `express-rate-limit` 7.5.1 added; `authRateLimiter` mounted on `/api/auth/*` in `server/_core/index.ts`. 5 attempts / 15 min per IP, successful logins skipped. `trust proxy = 1` set so Render's X-Forwarded-For resolves correctly._
+- [x] **Require email verification before AI features unlock.** Today, registering logs the user in immediately and grants full 14-day trial of all AI features regardless of verification. Gate AI feature access on `emailVerified=true` so unverified accounts can sign up and see the banner but cannot burn AI credits. Prevents fraud sign-ups (anyone with anyone's email) from costing real money. _Shipped: gate added to `assertAIAccess` helper in `server/routers.ts`. Grandfather cutoff hardcoded at 2026-05-08 UTC — anyone created before is treated as verified. Friendly error directs user to the resend banner._
+- [x] **Tighten password requirements.** Today: minimum 8 characters, no complexity rules. Combined with no rate limiting this is trivially brute-forceable. Bump to minimum 10 characters with at least one number or symbol. Existing weak passwords stay valid; users prompted to update on next login. _Shipped: rules updated in both `register` and `set-password` endpoints in `server/_core/oauth.ts`, plus `Register.tsx` requirement-pill display and `SetPassword.tsx` two-row hint UI._
+- [x] **Per-user AI rate limit.** Even authenticated users can hit AI endpoints as fast as their network allows. Add a soft cap (e.g. 10 AI calls per minute per user) returning a 429 with a friendly retry-after. _Shipped: in-memory sliding window in `server/_core/rateLimit.ts` exposing `assertAIRateLimit(userId)`; called from `assertAIAccess` so every AI-gated endpoint inherits it. 10 requests / 60 seconds per user. Documented as needing Redis migration if Render scales to multi-instance._
+
+#### Cost Protection (P0) — ✅ SHIPPED in E.16 (May 7, 2026)
+
+- [x] **Cap PDF page count on quote uploads.** Currently no upper limit — a 200-page PDF triggers ~20 sequential AI calls (~£0.60 per upload), a 1,000-page PDF would trigger ~100 calls (~£3). The brochure feature has a 30-page cap; quote evidence has none. Apply the same 30-page cap with a clear "split this document" error. _Shipped: `MAX_TOTAL_PAGES = 30` constant in `server/_core/claude.ts`, enforced upfront in both `analyzePdfWithClaude` and `analyzePdfWithOpenAI` before any API spend._
+- [x] **Cap file size on quote uploads.** Currently relies only on Express's 50MB JSON body cap. Add explicit per-handler check (e.g. 25MB) that returns a friendly error instead of a generic Express failure. _Shipped: `MAX_UPLOAD_BYTES = 25MB` in `server/r2Storage.ts`, applied at the `uploadToR2` choke point. Inherited by every upload path (quote inputs, brochure, logo)._
+- [x] **Cap upload count per quote.** No per-quote limit on number of inputs. A single quote could accumulate hundreds of files, each triggering automatic AI processing on upload. Recommended: 20 inputs per quote with a "this quote has too many files" message. _Shipped: `MAX_INPUTS_PER_QUOTE = 20` in `server/db.ts`, enforced inside `createInput` so every input-creation path inherits it._
+- [x] **Honour the support bot's reply length cap.** The bot's `max_tokens: 600` parameter is silently ignored because the underlying `invokeLLM` helper hardcodes `max_tokens` to 16384. One-line fix in `server/_core/llm.ts` to destructure and respect the parameter (other callers don't currently pass it, so they're unaffected). _Shipped: `invokeLLM` now destructures `maxTokens` / `max_tokens` and uses caller-supplied value with the existing conservative ceilings as fallback._
+
+#### Customer-facing bugs (P1)
+
+- [ ] **Stop orphaning team members when the Team owner deletes their account.** Today: deletion removes all team-member rows from the org but only deactivates the owner's user record. Other team members can still log in but the app finds no organisation for them and they hit cryptic "No organisation found" errors. Fix: deactivate all team members too AND send each one an email explaining the org was closed.
+- [ ] **Fix invite flow for users who already have a personal org.** When an existing user (who signed up themselves at some point) is invited to a Team, the new membership is recorded but `getUserPrimaryOrg` returns the older personal org. They log in, see their old org's data, and never see the team's. The invite silently fails from their perspective. Fix: prompt invited users on next login to pick which org to view, or auto-switch them to the most recently-joined org.
+- [ ] **Disable admin destructive buttons during request.** AdminPanel mutation buttons (Delete User, Reset Password, Extend Trial, Set Tier, etc.) read `isLoading` from tRPC mutations — that field doesn't exist on tRPC v10+, only `isPending` does. So these buttons never visually disable mid-request and double-clicks fire the action twice. Particularly concerning for Delete User. Sweep all admin mutation buttons and rename `isLoading → isPending`.
+- [ ] **Fix the missing phone field on PDF generator.** `server/pdfGenerator.ts:1544` references `user.phone` which doesn't exist on the User type — the actual field is `user.companyPhone`. Quote PDFs may be silently missing the customer's phone in one location. Pre-existing baseline TS error; worth investigating on a recent quote PDF before launch.
+
+#### Code Hygiene (P2)
+
+- [ ] **Remove the duplicate `server/index.ts`.** Two near-identical entry-point files exist: `server/index.ts` and `server/_core/index.ts`. Only the second one runs (per `package.json` scripts). The first is dead code that someone could waste time editing. Delete it.
+- [ ] **Heal the dual-schema drift between `shared/schema.ts` and `drizzle/schema.ts`.** Per the dual-schema rule, both files should be identical. They have drifted in places — `drizzle/schema.ts` is missing several columns and enums that exist in `shared/schema.ts`. Doesn't break anything today (the runtime DB matches `shared/schema.ts`) but a Drizzle-kit operation could behave unexpectedly. One-time clean-up.
+- [ ] **Backfill 168 historical NULL `tradePreset` rows.** Pre-existing data hygiene from earlier deliveries.
+- [ ] **Drop the dormant `proposal_orientation` column.** Pre-existing — the column was retired in E.4 (revised) but never dropped from the database.
+- [ ] **Fix the EmailScheduler SQL syntax error.** Pre-existing — flagged in earlier session handovers.
+
+#### Bot polish (after security & cost ship)
+
+These came out of the post-launch bot review. Lower priority because the bot is functional.
+
+- [ ] **Add a "Retry" button to the support drawer's startup error banner.** If the initial `startThread` call fails, the chat input stays disabled forever — user has no in-app recovery path beyond closing the drawer and reopening.
+- [ ] **Pop the optimistic user echo when a `sendMessage` call errors.** When a user hits the daily message cap, they see their question on screen with no reply and just an error toast — looks like the bot ghosted them rather than that they hit a limit.
+- [ ] **Remove dead `refetch` in admin Conversations list.** Cosmetic — destructured but never called.
+- [ ] **Update stale comment in `smtpMailer.ts` docblock.** Mentions the old `support@idoyourquotes.com` address before the alias swap.
+
 ### Q1 2026 - Team Features
 
 - [ ] Team invitation flow (email invite, accept/decline)
@@ -962,6 +1006,8 @@ All quote operations use `getQuoteWithOrgAccess()` helper:
 | 1.0 | Feb 4, 2026 | Initial comprehensive blueprint |
 | 2.0 | Feb 5, 2026 | Updated with: PostgreSQL migration, Claude Vision integration, Word/Excel parsing, brand color extraction, quote deletion with file cleanup, real-time status polling, sign out redirect fix, YouTube video embed, 114 tests |
 | 3.0 | May 7, 2026 | Phase 4 documented complete: Branded Proposal pipeline (Tile 3), multi-tag brochure classification, branding tab consolidation, brochure scale-to-fit, branded PDF filename convention, Buy-in Cost / Profit columns on workspace and dashboard, catalog cost auto-fill, catalogue tailoring nudge. Customer Service Bot added to Future Phases / Future Roadmap as the next major theme alongside Q2 Pricing & Billing. |
+| 3.1 | May 7, 2026 | Customer support bot shipped (E.13) with conversation memory across navigation (E.14). Pre-launch hardening section added to Future Roadmap covering 4 priority categories: App Security (rate limiting, email-verification gating, password complexity, AI rate limit), Cost Protection (PDF page caps, file size caps, upload count caps, bot reply length cap), Customer-facing bugs (team-member orphaning on owner deletion, broken invite flow for users with existing orgs, admin button isPending fix, PDF phone-field reference), and Code Hygiene. Identified during deep code audit. Items marked P0 are launch-blockers. |
+| 3.2 | May 7, 2026 | Pre-launch Hardening P0 work shipped: E.15 App Security (express-rate-limit on /api/auth/* with 5/15min IP throttling, per-user AI rate limit at 10/60s wired into assertAIAccess, email-verification gate on AI features with 2026-05-08 grandfather cutoff, password rules bumped to 10 chars + number/symbol on register and set-password); E.16 Cost Protection (PDF page cap at 30 in both Claude and OpenAI analysis paths, 25MB file size cap centralised at uploadToR2, 20-input cap per quote enforced in createInput, invokeLLM now honours caller-supplied max_tokens). TS baseline holds at 81. P1 customer-facing bugs and P2 hygiene remain. |
 
 ---
 
