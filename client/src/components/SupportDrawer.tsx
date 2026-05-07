@@ -1,15 +1,18 @@
 /**
- * SupportDrawer — Phase 4B Delivery E.13.
+ * SupportDrawer — Phase 4B Delivery E.13 (E.14 memory enhancement).
  *
  * Right-side Sheet (shadcn) that houses the support chat. Uses the
  * existing AIChatBox primitive for the message list + input. Around
  * it, this drawer:
  *
- *   - Starts a thread on first open of a session and persists the
- *     threadId in component state. Re-opening the drawer in the same
- *     page session resumes the thread; navigating to a new page
- *     starts a fresh one (intentional — keeps threads page-scoped so
- *     transcripts in the back-office show what page the user was on).
+ *   - Conversation memory across navigation. The active thread id is
+ *     stored in localStorage keyed by user id with a 24-hour expiry.
+ *     On drawer open, if a stored thread exists for the current user
+ *     and is still 'open' or 'escalated' (resolved threads start
+ *     fresh), the messages are hydrated from the server and the
+ *     conversation continues. Otherwise a new thread is created.
+ *     This means navigating between pages — or even refreshing the
+ *     browser — keeps the customer's conversation continuous.
  *
  *   - Fires support.sendMessage on each user submit; appends both the
  *     user echo and the assistant reply to the local list. Disables
@@ -39,6 +42,7 @@ import { Loader2, Send, Sparkles, ThumbsUp, Mail, Check } from "lucide-react";
 import { Streamdown } from "streamdown";
 import { brand } from "@/lib/brandTheme";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import SupportEscalationModal from "./SupportEscalationModal";
 
 const SUGGESTED_PROMPTS = [
@@ -47,6 +51,61 @@ const SUGGESTED_PROMPTS = [
   "What does the Profit column mean?",
   "How do I tailor my starter catalogue?",
 ];
+
+// ─── Conversation memory across navigation (E.14) ────────────────
+//
+// We persist the active thread id in localStorage so navigating between
+// pages — or refreshing the browser — keeps the conversation. Bumped
+// (v2) suffix on the key if the storage shape ever changes so old
+// values are ignored cleanly.
+
+const STORAGE_KEY = "idyq.support.thread.v1";
+const MAX_RESUME_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+type StoredThread = {
+  threadId: number;
+  userId: number;
+  storedAt: number;
+};
+
+function readStoredThread(currentUserId: number | undefined): number | null {
+  if (typeof window === "undefined" || currentUserId === undefined) return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredThread;
+    // Different user signed in on this browser — don't resume their thread
+    if (parsed.userId !== currentUserId) return null;
+    // Older than the cutoff — don't resume; a fresh thread feels right
+    if (Date.now() - parsed.storedAt > MAX_RESUME_AGE_MS) return null;
+    if (typeof parsed.threadId !== "number") return null;
+    return parsed.threadId;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredThread(threadId: number, userId: number) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ threadId, userId, storedAt: Date.now() } as StoredThread),
+    );
+  } catch {
+    // localStorage might be full / disabled / private mode — quietly fall
+    // through. Worst case the next open starts a fresh thread.
+  }
+}
+
+function clearStoredThread() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
 
 type LocalMessage = {
   id: number; // server id once persisted; -1 for the optimistic user echo
@@ -64,11 +123,18 @@ export default function SupportDrawer({
 }) {
   const [location] = useLocation();
   const utils = trpc.useUtils();
+  const { user } = useAuth();
+  const userId = (user as { id?: number } | null | undefined)?.id;
 
   const [threadId, setThreadId] = useState<number | null>(null);
   const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  // Distinct from `sending` — true while we're either resuming a stored
+  // thread or starting a fresh one. Used to gate the empty-state and
+  // prevent the suggested-prompts panel from briefly flashing before a
+  // resumed conversation hydrates.
+  const [resuming, setResuming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [remainingToday, setRemainingToday] = useState<number | null>(null);
   const [escalateOpen, setEscalateOpen] = useState(false);
@@ -78,25 +144,70 @@ export default function SupportDrawer({
   const sendMessageMut = trpc.support.sendMessage.useMutation();
   const markHelpfulMut = trpc.support.markHelpful.useMutation();
 
-  // Start a thread on first open of this drawer instance. Persist the
-  // id in component state for the lifetime of the drawer (closing
-  // and re-opening keeps the same thread; a hard nav resets it).
+  // On drawer open, try to resume a stored thread first; if anything
+  // goes wrong (no stored id, expired, deleted on the server, or
+  // resolved by an admin), start a fresh thread.
   useEffect(() => {
     if (!open || threadId !== null) return;
     let cancelled = false;
-    startThreadMut.mutate(
-      { startPagePath: location || undefined },
-      {
-        onSuccess: (data) => {
-          if (cancelled) return;
-          setThreadId(data.threadId);
+    setError(null);
+    setResuming(true);
+
+    const startNew = () => {
+      startThreadMut.mutate(
+        { startPagePath: location || undefined },
+        {
+          onSuccess: (data) => {
+            if (cancelled) return;
+            setThreadId(data.threadId);
+            if (userId !== undefined) writeStoredThread(data.threadId, userId);
+            setResuming(false);
+          },
+          onError: (err) => {
+            if (cancelled) return;
+            setError(err.message || "Couldn't start the support session.");
+            setResuming(false);
+          },
         },
-        onError: (err) => {
+      );
+    };
+
+    const stored = readStoredThread(userId);
+    if (stored === null) {
+      startNew();
+    } else {
+      // Try to resume
+      utils.support.getThread
+        .fetch({ threadId: stored })
+        .then((data) => {
           if (cancelled) return;
-          setError(err.message || "Couldn't start the support session.");
-        },
-      },
-    );
+          // Resolved threads are closed by an admin — start fresh.
+          // Open and escalated threads continue the conversation.
+          if (data.thread.status === "resolved") {
+            clearStoredThread();
+            startNew();
+            return;
+          }
+          const hydrated: LocalMessage[] = data.messages.map(
+            (m: { id: number; role: string; content: string; helpful: boolean | null }) => ({
+              id: m.id,
+              role: m.role as "user" | "assistant",
+              content: m.content,
+              helpful: m.helpful ?? null,
+            }),
+          );
+          setMessages(hydrated);
+          setThreadId(data.thread.id);
+          setResuming(false);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          // Thread no longer exists / not accessible — clear and start fresh
+          clearStoredThread();
+          startNew();
+        });
+    }
+
     return () => {
       cancelled = true;
     };
@@ -219,7 +330,15 @@ export default function SupportDrawer({
 
           {/* Body — message list */}
           <div className="flex-1 overflow-hidden" ref={scrollRef}>
-            {messages.length === 0 ? (
+            {resuming && messages.length === 0 ? (
+              <div
+                className="flex h-full items-center justify-center gap-2 text-sm"
+                style={{ color: brand.navyMuted }}
+              >
+                <Loader2 size={14} className="animate-spin" />
+                Catching up where we left off…
+              </div>
+            ) : messages.length === 0 ? (
               <EmptyState
                 onPick={(q) => handleSend(q)}
                 disabled={!threadId || sending}
