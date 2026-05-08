@@ -12,7 +12,7 @@
  *   startEmailScheduler();
  */
 import { getDb } from "../db";
-import { sendCheckInEmail, sendTrialExpiryReminder } from "./emailService";
+import { sendCheckInEmail, sendTrialExpiryReminder, sendTrialEndedEmail } from "./emailService";
 
 const ONE_HOUR = 60 * 60 * 1000;
 
@@ -141,6 +141,35 @@ async function processScheduledEmails(): Promise<void> {
         if (sent) {
           emailFlags.trialReminderSent = new Date().toISOString();
           flagsChanged = true;
+        }
+      }
+
+      // E.22 (May 2026) — Day 14 trial-ended email.
+      //
+      // Fires once the trial window has actually elapsed. We trigger off
+      // trialEndsAt rather than daysSinceStart so the email tracks the
+      // real end timestamp (which the E.18 trial-fix now sets correctly
+      // for first-time signups). The 48-hour window after expiry gives
+      // the hourly scheduler two cycles of opportunity to fire — single
+      // missed tick during a deploy or Resend hiccup won't drop the
+      // email entirely. Deduped via emailFlags.trialEndedSent.
+      //
+      // Skipped for zero-length-trial orgs by the guard at the top of
+      // this loop (orgs created via the E.18 "domain previously used"
+      // path already `continue` before reaching here).
+      if (trialEnd && !emailFlags.trialEndedSent) {
+        const msSinceEnd = Date.now() - trialEnd.getTime();
+        const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
+        if (msSinceEnd >= 0 && msSinceEnd <= FORTY_EIGHT_HOURS_MS) {
+          console.log(`[EmailScheduler] Sending trial-ended email to ${owner.email}`);
+          const sent = await sendTrialEndedEmail({
+            to: owner.email,
+            name: owner.name || undefined,
+          });
+          if (sent) {
+            emailFlags.trialEndedSent = new Date().toISOString();
+            flagsChanged = true;
+          }
         }
       }
 

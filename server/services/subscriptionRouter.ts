@@ -237,6 +237,20 @@ export const subscriptionRouter = router({
         throw new Error(`Cannot upgrade from ${currentTier} to ${input.newTier} — this is not an upgrade.`);
       }
 
+      // E.22 (May 2026) — write the tier-change dedupe marker BEFORE
+      // calling Stripe. The customer.subscription.updated webhook in
+      // server/services/stripe.ts reads this marker when it sees a tier
+      // delta and skips its own (now-redundant) tier-change email if the
+      // marker is fresh (<5 min). Setting it BEFORE the Stripe call
+      // (rather than after firing the email below) ensures the webhook
+      // — which can fire any time after Stripe receives the change —
+      // never sees a missing marker for an in-app initiated change.
+      const dayWorkRatesUpgrade = ((org as any).defaultDayWorkRates || {}) as Record<string, any>;
+      const emailFlagsUpgrade = dayWorkRatesUpgrade._emailFlags || {};
+      const updatedFlagsUpgrade = { ...emailFlagsUpgrade, tierChangeNotifiedAt: new Date().toISOString() };
+      const updatedRatesUpgrade = { ...dayWorkRatesUpgrade, _emailFlags: updatedFlagsUpgrade };
+      await updateOrganization(org.id, { defaultDayWorkRates: updatedRatesUpgrade } as any);
+
       // Perform the upgrade: full charge now, billing anchor unchanged, proration_behavior: 'none'
       const { chargedAmountPence, nextBillingDate } = await changeSubscriptionTier({
         stripeSubscriptionId,
@@ -297,6 +311,15 @@ export const subscriptionRouter = router({
       if (getTierRank(input.newTier) >= getTierRank(currentTier)) {
         throw new Error(`Cannot downgrade from ${currentTier} to ${input.newTier} — use upgrade instead.`);
       }
+
+      // E.22 (May 2026) — write the tier-change dedupe marker BEFORE
+      // calling Stripe. See the upgradeSubscription mutation above for
+      // the full reasoning; same pattern, same _emailFlags blob.
+      const dayWorkRatesDowngrade = ((org as any).defaultDayWorkRates || {}) as Record<string, any>;
+      const emailFlagsDowngrade = dayWorkRatesDowngrade._emailFlags || {};
+      const updatedFlagsDowngrade = { ...emailFlagsDowngrade, tierChangeNotifiedAt: new Date().toISOString() };
+      const updatedRatesDowngrade = { ...dayWorkRatesDowngrade, _emailFlags: updatedFlagsDowngrade };
+      await updateOrganization(org.id, { defaultDayWorkRates: updatedRatesDowngrade } as any);
 
       // Perform the downgrade: moves to new price at next billing period, no charge now.
       // changeSubscriptionTier handles the downgrade path (proration_behavior: none).

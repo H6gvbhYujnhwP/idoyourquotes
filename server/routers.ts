@@ -588,7 +588,14 @@ export const appRouter = router({
                   suggestedTierPrice: suggestion?.price,
                   newLimit: suggestion?.newLimit,
                   isHardLimit,
-                }).then(() => {
+                }).then((sent) => {
+                  // E.22 — only mark flag on a confirmed successful send.
+                  // Previously the flag was written unconditionally inside
+                  // .then(() => …), which meant a Resend hiccup would
+                  // suppress the warning until the next billing period.
+                  // Brings this path into symmetry with the canPerform
+                  // dedupe in subscriptionRouter.ts.
+                  if (!sent) return;
                   // Mark flag so we don't send again this billing period
                   const updatedFlags = { ...emailFlags, [flagKey]: new Date().toISOString() };
                   const updatedRates = { ...dayWorkRates, _emailFlags: updatedFlags };

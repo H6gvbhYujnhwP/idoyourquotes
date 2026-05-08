@@ -1462,3 +1462,103 @@ export async function sendPasswordResetEmail(params: {
     return false;
   }
 }
+
+/**
+ * Send "your trial has ended" email — fires from emailScheduler when an
+ * org's trial window has elapsed (typically Day 14). Distinct from
+ * sendTrialExpiryReminder, which fires on Day 12 ("ends in N days").
+ *
+ * E.22 (May 2026) — closes the gap where the Day-12 reminder fired and
+ * then nothing further was sent when the trial actually expired. Users
+ * would simply hit a paywall on their next quote attempt with no inbox
+ * heads-up.
+ */
+export async function sendTrialEndedEmail(params: {
+  to: string;
+  name?: string;
+}): Promise<boolean> {
+  const firstName = params.name?.split(' ')[0] || 'there';
+
+  try {
+    const { error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: params.to,
+      subject: `Your IdoYourQuotes trial has ended`,
+      html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f8fafc;">
+  <div style="max-width: 480px; margin: 0 auto; padding: 40px 20px;">
+
+    <div style="text-align: center; margin-bottom: 32px;">
+      <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663048135071/uMprjfIbjwvxZRuj.png" alt="IdoYourQuotes" style="height: 48px;" />
+    </div>
+
+    <div style="background: white; border-radius: 12px; padding: 32px; border: 1px solid #e2e8f0;">
+      <div style="background: #fee2e2; border-radius: 8px; padding: 12px 16px; margin-bottom: 24px;">
+        <p style="font-size: 14px; font-weight: 600; color: #991b1b; margin: 0;">
+          Your free trial has ended
+        </p>
+      </div>
+
+      <h1 style="font-size: 22px; font-weight: 700; color: #1a2b4a; margin: 0 0 16px;">
+        Pick a plan to keep going, ${firstName}
+      </h1>
+      <p style="font-size: 15px; color: #475569; line-height: 1.6; margin: 0 0 16px;">
+        Your 14-day IdoYourQuotes trial has wrapped up. To carry on creating quotes, generating branded proposals, and using the AI takeoff features, choose a plan that suits how you work.
+      </p>
+      <p style="font-size: 15px; color: #475569; line-height: 1.6; margin: 0 0 24px;">
+        Plans start at <strong>£59/month</strong>. Everything you've already created — quotes, catalogue items, brochure, settings — stays exactly as you left it.
+      </p>
+
+      <div style="text-align: center; margin: 28px 0;">
+        <a href="${APP_URL}/pricing" style="display: inline-block; background-color: #0d9488; color: white; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 8px;">
+          Choose a Plan
+        </a>
+      </div>
+
+      <div style="background: #f0fdfa; border-radius: 8px; padding: 16px; margin-top: 16px;">
+        <p style="font-size: 13px; color: #0d9488; font-weight: 600; margin: 0 0 8px;">What you keep on a paid plan:</p>
+        <p style="font-size: 13px; color: #475569; line-height: 1.8; margin: 0;">
+          ✓ AI-powered document interpretation<br>
+          ✓ Automatic quote line-item generation<br>
+          ✓ Branded proposal PDFs with your logo<br>
+          ✓ Catalogue, pricing &amp; team collaboration<br>
+          ✓ Every quote, brochure, and setting you've already saved
+        </p>
+      </div>
+
+      <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 24px;">
+        <p style="font-size: 13px; color: #64748b; margin: 0 0 4px; font-weight: 600;">Not ready to subscribe?</p>
+        <p style="font-size: 13px; color: #64748b; margin: 0;">
+          That's fine — your account stays in place. You can subscribe whenever suits, and your data is waiting. Questions? Email ${SUPPORT_MAILTO}.
+        </p>
+      </div>
+    </div>
+
+    <div style="text-align: center; margin-top: 24px;">
+      <p style="font-size: 12px; color: #94a3b8;">
+        &copy; ${new Date().getFullYear()} IdoYourQuotes. All rights reserved.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`,
+    });
+
+    if (error) {
+      console.error('[Email] Trial ended send failed:', error);
+      return false;
+    }
+
+    console.log(`[Email] Trial ended sent to ${params.to}`);
+    return true;
+  } catch (err) {
+    console.error('[Email] Trial ended send error:', err);
+    return false;
+  }
+}

@@ -8,6 +8,7 @@ import {
   sendSubscriptionActivatedEmail,
   sendPaymentFailedEmail,
   sendSubscriptionEndedEmail,
+  sendTierChangeEmail,
 } from './emailService';
 
 // ============ CONFIG ============
@@ -617,6 +618,68 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
       }
 
       await updateOrganization(orgId, updatePayload as any);
+
+      // E.22 (May 2026) — Stripe-portal tier-change recovery email.
+      //
+      // The in-app upgradeSubscription / downgradeSubscription mutations
+      // (server/services/subscriptionRouter.ts) fire sendTierChangeEmail
+      // themselves the moment the user clicks the button — that's the
+      // primary path and gives the customer immediate inbox confirmation.
+      // But if the user changes plan via the Stripe-hosted billing portal
+      // instead, no in-app code runs and the only signal we get is this
+      // webhook. Previously this case was silent.
+      //
+      // Dedupe approach: the in-app mutations stamp a fresh
+      // _emailFlags.tierChangeNotifiedAt ISO timestamp onto the org
+      // BEFORE calling the Stripe API, so by the time this webhook fires
+      // the marker is already set if (and only if) the change came from
+      // the app. We treat a marker within the last 5 minutes as a recent
+      // in-app change and skip the email; a missing or stale marker means
+      // this is a Stripe-portal change and we fire the email ourselves.
+      //
+      // We also skip when there's no real tier delta (status changes,
+      // period rollovers, downgrade-flag clears all fire this webhook),
+      // and when previousTier was null or 'trial' (initial activation —
+      // already covered by checkout.session.completed firing
+      // sendSubscriptionActivatedEmail).
+      if (
+        currentTierKey &&
+        currentTierKey !== 'trial' &&
+        currentTierKey !== tier
+      ) {
+        const dayWorkRates = ((org as any)?.defaultDayWorkRates || {}) as Record<string, any>;
+        const emailFlags = (dayWorkRates._emailFlags || {}) as Record<string, any>;
+        const markerIso = emailFlags.tierChangeNotifiedAt as string | undefined;
+        const FIVE_MIN_MS = 5 * 60 * 1000;
+        const markerIsRecent = !!markerIso && (Date.now() - new Date(markerIso).getTime()) < FIVE_MIN_MS;
+
+        if (markerIsRecent) {
+          console.log(`[Stripe Webhook] Tier change ${currentTierKey}→${tier} for org=${orgId} — in-app marker recent, skipping webhook tier-change email`);
+        } else {
+          const oldConfig = TIER_CONFIG[currentTierKey];
+          const newConfig = TIER_CONFIG[tier];
+          const isUpgradeChange = newRank > currentRank;
+          getOrgOwnerContact(orgId)
+            .then(contact => {
+              if (!contact) {
+                console.warn(`[Stripe Webhook] No owner contact resolved for org=${orgId} — skipping tier-change email`);
+                return;
+              }
+              return sendTierChangeEmail({
+                to: contact.email,
+                name: contact.name || undefined,
+                oldTierName: oldConfig?.name || currentTierKey,
+                newTierName: newConfig.name,
+                isUpgrade: isUpgradeChange,
+                newMaxQuotes: newConfig.maxQuotesPerMonth,
+                newMaxUsers: newConfig.maxUsers,
+                newPrice: newConfig.monthlyPrice / 100,
+              });
+            })
+            .catch(err => console.error(`[Stripe Webhook] Failed to send tier-change email for org=${orgId}:`, err));
+        }
+      }
+
       break;
     }
 
