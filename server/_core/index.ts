@@ -2,11 +2,14 @@ import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
+import crypto from "crypto";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
+import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { sdk } from "./sdk";
+import { getSessionCookieOptions } from "./cookies";
 import { serveStatic, setupVite } from "./vite";
 import { registerStripeWebhook } from "../services/stripeWebhook";
 import { startEmailScheduler } from "../services/emailScheduler";
@@ -43,6 +46,94 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
+
+  // ── Studio bridge ───────────────────────────────────────────────────────────
+  // Allows TGA Studio (studio.thegreenagents.com) to embed this app's admin
+  // panel without a second login. Studio's backend signs a 60-second HMAC
+  // ticket with the shared STUDIO_BRIDGE_SECRET; this endpoint verifies the
+  // ticket, mints a real session cookie for the dedicated bridge admin user
+  // (STUDIO_BRIDGE_ADMIN_EMAIL), and redirects to /manage-7k9x2m4q8r.
+  //
+  // Ticket format: <expiry-unix-seconds>.<nonce>.<HMAC-SHA256-hex>
+  // HMAC is computed over "<expiry>.<nonce>" using the shared secret.
+  //
+  // Env vars (both required):
+  //   STUDIO_BRIDGE_SECRET       — long random hex, must match
+  //                                IDYQ_BRIDGE_SECRET on Studio's Render env
+  //   STUDIO_BRIDGE_ADMIN_EMAIL  — email of the dedicated bridge admin user
+  //                                in this app's `users` table; user must
+  //                                have role='admin' and is_active=true
+  //
+  // Position: must be AFTER body parsers and BEFORE the SPA static handler
+  // (otherwise serveStatic would intercept the route in production).
+  app.get("/admin-bridge", async (req, res) => {
+    try {
+      const secret = process.env.STUDIO_BRIDGE_SECRET;
+      const bridgeEmail = process.env.STUDIO_BRIDGE_ADMIN_EMAIL;
+      if (!secret || !bridgeEmail) {
+        console.warn("[admin-bridge] STUDIO_BRIDGE_SECRET or STUDIO_BRIDGE_ADMIN_EMAIL not configured");
+        res.status(500).send("Bridge not configured on this server");
+        return;
+      }
+
+      const ticket = String((req.query as any).ticket || "").trim();
+      if (!ticket) {
+        res.status(400).send("Missing ticket");
+        return;
+      }
+
+      const parts = ticket.split(".");
+      if (parts.length !== 3) {
+        console.warn("[admin-bridge] Malformed ticket");
+        res.status(400).send("Malformed ticket");
+        return;
+      }
+      const [expiryStr, nonce, signature] = parts;
+
+      // Verify signature with constant-time comparison to avoid timing leaks
+      const expectedSig = crypto.createHmac("sha256", secret).update(`${expiryStr}.${nonce}`).digest("hex");
+      const sigBuf = Buffer.from(signature, "hex");
+      const expBuf = Buffer.from(expectedSig, "hex");
+      if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+        console.warn("[admin-bridge] Invalid signature");
+        res.status(403).send("Invalid ticket");
+        return;
+      }
+
+      // Verify expiry
+      const expiry = parseInt(expiryStr, 10);
+      if (!Number.isFinite(expiry) || expiry < Math.floor(Date.now() / 1000)) {
+        console.warn("[admin-bridge] Expired ticket");
+        res.status(403).send("Expired ticket — reload the embed in Studio to mint a fresh one");
+        return;
+      }
+
+      // Look up the bridge admin user. Lazy-import the db helper to mirror the
+      // file-proxy pattern below and avoid pulling drizzle into module init.
+      const { getUserByEmail } = await import("../db");
+      const user = await getUserByEmail(bridgeEmail);
+      if (!user || (user as any).role !== "admin" || !(user as any).isActive) {
+        console.warn(`[admin-bridge] Bridge user ${bridgeEmail} not found, not admin, or inactive`);
+        res.status(403).send("Bridge user invalid");
+        return;
+      }
+
+      // Mint a real session cookie for the bridge user. Same path as a
+      // normal login — no separate session type, so the existing
+      // adminProcedure middleware accepts it without changes.
+      const token = await sdk.createSessionToken(Number(user.id), user.email, { name: user.name || "" });
+      const cookieOpts = getSessionCookieOptions(req as any);
+      res.cookie(COOKIE_NAME, token, { ...cookieOpts, maxAge: ONE_YEAR_MS });
+
+      // 302 to the admin panel. Cookie is now set; AdminPanel renders normally.
+      res.redirect("/manage-7k9x2m4q8r");
+    } catch (err: any) {
+      console.error("[admin-bridge] error:", err?.message || err);
+      if (!res.headersSent) {
+        res.status(500).send("Bridge error");
+      }
+    }
+  });
 
   // ── File proxy ──────────────────────────────────────────────────────────────
   // Serves R2 files via an authenticated Express route.
