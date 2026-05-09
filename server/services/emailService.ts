@@ -6,7 +6,18 @@ import { Resend } from 'resend';
 
 const resend = new Resend(process.env.RESEND_API_KEY || '');
 
-const FROM_EMAIL = 'IdoYourQuotes <noreply@idoyourquotes.com>';
+// E.23 (May 2026) — sender identity is env-driven so the cutover from
+// noreply@idoyourquotes.com to support@mail.idoyourquotes.com (or any
+// future sender) happens via a Render env-var change rather than a
+// code redeploy. The fallback below preserves the pre-E.23 production
+// value so deploying this change alone is a zero-behaviour change —
+// the actual cutover only happens once RESEND_FROM_EMAIL is set on
+// Render (which should be done only after Resend has verified the
+// new sending domain — sending from an unverified domain bounces with
+// "domain not verified"). Format must be a Resend-acceptable value,
+// either a bare address ("support@mail.idoyourquotes.com") or the
+// display-name form ("IdoYourQuotes <support@mail.idoyourquotes.com>").
+const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'IdoYourQuotes <noreply@idoyourquotes.com>';
 const APP_URL = process.env.APP_URL || 'https://idoyourquotes.com';
 
 // Phase 4B Delivery E.13.2 — single source of truth for the support
