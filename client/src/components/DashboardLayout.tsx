@@ -38,8 +38,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
-import { AlertTriangle, CreditCard, Crown, LogOut, Mail } from "lucide-react";
-import { useState } from "react";
+import { AlertTriangle, CreditCard, Crown, LogOut } from "lucide-react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import SupportFloatingButton from "./SupportFloatingButton";
@@ -251,52 +250,10 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
 function SubscriptionBanner() {
   const [, setLocation] = useLocation();
   const { data: sub } = trpc.subscription.status.useQuery();
-  const { user } = useAuth();
-  const [resending, setResending] = useState(false);
 
-  // Email verification banner
-  if (user && !(user as any).emailVerified) {
-    const handleResend = async () => {
-      setResending(true);
-      try {
-        const res = await fetch("/api/auth/resend-verification", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: user.email }),
-        });
-        if (res.ok) {
-          alert("Verification email sent! Check your inbox.");
-        } else {
-          const data = await res.json();
-          alert(data.error || "Failed to resend");
-        }
-      } catch {
-        alert("Failed to resend verification email");
-      }
-      setResending(false);
-    };
-
-    return (
-      <div className="flex items-center justify-between px-4 py-2.5 text-sm bg-amber-500 text-white">
-        <div className="flex items-center gap-2">
-          <Mail className="h-4 w-4" />
-          <span className="font-medium">
-            Please verify your email to activate your free trial. Check your
-            inbox for a verification link.
-          </span>
-        </div>
-        <Button
-          size="sm"
-          variant="secondary"
-          className="h-7 text-xs font-bold"
-          onClick={handleResend}
-          disabled={resending}
-        >
-          {resending ? "Sending..." : "Resend Email"}
-        </Button>
-      </div>
-    );
-  }
+  // E.24 (May 2026) — verification banner block removed. Email verification
+  // is no longer a hard gate at registration (see oauth.ts register handler
+  // for full rationale). The DB column stays, this UI does not.
 
   if (!sub) return null;
 

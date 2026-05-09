@@ -110,7 +110,17 @@ async function processScheduledEmails(): Promise<void> {
         .where(eq(users.id, BigInt(ownerMembership.userId) as any))
         .limit(1);
 
-      if (!owner || !owner.emailVerified) continue;
+      if (!owner) continue;
+
+      // E.24 (May 2026) — previously this clause also skipped users
+      // where !owner.emailVerified. With email verification removed as
+      // a hard gate at registration, that skip is no longer correct —
+      // it would suppress all trial-lifecycle emails (Day 3, Day 12,
+      // Day 14) for any pre-E.24 user who never clicked their old
+      // verification link, AND for any team-invited owner whose
+      // verification flag is in the team-invite "pending" state. The
+      // owner check above already filters out missing owner records,
+      // which is the only filter we actually need at this layer.
 
       let flagsChanged = false;
 

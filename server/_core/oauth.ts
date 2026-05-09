@@ -2,9 +2,8 @@ import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import type { Express, Request, Response } from "express";
 import { getSessionCookieOptions } from "./cookies";
 import { sdk } from "./sdk";
-import { sendVerificationEmail, sendWelcomeEmail } from "../services/emailService";
+import { sendWelcomeEmail } from "../services/emailService";
 import { getDb, getUserPrimaryOrg } from "../db";
-import crypto from "crypto";
 
 // Free email providers — treat each address as its own domain for trial limits
 const FREE_EMAIL_PROVIDERS = new Set([
@@ -171,121 +170,45 @@ export function registerOAuthRoutes(app: Express) {
         return;
       }
 
-      // Generate verification token
-      const token = crypto.randomBytes(32).toString('hex');
-      
-      // Save token to user record
+      // E.24 (May 2026) — email verification removed as a hard gate.
+      //
+      // Previous flow: register → emailVerified=false → send a verify-
+      // email link → user clicks the link in their inbox → emailVerified=
+      // true → welcome email finally fires. This silently killed the
+      // entire onboarding sequence for any user whose verification email
+      // landed in their spam folder, because emailScheduler.ts skipped
+      // every trial-lifecycle email (Day 3 check-in, Day 12 reminder,
+      // Day 14 trial-ended) for users where !emailVerified. Outlook in
+      // particular rendered junk-folder mail in plain-text mode which
+      // wrapped the long URL across lines, breaking the click entirely.
+      //
+      // New flow: register → mark verified immediately → fire the
+      // welcome email straight away with the same state-aware logic
+      // (paid-active / trial-active / no-trial) previously gated behind
+      // the verification click. The trial-lifecycle emails fire on
+      // schedule as expected.
+      //
+      // The emailVerified column stays in the schema — the team-invite
+      // flow in subscriptionRouter.ts still uses emailVerified=false as
+      // a meaningful "invite pending, password not set" state. That
+      // path is untouched. We only flip the value to true for fresh
+      // self-signups here.
       const db = await getDb();
       if (db) {
         const { users } = await import("../../drizzle/schema");
         const { eq } = await import("drizzle-orm");
         await db.update(users).set({
-          emailVerificationToken: token,
-          emailVerificationSentAt: new Date(),
+          emailVerified: true,
         }).where(eq(users.id, result.user.id));
       }
 
-      // Send verification email (non-blocking)
-      sendVerificationEmail({
-        to: email,
-        name: name || undefined,
-        token,
-      }).catch(err => console.error("[Auth] Failed to send verification email:", err));
-
-      // Still log them in immediately — they can use the app but see a verification banner
-      const cookieOptions = getSessionCookieOptions(req);
-      res.cookie(COOKIE_NAME, result.token, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-
-      res.json({ 
-        success: true, 
-        user: {
-          id: result.user.id,
-          email: result.user.email,
-          name: result.user.name,
-          role: result.user.role,
-        },
-        requiresVerification: true,
-        // True when the new org was registered without a free trial because
-        // the business domain had been used previously. The client uses this
-        // to redirect to /pricing with an explanatory banner instead of
-        // dropping the user on an empty dashboard with a red expired bar.
-        noTrial: skipTrial,
-      });
-    } catch (error) {
-      console.error("[Auth] Registration failed", error);
-      res.status(500).json({ error: "Registration failed" });
-    }
-  });
-
-  // Email verification endpoint
-  app.get("/api/auth/verify-email", async (req: Request, res: Response) => {
-    const { token } = req.query;
-
-    if (!token || typeof token !== 'string') {
-      res.redirect('/?error=invalid-token');
-      return;
-    }
-
-    try {
-      const db = await getDb();
-      if (!db) {
-        res.redirect('/?error=server-error');
-        return;
-      }
-
-      const { users } = await import("../../drizzle/schema");
-      const { eq } = await import("drizzle-orm");
-
-      // Find user by token
-      const [user] = await db.select()
-        .from(users)
-        .where(eq(users.emailVerificationToken, token))
-        .limit(1);
-
-      if (!user) {
-        res.redirect('/login?error=invalid-token');
-        return;
-      }
-
-      // Check token isn't expired (24 hours)
-      if (user.emailVerificationSentAt) {
-        const hoursSinceSent = (Date.now() - new Date(user.emailVerificationSentAt).getTime()) / (1000 * 60 * 60);
-        if (hoursSinceSent > 24) {
-          res.redirect('/login?error=token-expired');
-          return;
-        }
-      }
-
-      // Mark as verified
-      await db.update(users).set({
-        emailVerified: true,
-        emailVerificationToken: null,
-      }).where(eq(users.id, user.id));
-
-      console.log(`[Auth] Email verified for user ${user.id} (${user.email})`);
-
-      // Send welcome email (non-blocking).
-      //
-      // E.21 (May 2026) — the welcome email is now state-aware. We look
-      // up the user's primary org to decide which copy to send:
-      //
-      //   - paid-active : org is on a paid tier with active/trialing
-      //                   status (user paid for a plan before clicking
-      //                   the verification link)
-      //   - trial-active: org is on the trial tier with trialEndsAt
-      //                   in the future (the standard happy path)
-      //   - no-trial    : org is on the trial tier but trialEndsAt has
-      //                   already passed — typically the E.18
-      //                   "domain previously used" path where
-      //                   trialEndsAt was set equal to trialStartsAt
-      //
-      // Failure to look up the org is non-fatal — we fall through to
-      // 'trial-active' as a sensible default rather than crash the
-      // verification flow.
+      // Welcome email — state detection logic moved verbatim from the
+      // (now-deprecated) /api/auth/verify-email handler. Still fire-and-
+      // forget; failure to send doesn't block the registration response.
       let welcomeState: 'trial-active' | 'paid-active' | 'no-trial' = 'trial-active';
       let welcomeTierName: string | undefined;
       try {
-        const primaryOrg = await getUserPrimaryOrg(user.id);
+        const primaryOrg = await getUserPrimaryOrg(result.user.id);
         if (primaryOrg) {
           const orgAny = primaryOrg as any;
           const tier = (orgAny.subscriptionTier || 'trial') as string;
@@ -294,7 +217,6 @@ export function registerOAuthRoutes(app: Express) {
 
           if (tier !== 'trial' && (status === 'active' || status === 'trialing')) {
             welcomeState = 'paid-active';
-            // Capitalise tier label for the subject + body (e.g. "Pro")
             welcomeTierName = tier.charAt(0).toUpperCase() + tier.slice(1);
           } else if (tier === 'trial' && trialEndsAt && trialEndsAt.getTime() > Date.now()) {
             welcomeState = 'trial-active';
@@ -307,76 +229,64 @@ export function registerOAuthRoutes(app: Express) {
       }
 
       sendWelcomeEmail({
-        to: user.email,
-        name: user.name || undefined,
+        to: email,
+        name: name || undefined,
         state: welcomeState,
         tierName: welcomeTierName,
       }).catch(err => console.error("[Auth] Failed to send welcome email:", err));
 
-      // Redirect to dashboard with success
-      res.redirect('/dashboard?verified=true');
+      // Log them in immediately
+      const cookieOptions = getSessionCookieOptions(req);
+      res.cookie(COOKIE_NAME, result.token, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+
+      res.json({ 
+        success: true, 
+        user: {
+          id: result.user.id,
+          email: result.user.email,
+          name: result.user.name,
+          role: result.user.role,
+        },
+        // E.24 — kept in the response for backward compatibility with any
+        // older client builds still checking it; always false now.
+        requiresVerification: false,
+        // True when the new org was registered without a free trial because
+        // the business domain had been used previously. The client uses this
+        // to redirect to /pricing with an explanatory banner instead of
+        // dropping the user on an empty dashboard with a red expired bar.
+        noTrial: skipTrial,
+      });
     } catch (error) {
-      console.error("[Auth] Verification failed", error);
-      res.redirect('/?error=verification-failed');
+      console.error("[Auth] Registration failed", error);
+      res.status(500).json({ error: "Registration failed" });
     }
   });
 
-  // Resend verification email
-  app.post("/api/auth/resend-verification", async (req: Request, res: Response) => {
-    const { email } = req.body;
-    if (!email) {
-      res.status(400).json({ error: "Email is required" });
-      return;
-    }
+  // Email verification endpoint — DEPRECATED.
+  //
+  // E.24 (May 2026) — verification removed as a hard gate at registration.
+  // Self-signups are marked verified immediately and the welcome email
+  // fires from the register handler above. This route stays in place
+  // purely so that any verification links still sitting in users' inboxes
+  // from before E.24 deployed don't 404. We just redirect to /dashboard
+  // — if the user is logged in they land on it, if not they bounce to
+  // /login via the normal auth flow. No DB writes, no email sends, no
+  // token validation. The route can be removed entirely once any
+  // pre-E.24 verification emails have aged out of inboxes (~30 days).
+  app.get("/api/auth/verify-email", async (_req: Request, res: Response) => {
+    res.redirect('/dashboard');
+  });
 
-    try {
-      const db = await getDb();
-      if (!db) {
-        res.status(500).json({ error: "Server error" });
-        return;
-      }
-
-      const { users } = await import("../../drizzle/schema");
-      const { eq } = await import("drizzle-orm");
-
-      const [user] = await db.select()
-        .from(users)
-        .where(eq(users.email, email.toLowerCase()))
-        .limit(1);
-
-      if (!user || user.emailVerified) {
-        // Don't reveal whether email exists
-        res.json({ success: true });
-        return;
-      }
-
-      // Rate limit: only allow resend every 2 minutes
-      if (user.emailVerificationSentAt) {
-        const minutesSinceSent = (Date.now() - new Date(user.emailVerificationSentAt).getTime()) / (1000 * 60);
-        if (minutesSinceSent < 2) {
-          res.status(429).json({ error: "Please wait a moment before requesting another email" });
-          return;
-        }
-      }
-
-      // Generate new token
-      const token = crypto.randomBytes(32).toString('hex');
-      await db.update(users).set({
-        emailVerificationToken: token,
-        emailVerificationSentAt: new Date(),
-      }).where(eq(users.id, user.id));
-
-      await sendVerificationEmail({
-        to: user.email,
-        name: user.name || undefined,
-        token,
-      });
-
-      res.json({ success: true });
-    } catch (error) {
-      console.error("[Auth] Resend verification failed", error);
-      res.status(500).json({ error: "Failed to resend" });
-    }
+  // Resend verification email — DEPRECATED.
+  //
+  // E.24 (May 2026) — verification removed as a hard gate. This route
+  // stays for backward compatibility with any older client builds still
+  // calling it (the verification banner that called this from
+  // DashboardLayout.tsx has been removed in E.24 too, but cached client
+  // bundles in users' browsers may still have the call). Always returns
+  // success so cached clients don't surface a misleading error.
+  app.post("/api/auth/resend-verification", async (_req: Request, res: Response) => {
+    res.json({ success: true });
   });
 
   // Validate invite token (check it's still valid before showing set-password form)
