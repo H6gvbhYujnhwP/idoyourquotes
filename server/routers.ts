@@ -13,6 +13,7 @@ import { prospectBotRouter } from "./services/prospectBotRouter";
 import { canCreateQuote, canUseAIFeatures, canAddCatalogItem, getUpgradeSuggestion, TIER_CONFIG, type SubscriptionTier } from "./services/stripe";
 import { sendLimitWarningEmail } from "./services/emailService";
 import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured, getFileBuffer } from "./r2Storage";
+import { validateUploadMime } from "./_core/uploadValidation";
 import { analyzePdfWithClaude, analyzePdfWithOpenAI, analyzeImageWithClaude, isClaudeConfigured, invokeClaude } from "./_core/claude";
 import { isOpenAIConfigured } from "./_core/openai";
 import { extractUrls, scrapeUrls, formatScrapedContentForAI } from "./_core/webScraper";
@@ -346,6 +347,13 @@ export const appRouter = router({
 
         // Decode base64 to buffer
         const buffer = Buffer.from(input.base64Data, "base64");
+
+        // Bug 1 fix — validate the logo against the image allowlist.
+        // SVG is intentionally excluded (XSS via inline JS in SVG markup).
+        const mimeCheck = await validateUploadMime(buffer, "image", input.filename);
+        if (!mimeCheck.ok) {
+          throw new Error(mimeCheck.error || "Sorry, that file type isn't allowed.");
+        }
 
         // Upload to R2 with user-specific folder.
         // Returns a permanent proxy URL (/api/file/{key}) — never expires.
@@ -2000,6 +2008,15 @@ IMPORTANT: Address the email greeting using the first name only (e.g. "Hi ${gree
 
         // Decode base64 to buffer
         const buffer = Buffer.from(input.base64Data, "base64");
+
+        // Bug 1 fix — validate the file's actual bytes against an allowlist
+        // for this inputType. Closes the XSS vector where the browser sends
+        // a forged Content-Type for a malicious file (e.g. HTML claiming to
+        // be a PDF). Single-source-of-truth helper in _core/uploadValidation.
+        const mimeCheck = await validateUploadMime(buffer, input.inputType, input.filename);
+        if (!mimeCheck.ok) {
+          throw new Error(mimeCheck.error || "Sorry, that file type isn't allowed.");
+        }
 
         // Upload to R2 with org-scoped folder structure for multi-tenancy
         // Use org slug and quote reference for better traceability in Cloudflare

@@ -4,6 +4,7 @@ import { getSessionCookieOptions } from "./cookies";
 import { sdk } from "./sdk";
 import { sendWelcomeEmail } from "../services/emailService";
 import { getDb, getUserPrimaryOrg } from "../db";
+import { authRateLimiter } from "./rateLimit";
 
 // Free email providers — treat each address as its own domain for trial limits
 const FREE_EMAIL_PROVIDERS = new Set([
@@ -78,7 +79,7 @@ async function isDomainTrialUsed(email: string): Promise<boolean> {
 
 export function registerOAuthRoutes(app: Express) {
   // Login endpoint
-  app.post("/api/auth/login", async (req: Request, res: Response) => {
+  app.post("/api/auth/login", authRateLimiter, async (req: Request, res: Response) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
@@ -113,7 +114,7 @@ export function registerOAuthRoutes(app: Express) {
   });
 
   // Register endpoint — with anti-gaming
-  app.post("/api/auth/register", async (req: Request, res: Response) => {
+  app.post("/api/auth/register", authRateLimiter, async (req: Request, res: Response) => {
     const { email, password, name, companyName, defaultTradeSector } = req.body;
 
     if (!email || !password) {

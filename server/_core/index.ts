@@ -35,6 +35,13 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 
 async function startServer() {
   const app = express();
+  // Trust Render's reverse proxy — req.ip resolves to the real client IP
+  // from X-Forwarded-For, which the auth rate limiter buckets by.
+  // Without this, every request would appear to originate from the proxy's
+  // IP and rate limiting would block all traffic together. The "1" tells
+  // Express to trust exactly one proxy hop (Render's edge), which is the
+  // correct setting for our deployment topology.
+  app.set("trust proxy", 1);
   const server = createServer(app);
 
   // Stripe webhook MUST be registered BEFORE body parsers (needs raw body)
