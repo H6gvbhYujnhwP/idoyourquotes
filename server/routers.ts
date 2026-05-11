@@ -530,13 +530,14 @@ export const appRouter = router({
           }
           // Reset count if needed
           if (quotaCheck.shouldResetCount) {
-            // Also clear the limit email flags so they can fire again next period
-            const dayWorkRates = ((org as any).defaultDayWorkRates || {}) as Record<string, any>;
-            const emailFlags = { ...(dayWorkRates._emailFlags || {}) };
+            // Also clear the limit email flags so they can fire again next period.
+            // Reads + writes the dedicated `emailFlags` column (May 2026) —
+            // previously this piggybacked inside defaultDayWorkRates._emailFlags
+            // which was clobber-prone when Settings saved day rates.
+            const emailFlags = { ...((org as any).emailFlags || {}) } as Record<string, string>;
             delete emailFlags.limitApproachingSent;
             delete emailFlags.limitReachedSent;
-            const updatedRates = { ...dayWorkRates, _emailFlags: emailFlags };
-            await updateOrganization(org.id, { monthlyQuoteCount: 0, quoteCountResetAt: new Date(), defaultDayWorkRates: updatedRates } as any);
+            await updateOrganization(org.id, { monthlyQuoteCount: 0, quoteCountResetAt: new Date(), emailFlags } as any);
           }
         }
 
@@ -569,9 +570,11 @@ export const appRouter = router({
           if (max > 0 && max !== -1) {
             const pct = Math.round((currentCount / max) * 100);
             if (pct >= 80) {
-              // Check if we've already sent this email this billing period
-              const dayWorkRates = ((org as any).defaultDayWorkRates || {}) as Record<string, any>;
-              const emailFlags = dayWorkRates._emailFlags || {};
+              // Check if we've already sent this email this billing period.
+              // Reads + writes the dedicated `emailFlags` column (May 2026) —
+              // previously this piggybacked inside defaultDayWorkRates._emailFlags
+              // which was clobber-prone when Settings saved day rates.
+              const emailFlags = ((org as any).emailFlags || {}) as Record<string, string>;
               const isHardLimit = pct >= 100;
               const flagKey = isHardLimit ? 'limitReachedSent' : 'limitApproachingSent';
 
@@ -599,8 +602,7 @@ export const appRouter = router({
                   if (!sent) return;
                   // Mark flag so we don't send again this billing period
                   const updatedFlags = { ...emailFlags, [flagKey]: new Date().toISOString() };
-                  const updatedRates = { ...dayWorkRates, _emailFlags: updatedFlags };
-                  updateOrganization(org.id, { defaultDayWorkRates: updatedRates } as any)
+                  updateOrganization(org.id, { emailFlags: updatedFlags } as any)
                     .catch(err => console.error('[QuoteCreate] Failed to save limit email flag:', err));
                 }).catch(err => console.error('[QuoteCreate] Failed to send limit email:', err));
               }

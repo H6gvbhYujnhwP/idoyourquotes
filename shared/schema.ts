@@ -103,8 +103,29 @@ export const organizations = pgTable("organizations", {
     materialMarkup?: number;
     plantMarkup?: number;
     defaultVatRate?: number;
+    /**
+     * @deprecated The piggyback storage of email flags inside the
+     * defaultDayWorkRates JSON blob was migrated out to the dedicated
+     * `emailFlags` column below. Read code goes through `emailFlags`;
+     * any legacy values still here will be backfilled by the migration
+     * and then ignored. Kept on the type to avoid breaking older rows
+     * that haven't been touched yet.
+     */
     _emailFlags?: Record<string, string>;
   }>(),
+  /**
+   * Email-scheduler dedupe flags. Each key is the flag name (e.g.
+   * checkInSent, trialReminderSent, trialEndedSent, limitApproachingSent,
+   * limitReachedSent) and the value is the ISO timestamp it was set.
+   *
+   * Lives in its own column rather than piggybacking on
+   * defaultDayWorkRates so Settings saves and other org-level updates
+   * can't accidentally clobber it via shallow-merge.
+   *
+   * Migrated from defaultDayWorkRates._emailFlags. See
+   * server/services/emailScheduler.ts for the read/write code.
+   */
+  emailFlags: json("email_flags").$type<Record<string, string>>().default({}),
   defaultExclusions: text("default_exclusions"),
   defaultValidityDays: integer("default_validity_days").default(30),
   defaultSignatoryName: varchar("default_signatory_name", { length: 255 }),

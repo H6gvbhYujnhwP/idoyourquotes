@@ -1,12 +1,24 @@
 /**
  * Email Scheduler
- * Runs every hour to send automated emails:
- * - Day 3: Check-in email
- * - Day 12: Trial expiry reminder (2 days before end)
- * 
- * Uses a JSON field on the org to track which emails have been sent,
- * preventing duplicates without needing a new table.
- * 
+ *
+ * Runs every hour to send automated lifecycle emails:
+ *   - Day 3:  Check-in email
+ *   - Day 12: Trial expiry reminder (2 days before end)
+ *   - Day 14: Trial-ended email
+ *
+ * Dedupe state lives in the org's `emailFlags` JSONB column (added
+ * May 2026 to replace the previous piggyback storage inside
+ * `defaultDayWorkRates._emailFlags`). Keys are flag names, values are
+ * the ISO timestamp the flag was set:
+ *
+ *   {
+ *     "checkInSent":          "2026-05-04T10:30:11.421Z",
+ *     "trialReminderSent":    "2026-05-13T11:30:09.882Z",
+ *     "trialEndedSent":       "2026-05-15T09:30:12.103Z",
+ *     "limitApproachingSent": "...",   // set elsewhere (quote.create path)
+ *     "limitReachedSent":     "..."    // set elsewhere (quote.create path)
+ *   }
+ *
  * Register in server/_core/index.ts:
  *   import { startEmailScheduler } from "../services/emailScheduler";
  *   startEmailScheduler();
@@ -17,7 +29,7 @@ import { sendCheckInEmail, sendTrialExpiryReminder, sendTrialEndedEmail } from "
 const ONE_HOUR = 60 * 60 * 1000;
 
 /**
- * Check all trial orgs and send appropriate emails
+ * Check all trial orgs and send appropriate emails.
  */
 async function processScheduledEmails(): Promise<void> {
   console.log("[EmailScheduler] Running scheduled email check...");
@@ -27,7 +39,7 @@ async function processScheduledEmails(): Promise<void> {
     if (!db) return;
 
     const { organizations, orgMembers, users } = await import("../../drizzle/schema");
-    const { eq, and, isNull, isNotNull } = await import("drizzle-orm");
+    const { eq, and, isNotNull } = await import("drizzle-orm");
 
     // Find all trial organizations that haven't been cancelled
     const trialOrgs = await db.select()
@@ -69,28 +81,23 @@ async function processScheduledEmails(): Promise<void> {
       }
 
       const daysSinceStart = (Date.now() - trialStart.getTime()) / (1000 * 60 * 60 * 24);
-      
-      // Track sent emails in the org's metadata
-      // We use aiCreditsRemaining as a bitmask (hacky but avoids schema changes)
-      // Bit 1 (value 1): check-in sent
-      // Bit 2 (value 2): trial reminder sent
-      // Actually, let's use a cleaner approach with a JSON field
-      // We'll store sent email flags in defaultDayWorkRates._emailsSent (piggyback on existing JSON)
-      // Better: use a simple approach — check the org's billing email field for markers
-      
-      // Clean approach: use metadata stored in the org record
-      // Since we can't easily add fields, we'll track via a dedicated query
-      // Check if emails were already sent by looking for recent email logs
-      
-      // Simplest approach: store in the organization's defaultExclusions field? No, too hacky.
-      // Let's just use a separate tracking mechanism via the users table's emailVerificationToken
-      // as a state tracker after verification... also hacky.
-      
-      // Cleanest: Add a simple JSON tracking to the org. We already have json fields.
-      // Use defaultDayWorkRates which is a JSON field — add _emailFlags to it
-      
-      const dayWorkRates = (orgAny.defaultDayWorkRates || {}) as Record<string, any>;
-      const emailFlags = dayWorkRates._emailFlags || {};
+
+      // ── Email-flag dedupe state ───────────────────────────────────
+      //
+      // Source of truth: the org's dedicated `emailFlags` JSONB column.
+      //
+      // BACKWARD-COMPAT SHIM (May 2026): for orgs that registered before
+      // the column existed, their old flags may still sit inside
+      // `defaultDayWorkRates._emailFlags`. The migration backfilled
+      // existing rows on deploy, so this fallback should only matter for
+      // the brief window between deploy and the migration running, or
+      // for any legacy row that somehow slipped the migration. We merge
+      // both sources, prefer the dedicated column on key conflicts, and
+      // any write below targets the new column. Old values will fade
+      // out naturally as the scheduler writes to the new location.
+      const legacyFlags = (orgAny.defaultDayWorkRates?._emailFlags || {}) as Record<string, string>;
+      const dedicatedFlags = (orgAny.emailFlags || {}) as Record<string, string>;
+      const emailFlags: Record<string, string> = { ...legacyFlags, ...dedicatedFlags };
 
       // Get the org owner's email
       const [ownerMembership] = await db.select()
@@ -160,7 +167,7 @@ async function processScheduledEmails(): Promise<void> {
       // trialEndsAt rather than daysSinceStart so the email tracks the
       // real end timestamp (which the E.18 trial-fix now sets correctly
       // for first-time signups). The 48-hour window after expiry gives
-      // the hourly scheduler two cycles of opportunity to fire — single
+      // the hourly scheduler two cycles of opportunity to fire — a single
       // missed tick during a deploy or Resend hiccup won't drop the
       // email entirely. Deduped via emailFlags.trialEndedSent.
       //
@@ -183,11 +190,16 @@ async function processScheduledEmails(): Promise<void> {
         }
       }
 
-      // Save flags back to org
+      // Save flags back to the org. Writes ONLY to the dedicated
+      // emailFlags column — never touches defaultDayWorkRates. If the
+      // org still has legacy values in defaultDayWorkRates._emailFlags
+      // they remain there harmlessly; future Settings saves will
+      // shallow-merge over them and they'll eventually disappear,
+      // but in the meantime they're already mirrored into emailFlags
+      // by the merge at the top of this loop.
       if (flagsChanged) {
-        const updatedRates = { ...dayWorkRates, _emailFlags: emailFlags };
         await db.update(organizations)
-          .set({ defaultDayWorkRates: updatedRates as any, updatedAt: new Date() })
+          .set({ emailFlags: emailFlags as any, updatedAt: new Date() })
           .where(eq(organizations.id, org.id));
       }
     }
@@ -199,7 +211,7 @@ async function processScheduledEmails(): Promise<void> {
 }
 
 /**
- * Start the email scheduler — call once on server startup
+ * Start the email scheduler — call once on server startup.
  */
 export function startEmailScheduler(): void {
   // Run first check after 30 seconds (let server finish starting)

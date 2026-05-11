@@ -62,8 +62,10 @@ export const organizations = pgTable("organizations", {
     materialMarkup?: number;
     plantMarkup?: number;
     defaultVatRate?: number;
+    /** @deprecated migrated out to the dedicated emailFlags column below */
     _emailFlags?: Record<string, string>;
   }>(),
+  emailFlags: json("email_flags").$type<Record<string, string>>().default({}),
   defaultExclusions: text("default_exclusions"),
   defaultValidityDays: integer("default_validity_days").default(30),
   defaultSignatoryName: varchar("default_signatory_name", { length: 255 }),
