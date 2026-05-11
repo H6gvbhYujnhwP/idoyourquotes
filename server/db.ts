@@ -303,7 +303,8 @@ export async function createUser(email: string, password: string, name?: string,
 
     // Seed starter catalog if a template exists for this sector.
     // Fail-safe: wrapped so seeding failures never block registration. The
-    // user can seed manually later from the Catalog page empty state.
+    // user can recover seed items later from the Catalog page if they
+    // delete any.
     if (defaultTradeSector) {
       try {
         await seedCatalogFromSectorTemplate(org.id, user.id, defaultTradeSector);
@@ -312,18 +313,13 @@ export async function createUser(email: string, password: string, name?: string,
         // Intentionally not rethrown — registration must succeed even if seeding fails.
       }
 
-      // Seed demo example quote if a factory exists for this sector.
-      // Runs AFTER catalog seeding so the demo's canonical line-item names
-      // can match against the freshly-seeded catalog via catalog-match
-      // fuzzy lookup in QuoteWorkspace. Fail-safe: wrapped so a demo
-      // failure never blocks registration. Existing users can trigger
-      // this manually later via the Dashboard nudge card button.
-      try {
-        await seedDemoQuoteForSector(org.id, user.id, defaultTradeSector);
-      } catch (err) {
-        console.error(`[createUser] Demo quote seeding failed for user ${user.id}, sector ${defaultTradeSector}:`, err);
-        // Intentionally not rethrown — same rationale as catalog seeding.
-      }
+      // Note (May 2026): demo-quote auto-seed on registration was removed
+      // intentionally. The "Acme Group" example quote was non-essential —
+      // new users now land on an empty quotes list and create their own
+      // first quote. The demo factory itself stays in place; users can
+      // still trigger it manually via the Dashboard "Load Example Quote"
+      // button (handler: handleLoadExampleQuote in Dashboard.tsx →
+      // trpc.quotes.seedDemoForSector).
     }
   }
 

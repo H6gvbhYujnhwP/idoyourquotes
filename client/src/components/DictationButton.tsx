@@ -142,6 +142,33 @@ export default function DictationButton({
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const finalTranscriptRef = useRef("");
 
+  // ── Long-form dictation: auto-restart on browser-auto-end ─────────────────
+  //
+  // The Web Speech API auto-ends recognition after a browser-defined idle
+  // period (typically ~60 seconds in Chrome). That's not enough time to
+  // dictate a full quote brief, so we auto-restart on `onend` unless the
+  // user explicitly stopped/cancelled, capped at 10 minutes total per
+  // session as a fail-safe.
+  //
+  //   isUserStoppedRef — set true by stopListening / cancelListening BEFORE
+  //                      calling stop()/abort(), so the onend handler knows
+  //                      the end is user-initiated (don't restart).
+  //   sessionStartedAtRef — wall-clock time the user first hit start.
+  //                         Cleared when user-stopped or fail-safe hit.
+  //   accumulatedTranscriptRef — running transcript across every restart
+  //                              within a single user-driven session.
+  //                              finalTranscriptRef still holds the current
+  //                              browser session's final text on its own;
+  //                              we concat them when emitting.
+  //
+  // 10-minute cap chosen as a practical upper bound — long enough for any
+  // realistic quote brief, short enough to prevent a forgotten mic from
+  // burning the user's battery or filling the network with empty audio.
+  const isUserStoppedRef = useRef(false);
+  const sessionStartedAtRef = useRef<number | null>(null);
+  const accumulatedTranscriptRef = useRef("");
+  const MAX_SESSION_MS = 10 * 60 * 1000;
+
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -157,6 +184,15 @@ export default function DictationButton({
       return;
     }
 
+    // First-press initialisation. If we're already inside an auto-restart
+    // (sessionStartedAtRef is already set), preserve the accumulated text.
+    const isFreshStart = sessionStartedAtRef.current === null;
+    if (isFreshStart) {
+      isUserStoppedRef.current = false;
+      sessionStartedAtRef.current = Date.now();
+      accumulatedTranscriptRef.current = "";
+    }
+
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
@@ -165,8 +201,17 @@ export default function DictationButton({
 
     recognition.onstart = () => {
       setIsListening(true);
-      setTranscript("");
-      setInterimText("");
+      // On a FRESH start (user just hit the button) reset visible transcript.
+      // On an AUTO-RESTART (browser timed out, we're starting again) keep
+      // the visible transcript showing the accumulated text so the user
+      // sees no flicker / no apparent text loss.
+      if (isFreshStart) {
+        setTranscript("");
+        setInterimText("");
+      } else {
+        setTranscript(accumulatedTranscriptRef.current);
+        setInterimText("");
+      }
       finalTranscriptRef.current = "";
     };
 
@@ -185,7 +230,11 @@ export default function DictationButton({
 
       if (finalText) {
         finalTranscriptRef.current = finalText;
-        setTranscript(finalText);
+        // Visible transcript is the running accumulator plus this session's
+        // final text. Keeps the UI showing the full long-form dictation
+        // even after a mid-session browser auto-restart.
+        const combined = (accumulatedTranscriptRef.current + " " + finalText).trim();
+        setTranscript(combined);
       }
       setInterimText(interimTextValue);
     };
@@ -204,7 +253,44 @@ export default function DictationButton({
     };
 
     recognition.onend = () => {
-      setIsListening(false);
+      // Roll any final text from this browser session into the running
+      // accumulator BEFORE deciding whether to auto-restart.
+      if (finalTranscriptRef.current) {
+        accumulatedTranscriptRef.current = (
+          accumulatedTranscriptRef.current + " " + finalTranscriptRef.current
+        ).trim();
+      }
+
+      // User-stopped path — clean shutdown, no restart.
+      if (isUserStoppedRef.current) {
+        setIsListening(false);
+        return;
+      }
+
+      // Fail-safe cap — 10 minutes total per dictation. Forced stop.
+      const elapsed = sessionStartedAtRef.current
+        ? Date.now() - sessionStartedAtRef.current
+        : 0;
+      if (elapsed >= MAX_SESSION_MS) {
+        setIsListening(false);
+        // Stamp the cap reason so the user understands the auto-end.
+        setError("Dictation auto-stopped after 10 minutes. Press the mic to continue.");
+        sessionStartedAtRef.current = null;
+        return;
+      }
+
+      // Auto-restart path — browser timed out, user still wants to dictate.
+      // Reinvoke startListening on the same session. isFreshStart will
+      // evaluate to false because sessionStartedAtRef is still set, which
+      // preserves the accumulated transcript across the restart.
+      try {
+        startListening();
+      } catch {
+        // If restart fails (mic released, page hidden, etc.), surface
+        // gracefully — drop into the user-stopped end state.
+        setIsListening(false);
+        sessionStartedAtRef.current = null;
+      }
     };
 
     recognitionRef.current = recognition;
@@ -214,30 +300,46 @@ export default function DictationButton({
     } catch (err) {
       setError("Failed to start speech recognition. Please try again.");
       setIsListening(false);
+      sessionStartedAtRef.current = null;
     }
   }, []);
 
   const stopListening = useCallback(() => {
+    // Mark user-stopped BEFORE telling recognition to stop, so the onend
+    // handler that fires asynchronously knows not to auto-restart.
+    isUserStoppedRef.current = true;
     if (recognitionRef.current) {
       recognitionRef.current.stop();
     }
     setIsListening(false);
 
-    const fullText = (finalTranscriptRef.current + " " + interimText).trim();
-    if (fullText) {
+    // Emit the combined transcript: accumulated text from any auto-restart
+    // cycles + the current session's final + any in-flight interim text.
+    const combined = (
+      accumulatedTranscriptRef.current +
+      " " +
+      finalTranscriptRef.current +
+      " " +
+      interimText
+    ).trim();
+    if (combined) {
       if (onTranscript) {
-        onTranscript(fullText);
+        onTranscript(combined);
       } else if (onCommand) {
-        const command = detectCommand(fullText);
+        const command = detectCommand(combined);
         onCommand(command);
       }
       setTranscript("");
       setInterimText("");
       finalTranscriptRef.current = "";
+      accumulatedTranscriptRef.current = "";
     }
+    sessionStartedAtRef.current = null;
   }, [interimText, onCommand, onTranscript]);
 
   const cancelListening = useCallback(() => {
+    // Mark user-stopped so onend doesn't auto-restart.
+    isUserStoppedRef.current = true;
     if (recognitionRef.current) {
       recognitionRef.current.abort();
     }
@@ -245,11 +347,16 @@ export default function DictationButton({
     setTranscript("");
     setInterimText("");
     finalTranscriptRef.current = "";
+    accumulatedTranscriptRef.current = "";
+    sessionStartedAtRef.current = null;
   }, []);
 
   useEffect(() => {
     return () => {
       if (recognitionRef.current) {
+        // Component unmount — abort cleanly and prevent any pending onend
+        // from spawning a restart.
+        isUserStoppedRef.current = true;
         recognitionRef.current.abort();
       }
     };

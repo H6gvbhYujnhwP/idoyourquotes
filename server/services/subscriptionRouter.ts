@@ -107,7 +107,7 @@ export const subscriptionRouter = router({
         priceWithVat: 70.80,
         maxUsers: 1,
         maxQuotesPerMonth: 10,
-        maxCatalogItems: 100,
+        maxCatalogItems: 200,
         features: TIER_CONFIG.solo.features,
       },
       pro: {

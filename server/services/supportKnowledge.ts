@@ -55,11 +55,10 @@ The active sectors are: **IT Services**, **Commercial Cleaning**, **Website & Di
 ## Signing up and getting started
 
 1. Register at the homepage. Email and password.
-2. Verify the email — a verification link arrives via Resend. Until verified, the trial is paused and a banner sits across the top of the dashboard.
-3. On first sign-in the user picks their sector. The app then auto-loads a starter catalogue tailored to that sector — a list of common items at indicative rates the user will tailor with their own buy-in costs.
-4. The Quotes page (the dashboard) is the home base. From there: New quote, search/filter existing quotes, open the catalogue, change settings.
+2. Pick a trade sector at registration. The app uses this to load a starter catalogue tailored to that sector — a list of common products and services at indicative UK rates the user will tailor with their own buy-in costs.
+3. The Quotes page (the dashboard) is the home base. From there: New quote, search/filter existing quotes, open the catalogue, change settings.
 
-A "Better catalogue, better first quote" banner appears for users who haven't tailored their starter catalogue yet. Clicking through goes to the catalogue; clicking the X dismisses the banner permanently.
+A "Your starter catalogue is ready" banner appears on the Dashboard for new users to nudge them toward tailoring rates and buy-in costs over time. Clicking through goes to the catalogue; clicking the X dismisses the banner permanently.
 
 ---
 
@@ -210,7 +209,7 @@ If the user clicks Generate again on the same evidence, results should be near-i
 The AI auto-fills Buy-in Cost only when the line item's name matches a catalogue entry that has a recorded buy-in. Common reasons it's empty:
 - The catalogue item has no buy-in cost recorded yet.
 - The AI's generated description doesn't match any catalogue entry name.
-- The user is on a fresh starter catalogue and hasn't tailored buy-ins yet — the "Better catalogue, better first quote" banner is pointing at exactly this fix.
+- The user is on a fresh starter catalogue and hasn't tailored buy-ins yet — the "Your starter catalogue is ready" banner is pointing at exactly this fix.
 
 ### "I uploaded a new brochure but I'm still seeing the old one in my proposal."
 

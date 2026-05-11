@@ -44,7 +44,7 @@ export const organizations = pgTable("organizations", {
   trialEndsAt: timestamp("trial_ends_at"),
   maxUsers: integer("max_users").default(1),
   maxQuotesPerMonth: integer("max_quotes_per_month").default(10),
-  maxCatalogItems: integer("max_catalog_items").default(100),
+  maxCatalogItems: integer("max_catalog_items").default(200),
   monthlyQuoteCount: integer("monthly_quote_count").default(0),
   quoteCountResetAt: timestamp("quote_count_reset_at"),
   aiCreditsRemaining: integer("ai_credits_remaining").default(0),

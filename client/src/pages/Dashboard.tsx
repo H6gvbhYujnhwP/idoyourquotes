@@ -398,15 +398,13 @@ export default function Dashboard() {
               className="font-medium mb-0.5"
               style={{ color: "var(--brand-text-primary)" }}
             >
-              Better catalogue, better first quote
+              Your starter catalogue is ready
             </div>
             <p
               className="text-sm"
               style={{ color: "var(--brand-text-secondary)" }}
             >
-              We've set up a starter catalogue for your sector — review the
-              rates, add your buy-in costs, and your AI-generated quotes will
-              land much closer to ready-to-send.
+              We've pre-loaded the common products and services for your sector at indicative UK rates — you can quote with it straight away. Tweak prices and add buy-in costs over time as you sell things.
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
