@@ -140,6 +140,59 @@ When the invoice shows prices as blacked-out boxes, "POA", or blank, you MUST st
 - Service Desk / Helpdesk Engineer: £55–£85 per hour
 - Senior IT Consultant: £95–£150 per hour
 - Generic per-device monitoring / RMM: £3–£8 per device per month
+- Business broadband — FTTC 40/10 or 80/20 Mbps: £22–£35 per line per month
+- Business broadband — SOGEA 80/20 Mbps: £28–£38 per line per month
+- Business broadband — FTTP 100/20 Mbps: £35–£50 per line per month
+- Business broadband — FTTP 300/50 Mbps: £45–£60 per line per month
+- Business broadband — FTTP 500/75 Mbps: £55–£75 per line per month
+- Business broadband — FTTP 1Gbps: £70–£100 per line per month
+- Business broadband — static IPv4 single address: £3–£7 per line per month
+- Broadband provision (one-off install + router): FTTC/SOGEA £120–£200; FTTP £200–£350
+- Leased line — uncontended fibre, monthly rental:
+   - 100Mbps symmetric: £220–£320 per month
+   - 200Mbps symmetric: £290–£400 per month
+   - 500Mbps symmetric: £400–£550 per month
+   - 1Gbps symmetric:   £550–£800 per month
+   - 10Gbps symmetric:  £1,500–£2,500 per month
+- Leased line one-off provision (standard 90-day install): £1,000–£2,500
+- SD-WAN edge device (managed, per site monthly): £35–£60 per device per month
+- SD-WAN cloud management (per site monthly): £50–£90 per site per month
+- 4G/5G failover router with multi-carrier SIM (monthly): £40–£70 per device per month
+- 4G/5G failover one-off provision: £150–£280
+- Satellite internet (LEO) standard tier (monthly): £80–£120 per line per month
+- Satellite internet priority business tier (monthly): £150–£220 per line per month
+- Satellite one-off provision (dish + install + commission): £450–£800
+- Enterprise Wi-Fi access point — Cisco Meraki (hardware, ex licence): £300–£450 each
+- Enterprise Wi-Fi access point — Ubiquiti UniFi (hardware): £130–£220 each
+- Wi-Fi cloud management licence per AP (monthly): £4–£10 per device per month
+- Wi-Fi site survey (one-off): £350–£650
+- SIP trunk channel (Gamma or equivalent, per concurrent call): £5–£9 per channel per month
+- SIP DDI number (single, geographic or non-geographic): £0.50–£1.50 per number per month
+- SIP DDI block of 10: £4–£8 per block per month
+- SIP DDI block of 100: £15–£30 per block per month
+- Number porting (one-off, per number): £8–£20
+- SIP trunk one-off provision and setup: £100–£250
+- VoIP user package — Essentials tier (per user monthly): £8–£12 per user per month
+- VoIP user package — Standard tier (per user monthly): £13–£18 per user per month
+- VoIP user package — Premium tier (per user monthly): £18–£25 per user per month
+- VoIP handset — entry / mid-range / executive: £60–£100 / £150–£220 / £250–£350 each
+- VoIP DECT cordless handset: £150–£250 each
+- VoIP conference phone (Yealink CP925-class): £300–£420 each
+- VoIP system one-off provision and setup: £200–£450
+- Google Workspace Business Starter: £5–£8 per user per month
+- Google Workspace Business Standard: £11–£15 per user per month
+- Google Workspace Business Plus: £18–£24 per user per month
+- Google Workspace Enterprise Standard: £18–£24 per user per month
+- Google Workspace Enterprise Plus: £24–£32 per user per month
+- Cyber Essentials certification (annual, self-assessed, IASME): £300–£500
+- Cyber Essentials Plus certification (annual, audited): £1,500–£3,000
+- Cyber Essentials Plus audit day (certifying-body audit): £750–£1,200
+- Cyber Essentials readiness support (pre-cert remediation): £80–£120 per hour
+- Vulnerability scanning (managed, per device monthly): £3–£8 per device per month
+- Dark web monitoring (per company domain monthly): £20–£40 per domain per month
+- Security awareness training (per user monthly, KnowBe4-class): £2.50–£5 per user per month
+- Hardware MFA token (YubiKey or equivalent, one-off): £30–£55 each
+- Penetration test — standard external (one-off): £1,800–£3,500
 
 Pick one specific number near the middle of the range — never return null for unitPrice on anchor-rated rows. The user reviews every estimated price before the quote goes to the client.
 
@@ -160,7 +213,7 @@ An MSP's catalog represents the vendor THEY have chosen in each commodity catego
 FORCED CATEGORISATION STEP — do this for EVERY evidence line item BEFORE deciding how to price it:
 
 STEP 1 — Identify the commodity category of the evidenced item. Emit it on the material row as "evidenceCategory" (short snake_case). Use one of these values; extend only if none fit:
-"firewall", "password_manager", "m365_backup", "server_backup", "endpoint_security", "email_threat_protection", "dns_filter", "email_signature_management", "rmm", "it_documentation", "named_user_support", "managed_server_support", "project_labour", "service_desk_labour", "microsoft_365_licence", "telephony", "specific_hardware", "other".
+"firewall", "password_manager", "m365_backup", "server_backup", "endpoint_security", "email_threat_protection", "dns_filter", "email_signature_management", "rmm", "it_documentation", "named_user_support", "managed_server_support", "project_labour", "service_desk_labour", "microsoft_365_licence", "google_workspace_licence", "telephony_platform", "sip_trunk", "voip_user_licence", "voip_handset", "broadband", "leased_line", "sd_wan", "mobile_failover", "satellite_internet", "wifi_hardware", "wifi_management_licence", "cyber_essentials", "cyber_essentials_plus", "vulnerability_scanning", "security_awareness_training", "dark_web_monitoring", "mfa_token", "penetration_test", "specific_hardware", "other".
 
 STEP 2 — Determine whether that category is SUBSTITUTABLE per the rules below. Emit on the material row as "substitutable": true | false.
 
@@ -194,12 +247,27 @@ POSITIVE LIST — CATEGORIES WHERE SUBSTITUTION IS CORRECT (brand-agnostic commo
 - IT documentation: IT Glue, Hudu, ITBoost, Confluence (in MSP context) — all interchangeable commodities.
 - DNS filtering / web filtering: Webroot DNS, Cisco Umbrella, DNSFilter, SafeDNS — all interchangeable commodities.
 - Named-user support contracts from a competing provider (e.g. "Reach IT Support [Core] Named User" on an incumbent invoice): named-user support IS a commodity category. Map to the user's catalog support tier if a semantic match exists (e.g. "Silver IT Support — Unlimited Remote" with unit "User" and pricingType "monthly"), noting the substitution. If no semantic match exists, apply PASSTHROUGH — do NOT reuse a support SKU with a different unit or a different pricing model.
+- Business broadband (FTTC, SOGEA, FTTP) — the access line is a commodity. Carriers (BT, Openreach via wholesale, Sky Business, Vodafone Business, TalkTalk Business, Zen, Plusnet Business, Daisy, Beaming, DWS, NTA) are interchangeable at the same speed tier. Match to the user's catalog row of the same speed/technology (e.g. evidence "Vodafone FTTP 500Mbps" → user catalog "FTTP Broadband 500/75 Mbps — Monthly"). Speed tier must match within a reasonable band — do not substitute a 100Mbps FTTP line for a 1Gbps catalog row.
+- Leased lines / Ethernet First Mile / dedicated fibre — the dedicated circuit is a commodity. Carriers (BT Wholesale / Openreach EAD, Virgin Media Business, Colt, TalkTalk Business, Vodafone, CityFibre, Daisy, Gamma) are interchangeable at the same bandwidth. Match to the user's catalog row of the same bandwidth (evidence "Colt 1Gbps EAD" → user catalog "Leased Line 1Gbps Symmetric — Monthly").
+- SIP trunk channels — the SIP service is a commodity. Carriers (Gamma, BT, Voiceflex, Sipgate, X-on, Bullnet, 8×8, Vonage Business) are interchangeable per concurrent channel. Map per-channel evidence to the user's catalog SIP channel SKU. DDI number rentals are similarly commodity per-number / per-block.
+- Hosted VoIP user packages (per-user/month, hosted PBX) — the per-user seat licence is a commodity. Platforms (3CX hosted, Gamma Horizon, BT Cloud Voice, Vonage, RingCentral, 8×8, Zoom Phone, Microsoft Teams Phone) are commodity at the SEAT LICENCE level for tier-matched packages (Essentials → Essentials, Standard → Standard, Premium → Premium). NOTE: the underlying PBX PLATFORM itself is NOT substitutable (see telephony_platform on the negative list) — only the per-user seat licence within a chosen platform is substitutable.
+- VoIP handsets (IP desk phones, DECT cordless, conference phones) — handset hardware is a commodity within a tier. Brands (Yealink T31/T54/T57 series, Polycom VVX, Cisco SPA / 8800-series, Grandstream GXP, Snom, Fanvil, Mitel 6900) are interchangeable at the same form-factor tier (entry / mid / executive / DECT / conference). Match to the user's catalog row of the same tier.
+- Wi-Fi access points within management ecosystem (cloud-managed enterprise APs) — Cisco Meraki, Ubiquiti UniFi, Aruba InstantOn, TP-Link Omada, Ruckus, Cambium — interchangeable at the deployment tier when the user's catalog represents their chosen management platform. Cloud management licences (per-AP monthly) are similarly commodity.
+- 4G/5G failover routers with multi-carrier SIM — Cradlepoint, Peplink, Teltonika, Robustel, Digi — interchangeable hardware.
+- Satellite internet (LEO business) — Starlink Business, OneWeb, Eutelsat / Konnect — interchangeable at the tier level (standard vs priority business).
+- SD-WAN edge devices and cloud management licences — vendors (Fortinet Secure SD-WAN, Cisco Meraki SD-WAN, VeloCloud / VMware SD-WAN, Aruba Silver Peak, Cato, Versa) are interchangeable when the user's catalog represents their chosen platform.
+- Vulnerability scanning (managed external + internal authenticated scans) — Tenable Nessus, Qualys, Rapid7 InsightVM, Greenbone / OpenVAS, Intruder — all interchangeable commodities per protected device.
+- Dark web monitoring / credential breach monitoring — SpyCloud, ID Agent Dark Web ID, IT Glue Network Glue, Have I Been Pwned (Enterprise), Constella — all interchangeable per company domain.
+- Security awareness training platforms — KnowBe4, Hoxhunt, usecure / uLearn, Curricula, Cofense, Mimecast Awareness Training, Proofpoint Security Awareness — all interchangeable commodities per user.
+- Cyber Essentials and Cyber Essentials Plus certification fees — administered by IASME, the certification fee itself is commodity. The CERTIFYING BODY (Indelible Data, Pentest People, Cyber Smart, IASME directly) is not a meaningful client-side distinction — substitute to the user's catalog certification SKU. Note: this is about the cert FEE, not the readiness/audit DAY rate which is engineer labour.
+- Hardware MFA tokens — YubiKey 5 series, Token2, Feitian — interchangeable at the same standards tier (FIDO2 / WebAuthn / U2F). Match to the user's catalog MFA token SKU.
+- Penetration testing (one-off external) — provider firms are commodity at the assurance level (CREST-qualified external pen test). Match to the user's catalog penetration test SKU when scope (external standard) matches.
 
 NEGATIVE LIST — CATEGORIES WHERE SUBSTITUTION IS WRONG (client-specific — quote exactly as evidenced):
-- Microsoft 365 vs Google Workspace vs Zoho — productivity suites are a client ecosystem decision. Never swap.
+- Microsoft 365 vs Google Workspace vs Zoho — productivity suites are a client ecosystem decision. Never swap. This means: do NOT substitute a Microsoft 365 evidence line into a Google Workspace catalog row, or vice versa. If the user's catalog only has the wrong suite, apply PASSTHROUGH at the evidence price.
 - Specific firewall brands AND MODELS: Sophos XGS / XG, Fortinet FortiGate, WatchGuard, Cisco Meraki MX, SonicWall, Ubiquiti UniFi, Juniper SRX, DrayTek Vigor — different management, licensing, and integration. Quote the EXACT brand AND model named in the evidence.
 - Specific hardware SKUs — if the evidence names a model (e.g. "Sophos XGS 118", "Cisco Catalyst 9200L-24P"), quote that exact model. The client may already own it or have integration requirements.
-- Telephony systems: 3CX vs Microsoft Teams Phone vs Zoom Phone vs RingCentral vs Gamma Horizon — different integration and porting implications. Quote the same system.
+- Telephony PLATFORM (the PBX itself): 3CX vs Microsoft Teams Phone vs Zoom Phone vs RingCentral vs Gamma Horizon vs Mitel — different integration and porting implications. Quote the same platform. NOTE: this rule applies to the PBX platform/provision. Per-user SEAT LICENCES within a chosen platform are commodity at the tier level (see positive list).
 - Managed server support tier (per-server) — if the incumbent bills per-server for managed server support, this is NOT a named-user support line and does NOT substitute into a per-user support SKU. It is either mapped to a catalog item whose UNIT is "Server" and whose description describes server management (substitutable: true, semantic match on unit), or it is applied via PASSTHROUGH.
 
 HOW TO SUBSTITUTE (only when substitutable: true AND a semantic catalog match exists on NAME + DESCRIPTION + UNIT + PRICING TYPE):
