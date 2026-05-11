@@ -1,9 +1,10 @@
 /**
  * IT Services / MSP — Starter Catalog Seed
  *
- * 81 items covering the common product stack for a UK MSP starting out:
- * Microsoft 365 licensing, security & backup, IT support contracts,
- * website services, productivity tools, engineer labour rates, plus the
+ * 88 items covering the common product stack for a UK MSP starting out:
+ * Microsoft 365 licensing, Google Workspace licensing, security & backup,
+ * cyber security certification & monitoring, IT support contracts, website
+ * services, productivity tools, engineer labour rates, plus the
  * connectivity / voice product family (broadband, leased lines, 4G/5G
  * failover, satellite, Wi-Fi, SIP trunking, hosted VoIP).
  *
@@ -24,17 +25,19 @@
  * names, not MSP shorthand) so AI extraction from competitor invoices — which
  * tend to use canonical names like "[NCE/1-Year/Monthly]" — matches cleanly.
  *
- * Category set (10):
+ * Category set (12):
  *   1.  Microsoft 365 & Licensing
- *   2.  Security & Backup
- *   3.  IT Support Contracts
- *   4.  Website Services
- *   5.  Productivity Tools
- *   6.  Engineer Labour
- *   7.  Connectivity              (NEW — 24 items)
- *   8.  Wi-Fi & LAN               (NEW — 5 items)
- *   9.  SIP & Voice Lines         (NEW — 6 items)
- *   10. VoIP Telephony            (NEW — 10 items)
+ *   2.  Google Workspace & Licensing  (NEW — 8 items)
+ *   3.  Security & Backup
+ *   4.  Cyber Security                (NEW — 9 items)
+ *   5.  IT Support Contracts
+ *   6.  Website Services
+ *   7.  Productivity Tools
+ *   8.  Engineer Labour
+ *   9.  Connectivity
+ *   10. Wi-Fi & LAN
+ *   11. SIP & Voice Lines
+ *   12. VoIP Telephony
  */
 
 export type CatalogSeedItem = {
@@ -140,6 +143,85 @@ export const IT_SERVICES_CATALOG_SEED: readonly CatalogSeedItem[] = [
     costPrice: "10.27",
   },
 
+  // ───────── Google Workspace & Licensing (8) ─────────
+  // Google's productivity suite — Gmail, Drive, Docs, Meet, Calendar.
+  // Same Monthly / Annual split as Microsoft 365 — annual term billed
+  // monthly is the best-value option for committed buyers; monthly term
+  // carries a small premium for flexibility. Pricing reflects 2026 list
+  // rates with typical reseller margin.
+  {
+    name: "Google Workspace Business Starter — Monthly",
+    description: "Google Workspace Business Starter [Flex / 1-Month term, no annual commitment] || Custom email at your domain (e.g. you@yourcompany.co.uk) || 30GB pooled cloud storage per user || Gmail, Drive, Docs, Sheets, Slides, Meet, Calendar, Chat || Up to 100-participant video meetings || Standard support",
+    category: "Google Workspace & Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "6.50",
+    costPrice: "5.20",
+  },
+  {
+    name: "Google Workspace Business Starter — Annual",
+    description: "Google Workspace Business Starter [Annual / 1-Year term, billed monthly — best value] || Custom email at your domain (e.g. you@yourcompany.co.uk) || 30GB pooled cloud storage per user || Gmail, Drive, Docs, Sheets, Slides, Meet, Calendar, Chat || Up to 100-participant video meetings || Standard support",
+    category: "Google Workspace & Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "5.75",
+    costPrice: "4.60",
+  },
+  {
+    name: "Google Workspace Business Standard — Monthly",
+    description: "Google Workspace Business Standard [Flex / 1-Month term, no annual commitment] || Custom email at your domain || 2TB pooled cloud storage per user || All Business Starter apps plus Meet recording and noise cancellation || Up to 150-participant video meetings || Shared team drives || Standard support",
+    category: "Google Workspace & Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "13.10",
+    costPrice: "10.50",
+  },
+  {
+    name: "Google Workspace Business Standard — Annual",
+    description: "Google Workspace Business Standard [Annual / 1-Year term, billed monthly — best value] || Custom email at your domain || 2TB pooled cloud storage per user || All Business Starter apps plus Meet recording and noise cancellation || Up to 150-participant video meetings || Shared team drives || Standard support",
+    category: "Google Workspace & Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "11.50",
+    costPrice: "9.20",
+  },
+  {
+    name: "Google Workspace Business Plus — Monthly",
+    description: "Google Workspace Business Plus [Flex / 1-Month term, no annual commitment] || Custom email at your domain || 5TB pooled cloud storage per user || All Business Standard apps plus attendance tracking, Meet recording and noise cancellation || Up to 500-participant video meetings || eDiscovery, retention and audit (Vault) || Enhanced security and management controls",
+    category: "Google Workspace & Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "21.20",
+    costPrice: "17.00",
+  },
+  {
+    name: "Google Workspace Business Plus — Annual",
+    description: "Google Workspace Business Plus [Annual / 1-Year term, billed monthly — best value] || Custom email at your domain || 5TB pooled cloud storage per user || All Business Standard apps plus attendance tracking, Meet recording and noise cancellation || Up to 500-participant video meetings || eDiscovery, retention and audit (Vault) || Enhanced security and management controls",
+    category: "Google Workspace & Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "18.60",
+    costPrice: "14.90",
+  },
+  {
+    name: "Google Workspace Enterprise Standard — Monthly",
+    description: "Google Workspace Enterprise Standard [Flex / 1-Month term] || Custom email at your domain || As much pooled storage as needed (per request) || All Business Plus apps plus advanced security, DLP, and S/MIME encryption || Up to 500-participant video meetings with attendance tracking || Enhanced endpoint management and context-aware access || Premium support",
+    category: "Google Workspace & Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "19.20",
+    costPrice: "15.40",
+  },
+  {
+    name: "Google Workspace Enterprise Plus — Monthly",
+    description: "Google Workspace Enterprise Plus [Flex / 1-Month term] || Custom email at your domain || As much pooled storage as needed (per request) || All Enterprise Standard apps plus Premium Meet (up to 1,000 participants, in-domain live streaming) || Connected Sheets for BigQuery analysis || Advanced endpoint management and context-aware access || Premium support",
+    category: "Google Workspace & Licensing",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "27.00",
+    costPrice: "21.60",
+  },
+
   // ───────── Security & Backup (5) ─────────
   {
     name: "ESET Endpoint Protection",
@@ -185,6 +267,95 @@ export const IT_SERVICES_CATALOG_SEED: readonly CatalogSeedItem[] = [
     pricingType: "monthly",
     defaultRate: "68.00",
     costPrice: "30.00",
+  },
+
+  // ───────── Cyber Security (9) ─────────
+  // UK-government-backed Cyber Essentials & Plus certifications administered
+  // by IASME, plus the wider supporting offerings — vulnerability scanning,
+  // dark web monitoring, security awareness training, hardware MFA tokens,
+  // and external penetration testing. Certs use pricingType "annual" to
+  // signal the 12-month renewal cadence; supporting services use
+  // monthly/standard as appropriate.
+  {
+    name: "Cyber Essentials Certification",
+    description: "UK Government-backed Cyber Essentials self-assessed certification (IASME-administered) || Annual certification valid 12 months || Includes IASME certification fee || Pre-submission review of the SAQ (Self-Assessment Questionnaire) || Guidance on the five technical controls (firewalls, secure configuration, user access control, malware protection, patch management) || Required for many UK public-sector and supplier-chain tenders",
+    category: "Cyber Security",
+    unit: "Each",
+    pricingType: "annual",
+    defaultRate: "450.00",
+    costPrice: "300.00",
+  },
+  {
+    name: "Cyber Essentials Plus Certification",
+    description: "UK Government-backed Cyber Essentials Plus certification (IASME-administered) || Annual certification valid 12 months || Includes IASME certification fee and certifying-body audit day || Hands-on technical audit by qualified assessor (internal vulnerability scan, sampled device inspection, simulated phishing) || Covers the same five technical controls as Cyber Essentials, evidenced by audit rather than self-assessment || Required for higher-assurance public-sector and supplier-chain tenders",
+    category: "Cyber Security",
+    unit: "Each",
+    pricingType: "annual",
+    defaultRate: "1995.00",
+    costPrice: "1250.00",
+  },
+  {
+    name: "Cyber Essentials Readiness Support",
+    description: "Hands-on engineering time to prepare a client for Cyber Essentials or Plus || Gap analysis against the five technical controls || Firewall, patching, user access and malware protection remediation || Asset register and policy template support || Mock SAQ walkthrough before submission || Charged per hour, typical engagements 4–12 hours",
+    category: "Cyber Security",
+    unit: "Hour",
+    pricingType: "standard",
+    defaultRate: "95.00",
+    costPrice: null,
+  },
+  {
+    name: "Cyber Essentials Plus Audit Day",
+    description: "Required onsite or remote audit day by a qualified certifying-body assessor || Internal authenticated vulnerability scan of sampled devices || Inspection of user devices, mobile devices and cloud services || Simulated phishing test of a sample of users || Audit report and findings handover || Charged per audit day — typical small/medium org requires one day",
+    category: "Cyber Security",
+    unit: "Each",
+    pricingType: "standard",
+    defaultRate: "950.00",
+    costPrice: "650.00",
+  },
+  {
+    name: "Vulnerability Scanning — Per Device Monthly",
+    description: "Managed vulnerability scanning per protected device || Monthly external (perimeter) and authenticated internal scans || CVE-rated findings prioritised by severity || Remediation guidance for each finding || Trending dashboard and monthly report || Supports Cyber Essentials Plus and ongoing assurance",
+    category: "Cyber Security",
+    unit: "Device",
+    pricingType: "monthly",
+    defaultRate: "4.50",
+    costPrice: "1.80",
+  },
+  {
+    name: "Dark Web Monitoring — Per Domain",
+    description: "Continuous dark-web monitoring per company domain || Alerts when employee credentials, email addresses or sensitive data appear on breach forums, paste sites and dark-web marketplaces || Historical and ongoing scans || Monthly summary report || Pairs well with a password manager rollout for fast credential-reset response",
+    category: "Cyber Security",
+    unit: "Each",
+    pricingType: "monthly",
+    defaultRate: "29.00",
+    costPrice: "8.00",
+  },
+  {
+    name: "Security Awareness Training — Per User Monthly",
+    description: "Managed security awareness training per user (KnowBe4-class platform) || Monthly phishing simulations with risk-scored results || On-demand training modules covering phishing, password hygiene, social engineering, GDPR and ransomware || Automated remedial training assigned on simulation failure || Quarterly board-ready reporting || Supports compliance posture for Cyber Essentials Plus, ISO 27001 and Cyber Insurance",
+    category: "Cyber Security",
+    unit: "User",
+    pricingType: "monthly",
+    defaultRate: "3.50",
+    costPrice: "1.20",
+  },
+  {
+    name: "MFA / 2FA Token (Hardware)",
+    description: "Hardware multi-factor authentication token per user (YubiKey or equivalent) || FIDO2 / WebAuthn / U2F support || Pairs with Microsoft 365, Google Workspace, Azure AD, password managers and most modern SSO platforms || Phishing-resistant — protects against credential theft even when the password is compromised || One-off purchase, no per-user licence fee",
+    category: "Cyber Security",
+    unit: "Each",
+    pricingType: "standard",
+    defaultRate: "39.00",
+    costPrice: "22.00",
+  },
+  {
+    name: "Penetration Test — Standard External",
+    description: "One-off external penetration test against the customer's perimeter || Reconnaissance, port scanning, service enumeration and exploit attempts from an external attacker perspective || CVE-rated findings with proof-of-exploit and reproduction steps || Executive summary plus technical report || Remediation guidance and optional retest after fixes || Conducted by a CREST or equivalent-qualified tester",
+    category: "Cyber Security",
+    unit: "Each",
+    pricingType: "standard",
+    defaultRate: "2495.00",
+    costPrice: "1500.00",
   },
 
   // ───────── IT Support Contracts (2) ─────────
