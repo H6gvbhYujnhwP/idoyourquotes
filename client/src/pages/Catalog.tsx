@@ -13,7 +13,7 @@ import {
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Plus, Package, Search, Trash2, Sparkles } from "lucide-react";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 
 interface CatalogItemData {
@@ -139,6 +139,164 @@ function EditableCell({
 }
 
 /**
+ * Sentinel string for the "+ New category…" dropdown option. Picked to be
+ * something a user cannot accidentally type into a normal category name —
+ * a control character pair plus the verb so it cannot collide with any real
+ * value selected through the saved-categories path.
+ */
+const NEW_CATEGORY_SENTINEL = "\u0000__new__";
+
+/**
+ * Inline Category Cell — drop-down picker with an inline "create new" path.
+ *
+ * Behaviour mirrors the existing Pricing <select> on this row but adds:
+ *   - Sector-seed categories at the top
+ *   - User's existing custom categories below a divider (deduped, sorted)
+ *   - A "+ New category…" sentinel that swaps the cell to a free-text input
+ *
+ * Sector-agnostic — `suggestedCategories` is passed by the parent and comes
+ * from whichever sector seed applies (or is empty if the user has no
+ * sector / no seed yet). The "Uncategorized" group label that appears in
+ * the page-level grouping is NOT exposed as a pickable option; users
+ * either pick something real or save a custom name.
+ */
+function CategoryCell({
+  value,
+  itemId,
+  suggestedCategories,
+  customCategories,
+  onSave,
+}: {
+  value: string;
+  itemId: number;
+  suggestedCategories: string[];
+  customCategories: string[];
+  onSave: (id: number, field: string, value: string) => void;
+}) {
+  const [mode, setMode] = useState<"select" | "newInput">("select");
+  const [newValue, setNewValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (mode === "newInput" && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [mode]);
+
+  const commitNew = () => {
+    const trimmed = newValue.trim();
+    setMode("select");
+    setNewValue("");
+    if (trimmed && trimmed !== value) {
+      onSave(itemId, "category", trimmed);
+    }
+  };
+
+  const cancelNew = () => {
+    setMode("select");
+    setNewValue("");
+  };
+
+  if (mode === "newInput") {
+    return (
+      <input
+        ref={inputRef}
+        type="text"
+        value={newValue}
+        onChange={(e) => setNewValue(e.target.value)}
+        onBlur={commitNew}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commitNew();
+          if (e.key === "Escape") cancelNew();
+        }}
+        placeholder="New category name"
+        style={{
+          width: "100%",
+          minWidth: 70,
+          padding: "4px 6px",
+          fontSize: 13,
+          border: "1px solid #0d9488",
+          borderRadius: 4,
+          outline: "none",
+          background: "#f0fdfa",
+        }}
+      />
+    );
+  }
+
+  // Build the option set. Suggested categories (from sector seed) first,
+  // then a divider, then any custom categories the user has invented that
+  // aren't already in the suggested list. The current value is always
+  // present in the dropdown — if it doesn't appear in either list it gets
+  // appended as an extra "(current)" option so we never silently overwrite it.
+  const suggestedLower = new Set(suggestedCategories.map((c) => c.toLowerCase()));
+  const customLower = new Set(customCategories.map((c) => c.toLowerCase()));
+  const valueInSuggested = value !== "" && suggestedLower.has(value.toLowerCase());
+  const valueInCustom = value !== "" && customLower.has(value.toLowerCase());
+  const valueIsOrphan = value !== "" && !valueInSuggested && !valueInCustom;
+
+  return (
+    <select
+      value={value}
+      onChange={(e) => {
+        const next = e.target.value;
+        if (next === NEW_CATEGORY_SENTINEL) {
+          setMode("newInput");
+          return;
+        }
+        if (next !== value) {
+          onSave(itemId, "category", next);
+        }
+      }}
+      style={{
+        width: "100%",
+        padding: "4px 6px",
+        fontSize: 13,
+        border: "1px solid #e2e8f0",
+        borderRadius: 4,
+        background: "white",
+        cursor: "pointer",
+        color: value ? "#1a2b4a" : "#94a3b8",
+        fontWeight: 500,
+        minHeight: 28,
+      }}
+      title="Pick a category, or choose '+ New category…' to invent one"
+    >
+      <option value="" disabled>
+        Pick a category…
+      </option>
+
+      {suggestedCategories.length > 0 && (
+        <optgroup label="Suggested for your sector">
+          {suggestedCategories.map((cat) => (
+            <option key={`s-${cat}`} value={cat}>
+              {cat}
+            </option>
+          ))}
+        </optgroup>
+      )}
+
+      {customCategories.length > 0 && (
+        <optgroup label="Your custom categories">
+          {customCategories.map((cat) => (
+            <option key={`c-${cat}`} value={cat}>
+              {cat}
+            </option>
+          ))}
+        </optgroup>
+      )}
+
+      {valueIsOrphan && (
+        <option value={value}>{value}</option>
+      )}
+
+      <option value={NEW_CATEGORY_SENTINEL}>+ New category…</option>
+    </select>
+  );
+}
+
+/**
  * Catalog Page - inline-editable spreadsheet-style table showing all fields.
  * Uses existing catalog.update tRPC route. No server changes needed.
  */
@@ -197,10 +355,13 @@ export default function Catalog() {
   // dialog-lifecycle refs stay together.
   const didAutoOpenSeedRef = useRef(false);
 
-  const { data: seedTemplate, isLoading: isLoadingTemplate } = trpc.catalog.getSectorTemplate.useQuery(
-    undefined,
-    { enabled: isSeedDialogOpen }
-  );
+  // Sector template query. Previously gated on isSeedDialogOpen — now always
+  // enabled, because the CategoryCell needs the seed's category list to
+  // populate the "Suggested for your sector" optgroup whether the Load
+  // Starter dialog is open or not. The payload is small (item list +
+  // capacity counters) and is cached by React Query so the dialog still
+  // opens instantly without an extra round-trip.
+  const { data: seedTemplate, isLoading: isLoadingTemplate } = trpc.catalog.getSectorTemplate.useQuery();
 
   // Auto-open the seed dialog when the Dashboard nudge (or any other link)
   // navigates here with ?seed=1. Runs on user / canSeedStarterCatalog change
@@ -318,7 +479,7 @@ export default function Catalog() {
     createItem.mutate({
       name,
       description: description || undefined,
-      category: category || undefined,
+      category: category.trim() || undefined,
       unit: unit || undefined,
       defaultRate: defaultRate || undefined,
       costPrice: costPrice || undefined,
@@ -352,6 +513,40 @@ export default function Catalog() {
 
   const categories = groupedItems ? Object.keys(groupedItems).sort() : [];
 
+  // ── Category dropdown data sources ──────────────────────────────────────
+  // Two parallel lists feed the CategoryCell on every row plus the Add Item
+  // dialog. Memoised against the upstream data so per-row work is just a
+  // ref read.
+  //
+  //   suggestedCategories — distinct categories from the sector seed.
+  //     Empty array if the user has no sector, or the sector has no seed.
+  //
+  //   customCategories — distinct categories currently present in the
+  //     user's own catalog that aren't already in suggestedCategories.
+  //     Preserves user-invented categories so they remain pickable on
+  //     other rows without having to retype them.
+  const suggestedCategories = useMemo<string[]>(() => {
+    if (!seedTemplate?.items) return [];
+    const set = new Set<string>();
+    for (const item of seedTemplate.items as Array<{ category: string | null }>) {
+      if (item.category) set.add(item.category);
+    }
+    return Array.from(set).sort();
+  }, [seedTemplate]);
+
+  const customCategories = useMemo<string[]>(() => {
+    if (!items) return [];
+    const suggestedLower = new Set(suggestedCategories.map((c) => c.toLowerCase()));
+    const set = new Set<string>();
+    for (const item of items as CatalogItemData[]) {
+      const cat = (item.category || "").trim();
+      if (!cat) continue;
+      if (suggestedLower.has(cat.toLowerCase())) continue;
+      set.add(cat);
+    }
+    return Array.from(set).sort();
+  }, [items, suggestedCategories]);
+
   const columns = [
     { label: "Name", flex: 2.5, mw: 160 },
     { label: "Description", flex: 2, mw: 120 },
@@ -363,6 +558,15 @@ export default function Catalog() {
     { label: "Pricing", flex: 0.9, mw: 80 },
     { label: "", flex: 0.3, mw: 36 },
   ];
+
+  // Helper for the Add Item dialog: detects whether the typed/picked
+  // category is a brand-new name that isn't in either suggested or custom
+  // lists. Used to swap that dropdown into a free-text input when the user
+  // chooses "+ New category…".
+  const addDialogUsingNewCategory =
+    category !== "" &&
+    !suggestedCategories.some((c) => c.toLowerCase() === category.trim().toLowerCase()) &&
+    !customCategories.some((c) => c.toLowerCase() === category.trim().toLowerCase());
 
   return (
     <div className="space-y-6">
@@ -408,7 +612,74 @@ export default function Catalog() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="category">Category</Label>
-                  <Input id="category" placeholder="e.g., Lighting" value={category} onChange={(e) => setCategory(e.target.value)} />
+                  {/* Picker for the Add Item dialog. Renders a native select
+                      backed by the same suggestedCategories + customCategories
+                      memo used by the inline row cell. Falls back to a free-
+                      text input when the user picks "+ New category…". */}
+                  {addDialogUsingNewCategory ? (
+                    <div className="flex gap-2">
+                      <Input
+                        id="category"
+                        placeholder="New category name"
+                        value={category}
+                        onChange={(e) => setCategory(e.target.value)}
+                        autoFocus
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setCategory("")}
+                      >
+                        Back to list
+                      </Button>
+                    </div>
+                  ) : (
+                    <select
+                      id="category"
+                      value={category}
+                      onChange={(e) => {
+                        if (e.target.value === NEW_CATEGORY_SENTINEL) {
+                          // Putting a single space here means the
+                          // `addDialogUsingNewCategory` branch above
+                          // takes over on the next render and the user
+                          // sees the text input. They'll overwrite the
+                          // space with a real name before saving.
+                          setCategory(" ");
+                          return;
+                        }
+                        setCategory(e.target.value);
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "8px 12px",
+                        fontSize: 14,
+                        border: "1px solid #e2e8f0",
+                        borderRadius: 6,
+                        background: "white",
+                      }}
+                    >
+                      <option value="">Pick a category…</option>
+                      {suggestedCategories.length > 0 && (
+                        <optgroup label="Suggested for your sector">
+                          {suggestedCategories.map((cat) => (
+                            <option key={`s-${cat}`} value={cat}>
+                              {cat}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {customCategories.length > 0 && (
+                        <optgroup label="Your custom categories">
+                          {customCategories.map((cat) => (
+                            <option key={`c-${cat}`} value={cat}>
+                              {cat}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      <option value={NEW_CATEGORY_SENTINEL}>+ New category…</option>
+                    </select>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="unit">Unit</Label>
@@ -504,7 +775,13 @@ export default function Catalog() {
                         <EditableCell value={item.description || ""} field="description" itemId={item.id} onSave={handleInlineSave} minWidth={100} />
                       </div>
                       <div style={{ flex: 1.2, minWidth: 90, padding: "0 2px" }}>
-                        <EditableCell value={item.category || ""} field="category" itemId={item.id} onSave={handleInlineSave} minWidth={70} />
+                        <CategoryCell
+                          value={item.category || ""}
+                          itemId={item.id}
+                          suggestedCategories={suggestedCategories}
+                          customCategories={customCategories}
+                          onSave={handleInlineSave}
+                        />
                       </div>
                       <div style={{ flex: 0.7, minWidth: 60, padding: "0 2px" }}>
                         <EditableCell value={item.unit || ""} field="unit" itemId={item.id} placeholder="each" onSave={handleInlineSave} minWidth={50} />
