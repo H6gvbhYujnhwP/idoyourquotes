@@ -709,4 +709,400 @@ export const adminRouter = router({
 
       return { ok: true, status: "resolved" };
     }),
+
+  // ──────────────────────────────────────────────────────────────────────────
+  //  Quote inspector + catalog diff (added for the admin panel polish session)
+  //
+  //  All three procedures below are READ-ONLY and additive. They do not modify
+  //  any existing data and are not depended on by any non-admin code path —
+  //  customer-facing flows (QuoteWorkspace, brochure pipeline, PDF rendering,
+  //  email scheduling, Stripe) cannot be affected by changes here.
+  //
+  //  - getOrgQuotes:    paginated quote list for one org. Used by the new
+  //                     "Quotes" tab on the org detail view.
+  //  - getQuoteDetail:  full inspection of a single quote — inputs (text/voice/
+  //                     photo/document/email), line items with stock/modified/
+  //                     added/adhoc source matching against the org's catalog
+  //                     and the sector seed, AI draft fields (userPrompt,
+  //                     processingInstructions, comprehensiveConfig), and the
+  //                     finalised assumptions/terms.
+  //  - getOrgCatalog:   the org's full catalog with each item categorised
+  //                     against the seed (stock/modified/added/disabled),
+  //                     with the diff value attached for modified rows.
+  //
+  //  Source-matching strategy: the `quote_line_items.item_name` column links a
+  //  generated line item to a `catalog_items.name` in the org's catalog. The
+  //  org's owner's `defaultTradeSector` then identifies which seed to compare
+  //  against. Edge case: if a user renames a seed item, that item's catalog
+  //  row no longer matches the seed by name and will appear as "added" rather
+  //  than "modified". Documented as accepted behaviour, no schema changes.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Paginated quote list for one organisation. Returns lightweight rows
+   * (no inputs or line item bodies — those come from getQuoteDetail) so the
+   * Quotes tab loads fast even on orgs with hundreds of quotes.
+   */
+  getOrgQuotes: adminProcedure
+    .input(z.object({
+      orgId: z.number(),
+      page: z.number().min(1).optional().default(1),
+      limit: z.number().min(1).max(100).optional().default(20),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { quotes: [], total: 0 };
+
+      const { quotes, quoteLineItems, quoteInputs } = await import("../../drizzle/schema");
+      const { eq, desc, count } = await import("drizzle-orm");
+
+      const orgIdBig = BigInt(input.orgId) as any;
+
+      // Total count first so the UI can render pagination immediately
+      const totalRows = await db
+        .select({ value: count() })
+        .from(quotes)
+        .where(eq(quotes.orgId, orgIdBig));
+      const total = Number((totalRows[0] as any)?.value ?? 0);
+
+      // Paginated quote rows, newest first
+      const offset = (input.page - 1) * input.limit;
+      const rows = await db
+        .select()
+        .from(quotes)
+        .where(eq(quotes.orgId, orgIdBig))
+        .orderBy(desc(quotes.createdAt))
+        .limit(input.limit)
+        .offset(offset);
+
+      // Enrich each row with input + line item counts. Two extra queries per
+      // quote — fine at this page size; if lists ever feel slow we can add a
+      // single grouped count query, but at 20/page this is cheap.
+      const enriched = await Promise.all(rows.map(async (q: any) => {
+        const liCountRows = await db
+          .select({ value: count() })
+          .from(quoteLineItems)
+          .where(eq(quoteLineItems.quoteId, q.id));
+        const inCountRows = await db
+          .select({ value: count() })
+          .from(quoteInputs)
+          .where(eq(quoteInputs.quoteId, q.id));
+        return {
+          id: Number(q.id),
+          title: q.title,
+          reference: q.reference,
+          clientName: q.clientName,
+          status: q.status,
+          subtotal: q.subtotal,
+          total: q.total,
+          monthlyTotal: q.monthlyTotal,
+          annualTotal: q.annualTotal,
+          tradePreset: q.tradePreset,
+          quoteMode: q.quoteMode,
+          createdAt: q.createdAt,
+          updatedAt: q.updatedAt,
+          sentAt: q.sentAt,
+          acceptedAt: q.acceptedAt,
+          lineItemCount: Number((liCountRows[0] as any)?.value ?? 0),
+          inputCount: Number((inCountRows[0] as any)?.value ?? 0),
+        };
+      }));
+
+      return { quotes: enriched, total };
+    }),
+
+  /**
+   * Full quote inspection for one quote. Returns:
+   *   - quote: metadata + AI draft fields (userPrompt, processingInstructions,
+   *            comprehensiveConfig — these are diagnostic-only, never edited
+   *            here)
+   *   - lineItems: each tagged with source = "stock" | "modified" | "added"
+   *                | "adhoc" based on a name match into the org's catalog
+   *                and the sector seed
+   *   - inputs: every input the customer fed in (text/voice/photo/document/
+   *             email), with file_key for the existing /api/file/{key}
+   *             authed proxy so the admin can view/download them
+   *   - hasSeedForSector / orgSector: surfaces whether source-matching is
+   *             reliable on this quote (no seed → all items show as "adhoc"
+   *             or "added"; the UI uses these flags to set expectations)
+   */
+  getQuoteDetail: adminProcedure
+    .input(z.object({ quoteId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB not available");
+
+      const { quotes, quoteLineItems, quoteInputs, catalogItems, users, orgMembers } = await import("../../drizzle/schema");
+      const { eq, asc, and } = await import("drizzle-orm");
+      const { getCatalogSeedForSector } = await import("../catalogSeeds");
+
+      const quoteIdBig = BigInt(input.quoteId) as any;
+
+      // Quote
+      const quoteRows = await db
+        .select()
+        .from(quotes)
+        .where(eq(quotes.id, quoteIdBig))
+        .limit(1);
+      if (quoteRows.length === 0) throw new Error("Quote not found");
+      const quote = quoteRows[0] as any;
+
+      // Line items, in display order
+      const lineItems = await db
+        .select()
+        .from(quoteLineItems)
+        .where(eq(quoteLineItems.quoteId, quote.id))
+        .orderBy(asc(quoteLineItems.sortOrder));
+
+      // Inputs, oldest first (matches creation order in the workspace)
+      const inputs = await db
+        .select()
+        .from(quoteInputs)
+        .where(eq(quoteInputs.quoteId, quote.id))
+        .orderBy(asc(quoteInputs.createdAt));
+
+      // Resolve org's owner sector for seed lookup. Members are ordered by
+      // role asc — owner first — but we filter explicitly to be safe.
+      let orgSector: string | null = null;
+      if (quote.orgId !== null && quote.orgId !== undefined) {
+        const ownerRows = await db
+          .select({ sector: users.defaultTradeSector })
+          .from(orgMembers)
+          .innerJoin(users, eq(users.id, orgMembers.userId))
+          .where(and(
+            eq(orgMembers.orgId, quote.orgId),
+            eq(orgMembers.role, "owner")
+          ))
+          .limit(1);
+        orgSector = ((ownerRows[0] as any)?.sector ?? null) as string | null;
+      }
+
+      // Build the org's catalog map, keyed by lowercase item name
+      const catalogByName = new Map<string, any>();
+      if (quote.orgId !== null && quote.orgId !== undefined) {
+        const catRows = await db
+          .select()
+          .from(catalogItems)
+          .where(eq(catalogItems.orgId, quote.orgId));
+        for (const item of catRows) {
+          if ((item as any).name) {
+            catalogByName.set(String((item as any).name).toLowerCase(), item);
+          }
+        }
+      }
+
+      // Build the seed map for the org's sector, keyed the same way
+      const seed = orgSector ? getCatalogSeedForSector(orgSector) : null;
+      const seedByName = new Map<string, any>();
+      if (seed) {
+        for (const s of seed) seedByName.set(s.name.toLowerCase(), s);
+      }
+
+      function determineSource(itemName: string | null | undefined): "stock" | "modified" | "added" | "adhoc" {
+        if (!itemName) return "adhoc";
+        const key = itemName.toLowerCase();
+        const catItem: any = catalogByName.get(key);
+        if (!catItem) return "adhoc";              // not in this org's catalog at all
+        const seedItem: any = seedByName.get(key);
+        if (!seedItem) return "added";             // in catalog but not in seed = user-added
+        // Both exist — compare canonical fields to detect modification
+        const sameRate    = String(catItem.defaultRate) === String(seedItem.defaultRate);
+        const sameDesc    = (catItem.description || "") === (seedItem.description || "");
+        const sameUnit    = (catItem.unit || "each")     === (seedItem.unit || "each");
+        const samePricing = (catItem.pricingType || "standard") === (seedItem.pricingType || "standard");
+        return (sameRate && sameDesc && sameUnit && samePricing) ? "stock" : "modified";
+      }
+
+      return {
+        quote: {
+          id: Number(quote.id),
+          orgId: quote.orgId !== null && quote.orgId !== undefined ? Number(quote.orgId) : null,
+          title: quote.title,
+          reference: quote.reference,
+          status: quote.status,
+          clientName: quote.clientName,
+          contactName: quote.contactName,
+          clientEmail: quote.clientEmail,
+          clientPhone: quote.clientPhone,
+          clientAddress: quote.clientAddress,
+          description: quote.description,
+          terms: quote.terms,
+          paymentTerms: quote.paymentTerms,
+          userPrompt: quote.userPrompt,
+          processingInstructions: quote.processingInstructions,
+          tradePreset: quote.tradePreset,
+          quoteMode: quote.quoteMode,
+          subtotal: quote.subtotal,
+          taxRate: quote.taxRate,
+          taxAmount: quote.taxAmount,
+          total: quote.total,
+          monthlyTotal: quote.monthlyTotal,
+          annualTotal: quote.annualTotal,
+          comprehensiveConfig: quote.comprehensiveConfig,
+          createdAt: quote.createdAt,
+          updatedAt: quote.updatedAt,
+          sentAt: quote.sentAt,
+          acceptedAt: quote.acceptedAt,
+        },
+        lineItems: lineItems.map((li: any) => ({
+          id: Number(li.id),
+          description: li.description,
+          itemName: li.itemName,
+          quantity: li.quantity,
+          unit: li.unit,
+          rate: li.rate,
+          total: li.total,
+          category: li.category,
+          pricingType: li.pricingType,
+          isPassthrough: li.isPassthrough,
+          isOptional: li.isOptional,
+          isEstimated: li.isEstimated,
+          sortOrder: li.sortOrder,
+          source: determineSource(li.itemName),
+        })),
+        inputs: inputs.map((inp: any) => ({
+          id: Number(inp.id),
+          type: inp.inputType,
+          filename: inp.filename,
+          fileUrl: inp.fileUrl,
+          fileKey: inp.fileKey,
+          content: inp.content,
+          mimeType: inp.mimeType,
+          processedContent: inp.processedContent,
+          processingStatus: inp.processingStatus,
+          processingError: inp.processingError,
+          createdAt: inp.createdAt,
+        })),
+        orgSector,
+        hasSeedForSector: seed !== null,
+      };
+    }),
+
+  /**
+   * Catalog diff for one organisation. Each item is categorised:
+   *   - stock:    matches a seed entry exactly (rate, desc, unit, pricingType)
+   *   - modified: name matches a seed entry but at least one field differs
+   *               (seedValue is populated with the original values for the diff UI)
+   *   - added:    name doesn't match any seed entry — user-created item
+   *   - disabled: is_active = 0 (overrides the above; user has soft-deleted it)
+   *
+   * If the org's owner has no defaultTradeSector or no seed exists for that
+   * sector, every item falls into "added" or "disabled" since there's nothing
+   * to diff against. The UI uses hasSeedForSector to set expectations.
+   */
+  getOrgCatalog: adminProcedure
+    .input(z.object({ orgId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) {
+        return {
+          items: [],
+          stats: { total: 0, stock: 0, modified: 0, added: 0, disabled: 0 },
+          sector: null,
+          hasSeedForSector: false,
+        };
+      }
+
+      const { catalogItems, users, orgMembers } = await import("../../drizzle/schema");
+      const { eq, asc, and } = await import("drizzle-orm");
+      const { getCatalogSeedForSector } = await import("../catalogSeeds");
+
+      const orgIdBig = BigInt(input.orgId) as any;
+
+      // Resolve owner sector
+      const ownerRows = await db
+        .select({ sector: users.defaultTradeSector })
+        .from(orgMembers)
+        .innerJoin(users, eq(users.id, orgMembers.userId))
+        .where(and(
+          eq(orgMembers.orgId, orgIdBig),
+          eq(orgMembers.role, "owner")
+        ))
+        .limit(1);
+      const orgSector = ((ownerRows[0] as any)?.sector ?? null) as string | null;
+
+      // Pull all catalog items for this org, sorted by category then name for
+      // a stable display order
+      const items = await db
+        .select()
+        .from(catalogItems)
+        .where(eq(catalogItems.orgId, orgIdBig))
+        .orderBy(asc(catalogItems.category), asc(catalogItems.name));
+
+      // Build seed map
+      const seed = orgSector ? getCatalogSeedForSector(orgSector) : null;
+      const seedByName = new Map<string, any>();
+      if (seed) {
+        for (const s of seed) seedByName.set(s.name.toLowerCase(), s);
+      }
+
+      let stockCount = 0;
+      let modifiedCount = 0;
+      let addedCount = 0;
+      let disabledCount = 0;
+
+      const enriched = items.map((item: any) => {
+        const isDisabled = item.isActive === 0;
+        const seedItem = item.name ? seedByName.get(String(item.name).toLowerCase()) : null;
+
+        let status: "stock" | "modified" | "added" | "disabled";
+        let seedValue: { defaultRate: string; description: string; unit: string; pricingType: string } | null = null;
+
+        if (isDisabled) {
+          status = "disabled";
+          disabledCount++;
+        } else if (!seedItem) {
+          status = "added";
+          addedCount++;
+        } else {
+          const sameRate    = String(item.defaultRate) === String(seedItem.defaultRate);
+          const sameDesc    = (item.description || "") === (seedItem.description || "");
+          const sameUnit    = (item.unit || "each")     === (seedItem.unit || "each");
+          const samePricing = (item.pricingType || "standard") === (seedItem.pricingType || "standard");
+          if (sameRate && sameDesc && sameUnit && samePricing) {
+            status = "stock";
+            stockCount++;
+          } else {
+            status = "modified";
+            modifiedCount++;
+            seedValue = {
+              defaultRate: String(seedItem.defaultRate),
+              description: String(seedItem.description),
+              unit: String(seedItem.unit),
+              pricingType: String(seedItem.pricingType),
+            };
+          }
+        }
+
+        return {
+          id: Number(item.id),
+          name: item.name,
+          description: item.description,
+          category: item.category,
+          unit: item.unit,
+          defaultRate: item.defaultRate,
+          costPrice: item.costPrice,
+          pricingType: item.pricingType,
+          isActive: item.isActive === 1,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+          status,
+          seedValue,
+        };
+      });
+
+      return {
+        items: enriched,
+        stats: {
+          total: enriched.length,
+          stock: stockCount,
+          modified: modifiedCount,
+          added: addedCount,
+          disabled: disabledCount,
+        },
+        sector: orgSector,
+        hasSeedForSector: seed !== null,
+      };
+    }),
 });
+
