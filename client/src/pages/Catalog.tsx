@@ -331,15 +331,15 @@ export default function Catalog() {
     onSuccess: (result) => {
       setIsSeedDialogOpen(false);
       if (result.seeded === 0 && result.skipped > 0) {
-        toast.info(`Those ${result.skipped} item${result.skipped === 1 ? ' was' : 's were'} already in your catalog — nothing added.`);
+        toast.info(`Those ${result.skipped} item${result.skipped === 1 ? ' was' : 's were'} already in your catalogue — nothing recovered.`);
       } else if (result.skipped > 0) {
-        toast.success(`Added ${result.seeded} item${result.seeded === 1 ? '' : 's'}. ${result.skipped} skipped (already in your catalog).`);
+        toast.success(`Recovered ${result.seeded} item${result.seeded === 1 ? '' : 's'}. ${result.skipped} skipped (already in your catalogue).`);
       } else {
-        toast.success(`Added ${result.seeded} item${result.seeded === 1 ? '' : 's'} to your catalog. Edit prices to match your own.`);
+        toast.success(`Recovered ${result.seeded} item${result.seeded === 1 ? '' : 's'} to your catalogue. Edit prices to match your own.`);
       }
       refetch();
     },
-    onError: (error: any) => toast.error("Failed to load starter catalog: " + error.message),
+    onError: (error: any) => toast.error("Failed to recover starter items: " + error.message),
   });
 
   // ── Starter Catalog Selection Dialog ─────────────────────────────────────
@@ -389,22 +389,20 @@ export default function Catalog() {
 
   // Initialise the default selection once per dialog open. Reset when closed
   // so the next open re-initialises from fresh template + catalog state.
+  //
+  // The dialog is now a "Recover deleted" affordance — new IT signups
+  // auto-receive the full starter catalogue via the createUser path. So
+  // someone hitting this dialog has explicitly deleted items they now
+  // want back. Starting with NO items selected forces a deliberate pick
+  // — preventing the case where the user re-floods their catalogue with
+  // dozens of items they meant to keep deleted.
   useEffect(() => {
     if (!isSeedDialogOpen) {
       seedInitializedRef.current = false;
       return;
     }
     if (seedTemplate && !seedInitializedRef.current) {
-      const inCatalogLower = new Set(
-        seedTemplate.alreadyInCatalog.map((n: string) => n.toLowerCase())
-      );
-      setSelectedSeedNames(
-        new Set(
-          seedTemplate.items
-            .filter((item: { name: string }) => !inCatalogLower.has(item.name.toLowerCase()))
-            .map((item: { name: string }) => item.name)
-        )
-      );
+      setSelectedSeedNames(new Set());
       seedInitializedRef.current = true;
     }
   }, [seedTemplate, isSeedDialogOpen]);
@@ -586,7 +584,7 @@ export default function Catalog() {
               className="border-teal-300 text-teal-900 hover:bg-teal-50"
             >
               <Sparkles className="mr-2 h-4 w-4" />
-              {seedCatalog.isPending ? "Loading..." : "Load Starter Catalog"}
+              {seedCatalog.isPending ? "Loading..." : "Recover deleted"}
             </Button>
           )}
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
@@ -727,10 +725,10 @@ export default function Catalog() {
               <div className="mb-6 max-w-md mx-auto p-4 rounded-lg border border-teal-200 bg-teal-50">
                 <div className="flex items-center justify-center gap-2 mb-2">
                   <Sparkles className="h-5 w-5 text-teal-600" />
-                  <span className="font-medium text-teal-900">Kick-start with an IT Services template</span>
+                  <span className="font-medium text-teal-900">Recover your sector starter items</span>
                 </div>
                 <p className="text-sm text-teal-800 mb-3">
-                  Load a starter catalog of 22 common MSP products — Microsoft 365 licensing, security &amp; backup, support contracts, engineer rates. All prices are fully editable.
+                  New accounts get the full starter catalogue automatically. If any items have been deleted, you can re-add them here. All prices are fully editable.
                 </p>
                 <Button
                   variant="outline"
@@ -739,7 +737,7 @@ export default function Catalog() {
                   className="border-teal-300 text-teal-900 hover:bg-teal-100"
                 >
                   <Sparkles className="mr-2 h-4 w-4" />
-                  {seedCatalog.isPending ? "Loading starter catalog..." : "Load Starter Catalog"}
+                  {seedCatalog.isPending ? "Loading starter items..." : "Recover deleted"}
                 </Button>
               </div>
             )}
@@ -844,10 +842,10 @@ export default function Catalog() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-teal-600" />
-              Load Starter Catalog
+              Recover deleted starter items
             </DialogTitle>
             <p className="text-sm text-muted-foreground pt-1">
-              Select which starter items to add to your catalog. All available items are selected by default. Items already in your catalog are greyed out.
+              Re-add any starter items that have been deleted from your catalogue. Items already in your catalogue are greyed out. Selected items are added at the original starter price — edit them freely after.
             </p>
           </DialogHeader>
 
@@ -993,7 +991,7 @@ export default function Catalog() {
                   >
                     {seedCatalog.isPending
                       ? "Adding..."
-                      : `Add ${selectedSeedNames.size} Selected`}
+                      : `Recover ${selectedSeedNames.size} Selected`}
                   </Button>
                 </div>
               </div>

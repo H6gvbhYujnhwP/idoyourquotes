@@ -297,6 +297,35 @@ FIELD EMISSION — every material row from this addendum MUST carry evidenceCate
 ANTI-FABRICATION RULE — NON-NEGOTIABLE:
 If you use a catalog item's "name" on a material row, you MUST also use that item's EXACT "unit" and EXACT "defaultRate" from the catalog. You may NOT change a catalog item's unit or price to fit evidence that doesn't match. If the evidence doesn't fit any catalog item's unit / pricing model, apply the PASSTHROUGH FALLBACK instead of reusing a near-miss catalog SKU at an invented price or invented unit. The moment you find yourself typing a unitPrice that is not the evidence price, not a catalog defaultRate, and not one of the UK MSP anchor rates above — stop. That is fabrication. Use passthrough (with unitPrice 0 if no price is known) and let the user set the price in the QDS.
 
+THE "REPLACES EXISTING" PREFIX RULE — STRICT:
+The "Replaces existing [vendor product]" description prefix is permitted ONLY when ALL FOUR of these are true:
+1. The evidence is a takeover scenario AND names a specific competitor product/vendor by name (LastPass, Webroot DNS, Datto SaaS Protect, Vodafone Business 1Gbps fibre, etc).
+2. The competitor product is in a SUBSTITUTABLE commodity category (see POSITIVE LIST above).
+3. The user's catalog DOES contain a semantically matching SKU on name + description + unit + pricing type.
+4. The output row uses the catalog SKU's exact name, exact unit, exact defaultRate.
+
+If any of (1)–(4) is false, DO NOT emit "Replaces existing" anywhere in the description. Specifically:
+- If the evidence names a competitor product but no catalog match exists, this is a PASSTHROUGH row. Use the evidence item name verbatim. Do NOT prefix with "Replaces existing". Echo the evidence price or 0 if not shown.
+- If the evidence does NOT name a competitor (the user is asking for a new service from scratch), this is a fresh quote line. There is nothing to "replace". Do NOT prefix with "Replaces existing".
+
+FORBIDDEN PATTERNS (these are real failure modes observed in past quotes — never emit):
+- "Replaces existing Webroot DNS filtering" + item name "DNS Filtering Service" + unitPrice £45 + unit "each" when (a) DNS filtering is not in the catalog and (b) £45/each is neither an evidence price nor an anchor rate. CORRECT: passthrough with item "Webroot DNS Filtering", unit "User" or "Device" (from evidence), unitPrice 0 or the evidence price.
+- Two materials rows for the same evidenced backup product (one labelled "SaaS Protection Service — Replaces existing Datto SaaS protect" at fabricated £4/user AND a second "SaaS Protect Backup (Microsoft 365 Backup)" catalog row). The catalog match IS the substitution — never emit a duplicate "Replaces existing" line alongside it.
+- "Business Fibre Connectivity Management — Replaces existing Vodafone Business 1Gbps fibre" at £85/each/month when the customer's prompt says the fibre "remains unchanged" and is NOT being taken over. CORRECT: omit the row entirely. The line is not in scope.
+
+NEW SERVICE WITH NO CATALOG MATCH — HOW TO HANDLE:
+When the customer asks for a NEW service (not a takeover), and the service has no catalog match:
+1. Emit ONE row only — never invent a duplicate.
+2. Use a clear plain-English item name based on what was requested (e.g. "Webroot DNS Filtering Subscription", not "DNS Filtering Service" + "Replaces existing…").
+3. Use the appropriate UK MSP anchor rate from the rates block above. Set estimated: true.
+4. Use the unit that matches the anchor rate's "per X" (per user, per device, per line, per month, etc).
+5. Do NOT prefix with "Replaces existing".
+6. Set passthrough: false (this is an anchor-rated estimate, not a passthrough).
+7. Set evidenceCategory to the right category and substitutable: true.
+
+QUANTITY ANTI-FABRICATION:
+Quantities come from the evidence. If the customer says "porting for three existing numbers", the quantity is 3 — never 5, never "3 or so". If the customer says "10 DDI numbers" without specifying a block, default to a block of 10 (qty 1, unit "Block") rather than 10 single DDIs unless the evidence is specific. If the customer mentions an existing service that "remains unchanged", do NOT create a row for it. Inventing quantities is fabrication.
+
 TENDER EVIDENCE — IT IMPLIED SKUs YOU MUST INFER (CRITICAL — COMMON OMISSION):
 
 When the evidence is a tender / RFP for IT services (see TENDER MODE rules above for activation signals), requirements are usually stated at a contractual level rather than itemised. The following implied SKUs MUST appear on the materials output even when the tender does not list them as discrete bullets:

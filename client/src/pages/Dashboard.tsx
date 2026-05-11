@@ -410,11 +410,14 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {/* Single dynamic CTA. handleSeedNudgeClick navigates to
-                /catalog?seed=1 — the Catalog page reads the seed=1 param
-                and triggers the starter-catalogue load when the catalogue
-                is empty, otherwise it just shows the page. So the same
-                handler covers both states; only the label changes. */}
+            {/* Single static CTA. With auto-seed on registration, every
+                seedable-sector signup lands with a fully-populated
+                catalogue. The nudge is now purely a tailor-the-catalogue
+                prompt — there's no "load" state to differentiate. The
+                /catalog?seed=1 param is preserved as a no-op for any
+                pre-auto-seed legacy account whose catalogue is still
+                empty; the Catalog page's empty-state Recover affordance
+                covers that case. */}
             <Button
               onClick={handleSeedNudgeClick}
               size="sm"
@@ -425,9 +428,7 @@ export default function Dashboard() {
               }}
             >
               <Sparkles className="mr-2 h-4 w-4" />
-              {catalogItems?.length === 0
-                ? "Load Starter Catalogue"
-                : "Open Catalogue"}
+              Open Catalogue
             </Button>
             <Button
               variant="ghost"
