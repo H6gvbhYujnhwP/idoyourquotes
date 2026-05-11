@@ -824,3 +824,78 @@ export const supportMessages = pgTable("support_messages", {
 
 export type SupportMessage = typeof supportMessages.$inferSelect;
 export type InsertSupportMessage = typeof supportMessages.$inferInsert;
+
+/**
+ * Prospect bot tables — public chat widget on marketing pages.
+ *
+ * Anonymous visitors get a per-tab clientUuid generated client-side and
+ * stored in sessionStorage (NOT localStorage — wipes on browser close).
+ * The thread is keyed by that UUID, not by any user identity.
+ *
+ * Hard separation from supportThreads / supportMessages by design:
+ *   - No org/user references — visitors have no identity.
+ *   - Public-safe knowledge base only — no customer data ever reaches
+ *     the system prompt (see server/services/prospectKnowledge.ts).
+ *   - Different table names so a router-level mistake can't accidentally
+ *     read or write across the boundary.
+ *
+ * IP + user agent stored for abuse trace; not used for anything else.
+ * Email captured only on explicit escalation — never asked for upfront.
+ */
+export const prospectThreadStatusEnum = pgEnum("prospect_thread_status", [
+  "open",
+  "escalated",
+]);
+
+export const prospectMessageRoleEnum = pgEnum("prospect_message_role", [
+  "user",
+  "assistant",
+]);
+
+export const prospectThreads = pgTable("prospect_threads", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+
+  // Client-generated UUID (crypto.randomUUID()) persisted to sessionStorage.
+  // Indexed for fast thread lookup on every sendMessage call.
+  clientUuid: varchar("client_uuid", { length: 64 }).notNull().unique(),
+
+  status: prospectThreadStatusEnum("status").default("open").notNull(),
+
+  // Where the visitor first opened the widget. Useful for marketing
+  // analytics (which page drove the conversation).
+  startPagePath: varchar("start_page_path", { length: 500 }),
+  lastPagePath: varchar("last_page_path", { length: 500 }),
+
+  // Abuse-trace metadata. Not surfaced to anything except logs / admin.
+  ipAddress: varchar("ip_address", { length: 64 }),
+  userAgent: varchar("user_agent", { length: 500 }),
+
+  // Captured at escalate-time only. Until then NULL.
+  escalationName: varchar("escalation_name", { length: 255 }),
+  escalationEmail: varchar("escalation_email", { length: 320 }),
+  escalationMessage: text("escalation_message"),
+  escalatedAt: timestamp("escalated_at"),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ProspectThread = typeof prospectThreads.$inferSelect;
+export type InsertProspectThread = typeof prospectThreads.$inferInsert;
+
+export const prospectMessages = pgTable("prospect_messages", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  threadId: bigint("thread_id", { mode: "number" }).notNull(),
+  role: prospectMessageRoleEnum("role").notNull(),
+  content: text("content").notNull(),
+
+  // Token usage on assistant messages — NULL on user rows. Lets us
+  // audit cost per thread without joining a separate usage table.
+  inputTokens: integer("input_tokens"),
+  outputTokens: integer("output_tokens"),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type ProspectMessage = typeof prospectMessages.$inferSelect;
+export type InsertProspectMessage = typeof prospectMessages.$inferInsert;

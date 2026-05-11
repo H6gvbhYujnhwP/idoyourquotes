@@ -4,6 +4,7 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import DashboardLayout from "./components/DashboardLayout";
+import PublicChatWidget from "./components/PublicChatWidget";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
@@ -91,6 +92,13 @@ function App() {
         <TooltipProvider>
           <Toaster />
           <Router />
+          {/* Quote Assistant — public-prospect chat widget. Renders only
+              on public marketing routes (Home, Features, Pricing, Register,
+              404). The widget itself contains the path-allowlist check, so
+              it can sit at the top level here and persist across public-
+              page navigation without remounting. Excluded from /login,
+              /set-password, and all signed-in surfaces. */}
+          <PublicChatWidget />
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

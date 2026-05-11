@@ -9,6 +9,7 @@ import { adminRouter } from "./services/adminRouter";
 import { brochureRouter } from "./services/brochureRouter";
 import { brandedProposalRouter } from "./services/brandedProposalRouter";
 import { supportRouter } from "./services/supportRouter";
+import { prospectBotRouter } from "./services/prospectBotRouter";
 import { canCreateQuote, canUseAIFeatures, canAddCatalogItem, getUpgradeSuggestion, TIER_CONFIG, type SubscriptionTier } from "./services/stripe";
 import { sendLimitWarningEmail } from "./services/emailService";
 import { uploadToR2, getPresignedUrl, deleteFromR2, isR2Configured, getFileBuffer } from "./r2Storage";
@@ -4024,6 +4025,13 @@ Rules:
   // ============ SUPPORT BOT (Phase 4B Delivery E.13) ============
   // In-app help drawer + escalation. See server/services/supportRouter.ts.
   support: supportRouter,
+
+  // ============ PROSPECT BOT — public Quote Assistant ============
+  // Marketing-site chat widget for non-logged-in visitors. All
+  // publicProcedure — no auth required. Hard-walled from customer data;
+  // separate tables, separate knowledge base, own rate limits + cost cap.
+  // See server/services/prospectBotRouter.ts.
+  prospectBot: prospectBotRouter,
 
   // ============ AI ASSISTANT ============
   ai: router({

@@ -232,3 +232,115 @@ ACCOUNT CONTEXT
 Reply directly to this email to respond to the customer — Reply-To is set to their address.
 `;
 }
+
+// ─── Prospect escalation email ────────────────────────────────────
+//
+// Separate from the customer escalation email above because prospects
+// have no account, no tier, no sector — they're anonymous visitors. The
+// subject is tagged [Prospect] so the team's inbox sorts naturally and
+// they can tell at a glance this is a marketing-site enquiry, not a
+// support ticket from an existing customer.
+
+export type ProspectEscalationEmailParams = {
+  contactName: string;
+  email: string;
+  summary: string;        // visitor-written "what they want to ask"
+  transcriptText: string; // plain-text transcript of the bot chat so far
+  startPagePath: string | null;
+  lastPagePath: string | null;
+  threadId: number;
+  ipAddress: string | null;
+  userAgent: string | null;
+};
+
+export async function sendProspectEscalationEmail(params: ProspectEscalationEmailParams): Promise<boolean> {
+  const transporter = getTransporter();
+  if (!transporter) return false;
+
+  const fromAddress = process.env.SMTP_USER!;
+  const supportInbox = process.env.SUPPORT_INBOX || "support@mail.idoyourquotes.com";
+
+  const trimmedSummary = params.summary.length > 80 ? params.summary.slice(0, 77) + "…" : params.summary;
+  const subject = `[Prospect] ${trimmedSummary || "Website enquiry"}`;
+
+  const html = `<!DOCTYPE html>
+<html>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 24px; max-width: 720px; margin: 0 auto; color: #1a2b4a;">
+
+  <div style="background: linear-gradient(135deg, #f59e0b, #f97316); padding: 12px 16px; border-radius: 8px; color: white; font-weight: 600; margin-bottom: 24px; display: inline-block;">
+    🌟 New prospect from idoyourquotes.com
+  </div>
+
+  <h2 style="color: #1a2b4a; margin: 0 0 16px;">Quote Assistant escalation — ${escapeHtml(params.contactName) || "—"}</h2>
+
+  <table style="border-collapse: collapse; width: 100%; max-width: 640px; margin-bottom: 24px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+    <tr style="background: #f8fafc;"><td style="padding: 10px 14px; font-weight: 600; width: 160px; border-bottom: 1px solid #e2e8f0;">Contact name</td><td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0;">${escapeHtml(params.contactName) || "—"}</td></tr>
+    <tr><td style="padding: 10px 14px; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Email</td><td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0;"><a href="mailto:${escapeHtml(params.email)}" style="color: #f59e0b;">${escapeHtml(params.email)}</a></td></tr>
+    <tr style="background: #f8fafc;"><td style="padding: 10px 14px; font-weight: 600;">Account</td><td style="padding: 10px 14px;">Not signed up — public website visitor</td></tr>
+  </table>
+
+  <h3 style="color: #1a2b4a; margin: 0 0 8px; font-size: 15px;">What they want to ask</h3>
+  <div style="background: #fffbeb; border-left: 3px solid #f59e0b; padding: 12px 16px; margin-bottom: 24px; border-radius: 4px; font-size: 14px; white-space: pre-wrap;">
+${escapeHtml(params.summary) || "<em>No message provided</em>"}
+  </div>
+
+  <h3 style="color: #1a2b4a; margin: 0 0 8px; font-size: 15px;">Conversation transcript</h3>
+  <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 12px 16px; margin-bottom: 24px; border-radius: 4px; font-size: 13px; white-space: pre-wrap; line-height: 1.55;">
+${escapeHtml(params.transcriptText) || "<em>No prior chat</em>"}
+  </div>
+
+  <h3 style="color: #94a3b8; margin: 0 0 8px; font-size: 13px;">Visit context</h3>
+  <table style="border-collapse: collapse; width: 100%; max-width: 640px; font-size: 12px; color: #64748b;">
+    <tr><td style="padding: 4px 8px;">Started on:</td><td style="padding: 4px 8px;">${escapeHtml(params.startPagePath || "—")}</td></tr>
+    <tr><td style="padding: 4px 8px;">Last on:</td><td style="padding: 4px 8px;">${escapeHtml(params.lastPagePath || "—")}</td></tr>
+    <tr><td style="padding: 4px 8px;">Thread ID:</td><td style="padding: 4px 8px;">#${params.threadId}</td></tr>
+    <tr><td style="padding: 4px 8px;">IP:</td><td style="padding: 4px 8px;">${escapeHtml(params.ipAddress || "—")}</td></tr>
+    <tr><td style="padding: 4px 8px;">User agent:</td><td style="padding: 4px 8px;">${escapeHtml(params.userAgent || "—")}</td></tr>
+  </table>
+
+  <p style="margin-top: 24px; font-size: 12px; color: #94a3b8;">
+    Reply directly to this email to respond to the prospect — Reply-To is set to their address. They are NOT a registered customer; this is a marketing-site enquiry.
+  </p>
+
+</body>
+</html>`;
+
+  const text = `Quote Assistant escalation — ${params.contactName || "—"}
+
+CONTACT
+  Name:    ${params.contactName || "—"}
+  Email:   ${params.email}
+  Account: Not signed up — public website visitor
+
+WHAT THEY WANT TO ASK
+${params.summary || "(no message provided)"}
+
+CONVERSATION TRANSCRIPT
+${params.transcriptText || "(no prior chat)"}
+
+VISIT CONTEXT
+  Started on:    ${params.startPagePath || "—"}
+  Last on:       ${params.lastPagePath || "—"}
+  Thread ID:     #${params.threadId}
+  IP:            ${params.ipAddress || "—"}
+  User agent:    ${params.userAgent || "—"}
+
+Reply directly to this email — Reply-To is set to the prospect's address. They are NOT a registered customer; this is a marketing-site enquiry.
+`;
+
+  try {
+    const info = await transporter.sendMail({
+      from: `"IdoYourQuotes Quote Assistant" <${fromAddress}>`,
+      to: supportInbox,
+      replyTo: params.email,
+      subject,
+      html,
+      text,
+    });
+    console.log(`[SMTP] Prospect escalation email sent for thread ${params.threadId} (messageId=${info.messageId})`);
+    return true;
+  } catch (err) {
+    console.error("[SMTP] Prospect escalation email send failed:", err);
+    return false;
+  }
+}

@@ -696,3 +696,49 @@ export const supportMessages = pgTable("support_messages", {
 
 export type SupportMessage = typeof supportMessages.$inferSelect;
 export type InsertSupportMessage = typeof supportMessages.$inferInsert;
+
+// ─── Prospect bot tables — public chat widget on marketing pages ────
+// Anonymous, per-tab. Hard separation from supportThreads/supportMessages
+// by design — no customer data is ever joined into the prospect bot.
+// See shared/schema.ts for the full annotated definition.
+export const prospectThreadStatusEnum = pgEnum("prospect_thread_status", [
+  "open",
+  "escalated",
+]);
+
+export const prospectMessageRoleEnum = pgEnum("prospect_message_role", [
+  "user",
+  "assistant",
+]);
+
+export const prospectThreads = pgTable("prospect_threads", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  clientUuid: varchar("client_uuid", { length: 64 }).notNull().unique(),
+  status: prospectThreadStatusEnum("status").default("open").notNull(),
+  startPagePath: varchar("start_page_path", { length: 500 }),
+  lastPagePath: varchar("last_page_path", { length: 500 }),
+  ipAddress: varchar("ip_address", { length: 64 }),
+  userAgent: varchar("user_agent", { length: 500 }),
+  escalationName: varchar("escalation_name", { length: 255 }),
+  escalationEmail: varchar("escalation_email", { length: 320 }),
+  escalationMessage: text("escalation_message"),
+  escalatedAt: timestamp("escalated_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ProspectThread = typeof prospectThreads.$inferSelect;
+export type InsertProspectThread = typeof prospectThreads.$inferInsert;
+
+export const prospectMessages = pgTable("prospect_messages", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  threadId: bigint("thread_id", { mode: "number" }).notNull(),
+  role: prospectMessageRoleEnum("role").notNull(),
+  content: text("content").notNull(),
+  inputTokens: integer("input_tokens"),
+  outputTokens: integer("output_tokens"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type ProspectMessage = typeof prospectMessages.$inferSelect;
+export type InsertProspectMessage = typeof prospectMessages.$inferInsert;
