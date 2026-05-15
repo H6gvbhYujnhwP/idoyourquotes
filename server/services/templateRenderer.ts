@@ -113,6 +113,26 @@ export async function renderTemplate(
     const fileUrl = pathToFileURL(template.htmlPath).toString();
     await page.goto(fileUrl, { waitUntil: "networkidle0", timeout: 60_000 });
 
+    // 4b. Shim __name in the page context.
+    //
+    //   esbuild (used by tsx and by the production build) wraps named
+    //   function declarations with a __name(fn, "name") helper to
+    //   preserve runtime .name strings for debugging. When a named
+    //   function is serialised across to a puppeteer page via
+    //   page.evaluate(), the wrapper goes with it in the string, but
+    //   the browser context has no __name defined — and you get a
+    //   "__name is not defined" ReferenceError.
+    //
+    //   This anonymous-arrow shim is itself NOT wrapped by esbuild
+    //   (only named functions are), so it serialises cleanly and gives
+    //   the page a no-op __name before any wrapped function runs.
+    await page.evaluate(() => {
+      const g = globalThis as Record<string, unknown>;
+      if (typeof g.__name === "undefined") {
+        g.__name = (fn: unknown): unknown => fn;
+      }
+    });
+
     // 5–7. Apply all DOM mutations in a single evaluate() — atomic and
     //      easier to debug than multiple round-trips.
     await page.evaluate(applyTemplateMutations, {
@@ -184,6 +204,10 @@ async function launchBrowser(timeoutMs: number): Promise<Browser> {
  * IMPORTANT: this function is serialised across to the browser context.
  * It must not reference outer-scope variables or import statements.
  * Keep it self-contained.
+ *
+ * The __name shim injected just before this evaluate() call neutralises
+ * esbuild's `__name(fn, "name")` wrapper that would otherwise blow up
+ * in the page context.
  */
 function applyTemplateMutations(payload: {
   brand: BrandRenderVars;
@@ -228,17 +252,17 @@ function applyTemplateMutations(payload: {
   //    placeholder. Replace the inner with an <img> when a logoUrl is
   //    provided.
   if (logoUrl) {
+    // Escape inline to keep this function self-contained for serialisation.
+    const escapedUrl = logoUrl
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
     const logoSlots = document.querySelectorAll<HTMLElement>('[data-slot="logo"]');
     logoSlots.forEach((slot) => {
       // Preserve any sizing the template applied to the slot wrapper;
       // we just swap the inner content.
-      slot.innerHTML = `<img src="${escapeAttr(logoUrl)}" alt="" data-injected-logo="true" style="max-width: 100%; max-height: 100%; display: block; object-fit: contain;" />`;
+      slot.innerHTML = `<img src="${escapedUrl}" alt="" data-injected-logo="true" style="max-width: 100%; max-height: 100%; display: block; object-fit: contain;" />`;
     });
-  }
-
-  // Helper — guard against quote/angle-bracket injection in the logo URL.
-  // Inline because page.evaluate can't reach outer-scope functions.
-  function escapeAttr(s: string): string {
-    return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 }
