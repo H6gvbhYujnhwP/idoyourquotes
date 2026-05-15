@@ -301,6 +301,7 @@ export const quotes = pgTable("quotes", {
   // BrandChoiceModal at branded-PDF generation time. Mirrors
   // shared/schema.ts exactly per the dual-schema rule.
   proposalTemplate: text("proposal_template"),
+	proposalTemplateV2: varchar("proposal_template_v2", { length: 64 }),
   // Phase 4A Delivery 25 — Project / Migration foundation. Two already-
   // applied columns (migration_type / hypercare_days were applied as
   // raw SQL during the design session before the schema files were

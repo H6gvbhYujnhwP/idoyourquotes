@@ -351,6 +351,12 @@ export const quotes = pgTable("quotes", {
   // "use the org default" (organizations.proposalTemplate). Set via
   // BrandChoiceModal at branded-PDF generation time.
   proposalTemplate: text("proposal_template"),
+  // Phase 2 — v2.1 template library. Stores the picked template id in
+  // "sector/style" form (e.g. "it-services/01-split-screen"). NULL means
+  // "use sector default" — resolved by templateProposalRouter on render.
+  // Coexists with the legacy proposalTemplate column above; old endpoint
+  // reads proposalTemplate, new endpoint reads proposalTemplateV2.
+  proposalTemplateV2: varchar("proposal_template_v2", { length: 64 }),
   // Phase 4A Delivery 25 — Project / Migration foundation. Two already-
   // applied columns (migration_type, hypercare_days were applied as raw
   // SQL during the design session before the schema files were updated;

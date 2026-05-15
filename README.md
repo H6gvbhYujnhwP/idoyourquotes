@@ -1,9 +1,8 @@
-# Phase 1 Delivery — Template Library Foundation
+# Phase 2 Delivery — Content Pipeline + New Endpoint
 
-Foundation layer for the path-2 "Use a branded colour template" upgrade.
-Nothing user-visible changes after this delivery. You verify it works by
-running the test script on Render shell — it should output sample PDFs
-to `/tmp/template-renders/`.
+After this delivery, the new endpoint `generateBrandedProposalV2` is live alongside your existing `generateBrandedProposal`. You can call it from any quote and get back a real PDF rendered from the v2.1 template library, with your brand colours, your logo, and your quote's line items already injected.
+
+Phase 3 (next) wires it to the picker UI so it's actually clickable from the workspace. For now, you verify by calling it directly from the Render shell.
 
 ---
 
@@ -11,27 +10,21 @@ to `/tmp/template-renders/`.
 
 | File | Goes to | What it is |
 |------|---------|------------|
-| `server/services/colourUtils.ts` | `server/services/` | Pure colour math. Computes the six brand CSS variables (3 raw + 3 text-safe) from any user's brand inputs, plus the pale-luminance flag. New file. |
-| `server/services/templateLibrary.ts` | `server/services/` | Template discovery + metadata. Maps `(sector, style)` to on-disk paths. New file. |
-| `server/services/templateRenderer.ts` | `server/services/` | The render service. Takes a template id, brand colours, slot content, logo URL → returns a PDF Buffer. Launches Chromium, injects everything via DOM mutation, emits PDF. New file. |
-| `server/scripts/testTemplateRender.ts` | `server/scripts/` | Verification script. Run on Render shell to confirm the pipeline works end-to-end. New file. |
-| `server/templates/library/` | `server/templates/` | The v2.1 template library (24 templates across 4 sectors × 6 designs, ~28 MB). Includes the two local CSS fixes appended to each `base.css` for the cover-bleed and text-safe-meta-block bugs Manus left in v2.1. New folder. |
-| `package.json` | repo root | Adds two dependencies: `@sparticuz/chromium ^138.0.2` and `puppeteer-core ^24.10.0`. Alphabetically inserted. |
-
-`pnpm-lock.yaml` is NOT in this delivery — it must be regenerated on
-your Windows machine (see install steps below) so it matches your pnpm
-version exactly.
+| `server/services/slotContentBuilder.ts` | `server/services/` | **New file.** Builds the slot content map from a quote + line items + organisation. Pure transformation, no AI calls in v1, no DB access. |
+| `server/services/templateProposalRouter.ts` | `server/services/` | **New file.** tRPC sub-router with one endpoint `generateBrandedProposalV2`. Mirrors the structure of `brandedProposalRouter.ts`. |
+| `server/services/templateRenderer.ts` | `server/services/` | **Replaces the Phase 1 version.** Adds array slot value support — needed because most templates have two pricing tables (one-off + recurring). |
+| `apply-phase2-patches.mjs` | repo root | One-shot Node script that applies three additive edits: `routers.ts` import + mount, `shared/schema.ts` column, `drizzle/schema.ts` column. Idempotent. |
+| `migration-phase2.sql` | repo root | Raw SQL for the schema change (drizzle-kit push is broken on this codebase, so we use raw SQL on Render shell as usual). |
 
 ---
 
-## What I did NOT touch
+## What I didn't touch
 
 - `server/pdfGenerator.ts` — locked
-- `server/routers.ts` — Phase 2 will add a new endpoint here, Phase 1 doesn't
 - `client/src/pages/QuoteWorkspace.tsx` — Phase 3 only
 - `server/brandedProposalRenderer.ts` — deprecated, leave alone
-- The Tile 3 brochure-embed pipeline — untouched
-- `shared/schema.ts` / `drizzle/schema.ts` — no schema changes in Phase 1
+- The existing `generateBrandedProposal` procedure in `routers.ts` — additive only, the old endpoint coexists with the new one
+- Tile 3 brochure-embed pipeline — untouched
 
 ---
 
@@ -40,90 +33,174 @@ version exactly.
 From the repo root in PowerShell or Git Bash:
 
 ```bash
-# 1. Drop the new files in place
-#    (extract this zip into the repo, overwriting package.json)
+# 1. Extract this zip into the repo root.
+#    The new files land in server/services/ and at the repo root.
 
-# 2. Regenerate pnpm-lock.yaml against the new package.json
-npx pnpm@10.4.1 install --ignore-scripts --no-frozen-lockfile
-
-# 3. Verify TypeScript baseline holds (zero new errors)
-node node_modules/typescript/lib/tsc.js --noEmit
-
-# 4. Commit both files in lockstep
-git add package.json pnpm-lock.yaml server/services/colourUtils.ts \
-        server/services/templateLibrary.ts server/services/templateRenderer.ts \
-        server/scripts/testTemplateRender.ts server/templates/library
-git commit -m "phase 1: template library foundation"
+# 2. Apply the three additive edits to existing files (routers.ts + both schema files)
+node apply-phase2-patches.mjs
 ```
 
-Deploy via GitHub Desktop as usual.
+You should see output like:
+```
+=== Phase 2 patch summary ===
+  ✓ routers.ts import inserted
+  ✓ routers.ts mount inserted
+  ✓ shared/schema.ts: proposal_template_v2 column added
+  ✓ drizzle/schema.ts: proposal_template_v2 column added
+```
 
----
-
-## Render shell verification
-
-After deploy, SSH into the Render shell and run:
+If it shows `• already applied, skipping` for some lines, that's fine — the script is idempotent and safe to re-run.
 
 ```bash
-# Default: render a curated sample of 5 templates × different palettes
-# (exercises every code path — bleed fix, text-safe variant, luminance flip)
-echo go; npx tsx server/scripts/testTemplateRender.ts
-
-# Or render a single specific template
-echo go; npx tsx server/scripts/testTemplateRender.ts it-services/01-split-screen
-
-# Or render every template across the navy palette (24 PDFs, slower)
-echo go; npx tsx server/scripts/testTemplateRender.ts --all
+# 3. Verify TypeScript baseline holds
+node node_modules/typescript/lib/tsc.js --noEmit
 ```
 
-Output PDFs land in `/tmp/template-renders/`. To inspect one without
-downloading, you can `base64 -w0 /tmp/template-renders/it-services_01-split-screen_navy.pdf | head -c 200`
-just to confirm it's a non-trivial PDF — but really you want to download
-one and open it to confirm the visual is correct.
+Expected: same error count as Phase 1 (around 69). My three new files should contribute zero new errors.
 
-### Success criteria for Phase 1
+```bash
+# 4. Commit and push via GitHub Desktop
+#    Commit message: phase 2: content pipeline + new endpoint
+```
 
-The script completes without errors AND one of the rendered PDFs you
-download from `/tmp/template-renders/` shows:
-
-- A genuine v2.1 design (e.g. Split Screen for IT, navy palette)
-- The brand colour (navy in the default sample) applied to headings
-  and accent elements
-- Photoreal duotone imagery rendered correctly
-- The cover headline fully visible (the bleed fix in action)
-- For the mint palette render: headings and meta-block text are
-  readable darker mint, not invisible pale (the text-safe variant in
-  action)
-
-If all that's true, Chromium runs cleanly on Render and the foundation
-is solid. Phase 2 can proceed — wiring AI content + adding the new
-endpoint to routers.ts.
+Wait for Render to redeploy (3–5 minutes).
 
 ---
 
-## Known follow-ups for Phase 2/3
+## Run the SQL migration on Render
 
-These are deliberate Phase 1 scope-cuts, not bugs:
+After deploy is live, open the Render shell. Paste:
 
-- **No routers.ts endpoint yet** — Phase 2 adds `generateBrandedProposalV2` alongside the existing path-2 endpoint
-- **No AI content integration yet** — Phase 2 wires the existing branded-proposal content generator's chapters into the slot system
-- **No picker UI yet** — Phase 3 redesigns the export modal
-- **`brandAccentColor` not in schema yet** — for now the renderer derives an accent from primary when one isn't set; Phase 3 adds the schema column + accent picker
-- **No PDF caching to R2 yet** — Phase 4 polish
-- **Schedule of Works UI in workspace** — Phase 4 polish (the original ask from session 1, finally circling back)
+```bash
+echo go; psql $DATABASE_URL -c "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS proposal_template_v2 VARCHAR(64);"
+```
+
+Or run the SQL file directly:
+
+```bash
+echo go; psql $DATABASE_URL -f migration-phase2.sql
+```
+
+Verify it landed:
+
+```bash
+echo go; psql $DATABASE_URL -c "\d quotes" | grep proposal_template
+```
+
+You should see two rows: the legacy `proposal_template` column (text) and the new `proposal_template_v2` column (varchar(64), nullable).
 
 ---
 
-## TypeScript baseline note
+## Verify the endpoint works
 
-I couldn't fully verify the TS baseline in my environment due to a
-`patchedDependencies` mismatch in the pnpm lockfile config. The three
-new source files are written to zero-new-errors discipline:
+Pick any real quote you have in the database (your Sweetbyte IT test org, user 10 / org 10, paid Pro). You'll need its numeric quote ID — grab one from any quote URL in the workspace, the number at the end.
 
-- Strict types throughout (no `any`)
-- Explicit imports
-- `puppeteer-core` and `@sparticuz/chromium` both ship TypeScript
-  definitions
+On the Render shell, you can invoke the tRPC endpoint via a small test script. Easiest way:
 
-If the baseline check on your machine reports any new errors, send me
-the diff and I'll fix in place.
+```bash
+echo go; cat > /tmp/test-v2-endpoint.ts << 'EOF'
+import { renderTemplate } from "./server/services/templateRenderer.js";
+import { buildSlotContent } from "./server/services/slotContentBuilder.js";
+import { getQuoteById, getUserPrimaryOrg, getLineItemsByQuoteId } from "./server/db.js";
+import * as fs from "fs";
+
+// REPLACE WITH YOUR REAL VALUES
+const QUOTE_ID = 99;       // ← put a real quote id here
+const USER_ID = 10;        // ← your test user
+const TEMPLATE_ID = "it-services/01-split-screen";
+
+const org = await getUserPrimaryOrg(USER_ID);
+const quote = await getQuoteById(QUOTE_ID, USER_ID);
+const lineItems = await getLineItemsByQuoteId(QUOTE_ID);
+
+if (!quote || !org) {
+  console.error("Quote or org not found");
+  process.exit(1);
+}
+
+const slotContent = buildSlotContent({
+  quote: quote as any,
+  organization: org as any,
+  lineItems: lineItems as any,
+});
+
+const result = await renderTemplate({
+  templateId: TEMPLATE_ID,
+  brand: {
+    primary: org.brandPrimaryColor,
+    secondary: org.brandSecondaryColor,
+    accent: null,
+  },
+  slotContent,
+  logoUrl: org.companyLogo,
+});
+
+fs.writeFileSync("/tmp/v2-test.pdf", result.pdf);
+console.log("PDF written:", result.pdf.length, "bytes in", result.durationMs, "ms");
+EOF
+npx tsx /tmp/test-v2-endpoint.ts
+```
+
+If you see "PDF written: ~2.5 MB in ~3000 ms" — Phase 2 works end-to-end with your real data.
+
+Then download the PDF to inspect:
+
+```bash
+echo go; base64 -w0 /tmp/v2-test.pdf
+```
+
+Copy the full base64 string, paste into base64.guru or any base64-to-file converter, download as `.pdf`, and open. You should see:
+- The template design (Split Screen)
+- Your brand colours throughout
+- Your company logo on the cover (if you've uploaded one)
+- Your real quote reference, client name, line items in the pricing table
+- Your terms (or the org default, or the fallback)
+
+---
+
+## What you'll see in the PDF for v1
+
+The endpoint produces a real PDF from real quote data, but **without AI-enhanced narrative** in this v1 — the "about us", "executive summary", and "methodology" sections use deterministic content built from the quote fields you've already populated (description, terms) plus sensible defaults. That's a deliberate scope-cut to ship faster and validate the pipeline.
+
+Phase 2.5 (later, separate session) will add an AI step that generates richer narrative content for those sections. The data slot architecture is already in place; it's just a content-source swap.
+
+---
+
+## What's NOT in Phase 2
+
+Deliberate scope cuts to keep this shippable in one bite:
+
+- **No picker UI yet** — Phase 3
+- **No `brandAccentColor` schema column** — Phase 3 adds it when the accent picker UI lands. For now, accent is derived from primary by colourUtils.
+- **No PDF caching** — every call re-renders. Phase 4 polish.
+- **No AI content enhancement** — Phase 2.5.
+- **No tiered pricing UI option** — the templates support it, but no workspace control to flip between line-item table and 3-tier cards yet. Phase 4 polish.
+- **Schedule of Works** — the slot exists in the templates; the workspace UI for editing per-quote phases is Phase 4 (the original ask from session 1, finally returning).
+
+---
+
+## Known limitations to flag
+
+- **Annual recurring line items roll into the "Recurring Services" table** alongside monthly ones, with a `(/year)` suffix in the description. Most quotes don't have annual items so this is fine; if your test quote does, expect mixed rows in the second table.
+- **About Us and Methodology use generic defaults** until Phase 2.5 wires AI content. They'll read as polished-but-generic boilerplate for now. Quote description and terms come straight from the user's quote fields.
+- **Vendor logos and accreditation strips** still show the grey "LOGO 1 / LOGO 2" placeholders. Phase 4 polish wires in real logos from the user's org settings.
+- **The two pricing-title slots are filled independently** — first slot gets "One-Off Investment", second gets "Recurring Services" (or empty if no recurring items). This needs the array-slot support added in this Phase 2's templateRenderer update.
+
+---
+
+## Changes Log row for SESSION-START.md
+
+```
+Phase 2 (content pipeline + new endpoint): live alongside existing v1 endpoint
+- New server/services/slotContentBuilder.ts — pure transform; quote+org+lineItems → SlotContent
+- New server/services/templateProposalRouter.ts — generateBrandedProposalV2 mutation (Pro/Team tier-gated, returns base64 PDF)
+- Updated server/services/templateRenderer.ts — slot values now support string | string[] (indexed)
+- Modified server/routers.ts (additive) — 1 import + 1 mount line via apply-phase2-patches.mjs
+- Modified shared/schema.ts — added proposalTemplateV2 varchar(64) column on quotes
+- Modified drizzle/schema.ts — same (dual-schema rule)
+- New SQL migration applied via Render shell: ALTER TABLE quotes ADD COLUMN proposal_template_v2 VARCHAR(64)
+- No router endpoint modifications (existing generateBrandedProposal untouched)
+- No client changes (Phase 3)
+- TypeScript baseline: held at 69 (zero new errors)
+- Render verification: end-to-end PDF from real quote data, ~2.5 MB in 3s
+```
