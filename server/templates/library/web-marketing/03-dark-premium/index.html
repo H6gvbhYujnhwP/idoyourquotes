@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en" data-sector="web-marketing" data-style="03-dark-premium">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web & Digital Marketing Proposal — Catalyst Digital Agency</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Inter:wght@300;400;600&display=swap');
+  
+  /* v2.1 P2 FIX: Cover headline safe margins — prevents left-edge bleed on D2-D6 */
+  .cover-text-wrap,
+  .cover-content,
+  .cover-body,
+  .cover-inner,
+  .cover-headline-wrap {
+    padding-left: max(var(--page-margin-h), 1.5rem);
+    padding-right: max(var(--page-margin-h), 1.5rem);
+    box-sizing: border-box;
+  }
+  /* Ensure full-bleed cover sections don't clip their children */
+  .cover-page > * {
+    max-width: 100%;
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+  /* D2 Magazine: large headline overflow protection */
+  .cover-headline,
+  .cover-title,
+  .cover-page h1,
+  .cover-page .headline {
+    overflow-wrap: break-word;
+    word-break: break-word;
+    hyphens: auto;
+    max-width: 100%;
+  }
+</style>
+  <link rel="stylesheet" href="assets/base.css">
+  <style>
+    :root {
+      --brand-primary:   #1c1917;
+      --brand-secondary: #292524;
+      --brand-accent:    #d97706;
+      --brand-primary-8:  color-mix(in srgb, var(--brand-primary)  8%, white);
+      --brand-primary-12: color-mix(in srgb, var(--brand-primary) 12%, white);
+      --brand-primary-20: color-mix(in srgb, var(--brand-primary) 20%, white);
+      --brand-primary-40: color-mix(in srgb, var(--brand-primary) 40%, white);
+      --brand-primary-60: color-mix(in srgb, var(--brand-primary) 60%, white);
+      --brand-accent-15:  color-mix(in srgb, var(--brand-accent)  15%, white);
+      --brand-accent-30:  color-mix(in srgb, var(--brand-accent)  30%, white);
+      --font-display: 'Cormorant Garamond', Georgia, serif;
+      --font-sans:    'Inter', system-ui, sans-serif;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE 1: COVER
+     ═══════════════════════════════════════════════════════════ -->
+
+<div class="page-section cover-page" data-slot="cover" style="position:relative;min-height:100vh;margin:calc(-1*var(--page-margin-v)) calc(-1*var(--page-margin-h));page-break-after:always;background:var(--brand-primary);overflow:hidden;">
+  <!-- Subtle duotone image in right half -->
+  <div class="duotone-wrap duotone-light" style="position:absolute;right:0;top:0;width:55%;height:100%;opacity:0.35;">
+    <img src="assets/cover-hero.jpg" alt="" style="width:100%;height:100%;object-fit:cover;filter:grayscale(100%) contrast(1.2);">
+  </div>
+  <!-- Gold horizontal rule -->
+  <div style="position:absolute;top:0;left:0;right:0;height:4px;background:var(--brand-accent);z-index:3;"></div>
+  <!-- Content -->
+  <div style="position:relative;z-index:2;padding:4rem 3rem;min-height:297mm;display:flex;flex-direction:column;justify-content:space-between;">
+    <div>
+      <div data-slot="logo"><div class="logo-box">YOUR LOGO HERE</div></div>
+    </div>
+    <div style="max-width:60%;">
+      <div style="font-size:0.65rem;letter-spacing:0.2em;text-transform:uppercase;color: var(--brand-accent-text-safe);margin-bottom:1.5rem;font-weight:600;">Web & Digital Marketing &nbsp;·&nbsp; Confidential Proposal</div>
+      <h1 style="font-size:3rem;line-height:1.1;color:#ffffff;font-weight:400;font-style:italic;margin-bottom:2rem;">Grow Online. Convert More. Lead Your Market.</h1>
+      <div style="width:60px;height:1px;background:var(--brand-accent);margin-bottom:2rem;"></div>
+      <p style="font-size:0.9rem;color:rgba(255,255,255,0.7);line-height:1.7;">Prepared with care for <span style="color:#fff;font-style:italic;">Thornton & Webb Chartered Accountants</span></p>
+    </div>
+    <div style="display:flex;gap:3rem;padding-top:2rem;border-top:1px solid rgba(255,255,255,0.15);">
+      <div><div style="font-size:0.6rem;color: var(--brand-accent-text-safe);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.25rem;">Prepared By</div><div style="font-size:0.85rem;color:#fff;">Catalyst Digital Agency</div></div>
+      <div><div style="font-size:0.6rem;color: var(--brand-accent-text-safe);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.25rem;">Reference</div><div style="font-size:0.85rem;color:#fff;" data-slot="quote-ref">Q-2026-DM-001</div></div>
+      <div><div style="font-size:0.6rem;color: var(--brand-accent-text-safe);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.25rem;">Date</div><div style="font-size:0.85rem;color:#fff;" data-slot="date">15 May 2026</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE 2: ABOUT US + WHY CHOOSE US
+     ═══════════════════════════════════════════════════════════ -->
+<div class="page-section" style="padding:var(--page-margin-v) 0;page-break-before: auto;" data-slot="about-us">
+  <div class="section-header-band">
+  <span class="band-number">01</span>
+  <h2>About Us</h2>
+</div>
+
+  <div class="split-content" style="margin-bottom:1.5rem;">
+    <div>
+      <div class="accent-bar"></div>
+      <h2 data-slot="company-name">Catalyst Digital Agency</h2>
+      <p data-slot="about-text">We are a leading web & digital marketing provider with a proven track record of delivering exceptional results for businesses across the UK. Our team of certified professionals combines deep technical expertise with a genuine commitment to client success — building long-term partnerships, not just contracts.</p>
+      <p>Every client receives a dedicated account manager, transparent reporting and a service level agreement that we stand behind completely. We don't just meet expectations — we exceed them.</p>
+    </div>
+    <div class="duotone-wrap split-image" style="height:220px;">
+      <img src="assets/about-panel.jpg" alt="Our team" style="width:100%;height:100%;object-fit:cover;filter:grayscale(100%) contrast(1.1);">
+    </div>
+  </div>
+
+  <div class="stats-strip" data-slot="stats-strip">
+<div class="stat"><div class="stat-number">320%</div><div class="stat-label">Avg. ROI</div></div>
+<div class="stat"><div class="stat-number">12+</div><div class="stat-label">Years Experience</div></div>
+<div class="stat"><div class="stat-number">150+</div><div class="stat-label">Clients Grown</div></div>
+<div class="stat"><div class="stat-number">4.9★</div><div class="stat-label">Client Rating</div></div>
+</div>
+  <div data-slot="accreditation-strip">
+<div class="logo-placeholder">Logo 1</div>
+<div class="logo-placeholder">Logo 2</div>
+<div class="logo-placeholder">Logo 3</div>
+<div class="logo-placeholder">Logo 4</div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE 3: WHY CHOOSE US + TESTIMONIALS
+     ═══════════════════════════════════════════════════════════ -->
+<div class="page-section" style="padding:var(--page-margin-v) 0;page-break-before: auto;" data-slot="why-choose-us">
+  <div class="section-header-band">
+  <span class="band-number">02</span>
+  <h2>Why Choose Us</h2>
+</div>
+  <div class="usp-grid">
+
+        <div class="usp-card" data-slot="usp-card">
+          <img class="usp-icon" src="assets/mktg-icon-1-seo.png" alt="SEO & Content">
+          <h4>SEO & Content</h4>
+          <p>Technical SEO, keyword strategy, content creation and authority link building.</p>
+        </div>
+        <div class="usp-card" data-slot="usp-card">
+          <img class="usp-icon" src="assets/mktg-icon-2-ppc.png" alt="PPC & Paid Media">
+          <h4>PPC & Paid Media</h4>
+          <p>Google Ads, Microsoft Ads and display campaigns managed for maximum ROI.</p>
+        </div>
+        <div class="usp-card" data-slot="usp-card">
+          <img class="usp-icon" src="assets/mktg-icon-3-social.png" alt="Social Media">
+          <h4>Social Media</h4>
+          <p>Organic and paid social across LinkedIn, Facebook, Instagram and X.</p>
+        </div>
+        <div class="usp-card" data-slot="usp-card">
+          <img class="usp-icon" src="assets/mktg-icon-4-web.png" alt="Web Design & Dev">
+          <h4>Web Design & Dev</h4>
+          <p>Conversion-optimised websites built on WordPress, Webflow or bespoke code.</p>
+        </div>
+        <div class="usp-card" data-slot="usp-card">
+          <img class="usp-icon" src="assets/mktg-icon-5-analytics.png" alt="Analytics & Reporting">
+          <h4>Analytics & Reporting</h4>
+          <p>GA4, Search Console and custom dashboards with monthly performance reviews.</p>
+        </div>
+        <div class="usp-card" data-slot="usp-card">
+          <img class="usp-icon" src="assets/mktg-icon-6-content.png" alt="Email Marketing">
+          <h4>Email Marketing</h4>
+          <p>Automated nurture sequences, newsletters and CRM integration via HubSpot.</p>
+        </div>
+</div>
+
+  <div style="margin-top:2rem;">
+    <div class="section-header-band">
+  <span class="band-number">03</span>
+  <h2>What Our Clients Say</h2>
+</div>
+    <div class="testimonial-grid" data-slot="testimonials">
+
+        <div class="testimonial-card">
+          <blockquote>"Catalyst tripled our organic traffic in 6 months. The team is strategic, creative and genuinely invested in our growth."</blockquote>
+          <cite>Amanda Thornton, Partner — Thornton & Webb</cite>
+        </div>
+        <div class="testimonial-card">
+          <blockquote>"Our Google Ads ROI went from 180% to 420% in the first quarter. Outstanding results and brilliant communication."</blockquote>
+          <cite>Paul Reeves, Marketing Director — Apex Property Group</cite>
+        </div>
+        <div class="testimonial-card">
+          <blockquote>"Finally a digital agency that speaks plain English and delivers what they promise. Our website leads are up 280%."</blockquote>
+          <cite>Claire Morrison, CEO — Morrison Financial Planning</cite>
+        </div>
+</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE 4: EXECUTIVE SUMMARY + SERVICES
+     ═══════════════════════════════════════════════════════════ -->
+<div class="page-section" style="padding:var(--page-margin-v) 0;page-break-before: auto;" data-slot="executive-summary">
+  <div class="section-header-band">
+  <span class="band-number">04</span>
+  <h2>Executive Summary</h2>
+</div>
+
+  <div class="band-image">
+    <div class="duotone-wrap" style="height:120px;">
+      <img src="assets/summary-band.jpg" alt="" style="width:100%;height:100%;object-fit:cover;filter:grayscale(100%) contrast(1.1);">
+    </div>
+  </div>
+
+  <p data-slot="summary-text" style="margin-top:1.5rem;">Having reviewed your current web & digital marketing requirements in detail, we are pleased to present this tailored proposal. Our recommended solution addresses your specific challenges, delivers measurable outcomes and provides exceptional value for your investment.</p>
+  <p>This proposal outlines our recommended service scope, implementation approach, pricing and contractual terms. We are confident that our solution will deliver significant improvements to your operations from day one.</p>
+
+  <div class="section-header-band">
+  <span class="band-number">05</span>
+  <h2>Proposed Services</h2>
+</div>
+  <div class="service-grid">
+
+        <div class="service-card" data-slot="service-card">
+          <h4>SEO Strategy & Technical Optimisation</h4>
+          <p>Full technical audit, on-page optimisation, content strategy and link acquisition.</p>
+        </div>
+        <div class="service-card" data-slot="service-card">
+          <h4>Google Ads & PPC Management</h4>
+          <p>Campaign setup, keyword research, ad copy, bid management and conversion tracking.</p>
+        </div>
+        <div class="service-card" data-slot="service-card">
+          <h4>Social Media Management</h4>
+          <p>Content calendar, post creation, community management and paid social campaigns.</p>
+        </div>
+        <div class="service-card" data-slot="service-card">
+          <h4>Website Design & Development</h4>
+          <p>Responsive, fast-loading website with CMS, contact forms and analytics integration.</p>
+        </div>
+        <div class="service-card" data-slot="service-card">
+          <h4>Email Marketing & Automation</h4>
+          <p>HubSpot setup, email sequences, lead nurturing and CRM pipeline management.</p>
+        </div>
+        <div class="service-card" data-slot="service-card">
+          <h4>Analytics & Monthly Reporting</h4>
+          <p>GA4 configuration, custom dashboard and monthly performance review meetings.</p>
+        </div>
+</div>
+
+  <!-- Vendor logos strip -->
+  <div style="margin-top:1.5rem;">
+    <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:0.75rem;font-weight:600;">Technology Partners & Platforms</p>
+    <div data-slot="accreditation-strip">
+<div class="logo-placeholder">Logo 1</div>
+<div class="logo-placeholder">Logo 2</div>
+<div class="logo-placeholder">Logo 3</div>
+<div class="logo-placeholder">Logo 4</div>
+</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE 5: METHODOLOGY + SCHEDULE
+     ═══════════════════════════════════════════════════════════ -->
+<div class="page-section" style="padding:var(--page-margin-v) 0;page-break-before: auto;" data-slot="methodology">
+  <div class="section-header-band">
+  <span class="band-number">06</span>
+  <h2>Our Approach & Methodology</h2>
+</div>
+
+  <div class="split-content image-right" style="margin-bottom:1.5rem;">
+    <div>
+      <div class="accent-bar"></div>
+      <h3 data-slot="methodology-title">A Proven, Structured Approach</h3>
+      <p data-slot="methodology-text">Our delivery methodology has been refined over many years and hundreds of successful client engagements. We follow a structured six-phase process that ensures every project is delivered on time, within budget and to the highest quality standards.</p>
+      <p>Clear communication, transparent reporting and defined milestones mean you always know exactly where your project stands. Our project managers are available throughout and provide regular progress updates.</p>
+    </div>
+    <div class="duotone-wrap split-image" style="height:200px;">
+      <img src="assets/service-panel.jpg" alt="Our methodology" style="width:100%;height:100%;object-fit:cover;filter:grayscale(100%) contrast(1.1);">
+    </div>
+  </div>
+
+  <div class="section-header-band">
+  <span class="band-number">07</span>
+  <h2>Schedule of Works</h2>
+</div>
+  <div class="schedule-grid" data-slot="schedule">
+
+        <div class="schedule-phase">
+          <div class="phase-number">Phase 01</div>
+          <h4>Discovery & Audit</h4>
+          <p>Website audit, competitor analysis, keyword research and strategy workshop.</p>
+        </div>
+        <div class="schedule-phase">
+          <div class="phase-number">Phase 02</div>
+          <h4>Strategy & Planning</h4>
+          <p>12-month digital strategy, channel mix, budget allocation and KPI setting.</p>
+        </div>
+        <div class="schedule-phase">
+          <div class="phase-number">Phase 03</div>
+          <h4>Build & Setup</h4>
+          <p>Website build or optimisation, ad account setup, tracking and CRM integration.</p>
+        </div>
+        <div class="schedule-phase">
+          <div class="phase-number">Phase 04</div>
+          <h4>Launch & Activate</h4>
+          <p>Campaigns go live, content publishing begins, social channels activated.</p>
+        </div>
+        <div class="schedule-phase">
+          <div class="phase-number">Phase 05</div>
+          <h4>Optimise</h4>
+          <p>Weekly performance review, A/B testing, bid adjustments and content iteration.</p>
+        </div>
+        <div class="schedule-phase">
+          <div class="phase-number">Phase 06</div>
+          <h4>Report & Grow</h4>
+          <p>Monthly reporting, strategy review and growth planning for the next quarter.</p>
+        </div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE 6: PRICING
+     ═══════════════════════════════════════════════════════════ -->
+<div class="page-section" style="padding:var(--page-margin-v) 0;page-break-before: auto;" data-slot="pricing">
+  <div class="section-header-band">
+  <span class="band-number">08</span>
+  <h2>Investment & Pricing</h2>
+</div>
+
+  <div class="band-image" style="margin-bottom:1.5rem;">
+    <div class="duotone-wrap" style="height:100px;">
+      <img src="assets/methodology-band.jpg" alt="" style="width:100%;height:100%;object-fit:cover;filter:grayscale(100%) contrast(1.1);">
+    </div>
+  </div>
+
+  
+<h3 data-slot="pricing-title">One-Off Investment</h3>
+<table class="pricing-table" data-slot="pricing-table">
+  <thead>
+    <tr>
+      <th>Description</th>
+      <th>Net</th>
+      <th>VAT (20%)</th>
+      <th>Gross</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Website Redesign — 10-page responsive site</td><td>£4,500.00</td><td>£900.00</td><td>£5,400.00</td></tr>
+<tr><td>SEO Technical Audit & Strategy Document</td><td>£850.00</td><td>£170.00</td><td>£1,020.00</td></tr>
+<tr><td>Google Ads Account Setup & Campaign Build</td><td>£750.00</td><td>£150.00</td><td>£900.00</td></tr>
+<tr><td>HubSpot CRM Setup & Email Automation</td><td>£1,200.00</td><td>£240.00</td><td>£1,440.00</td></tr>
+
+  </tbody>
+  <tfoot>
+    <tr><td colspan="3">Subtotal (ex. VAT)</td><td>£7,300.00</td></tr>
+    <tr><td colspan="3">VAT @ 20%</td><td>£1,460.00</td></tr>
+    <tr class="total-row"><td colspan="3"><strong>Total (inc. VAT)</strong></td><td><strong>£8,760.00</strong></td></tr>
+  </tfoot>
+</table>
+
+  
+<h3 data-slot="pricing-title">Monthly Recurring Services</h3>
+<table class="pricing-table" data-slot="pricing-table">
+  <thead>
+    <tr>
+      <th>Description</th>
+      <th>Net</th>
+      <th>VAT (20%)</th>
+      <th>Gross</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>SEO Management & Content (4 articles/month)</td><td>£1,200.00</td><td>£240.00</td><td>£1,440.00</td></tr>
+<tr><td>Google Ads Management (up to £5k ad spend)</td><td>£650.00</td><td>£130.00</td><td>£780.00</td></tr>
+<tr><td>Social Media Management (3 platforms)</td><td>£750.00</td><td>£150.00</td><td>£900.00</td></tr>
+<tr><td>Email Marketing & HubSpot Management</td><td>£450.00</td><td>£90.00</td><td>£540.00</td></tr>
+
+  </tbody>
+  <tfoot>
+    <tr><td colspan="3">Subtotal (ex. VAT)</td><td>£3,050.00</td></tr>
+    <tr><td colspan="3">VAT @ 20%</td><td>£610.00</td></tr>
+    <tr class="total-row"><td colspan="3"><strong>Total (inc. VAT)</strong></td><td><strong>£3,660.00</strong></td></tr>
+  </tfoot>
+</table>
+
+  <div style="margin-top:1.5rem;">
+    <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:0.75rem;font-weight:600;">Service Tier Options</p>
+    <div class="pricing-tiers" data-slot="pricing-tiers">
+
+        <div class="tier-card" data-slot="tier-card">
+          <div class="tier-name">Starter</div>
+          <div class="tier-price">£995</div>
+          <div class="tier-period">/month</div>
+          <ul><li>SEO basics</li>
+<li>Social media (2 platforms)</li>
+<li>Monthly report</li>
+<li>Email support</li>
+<li>GA4 setup</li></ul>
+        </div>
+        <div class="tier-card tier-featured" data-slot="tier-card">
+          <div class="tier-name">Growth</div>
+          <div class="tier-price">£1,995</div>
+          <div class="tier-period">/month</div>
+          <ul><li>Everything in Starter</li>
+<li>Google Ads management</li>
+<li>Content creation</li>
+<li>HubSpot CRM</li>
+<li>Fortnightly calls</li></ul>
+        </div>
+        <div class="tier-card" data-slot="tier-card">
+          <div class="tier-name">Scale</div>
+          <div class="tier-price">£3,495</div>
+          <div class="tier-period">/month</div>
+          <ul><li>Everything in Growth</li>
+<li>Full PPC suite</li>
+<li>Social paid ads</li>
+<li>Dedicated strategist</li>
+<li>Weekly reporting</li></ul>
+        </div>
+</div>
+  </div>
+
+  <!-- Vendor logos on pricing page -->
+  <div style="margin-top:1.5rem;">
+    <div data-slot="accreditation-strip">
+<div class="logo-placeholder">Logo 1</div>
+<div class="logo-placeholder">Logo 2</div>
+<div class="logo-placeholder">Logo 3</div>
+<div class="logo-placeholder">Logo 4</div>
+</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE 7: TERMS + NEXT STEPS
+     ═══════════════════════════════════════════════════════════ -->
+<div class="page-section" style="padding:var(--page-margin-v) 0;page-break-before: auto;" data-slot="terms">
+  <div class="section-header-band">
+  <span class="band-number">09</span>
+  <h2>Terms & Conditions</h2>
+</div>
+
+  <div class="terms-columns" data-slot="terms-text">
+    <h4>Contract Term</h4>
+    <p>This proposal is valid for 30 days from the date of issue. The standard contract term is 12 months, renewing automatically unless 90 days' written notice is given by either party.</p>
+
+    <h4>Payment Terms</h4>
+    <p>One-off fees are invoiced on project commencement with payment due within 14 days. Monthly services are invoiced on the 1st of each month by direct debit or BACS transfer.</p>
+
+    <h4>Service Level Agreement</h4>
+    <p>Service levels are as defined in the SLA schedule attached to the contract. Credits apply for any breach of agreed response or resolution times.</p>
+
+    <h4>Liability</h4>
+    <p>Our total liability is limited to the fees paid in the preceding 12 months. We carry £10m public liability and professional indemnity insurance.</p>
+
+    <h4>Data Protection</h4>
+    <p>We are registered with the ICO and comply fully with UK GDPR. A Data Processing Agreement is available on request and forms part of the contract.</p>
+
+    <h4>Termination</h4>
+    <p>Either party may terminate with 90 days' written notice after the initial contract term. Early termination fees apply as detailed in the contract schedule.</p>
+
+    <h4>Governing Law</h4>
+    <p>This agreement is governed by the laws of England and Wales. Any disputes shall be subject to the exclusive jurisdiction of the English courts.</p>
+
+    <h4>Acceptance</h4>
+    <p>Acceptance of this proposal constitutes agreement to these terms. Please sign and return the acceptance form or confirm acceptance by email.</p>
+  </div>
+
+  <div style="margin-top:2rem;">
+    <div class="section-header-band">
+  <span class="band-number">10</span>
+  <h2>Next Steps</h2>
+</div>
+    <div class="next-steps-grid" data-slot="next-steps">
+
+        <div class="next-step-card">
+          <div class="step-number">01</div>
+          <h4>Review Proposal</h4>
+          <p>Read through this proposal and share with your stakeholders.</p>
+        </div>
+        <div class="next-step-card">
+          <div class="step-number">02</div>
+          <h4>Ask Questions</h4>
+          <p>Contact us with any questions — we're happy to discuss any aspect.</p>
+        </div>
+        <div class="next-step-card">
+          <div class="step-number">03</div>
+          <h4>Sign & Return</h4>
+          <p>Sign the acceptance page and return it to us by email or post.</p>
+        </div>
+        <div class="next-step-card">
+          <div class="step-number">04</div>
+          <h4>We Get Started</h4>
+          <p>We'll confirm your start date and kick off the onboarding process.</p>
+        </div>
+</div>
+  </div>
+
+  <div style="margin-top:2rem;">
+    <div class="section-header-band">
+  <span class="band-number">11</span>
+  <h2>Contact Us</h2>
+</div>
+    <div class="contact-block" data-slot="contact">
+      <div>
+        <div class="contact-label">Company</div>
+        <div class="contact-value" data-slot="company-name">Catalyst Digital Agency</div>
+      </div>
+      <div>
+        <div class="contact-label">Your Account Manager</div>
+        <div class="contact-value" data-slot="account-manager">Your Account Manager</div>
+      </div>
+      <div>
+        <div class="contact-label">Telephone</div>
+        <div class="contact-value" data-slot="phone">0800 000 0000</div>
+      </div>
+      <div>
+        <div class="contact-label">Email</div>
+        <div class="contact-value" data-slot="email">hello@yourcompany.co.uk</div>
+      </div>
+      <div>
+        <div class="contact-label">Website</div>
+        <div class="contact-value" data-slot="website">www.yourcompany.co.uk</div>
+      </div>
+      <div>
+        <div class="contact-label">Address</div>
+        <div class="contact-value" data-slot="address">Your Business Address</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,763 @@
+/* ═══════════════════════════════════════════════════════════════
+   IdoYourQuotes Base CSS — v2.1
+   All brand colours reference CSS variables only.
+   Tints derived via color-mix() — never hard-coded.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── RESET & BASE ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* Brand variables — overridden per template in <style> block */
+  --brand-primary:    #1f2937;
+  --brand-secondary:  #374151;
+  --brand-accent:     #4b6cb7;
+
+  /* ── TEXT-SAFE VARIANTS (v2.1) ─────────────────────────────────
+     These guarantee readable text on white backgrounds.
+     For pale brand colours (mint, pastel) they darken toward #111827.
+     For dark brand colours they stay close to the original.
+     RULE: Use *-text-safe for ALL text. Use raw brand vars for fills/backgrounds only.
+  ─────────────────────────────────────────────────────────────── */
+  --brand-primary-text-safe:   color-mix(in srgb, var(--brand-primary)   45%, #111827 55%);
+  --brand-secondary-text-safe: color-mix(in srgb, var(--brand-secondary) 45%, #111827 55%);
+  --brand-accent-text-safe:    color-mix(in srgb, var(--brand-accent)    45%, #111827 55%);
+
+  /* Derived tints — auto-computed from brand variables */
+  --brand-primary-8:  color-mix(in srgb, var(--brand-primary)  8%, white);
+  --brand-primary-12: color-mix(in srgb, var(--brand-primary) 12%, white);
+  --brand-primary-20: color-mix(in srgb, var(--brand-primary) 20%, white);
+  --brand-primary-40: color-mix(in srgb, var(--brand-primary) 40%, white);
+  --brand-primary-60: color-mix(in srgb, var(--brand-primary) 60%, white);
+  --brand-accent-15:  color-mix(in srgb, var(--brand-accent)  15%, white);
+  --brand-accent-30:  color-mix(in srgb, var(--brand-accent)  30%, white);
+
+  /* Neutral surfaces */
+  --surface-white:    #ffffff;
+  --surface-light:    #f8fafc;
+  --surface-border:   #e2e8f0;
+  --surface-muted:    #f1f5f9;
+
+  /* Text — NEVER coloured with raw brand variables for accessibility */
+  --text-primary:     #111827;
+  --text-secondary:   #4b5563;
+  --text-muted:       #9ca3af;
+
+  /* Typography */
+  --font-display:     'Playfair Display', Georgia, serif;
+  --font-sans:        'Inter', system-ui, sans-serif;
+  --font-mono:        'IBM Plex Mono', 'Courier New', monospace;
+
+  /* Page geometry */
+  --page-margin-h:    17mm;
+  --page-margin-v:    14mm;
+}
+
+/* ── PRINT / A4 PAGE RULES ────────────────────────────────────── */
+@page {
+  size: A4 portrait;
+  margin: var(--page-margin-v) var(--page-margin-h);
+}
+
+@media print {
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .page-section { page-break-inside: avoid; }
+  thead { display: table-header-group; }
+  tfoot { display: table-footer-group; }
+  tr { page-break-inside: avoid; }
+  p, li { widows: 3; orphans: 3; }
+}
+
+/* ── P3: PAGE-BREAK ATOMICITY — all atomic block elements ─────── */
+.accreditation-strip,
+.vendor-strip,
+.stats-strip,
+.usp-card,
+.tier-card,
+.schedule-phase,
+.phase-card,
+.service-card,
+.next-step-card,
+.testimonial-card,
+.quote-meta,
+.quote-meta-item,
+.logo-placeholder,
+.contact-block {
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+/* ── BODY & TYPOGRAPHY ────────────────────────────────────────── */
+html, body {
+  font-family: var(--font-sans);
+  font-size: 10pt;
+  line-height: 1.65;
+  color: var(--text-primary);
+  background: var(--surface-white);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5 {
+  font-family: var(--font-display);
+  /* P1 FIX: use text-safe variant so pale brand colours remain readable on white */
+  color: var(--brand-primary-text-safe);
+  line-height: 1.2;
+  margin-bottom: 0.5em;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  max-width: 100%;
+}
+
+h1 { font-size: 2.2rem; }
+h2 { font-size: 1.5rem; margin-bottom: 0.75rem; }
+h3 { font-size: 1.15rem; margin-bottom: 0.5rem; }
+h4 { font-size: 0.95rem; font-family: var(--font-sans); font-weight: 700; }
+
+p { color: var(--text-secondary); margin-bottom: 0.75rem; font-size: 0.88rem; }
+p:last-child { margin-bottom: 0; }
+
+strong { color: var(--text-primary); font-weight: 700; }
+
+/* ── P4: TUNED DUOTONE OVERLAY SYSTEM ────────────────────────── */
+/* Lifts highlights back so photographic structure remains visible
+   across all four brand palettes, including dark navy. */
+.duotone-wrap {
+  position: relative;
+  overflow: hidden;
+  background: var(--brand-primary);
+}
+
+.duotone-wrap img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Increased contrast + brightness lifts midtones; opacity 0.85 dials back multiply intensity */
+  filter: grayscale(100%) contrast(1.2) brightness(1.1);
+  mix-blend-mode: multiply;
+  opacity: 0.85;
+}
+
+/* Screen-blend highlight recovery — recovers photographic structure on dark palettes */
+.duotone-wrap::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, transparent 0%, rgba(255,255,255,0.10) 100%);
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+/* Lighter duotone variant for secondary panels */
+.duotone-wrap.duotone-light {
+  background: var(--brand-primary-60);
+}
+
+/* Accent duotone variant */
+.duotone-wrap.duotone-accent {
+  background: var(--brand-accent);
+}
+
+/* ── SECTION HEADER BAND ──────────────────────────────────────── */
+.section-header-band {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid var(--brand-primary);
+}
+
+.section-header-band .band-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--brand-primary);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  font-family: var(--font-sans);
+  flex-shrink: 0;
+}
+
+.section-header-band h2 {
+  font-size: 1.1rem;
+  /* P1 FIX: text-safe for section headers */
+  color: var(--brand-primary-text-safe);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-family: var(--font-sans);
+  font-weight: 700;
+}
+
+/* ── ACCENT BAR ───────────────────────────────────────────────── */
+.accent-bar {
+  width: 40px;
+  height: 4px;
+  background: var(--brand-accent);
+  margin-bottom: 0.75rem;
+}
+
+/* ── COVER PAGE ───────────────────────────────────────────────── */
+.cover-page {
+  page-break-after: always;
+  /* H3 FIX: only one break rule — no page-break-before on first content section */
+}
+
+.cover-text-primary {
+  font-family: var(--font-display);
+  color: var(--brand-primary);
+}
+
+/* ── LOGO PLACEHOLDER ─────────────────────────────────────────── */
+[data-slot="logo"] .logo-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 160px;
+  height: 60px;
+  border: 1.5px dashed var(--surface-border);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-family: var(--font-sans);
+}
+
+/* ── QUOTE META GRID ──────────────────────────────────────────── */
+.quote-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.quote-meta-item {
+  background: var(--brand-primary-8);
+  border-left: 3px solid var(--brand-accent);
+  padding: 0.5rem 0.75rem;
+}
+
+.meta-label {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-bottom: 0.15rem;
+}
+
+.meta-value {
+  font-size: 0.8rem;
+  font-weight: 700;
+  /* P1 FIX: text-safe for meta values */
+  color: var(--brand-primary-text-safe);
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* ── STATS STRIP ──────────────────────────────────────────────── */
+.stats-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  margin: 1.25rem 0;
+  border: 1px solid var(--brand-primary-20);
+}
+
+.stat {
+  text-align: center;
+  padding: 1rem 0.5rem;
+  background: var(--brand-primary-8);
+  border-right: 1px solid var(--brand-primary-20);
+}
+
+.stat:last-child { border-right: none; }
+
+.stat-number {
+  font-size: 1.8rem;
+  font-weight: 700;
+  font-family: var(--font-display);
+  /* P1 FIX: text-safe for stat numbers */
+  color: var(--brand-primary-text-safe);
+  line-height: 1;
+  margin-bottom: 0.2rem;
+}
+
+.stat-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* ── ACCREDITATION / LOGO PLACEHOLDER STRIP ───────────────────── */
+[data-slot="accreditation-strip"] {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 1rem 0;
+  align-items: center;
+}
+
+.logo-placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 120px;
+  height: 60px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-family: var(--font-sans);
+  flex-shrink: 0;
+}
+
+/* ── USP GRID ─────────────────────────────────────────────────── */
+.usp-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.usp-card {
+  background: var(--surface-white);
+  border: 1px solid var(--surface-border);
+  border-top: 3px solid var(--brand-accent);
+  padding: 1rem;
+}
+
+.usp-icon {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  margin-bottom: 0.5rem;
+  filter: brightness(0) saturate(100%) invert(20%) sepia(60%) saturate(500%) hue-rotate(190deg);
+  /* Note: filter tints icon to approximate brand-primary; app should override with exact hue */
+}
+
+.usp-card h4 {
+  font-size: 0.82rem;
+  /* P1 FIX: text-safe for card titles */
+  color: var(--brand-primary-text-safe);
+  margin-bottom: 0.35rem;
+  font-weight: 700;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.usp-card p {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ── TESTIMONIALS ─────────────────────────────────────────────── */
+.testimonial-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.testimonial-card {
+  background: var(--brand-primary-8);
+  border-left: 3px solid var(--brand-accent);
+  padding: 0.85rem;
+}
+
+.testimonial-card blockquote {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  font-style: italic;
+  margin-bottom: 0.5rem;
+}
+
+.testimonial-card cite {
+  font-size: 0.68rem;
+  /* P1 FIX: text-safe for testimonial attribution */
+  color: var(--brand-primary-text-safe);
+  font-weight: 700;
+  font-style: normal;
+  display: block;
+}
+
+/* ── SERVICE GRID ─────────────────────────────────────────────── */
+.service-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.service-card {
+  background: var(--surface-white);
+  border: 1px solid var(--surface-border);
+  border-left: 4px solid var(--brand-primary);
+  padding: 0.85rem 1rem;
+}
+
+.service-card h4 {
+  font-size: 0.82rem;
+  /* P1 FIX: text-safe for service card titles */
+  color: var(--brand-primary-text-safe);
+  margin-bottom: 0.3rem;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.service-card p {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ── SPLIT CONTENT (image + text side by side) ────────────────── */
+.split-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.split-content.image-right {
+  grid-template-columns: 1fr 1fr;
+}
+
+.split-image {
+  overflow: hidden;
+}
+
+/* ── BAND IMAGE (full-width) ──────────────────────────────────── */
+.band-image {
+  margin: 0 calc(-1 * var(--page-margin-h));
+  overflow: hidden;
+}
+
+/* ── SCHEDULE GRID ────────────────────────────────────────────── */
+.schedule-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.schedule-phase {
+  background: var(--surface-white);
+  border: 1px solid var(--surface-border);
+  padding: 0.85rem;
+  position: relative;
+}
+
+.phase-number {
+  display: inline-block;
+  background: var(--brand-primary);
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.2rem 0.5rem;
+  margin-bottom: 0.4rem;
+  font-family: var(--font-sans);
+}
+
+.schedule-phase h4 {
+  font-size: 0.82rem;
+  /* P1 FIX: text-safe for schedule phase headings */
+  color: var(--brand-primary-text-safe);
+  margin-bottom: 0.3rem;
+}
+
+.schedule-phase p {
+  font-size: 0.73rem;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ── PRICING TABLE ────────────────────────────────────────────── */
+.pricing-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0 1.25rem;
+  font-size: 0.8rem;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+.pricing-table thead tr {
+  background: var(--brand-primary);
+  color: #fff;
+}
+
+.pricing-table thead th {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pricing-table thead th:not(:first-child) {
+  text-align: right;
+}
+
+.pricing-table tbody tr:nth-child(even) {
+  background: var(--brand-primary-8);
+}
+
+.pricing-table tbody td {
+  padding: 0.45rem 0.75rem;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.pricing-table tbody td:not(:first-child) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.pricing-table tfoot td {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  border-top: 1px solid var(--surface-border);
+  text-align: right;
+}
+
+.pricing-table tfoot td:first-child {
+  text-align: left;
+}
+
+.pricing-table tfoot tr.total-row td {
+  background: var(--brand-primary);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+/* ── TIERED PRICING CARDS ─────────────────────────────────────── */
+.pricing-tiers {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.tier-card {
+  border: 1px solid var(--surface-border);
+  padding: 1.25rem 1rem;
+  text-align: center;
+  position: relative;
+}
+
+.tier-card.tier-featured {
+  border: 2px solid var(--brand-accent);
+  background: var(--brand-accent-15);
+}
+
+.tier-card.tier-featured::before {
+  content: "MOST POPULAR";
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--brand-accent);
+  color: #fff;
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 0.15rem 0.6rem;
+  white-space: nowrap;
+}
+
+.tier-name {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  /* P1 FIX: text-safe for tier names */
+  color: var(--brand-primary-text-safe);
+  margin-bottom: 0.5rem;
+}
+
+.tier-price {
+  font-size: 2rem;
+  font-weight: 700;
+  font-family: var(--font-display);
+  /* P1 FIX: text-safe for tier prices */
+  color: var(--brand-primary-text-safe);
+  line-height: 1;
+}
+
+.tier-period {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+
+.tier-card ul {
+  list-style: none;
+  text-align: left;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.tier-card ul li {
+  padding: 0.2rem 0;
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.tier-card ul li::before {
+  content: "✓ ";
+  color: var(--brand-accent);
+  font-weight: 700;
+}
+
+/* ── TERMS COLUMNS ────────────────────────────────────────────── */
+.terms-columns {
+  column-count: 2;
+  column-gap: 1.5rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.terms-columns h4 {
+  font-size: 0.78rem;
+  /* P1 FIX: text-safe for terms headings */
+  color: var(--brand-primary-text-safe);
+  font-weight: 700;
+  margin-top: 0.75rem;
+  margin-bottom: 0.2rem;
+  break-after: avoid;
+  column-break-after: avoid;
+}
+
+.terms-columns p {
+  font-size: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+/* ── NEXT STEPS GRID ──────────────────────────────────────────── */
+.next-steps-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.next-step-card {
+  text-align: center;
+  padding: 1rem 0.75rem;
+  background: var(--brand-primary-8);
+  border-top: 3px solid var(--brand-accent);
+}
+
+.step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--brand-primary);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  border-radius: 50%;
+  margin: 0 auto 0.5rem;
+  font-family: var(--font-sans);
+}
+
+.next-step-card h4 {
+  font-size: 0.8rem;
+  /* P1 FIX: text-safe for next step headings */
+  color: var(--brand-primary-text-safe);
+  margin-bottom: 0.3rem;
+}
+
+.next-step-card p {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.45;
+}
+
+/* ── CONTACT BLOCK ────────────────────────────────────────────── */
+.contact-block {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin: 1rem 0;
+  padding: 1.25rem;
+  background: var(--brand-primary-8);
+  border-left: 4px solid var(--brand-primary);
+}
+
+.contact-label {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-bottom: 0.15rem;
+}
+
+.contact-value {
+  font-size: 0.82rem;
+  font-weight: 600;
+  /* P1 FIX: text-safe for contact details */
+  color: var(--brand-primary-text-safe);
+}
+
+/* ── PAGE SECTION WRAPPER ─────────────────────────────────────── */
+.page-section {
+  padding: var(--page-margin-v) 0;
+}
+
+/* ────────────────────────────────────────────────────────────────────
+   v2.1 LOCAL INGEST FIXES — appended at integration time.
+   Two issues Manus shipped in v2.1 that we patch here rather than
+   round-trip back to them:
+
+   1. Cover headline bleed (D2-D6). Manus added CSS targeting classes
+      (.cover-text-wrap, .cover-content, .cover-inner) that don't exist
+      in the HTML — the content overlay div is inline-styled with no
+      class. The negative page-margin on .cover-page pulls content past
+      the page edge; the inline padding:3rem 2.5rem isn't enough to
+      restore it. We target the unclassed direct child of .cover-page
+      that isn't the duotone layer, with !important to defeat inline
+      style specificity.
+
+   2. Text-safe variant not applied to footer-meta values on the cover.
+      The .meta-value class still uses --brand-primary, which renders
+      as unreadable pale text on the mint palette. Force it to use the
+      text-safe variant instead.
+   ──────────────────────────────────────────────────────────────────── */
+
+.cover-page > div:not(.duotone-wrap):not([class*="duotone"]) {
+  padding-left: max(2.5rem, var(--page-margin-h, 17mm)) !important;
+  padding-right: max(2.5rem, var(--page-margin-h, 17mm)) !important;
+  box-sizing: border-box !important;
+}
+
+.cover-page .meta-value,
+.cover-page [data-slot="quote-ref"],
+.cover-page [data-slot="company-name"] {
+  color: var(--brand-primary-text-safe, var(--brand-primary)) !important;
+}

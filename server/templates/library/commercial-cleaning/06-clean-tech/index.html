@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en" data-sector="commercial-cleaning" data-style="06-clean-tech">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Commercial Cleaning Proposal — Pristine Commercial Cleaning Ltd</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap');
+  
+  /* v2.1 P2 FIX: Cover headline safe margins — prevents left-edge bleed on D2-D6 */
+  .cover-text-wrap,
+  .cover-content,
+  .cover-body,
+  .cover-inner,
+  .cover-headline-wrap {
+    padding-left: max(var(--page-margin-h), 1.5rem);
+    padding-right: max(var(--page-margin-h), 1.5rem);
+    box-sizing: border-box;
+  }
+  /* Ensure full-bleed cover sections don't clip their children */
+  .cover-page > * {
+    max-width: 100%;
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+  /* D2 Magazine: large headline overflow protection */
+  .cover-headline,
+  .cover-title,
+  .cover-page h1,
+  .cover-page .headline {
+    overflow-wrap: break-word;
+    word-break: break-word;
+    hyphens: auto;
+    max-width: 100%;
+  }
+</style>
+  <link rel="stylesheet" href="assets/base.css">
+  <style>
+    :root {
+      --brand-primary:   #0c4a6e;
+      --brand-secondary: #075985;
+      --brand-accent:    #0ea5e9;
+      --brand-primary-8:  color-mix(in srgb, var(--brand-primary)  8%, white);
+      --brand-primary-12: color-mix(in srgb, var(--brand-primary) 12%, white);
+      --brand-primary-20: color-mix(in srgb, var(--brand-primary) 20%, white);
+      --brand-primary-40: color-mix(in srgb, var(--brand-primary) 40%, white);
+      --brand-primary-60: color-mix(in srgb, var(--brand-primary) 60%, white);
+      --brand-accent-15:  color-mix(in srgb, var(--brand-accent)  15%, white);
+      --brand-accent-30:  color-mix(in srgb, var(--brand-accent)  30%, white);
+      --font-display: 'IBM Plex Sans', system-ui, sans-serif;
+      --font-sans:    'IBM Plex Sans', system-ui, sans-serif;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE 1: COVER
+     ═══════════════════════════════════════════════════════════ -->
+
+<div class="page-section cover-page" data-slot="cover" style="min-height:100vh;margin:calc(-1*var(--page-margin-v)) calc(-1*var(--page-margin-h));page-break-after:always;background:#ffffff;position:relative;overflow:hidden;">
+  <!-- Top accent block -->
+  <div style="background:var(--brand-primary);height:8px;"></div>
+  <!-- Right image block -->
+  <div class="duotone-wrap" style="position:absolute;right:0;top:8px;width:45%;height:280px;overflow:hidden;">
+    <img src="assets/cover-hero.jpg" alt="" style="width:100%;height:100%;object-fit:cover;filter:grayscale(100%) contrast(1.1);">
+  </div>
+  <!-- Content -->
+  <div style="padding:3rem 3rem;min-height:297mm;display:flex;flex-direction:column;justify-content:space-between;position:relative;z-index:2;">
+    <div>
+      <div data-slot="logo"><div class="logo-box">YOUR LOGO HERE</div></div>
+      <div style="margin-top:2rem;max-width:55%;">
+        <div style="font-size:0.65rem;font-family:var(--font-mono);color: var(--brand-accent-text-safe);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:0.75rem;">// Commercial Cleaning Proposal</div>
+        <h1 style="font-size:2.6rem;line-height:1.1;color: var(--brand-primary-text-safe);font-weight:700;margin-bottom:1.5rem;">Spotless Spaces. Trusted Service.</h1>
+        <p style="font-size:0.9rem;color:var(--text-secondary);line-height:1.6;margin-bottom:2rem;">Prepared for <strong>Meridian Business Park Management</strong></p>
+      </div>
+    </div>
+    <div>
+      <!-- Horizontal rule -->
+      <div style="height:1px;background:var(--brand-primary);margin-bottom:1.5rem;"></div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1.5rem;">
+        <div><div style="font-size:0.6rem;font-family:var(--font-mono);color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.2rem;">Years Trading</div><div style="font-size:1.6rem;font-weight:700;color: var(--brand-primary-text-safe);font-family:var(--font-display);">15+</div></div><div><div style="font-size:0.6rem;font-family:var(--font-mono);color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.2rem;">Active Clients</div><div style="font-size:1.6rem;font-weight:700;color: var(--brand-primary-text-safe);font-family:var(--font-display);">200+</div></div><div><div style="font-size:0.6rem;font-family:var(--font-mono);color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.2rem;">Retention Rate</div><div style="font-size:1.6rem;font-weight:700;color: var(--brand-primary-text-safe);font-family:var(--font-display);">98%</div></div><div><div style="font-size:0.6rem;font-family:var(--font-mono);color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.2rem;">Public Liability</div><div style="font-size:1.6rem;font-weight:700;color: var(--brand-primary-text-safe);font-family:var(--font-display);">£10m</div></div>
+      </div>
+      <div style="height:1px;background:var(--surface-border);margin-top:1.5rem;margin-bottom:1rem;"></div>
+      <div style="display:flex;gap:2rem;font-size:0.75rem;">
+        <div><span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;font-family:var(--font-mono);">Ref: </span><span style="color: var(--brand-primary-text-safe);font-weight:600;" data-slot="quote-ref">Q-2026-CC-001</span></div>
+        <div><span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;font-family:var(--font-mono);">Date: </span><span style="color: var(--brand-primary-text-safe);font-weight:600;" data-slot="date">15 May 2026</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE 2: ABOUT US + WHY CHOOSE US
+     ═══════════════════════════════════════════════════════════ -->
+<div class="page-section" style="padding:var(--page-margin-v) 0;page-break-before: auto;" data-slot="about-us">
+  <div class="section-header-band">
+  <span class="band-number">01</span>
+  <h2>About Us</h2>
+</div>
+
+  <div class="split-content" style="margin-bottom:1.5rem;">
+    <div>
+      <div class="accent-bar"></div>
+      <h2 data-slot="company-name">Pristine Commercial Cleaning Ltd</h2>
+      <p data-slot="about-text">We are a leading commercial cleaning provider with a proven track record of delivering exceptional results for businesses across the UK. Our team of certified professionals combines deep technical expertise with a genuine commitment to client success — building long-term partnerships, not just contracts.</p>
+      <p>Every client receives a dedicated account manager, transparent reporting and a service level agreement that we stand behind completely. We don't just meet expectations — we exceed them.</p>
+    </div>
+    <div class="duotone-wrap split-image" style="height:220px;">
+      <img src="assets/about-panel.jpg" alt="Our team" style="width:100%;height:100%;object-fit:cover;filter:grayscale(100%) contrast(1.1);">
+    </div>
+  </div>
+
+  <div class="stats-strip" data-slot="stats-strip">
+<div class="stat"><div class="stat-number">15+</div><div class="stat-label">Years Trading</div></div>
+<div class="stat"><div class="stat-number">200+</div><div class="stat-label">Active Clients</div></div>
+<div class="stat"><div class="stat-number">98%</div><div class="stat-label">Retention Rate</div></div>
+<div class="stat"><div class="stat-number">£10m</div><div class="stat-label">Public Liability</div></div>
+</div>
+  <div data-slot="accreditation-strip">
+<div class="logo-placeholder">Logo 1</div>
+<div class="logo-placeholder">Logo 2</div>
+<div class="logo-placeholder">Logo 3</div>
+<div class="logo-placeholder">Logo 4</div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE 3: WHY CHOOSE US + TESTIMONIALS
+     ═══════════════════════════════════════════════════════════ -->
+<div class="page-section" style="padding:var(--page-margin-v) 0;page-break-before: auto;" data-slot="why-choose-us">
+  <div class="section-header-band">
+  <span class="band-number">02</span>
+  <h2>Why Choose Us</h2>
+</div>
+  <div class="usp-grid">
+
+        <div class="usp-card" data-slot="usp-card">
+          <img class="usp-icon" src="assets/clean-icon-1-eco.png" alt="Eco-Friendly Products">
+          <h4>Eco-Friendly Products</h4>
+          <p>COSHH-compliant, biodegradable cleaning products safe for staff and the environment.</p>
+        </div>
+        <div class="usp-card" data-slot="usp-card">
+          <img class="usp-icon" src="assets/clean-icon-2-trained.png" alt="Trained Operatives">
+          <h4>Trained Operatives</h4>
+          <p>All staff DBS-checked, uniformed and trained to BICSc standards.</p>
+        </div>
+        <div class="usp-card" data-slot="usp-card">
+          <img class="usp-icon" src="assets/clean-icon-3-schedule.png" alt="Flexible Scheduling">
+          <h4>Flexible Scheduling</h4>
+          <p>Early morning, daytime, evening and weekend cleans to suit your operations.</p>
+        </div>
+        <div class="usp-card" data-slot="usp-card">
+          <img class="usp-icon" src="assets/clean-icon-4-insured.png" alt="Fully Insured">
+          <h4>Fully Insured</h4>
+          <p>£10m public liability insurance and employers' liability cover as standard.</p>
+        </div>
+        <div class="usp-card" data-slot="usp-card">
+          <img class="usp-icon" src="assets/clean-icon-5-quality.png" alt="Quality Assurance">
+          <h4>Quality Assurance</h4>
+          <p>Regular site audits, photographic reporting and client satisfaction reviews.</p>
+        </div>
+        <div class="usp-card" data-slot="usp-card">
+          <img class="usp-icon" src="assets/clean-icon-6-account.png" alt="Dedicated Account Manager">
+          <h4>Dedicated Account Manager</h4>
+          <p>A named account manager for every client — one call, always answered.</p>
+        </div>
+</div>
+
+  <div style="margin-top:2rem;">
+    <div class="section-header-band">
+  <span class="band-number">03</span>
+  <h2>What Our Clients Say</h2>
+</div>
+    <div class="testimonial-grid" data-slot="testimonials">
+
+        <div class="testimonial-card">
+          <blockquote>"Our offices have never looked better. The team is professional, discreet and always on time."</blockquote>
+          <cite>David Clarke, Facilities Manager — Meridian Business Park</cite>
+        </div>
+        <div class="testimonial-card">
+          <blockquote>"Pristine took over from our previous contractor and the difference was immediate. Highly recommend."</blockquote>
+          <cite>Emma Watson, Office Manager — Clearwater Consulting</cite>
+        </div>
+        <div class="testimonial-card">
+          <blockquote>"Reliable, thorough and great value. They've cleaned our 8 offices for 6 years without a single complaint."</blockquote>
+          <cite>Robert Singh, Operations Director — NorthStar Group</cite>
+        </div>
+</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE 4: EXECUTIVE SUMMARY + SERVICES
+     ═══════════════════════════════════════════════════════════ -->
+<div class="page-section" style="padding:var(--page-margin-v) 0;page-break-before: auto;" data-slot="executive-summary">
+  <div class="section-header-band">
+  <span class="band-number">04</span>
+  <h2>Executive Summary</h2>
+</div>
+
+  <div class="band-image">
+    <div class="duotone-wrap" style="height:120px;">
+      <img src="assets/summary-band.jpg" alt="" style="width:100%;height:100%;object-fit:cover;filter:grayscale(100%) contrast(1.1);">
+    </div>
+  </div>
+
+  <p data-slot="summary-text" style="margin-top:1.5rem;">Having reviewed your current commercial cleaning requirements in detail, we are pleased to present this tailored proposal. Our recommended solution addresses your specific challenges, delivers measurable outcomes and provides exceptional value for your investment.</p>
+  <p>This proposal outlines our recommended service scope, implementation approach, pricing and contractual terms. We are confident that our solution will deliver significant improvements to your operations from day one.</p>
+
+  <div class="section-header-band">
+  <span class="band-number">05</span>
+  <h2>Proposed Services</h2>
+</div>
+  <div class="service-grid">
+
+        <div class="service-card" data-slot="service-card">
+          <h4>Daily Office Cleaning</h4>
+          <p>Full office clean including desks, floors, kitchens, toilets and communal areas.</p>
+        </div>
+        <div class="service-card" data-slot="service-card">
+          <h4>Deep Clean & Sanitisation</h4>
+          <p>Periodic deep cleans with hospital-grade disinfectants and HEPA vacuuming.</p>
+        </div>
+        <div class="service-card" data-slot="service-card">
+          <h4>Window Cleaning</h4>
+          <p>Internal and external window cleaning using reach-and-wash and traditional methods.</p>
+        </div>
+        <div class="service-card" data-slot="service-card">
+          <h4>Carpet & Upholstery Cleaning</h4>
+          <p>Hot water extraction and dry cleaning for carpets, chairs and soft furnishings.</p>
+        </div>
+        <div class="service-card" data-slot="service-card">
+          <h4>Washroom Services</h4>
+          <p>Consumables supply, sanitary waste collection and washroom hygiene management.</p>
+        </div>
+        <div class="service-card" data-slot="service-card">
+          <h4>Waste Management</h4>
+          <p>General waste, recycling and confidential waste disposal services.</p>
+        </div>
+</div>
+
+  <!-- Vendor logos strip -->
+  <div style="margin-top:1.5rem;">
+    <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:0.75rem;font-weight:600;">Technology Partners & Platforms</p>
+    <div data-slot="accreditation-strip">
+<div class="logo-placeholder">Logo 1</div>
+<div class="logo-placeholder">Logo 2</div>
+<div class="logo-placeholder">Logo 3</div>
+<div class="logo-placeholder">Logo 4</div>
+</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE 5: METHODOLOGY + SCHEDULE
+     ═══════════════════════════════════════════════════════════ -->
+<div class="page-section" style="padding:var(--page-margin-v) 0;page-break-before: auto;" data-slot="methodology">
+  <div class="section-header-band">
+  <span class="band-number">06</span>
+  <h2>Our Approach & Methodology</h2>
+</div>
+
+  <div class="split-content image-right" style="margin-bottom:1.5rem;">
+    <div>
+      <div class="accent-bar"></div>
+      <h3 data-slot="methodology-title">A Proven, Structured Approach</h3>
+      <p data-slot="methodology-text">Our delivery methodology has been refined over many years and hundreds of successful client engagements. We follow a structured six-phase process that ensures every project is delivered on time, within budget and to the highest quality standards.</p>
+      <p>Clear communication, transparent reporting and defined milestones mean you always know exactly where your project stands. Our project managers are available throughout and provide regular progress updates.</p>
+    </div>
+    <div class="duotone-wrap split-image" style="height:200px;">
+      <img src="assets/service-panel.jpg" alt="Our methodology" style="width:100%;height:100%;object-fit:cover;filter:grayscale(100%) contrast(1.1);">
+    </div>
+  </div>
+
+  <div class="section-header-band">
+  <span class="band-number">07</span>
+  <h2>Schedule of Works</h2>
+</div>
+  <div class="schedule-grid" data-slot="schedule">
+
+        <div class="schedule-phase">
+          <div class="phase-number">Phase 01</div>
+          <h4>Site Survey</h4>
+          <p>Full site walkthrough, area measurement and specification agreement.</p>
+        </div>
+        <div class="schedule-phase">
+          <div class="phase-number">Phase 02</div>
+          <h4>COSHH Assessment</h4>
+          <p>Product selection, risk assessment and method statement preparation.</p>
+        </div>
+        <div class="schedule-phase">
+          <div class="phase-number">Phase 03</div>
+          <h4>Team Allocation</h4>
+          <p>Staff assignment, DBS checks, uniform issue and site induction.</p>
+        </div>
+        <div class="schedule-phase">
+          <div class="phase-number">Phase 04</div>
+          <h4>Trial Period</h4>
+          <p>2-week supervised trial with daily quality checks and client sign-off.</p>
+        </div>
+        <div class="schedule-phase">
+          <div class="phase-number">Phase 05</div>
+          <h4>Full Service</h4>
+          <p>Contracted service commences with agreed schedule and reporting.</p>
+        </div>
+        <div class="schedule-phase">
+          <div class="phase-number">Phase 06</div>
+          <h4>Review & Audit</h4>
+          <p>Monthly quality audits, photographic reporting and account reviews.</p>
+        </div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE 6: PRICING
+     ═══════════════════════════════════════════════════════════ -->
+<div class="page-section" style="padding:var(--page-margin-v) 0;page-break-before: auto;" data-slot="pricing">
+  <div class="section-header-band">
+  <span class="band-number">08</span>
+  <h2>Investment & Pricing</h2>
+</div>
+
+  <div class="band-image" style="margin-bottom:1.5rem;">
+    <div class="duotone-wrap" style="height:100px;">
+      <img src="assets/methodology-band.jpg" alt="" style="width:100%;height:100%;object-fit:cover;filter:grayscale(100%) contrast(1.1);">
+    </div>
+  </div>
+
+  
+<h3 data-slot="pricing-title">One-Off Investment</h3>
+<table class="pricing-table" data-slot="pricing-table">
+  <thead>
+    <tr>
+      <th>Description</th>
+      <th>Net</th>
+      <th>VAT (20%)</th>
+      <th>Gross</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Initial Deep Clean — 12,000 sq ft</td><td>£1,800.00</td><td>£360.00</td><td>£2,160.00</td></tr>
+<tr><td>Carpet Deep Clean — All Common Areas</td><td>£650.00</td><td>£130.00</td><td>£780.00</td></tr>
+<tr><td>Window Clean — External (First Clean)</td><td>£420.00</td><td>£84.00</td><td>£504.00</td></tr>
+<tr><td>COSHH Risk Assessment & Method Statements</td><td>£250.00</td><td>£50.00</td><td>£300.00</td></tr>
+
+  </tbody>
+  <tfoot>
+    <tr><td colspan="3">Subtotal (ex. VAT)</td><td>£3,120.00</td></tr>
+    <tr><td colspan="3">VAT @ 20%</td><td>£624.00</td></tr>
+    <tr class="total-row"><td colspan="3"><strong>Total (inc. VAT)</strong></td><td><strong>£3,744.00</strong></td></tr>
+  </tfoot>
+</table>
+
+  
+<h3 data-slot="pricing-title">Monthly Recurring Services</h3>
+<table class="pricing-table" data-slot="pricing-table">
+  <thead>
+    <tr>
+      <th>Description</th>
+      <th>Net</th>
+      <th>VAT (20%)</th>
+      <th>Gross</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Daily Office Cleaning — 5 days/week (12,000 sq ft)</td><td>£2,400.00</td><td>£480.00</td><td>£2,880.00</td></tr>
+<tr><td>Washroom Services & Consumables</td><td>£320.00</td><td>£64.00</td><td>£384.00</td></tr>
+<tr><td>Monthly Window Clean — Internal & External</td><td>£280.00</td><td>£56.00</td><td>£336.00</td></tr>
+<tr><td>Waste Management & Recycling</td><td>£180.00</td><td>£36.00</td><td>£216.00</td></tr>
+
+  </tbody>
+  <tfoot>
+    <tr><td colspan="3">Subtotal (ex. VAT)</td><td>£3,180.00</td></tr>
+    <tr><td colspan="3">VAT @ 20%</td><td>£636.00</td></tr>
+    <tr class="total-row"><td colspan="3"><strong>Total (inc. VAT)</strong></td><td><strong>£3,816.00</strong></td></tr>
+  </tfoot>
+</table>
+
+  <div style="margin-top:1.5rem;">
+    <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:0.75rem;font-weight:600;">Service Tier Options</p>
+    <div class="pricing-tiers" data-slot="pricing-tiers">
+
+        <div class="tier-card" data-slot="tier-card">
+          <div class="tier-name">Standard</div>
+          <div class="tier-price">£0.18</div>
+          <div class="tier-period">/sq ft/month</div>
+          <ul><li>5-day cleaning</li>
+<li>Eco products</li>
+<li>Insured staff</li>
+<li>Monthly report</li>
+<li>Account manager</li></ul>
+        </div>
+        <div class="tier-card tier-featured" data-slot="tier-card">
+          <div class="tier-name">Premium</div>
+          <div class="tier-price">£0.24</div>
+          <div class="tier-period">/sq ft/month</div>
+          <ul><li>Everything in Standard</li>
+<li>Washroom services</li>
+<li>Window cleaning</li>
+<li>Quarterly deep clean</li>
+<li>24hr response</li></ul>
+        </div>
+        <div class="tier-card" data-slot="tier-card">
+          <div class="tier-name">Elite</div>
+          <div class="tier-price">£0.32</div>
+          <div class="tier-period">/sq ft/month</div>
+          <ul><li>Everything in Premium</li>
+<li>Daily quality audit</li>
+<li>Carpet cleaning</li>
+<li>Waste management</li>
+<li>Dedicated supervisor</li></ul>
+        </div>
+</div>
+  </div>
+
+  <!-- Vendor logos on pricing page -->
+  <div style="margin-top:1.5rem;">
+    <div data-slot="accreditation-strip">
+<div class="logo-placeholder">Logo 1</div>
+<div class="logo-placeholder">Logo 2</div>
+<div class="logo-placeholder">Logo 3</div>
+<div class="logo-placeholder">Logo 4</div>
+</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE 7: TERMS + NEXT STEPS
+     ═══════════════════════════════════════════════════════════ -->
+<div class="page-section" style="padding:var(--page-margin-v) 0;page-break-before: auto;" data-slot="terms">
+  <div class="section-header-band">
+  <span class="band-number">09</span>
+  <h2>Terms & Conditions</h2>
+</div>
+
+  <div class="terms-columns" data-slot="terms-text">
+    <h4>Contract Term</h4>
+    <p>This proposal is valid for 30 days from the date of issue. The standard contract term is 12 months, renewing automatically unless 90 days' written notice is given by either party.</p>
+
+    <h4>Payment Terms</h4>
+    <p>One-off fees are invoiced on project commencement with payment due within 14 days. Monthly services are invoiced on the 1st of each month by direct debit or BACS transfer.</p>
+
+    <h4>Service Level Agreement</h4>
+    <p>Service levels are as defined in the SLA schedule attached to the contract. Credits apply for any breach of agreed response or resolution times.</p>
+
+    <h4>Liability</h4>
+    <p>Our total liability is limited to the fees paid in the preceding 12 months. We carry £10m public liability and professional indemnity insurance.</p>
+
+    <h4>Data Protection</h4>
+    <p>We are registered with the ICO and comply fully with UK GDPR. A Data Processing Agreement is available on request and forms part of the contract.</p>
+
+    <h4>Termination</h4>
+    <p>Either party may terminate with 90 days' written notice after the initial contract term. Early termination fees apply as detailed in the contract schedule.</p>
+
+    <h4>Governing Law</h4>
+    <p>This agreement is governed by the laws of England and Wales. Any disputes shall be subject to the exclusive jurisdiction of the English courts.</p>
+
+    <h4>Acceptance</h4>
+    <p>Acceptance of this proposal constitutes agreement to these terms. Please sign and return the acceptance form or confirm acceptance by email.</p>
+  </div>
+
+  <div style="margin-top:2rem;">
+    <div class="section-header-band">
+  <span class="band-number">10</span>
+  <h2>Next Steps</h2>
+</div>
+    <div class="next-steps-grid" data-slot="next-steps">
+
+        <div class="next-step-card">
+          <div class="step-number">01</div>
+          <h4>Review Proposal</h4>
+          <p>Read through this proposal and share with your stakeholders.</p>
+        </div>
+        <div class="next-step-card">
+          <div class="step-number">02</div>
+          <h4>Ask Questions</h4>
+          <p>Contact us with any questions — we're happy to discuss any aspect.</p>
+        </div>
+        <div class="next-step-card">
+          <div class="step-number">03</div>
+          <h4>Sign & Return</h4>
+          <p>Sign the acceptance page and return it to us by email or post.</p>
+        </div>
+        <div class="next-step-card">
+          <div class="step-number">04</div>
+          <h4>We Get Started</h4>
+          <p>We'll confirm your start date and kick off the onboarding process.</p>
+        </div>
+</div>
+  </div>
+
+  <div style="margin-top:2rem;">
+    <div class="section-header-band">
+  <span class="band-number">11</span>
+  <h2>Contact Us</h2>
+</div>
+    <div class="contact-block" data-slot="contact">
+      <div>
+        <div class="contact-label">Company</div>
+        <div class="contact-value" data-slot="company-name">Pristine Commercial Cleaning Ltd</div>
+      </div>
+      <div>
+        <div class="contact-label">Your Account Manager</div>
+        <div class="contact-value" data-slot="account-manager">Your Account Manager</div>
+      </div>
+      <div>
+        <div class="contact-label">Telephone</div>
+        <div class="contact-value" data-slot="phone">0800 000 0000</div>
+      </div>
+      <div>
+        <div class="contact-label">Email</div>
+        <div class="contact-value" data-slot="email">hello@yourcompany.co.uk</div>
+      </div>
+      <div>
+        <div class="contact-label">Website</div>
+        <div class="contact-value" data-slot="website">www.yourcompany.co.uk</div>
+      </div>
+      <div>
+        <div class="contact-label">Address</div>
+        <div class="contact-value" data-slot="address">Your Business Address</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
