@@ -1,206 +1,153 @@
-# Phase 2 Delivery — Content Pipeline + New Endpoint
+# Phase 3 Delivery — Picker UI
 
-After this delivery, the new endpoint `generateBrandedProposalV2` is live alongside your existing `generateBrandedProposal`. You can call it from any quote and get back a real PDF rendered from the v2.1 template library, with your brand colours, your logo, and your quote's line items already injected.
-
-Phase 3 (next) wires it to the picker UI so it's actually clickable from the workspace. For now, you verify by calling it directly from the Render shell.
+After this delivery, the **user-visible flow is live**. Click "Generate PDF" → "Use a branded colour template" → the new picker opens with six designs filtered to your sector → pick one → click Generate → PDF downloads in your brand colour. End-to-end.
 
 ---
 
 ## What's in this zip — file-by-file repo placement
 
-| File | Goes to | What it is |
-|------|---------|------------|
-| `server/services/slotContentBuilder.ts` | `server/services/` | **New file.** Builds the slot content map from a quote + line items + organisation. Pure transformation, no AI calls in v1, no DB access. |
-| `server/services/templateProposalRouter.ts` | `server/services/` | **New file.** tRPC sub-router with one endpoint `generateBrandedProposalV2`. Mirrors the structure of `brandedProposalRouter.ts`. |
-| `server/services/templateRenderer.ts` | `server/services/` | **Replaces the Phase 1 version.** Adds array slot value support — needed because most templates have two pricing tables (one-off + recurring). |
-| `apply-phase2-patches.mjs` | repo root | One-shot Node script that applies three additive edits: `routers.ts` import + mount, `shared/schema.ts` column, `drizzle/schema.ts` column. Idempotent. |
-| `migration-phase2.sql` | repo root | Raw SQL for the schema change (drizzle-kit push is broken on this codebase, so we use raw SQL on Render shell as usual). |
+| File | Goes to | Action |
+|------|---------|--------|
+| `client/src/components/BrandedTemplatePickerV2.tsx` | `client/src/components/` | **New file** — the picker modal (sector-filtered 6-design grid + generate button). |
+| `client/public/template-thumbnails/` (24 PNGs) | `client/public/` | **New folder** — 280px-wide PNG thumbnails for each template (navy palette). ~830 KB total. |
+| `apply-phase3-patches.mjs` | repo root | **One-shot script** that surgically edits QuoteWorkspace.tsx (4 anchored edits, idempotent). |
+
+The legacy `BrandChoiceModal.tsx` stays in the codebase unchanged. Its mount remains in QuoteWorkspace but is unreachable from any user flow — dead code, safe to remove in a later cleanup once Phase 3 is verified in production.
 
 ---
 
 ## What I didn't touch
 
 - `server/pdfGenerator.ts` — locked
-- `client/src/pages/QuoteWorkspace.tsx` — Phase 3 only
+- `server/routers.ts` — Phase 2 work is complete, no changes here
 - `server/brandedProposalRenderer.ts` — deprecated, leave alone
-- The existing `generateBrandedProposal` procedure in `routers.ts` — additive only, the old endpoint coexists with the new one
+- `client/src/components/BrandChoiceModal.tsx` — kept as fallback / archival
+- `client/src/components/ExportFormatPickerModal.tsx` — its existing "Branded colour template" card already calls `onSelectContractTender`, we just route it differently
 - Tile 3 brochure-embed pipeline — untouched
 
 ---
 
 ## Install steps (Windows)
 
-From the repo root in PowerShell or Git Bash:
+From the repo root in a terminal:
 
 ```bash
-# 1. Extract this zip into the repo root.
-#    The new files land in server/services/ and at the repo root.
+# 1. Extract the zip into the repo root. Three new things land:
+#    - client/src/components/BrandedTemplatePickerV2.tsx
+#    - client/public/template-thumbnails/ (24 PNG files)
+#    - apply-phase3-patches.mjs
 
-# 2. Apply the three additive edits to existing files (routers.ts + both schema files)
-node apply-phase2-patches.mjs
+# 2. Apply the surgical edits to QuoteWorkspace.tsx
+node apply-phase3-patches.mjs
 ```
 
-You should see output like:
+Expect output:
 ```
-=== Phase 2 patch summary ===
-  ✓ routers.ts import inserted
-  ✓ routers.ts mount inserted
-  ✓ shared/schema.ts: proposal_template_v2 column added
-  ✓ drizzle/schema.ts: proposal_template_v2 column added
+=== Phase 3 patch summary ===
+  ✓ import inserted
+  ✓ state inserted
+  ✓ trigger swapped
+  ✓ modal JSX inserted
+
+Changes applied: 4
 ```
 
-If it shows `• already applied, skipping` for some lines, that's fine — the script is idempotent and safe to re-run.
+If you see `• already applied, skipping` lines, that's fine — script is idempotent.
 
 ```bash
 # 3. Verify TypeScript baseline holds
 node node_modules/typescript/lib/tsc.js --noEmit
 ```
 
-Expected: same error count as Phase 1 (around 69). My three new files should contribute zero new errors.
+Expect: same error count as Phase 2 (~69). My new component contributes zero new errors.
 
 ```bash
-# 4. Commit and push via GitHub Desktop
-#    Commit message: phase 2: content pipeline + new endpoint
+# 4. Commit + push via GitHub Desktop
+#    Commit message: phase 3: branded template picker UI
 ```
 
-Wait for Render to redeploy (3–5 minutes).
+Wait for Render to deploy (3–5 minutes).
 
 ---
 
-## Run the SQL migration on Render
+## Verify in the live app
 
-After deploy is live, open the Render shell. Paste:
+1. Open any quote in the workspace (use your Sweetbyte IT test account — user 10 / org 10 / Pro tier).
+2. Click **Generate PDF**.
+3. In the export format picker, click **"Use a branded colour template"**.
+4. **The new picker opens** — six design thumbnails for your sector (IT Services), each with name + one-line description. The trigger that used to open the legacy BrandChoiceModal now opens this.
+5. Click a thumbnail to select it (blue border + checkmark appears).
+6. Click **"Generate proposal"**.
+7. Loading spinner runs for ~3–5 seconds (Chromium rendering on Render).
+8. PDF downloads as `proposal-<quoteId>.pdf`.
+9. Open it — should show:
+   - The chosen design
+   - Your brand colours throughout (whatever you have set on the org)
+   - Your company logo on the cover (if uploaded)
+   - Your real quote reference, client name, line items in the pricing tables
+   - Your terms
 
-```bash
-echo go; psql $DATABASE_URL -c "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS proposal_template_v2 VARCHAR(64);"
-```
+10. The quote's status flips to `pdf_generated` (same behaviour as the legacy flow).
 
-Or run the SQL file directly:
-
-```bash
-echo go; psql $DATABASE_URL -f migration-phase2.sql
-```
-
-Verify it landed:
-
-```bash
-echo go; psql $DATABASE_URL -c "\d quotes" | grep proposal_template
-```
-
-You should see two rows: the legacy `proposal_template` column (text) and the new `proposal_template_v2` column (varchar(64), nullable).
-
----
-
-## Verify the endpoint works
-
-Pick any real quote you have in the database (your Sweetbyte IT test org, user 10 / org 10, paid Pro). You'll need its numeric quote ID — grab one from any quote URL in the workspace, the number at the end.
-
-On the Render shell, you can invoke the tRPC endpoint via a small test script. Easiest way:
-
-```bash
-echo go; cat > /tmp/test-v2-endpoint.ts << 'EOF'
-import { renderTemplate } from "./server/services/templateRenderer.js";
-import { buildSlotContent } from "./server/services/slotContentBuilder.js";
-import { getQuoteById, getUserPrimaryOrg, getLineItemsByQuoteId } from "./server/db.js";
-import * as fs from "fs";
-
-// REPLACE WITH YOUR REAL VALUES
-const QUOTE_ID = 99;       // ← put a real quote id here
-const USER_ID = 10;        // ← your test user
-const TEMPLATE_ID = "it-services/01-split-screen";
-
-const org = await getUserPrimaryOrg(USER_ID);
-const quote = await getQuoteById(QUOTE_ID, USER_ID);
-const lineItems = await getLineItemsByQuoteId(QUOTE_ID);
-
-if (!quote || !org) {
-  console.error("Quote or org not found");
-  process.exit(1);
-}
-
-const slotContent = buildSlotContent({
-  quote: quote as any,
-  organization: org as any,
-  lineItems: lineItems as any,
-});
-
-const result = await renderTemplate({
-  templateId: TEMPLATE_ID,
-  brand: {
-    primary: org.brandPrimaryColor,
-    secondary: org.brandSecondaryColor,
-    accent: null,
-  },
-  slotContent,
-  logoUrl: org.companyLogo,
-});
-
-fs.writeFileSync("/tmp/v2-test.pdf", result.pdf);
-console.log("PDF written:", result.pdf.length, "bytes in", result.durationMs, "ms");
-EOF
-npx tsx /tmp/test-v2-endpoint.ts
-```
-
-If you see "PDF written: ~2.5 MB in ~3000 ms" — Phase 2 works end-to-end with your real data.
-
-Then download the PDF to inspect:
-
-```bash
-echo go; base64 -w0 /tmp/v2-test.pdf
-```
-
-Copy the full base64 string, paste into base64.guru or any base64-to-file converter, download as `.pdf`, and open. You should see:
-- The template design (Split Screen)
-- Your brand colours throughout
-- Your company logo on the cover (if you've uploaded one)
-- Your real quote reference, client name, line items in the pricing table
-- Your terms (or the org default, or the fallback)
+11. **Persistence check** — open the picker again on the same quote. Your last-picked design should be remembered (the server stored it on `quote.proposal_template_v2`).
 
 ---
 
-## What you'll see in the PDF for v1
+## What's user-visible after Phase 3
 
-The endpoint produces a real PDF from real quote data, but **without AI-enhanced narrative** in this v1 — the "about us", "executive summary", and "methodology" sections use deterministic content built from the quote fields you've already populated (description, terms) plus sensible defaults. That's a deliberate scope-cut to ship faster and validate the pipeline.
+This is the first user-visible delivery in the whole rollout:
 
-Phase 2.5 (later, separate session) will add an AI step that generates richer narrative content for those sections. The data slot architecture is already in place; it's just a content-source swap.
+- New picker UI replaces the 3-template gallery
+- 24 designs available (filtered to 6 per sector)
+- PDF downloads directly (no print-window popup)
+- Per-quote template choice is remembered
 
----
-
-## What's NOT in Phase 2
-
-Deliberate scope cuts to keep this shippable in one bite:
-
-- **No picker UI yet** — Phase 3
-- **No `brandAccentColor` schema column** — Phase 3 adds it when the accent picker UI lands. For now, accent is derived from primary by colourUtils.
-- **No PDF caching** — every call re-renders. Phase 4 polish.
-- **No AI content enhancement** — Phase 2.5.
-- **No tiered pricing UI option** — the templates support it, but no workspace control to flip between line-item table and 3-tier cards yet. Phase 4 polish.
-- **Schedule of Works** — the slot exists in the templates; the workspace UI for editing per-quote phases is Phase 4 (the original ask from session 1, finally returning).
+Everything else (Quick PDF, Tile 3 Brochure pipeline) is untouched.
 
 ---
 
-## Known limitations to flag
+## What's NOT in Phase 3 (and is on the horizon)
 
-- **Annual recurring line items roll into the "Recurring Services" table** alongside monthly ones, with a `(/year)` suffix in the description. Most quotes don't have annual items so this is fine; if your test quote does, expect mixed rows in the second table.
-- **About Us and Methodology use generic defaults** until Phase 2.5 wires AI content. They'll read as polished-but-generic boilerplate for now. Quote description and terms come straight from the user's quote fields.
-- **Vendor logos and accreditation strips** still show the grey "LOGO 1 / LOGO 2" placeholders. Phase 4 polish wires in real logos from the user's org settings.
-- **The two pricing-title slots are filled independently** — first slot gets "One-Off Investment", second gets "Recurring Services" (or empty if no recurring items). This needs the array-slot support added in this Phase 2's templateRenderer update.
+These are deliberate scope cuts to keep the picker shipping quickly:
+
+- **Thumbnails are navy-tinted, not your-brand-tinted.** A user with a forest brand sees navy previews but generates a forest PDF. Phase 4 polish can swap to per-user previews (render thumbs on-the-fly with the user's brand colours, cache to R2).
+- **No brand accent colour picker.** The accent is derived from primary by colourUtils. Phase 4 can add a `brand_accent_color` column on organizations + a settings control.
+- **No AI-enhanced narrative content.** "About us" and "Methodology" sections use deterministic defaults. Phase 2.5 plugs an AI step into the slot builder.
+- **No PDF caching.** Every generation re-renders. Phase 4 caches by `(templateId + brandHash + contentHash)` in R2.
+- **Schedule of Works UI in workspace** — the original ask from session 1, still pending Phase 4.
+- **Tiered pricing UI** — the templates support it; the workspace control to flip between line-item table and 3-tier cards is pending.
+
+---
+
+## Known limitations
+
+- **Legacy BrandChoiceModal still mounted (dead code).** It sits in the JSX tree but its open flag is never set. TypeScript and React both happily ignore it. Removing properly is a Phase 4 cleanup task — for now the safety of keeping the rollback path outweighs the dead-code smell.
+- **`BrandMode` type still imported in QuoteWorkspace** because legacy handlers reference it. Same reason as above.
+- **Sector mapping is tolerant** (`it_services`, `it-services`, `IT` all map correctly) but falls back to `it-services` for unrecognised values. If your org has an oddly-named tradePreset, the picker shows IT designs as a safe fallback.
 
 ---
 
 ## Changes Log row for SESSION-START.md
 
 ```
-Phase 2 (content pipeline + new endpoint): live alongside existing v1 endpoint
-- New server/services/slotContentBuilder.ts — pure transform; quote+org+lineItems → SlotContent
-- New server/services/templateProposalRouter.ts — generateBrandedProposalV2 mutation (Pro/Team tier-gated, returns base64 PDF)
-- Updated server/services/templateRenderer.ts — slot values now support string | string[] (indexed)
-- Modified server/routers.ts (additive) — 1 import + 1 mount line via apply-phase2-patches.mjs
-- Modified shared/schema.ts — added proposalTemplateV2 varchar(64) column on quotes
-- Modified drizzle/schema.ts — same (dual-schema rule)
-- New SQL migration applied via Render shell: ALTER TABLE quotes ADD COLUMN proposal_template_v2 VARCHAR(64)
-- No router endpoint modifications (existing generateBrandedProposal untouched)
-- No client changes (Phase 3)
-- TypeScript baseline: held at 69 (zero new errors)
-- Render verification: end-to-end PDF from real quote data, ~2.5 MB in 3s
+Phase 3 (picker UI): branded template picker live in workspace
+- New client/src/components/BrandedTemplatePickerV2.tsx — sector-filtered 6-design picker, calls generateBrandedProposalV2, downloads PDF as Blob
+- New client/public/template-thumbnails/ — 24 navy-palette PNGs (280px wide, ~830 KB total)
+- Modified client/src/pages/QuoteWorkspace.tsx (4 surgical edits via apply-phase3-patches.mjs): 1 new import, 1 new state, 1 trigger swap, 1 new modal mount
+- No router changes (Phase 2's endpoint is the target)
+- No schema changes (deferred — accent derived from primary; thumbnails use static assets)
+- No server-side work
+- BrandChoiceModal kept in repo as dead code (open flag never set, easily re-enabled if rollback needed)
+- TypeScript baseline: held at 69
+- User-visible flow live: Generate PDF → Branded colour template → new picker → PDF download
 ```
+
+---
+
+## Once Phase 3 verifies, the natural next steps are
+
+1. **Phase 2.5** — AI content generation for the narrative slots (about-us, methodology). Plug an OpenAI/Claude call into `slotContentBuilder`.
+2. **Phase 4 polish** — per-user preview thumbnails, accent picker, PDF caching to R2, Schedule of Works workspace UI, tiered pricing UI.
+3. **Cleanup** — remove BrandChoiceModal + legacy generateBrandedProposal endpoint + deprecated brandedProposalRenderer.ts.
+
+Give me a "go" with whichever you want first.

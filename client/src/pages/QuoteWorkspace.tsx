@@ -90,6 +90,7 @@ import ReviewBeforeGenerateModal from "@/components/ReviewBeforeGenerateModal";
 import SoloUpgradeModal from "@/components/SoloUpgradeModal";
 import ExportFormatPickerModal from "@/components/ExportFormatPickerModal";
 import BrandChoiceModal, { type BrandMode } from "@/components/BrandChoiceModal";
+import BrandedTemplatePickerV2 from "@/components/BrandedTemplatePickerV2";
 // Phase 4B Delivery C — Tile 3 ("Branded with your artwork and company
 // story") routes through here. If the org has no brochure yet, we open
 // BrochureUploadModal inline (with first-run-specific copy) so the user
@@ -363,6 +364,11 @@ export default function QuoteWorkspace() {
   // between "use your branding" (AI-extracted brand tokens) and "use
   // template defaults" (built-in navy/violet palette).
   const [showBrandChoiceModal, setShowBrandChoiceModal] = useState(false);
+  // Phase 3 — v2.1 template picker. Sibling to showBrandChoiceModal;
+  // both modals are mounted, but the picker trigger now opens this one
+  // and the legacy modal's open flag never becomes true. Legacy is dead
+  // code; safe to remove in a later cleanup once Phase 3 is verified.
+  const [showBrandedTemplatePickerV2, setShowBrandedTemplatePickerV2] = useState(false);
   // Phase 4A Delivery 24 — Branded review gate. After the user commits
   // their branding + template choice in BrandChoiceModal, we intercept
   // the generate call, stash the chosen options, and open the
@@ -1078,7 +1084,9 @@ export default function QuoteWorkspace() {
   // context is already baked into the saved quote.
   const handlePickerSelectContractTender = () => {
     setShowFormatPickerModal(false);
-    setShowBrandChoiceModal(true);
+    // Phase 3 — opens the v2.1 template picker. Legacy modal still
+    // mounted but unreachable from this trigger.
+    setShowBrandedTemplatePickerV2(true);
   };
 
   // Phase 4B Delivery C — Tile 3 handler. The user picked "Branded with
@@ -1786,6 +1794,37 @@ export default function QuoteWorkspace() {
           Phase 4A Delivery 24 — onGenerate now routes through the
           ReviewBeforeGenerateModal gate (handleBrandChoiceCommitted)
           rather than firing the mutation directly. */}
+      {/* Phase 3 — v2.1 template picker. Sector-filtered six-design
+          grid that drives the new generateBrandedProposalV2 endpoint.
+          Replaces the legacy BrandChoiceModal in the user-visible flow;
+          legacy mount kept below but its open state is never set. */}
+      <BrandedTemplatePickerV2
+        open={showBrandedTemplatePickerV2}
+        onDismiss={() => setShowBrandedTemplatePickerV2(false)}
+        onBack={() => {
+          setShowBrandedTemplatePickerV2(false);
+          setShowFormatPickerModal(true);
+        }}
+        quoteId={quoteId}
+        tradePreset={tradePreset}
+        onGenerated={async () => {
+          const currentStatus = (quote as any)?.status as string | undefined;
+          if (currentStatus && currentStatus !== "pdf_generated") {
+            try {
+              await updateStatus.mutateAsync({
+                id: quoteId,
+                status: "pdf_generated",
+              });
+            } catch (err) {
+              console.warn(
+                "[QuoteWorkspace] phase 3 pdf_generated status flip failed:",
+                err,
+              );
+            }
+          }
+        }}
+      />
+
       <BrandChoiceModal
         open={showBrandChoiceModal}
         onDismiss={() => setShowBrandChoiceModal(false)}
