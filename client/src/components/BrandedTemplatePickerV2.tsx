@@ -126,25 +126,42 @@ export default function BrandedTemplatePickerV2(props: BrandedTemplatePickerV2Pr
         quoteId,
         templateId: selectedTemplateId,
       });
-      if (!result?.pdfBase64) {
+
+      // DELIVERY: prefer the out-of-band file URL. The server now
+      // uploads the PDF to R2 and returns a small /api/file/<key> URL
+      // instead of a multi-MB base64 blob inside the tRPC JSON (that
+      // approach failed in production with "Failed to fetch" — the
+      // ~3.4MB response dropped before completing). pdfBase64 is only
+      // present as a fallback when the server has no R2 configured.
+      if (result?.fileUrl) {
+        // Direct download from the authenticated /api/file route. The
+        // browser streams the binary with the correct Content-Type —
+        // no base64 decode, no large in-memory blob, no JSON wrapper.
+        const a = document.createElement("a");
+        a.href = result.fileUrl;
+        a.download = `proposal-${quoteId}.pdf`;
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else if (result?.pdfBase64) {
+        // Fallback path (server without R2). base64 → Blob via fetch on
+        // a data URL — avoids the Uint8Array → Blob type wrangling
+        // (Uint8Array.buffer is ArrayBufferLike, not strictly
+        // ArrayBuffer) and keeps the code short.
+        const blob = await fetch(`data:application/pdf;base64,${result.pdfBase64}`)
+          .then((r) => r.blob());
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `proposal-${quoteId}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else {
         throw new Error("No PDF received from server");
       }
-
-      // base64 → Blob via fetch on a data URL. Avoids the Uint8Array →
-      // Blob type wrangling (Uint8Array.buffer is now ArrayBufferLike,
-      // not strictly ArrayBuffer) and keeps the code short. For a ~3MB
-      // PDF the data-URL trip adds maybe 20ms — negligible against the
-      // 3–5s Chromium render.
-      const blob = await fetch(`data:application/pdf;base64,${result.pdfBase64}`)
-        .then((r) => r.blob());
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `proposal-${quoteId}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
 
       toast.success("Proposal generated");
       onGenerated?.(selectedTemplateId);
