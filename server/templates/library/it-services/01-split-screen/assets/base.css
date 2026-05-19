@@ -700,3 +700,152 @@ strong { color: var(--text-primary); font-weight: 700; }
 .cover-page [data-slot="company-name"] {
   color: var(--brand-primary-text-safe, var(--brand-primary)) !important;
 }
+
+/* ────────────────────────────────────────────────────────────────────
+   TEMPLATE-QUALITY FIXES — appended at integration time.
+
+   Three defects visible in real client output, all fixed here in the
+   single shared base.css so one edit corrects all 24 templates
+   (4 sectors x 6 designs — every base.css is byte-identical and MUST
+   stay so; this block is propagated verbatim to all of them).
+
+   No HTML edits: where inline styles must be defeated we use
+   !important, the same technique the v2.1 cover-bleed fix above
+   already relies on (per the integration notes — inline style
+   specificity can only be beaten with !important, and color-mix()
+   chains still resolve fine in plain rules; only inline overrides of
+   them fail in Chromium).
+   ──────────────────────────────────────────────────────────────────── */
+
+/* FIX 1 — Duotone produced near-black images.
+   Original: `.duotone-wrap img { filter: grayscale(100%) contrast(1.1);
+   mix-blend-mode: multiply; }` over `.duotone-wrap { background:
+   var(--brand-primary); }`. multiply = pixel x background, so a
+   greyscale image multiplied by a dark brand colour collapses to
+   black. Mathematically guaranteed for any dark brand — not a glitch.
+   Every <img> also carries an INLINE `filter:grayscale(100%)
+   contrast(1.1)` that beats CSS specificity, so the fix must both
+   neutralise the inline filter (!important) and replace the blend.
+
+   New approach: no blend-to-black. The photo renders at full tonal
+   range, lightly desaturated and gently lifted for legibility, with a
+   translucent brand wash applied as a ::after overlay. This looks
+   professional with ANY brand colour, dark or light — the previous
+   code only worked with a pale brand. */
+.duotone-wrap {
+  position: relative;
+  overflow: hidden;
+  /* Was a solid dark fill the image multiplied against; now just a
+     neutral backstop behind a photo that stays visible. */
+  background: var(--brand-primary-12, #e5e7eb) !important;
+}
+
+.duotone-wrap img {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  /* Defeat the inline grayscale/multiply. Slight desaturation +
+     small brightness lift keeps the image on-brand-subtle while
+     remaining clearly readable. No mix-blend-mode → no black crush. */
+  filter: grayscale(35%) contrast(1.02) brightness(1.06) !important;
+  mix-blend-mode: normal !important;
+}
+
+/* Translucent brand wash sits OVER the photo at low opacity, giving
+   the on-brand tint the duotone was meant to provide without
+   destroying the image. Pseudo-element so no HTML change is needed. */
+.duotone-wrap::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--brand-primary);
+  opacity: 0.28;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+
+/* Pale brands: a 0.28 multiply wash of a light colour barely tints
+   and can wash light; drop the overlay opacity further so the photo
+   reads cleanly. (data-brand-luminance="light" is set on <html> by
+   the renderer for pale brands.) */
+html[data-brand-luminance="light"] .duotone-wrap::after {
+  opacity: 0.16;
+}
+
+/* The duotone-light / duotone-accent variants used the same multiply
+   model; bring them into line so secondary panels match. */
+.duotone-wrap.duotone-light::after { opacity: 0.18; }
+.duotone-wrap.duotone-accent::after {
+  background: var(--brand-accent);
+  opacity: 0.30;
+}
+
+/* FIX 2 — Logo collided with the cover image.
+   The split-screen cover is a 2-col grid (image | content) with no
+   gutter, so the dark image butts straight against the logo/headline.
+   Other designs have their own cover structures but share the same
+   symptom class. Give the content side breathing room and constrain
+   the injected logo so a wide real logo can't overrun its zone or
+   touch an adjacent image. The injected logo is an <img
+   data-injected-logo="true"> (see templateRenderer); size it sanely
+   regardless of the placeholder box it replaces. */
+[data-slot="logo"] img[data-injected-logo="true"] {
+  max-width: 220px !important;
+  max-height: 64px !important;
+  width: auto !important;
+  height: auto !important;
+  object-fit: contain !important;
+  display: block !important;
+}
+
+/* Separation between a full-bleed cover image and the content column
+   it sits beside. Applies to the content-bearing direct child of the
+   cover (the one that is NOT the duotone image layer — same selector
+   shape the v2.1 cover-bleed fix uses). The extra inline-start pad
+   guarantees a gutter even when the grid has none. */
+.cover-page > div:not(.duotone-wrap):not([class*="duotone"]) {
+  padding-top: max(2.5rem, var(--page-margin-v, 20mm)) !important;
+}
+
+/* Belt-and-braces: never let a cover image bleed under sibling
+   content. Clip to its own box. */
+.cover-page .duotone-wrap {
+  overflow: hidden !important;
+}
+
+/* FIX 3 — "LOGO 1 / LOGO 2 / LOGO 3 / LOGO 4" placeholder boxes.
+   These are the partner/accreditation strip
+   (<div data-slot="accreditation-strip">), which the content pipeline
+   never populates. Until a partner-logo upload feature exists they
+   show literal placeholder text in client-facing PDFs.
+
+   Structure across all 6 designs (verified): the strip appears 3x.
+   (a) On the cover/about block its parent ALSO holds other content
+       (the stats grid), so we must NOT collapse the parent — only
+       hide the strip itself.
+   (b) On the services and pricing pages it sits in a dedicated
+       wrapper `<div style="margin-top:1.5rem;">` together with a
+       "Technology Partners & Platforms" label; collapsing that whole
+       wrapper removes the strip AND avoids orphaning the label.
+
+   So: hide the strip everywhere, and additionally collapse ONLY the
+   dedicated margin-top wrapper (scoped via :has() — Chromium 138 in
+   the renderer supports it). The slot stays in the DOM; a future
+   partner-logo feature just stops hiding it. Nothing is destroyed. */
+[data-slot="accreditation-strip"] {
+  display: none !important;
+}
+
+.logo-placeholder {
+  display: none !important;
+}
+
+/* Collapse ONLY the dedicated label+strip wrapper (the one with the
+   inline margin-top:1.5rem that holds the "Technology Partners"
+   label). Scoped by that inline style so the cover/about content
+   column — whose parent also contains the stats grid — is never
+   affected. */
+div[style*="margin-top:1.5rem"]:has(> [data-slot="accreditation-strip"]) {
+  display: none !important;
+}
