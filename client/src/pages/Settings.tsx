@@ -18,7 +18,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { getVisibleTradeSectorOptions } from "@/lib/tradeSectors";
-import { DESIGN_TEMPLATES, DESIGN_TEMPLATE_ORDER, type DesignTemplate } from "@/lib/proposalShowcaseAssets";
+// Phase 4B Tile-2-retirement delivery — DESIGN_TEMPLATES / DESIGN_TEMPLATE_ORDER
+// / DesignTemplate import removed alongside the Proposal design picker
+// card below. The proposalShowcaseAssets module itself stays in place;
+// it's still consumed by the public marketing pages (PROPOSAL_SHOWCASES).
 import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -82,9 +85,10 @@ export default function Settings() {
   const [extractionError, setExtractionError] = useState<string | null>(null);
 
   // Phase 4A Delivery 17 — proposal design template + cover stat strip
-  // toggle. Both org-scoped, both persisted via updateBrandSettings.
-  const [proposalTemplate, setProposalTemplate] = useState<"modern" | "structured" | "bold">("modern");
-  const [coverStatStripEnabled, setCoverStatStripEnabled] = useState(true);
+  // state previously lived here. Removed alongside the Proposal design
+  // picker card in the Tile-2-retirement delivery. The org columns
+  // (proposalTemplate, coverStatStripEnabled) stay intact on the
+  // server side for now; no UI reads or writes them after this delivery.
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -148,15 +152,10 @@ export default function Settings() {
         (allowed.includes(rawStatus as ExtractionStatus) ? rawStatus : "idle") as ExtractionStatus,
       );
       setExtractionError(org.brandExtractionError || null);
-      // Phase 4A Delivery 17 — proposal design template + stat strip toggle
-      const rawTemplate = ((org as any).proposalTemplate || "modern") as string;
-      if (rawTemplate === "modern" || rawTemplate === "structured" || rawTemplate === "bold") {
-        setProposalTemplate(rawTemplate);
-      } else {
-        setProposalTemplate("modern");
-      }
-      const rawStatStrip = (org as any).coverStatStripEnabled;
-      setCoverStatStripEnabled(rawStatStrip !== false); // default true
+      // Phase 4A Delivery 17 — proposalTemplate / coverStatStripEnabled
+      // hydration removed in the Tile-2-retirement delivery. The picker
+      // and toggle that consumed these values are gone; columns remain
+      // on the org record for now (cleanup in a later delivery).
     }
   }, [orgProfile]);
 
@@ -185,15 +184,10 @@ export default function Settings() {
   });
 
   // Phase 4A — Proposal Branding mutations.
-  const updateBrandSettings = trpc.auth.updateBrandSettings.useMutation({
-    onSuccess: () => {
-      utils.auth.orgProfile.invalidate();
-      toast.success("Brand settings saved");
-    },
-    onError: (error) => {
-      toast.error(error.message || "Failed to save brand settings");
-    },
-  });
+  // Phase 4B Tile-2-retirement — updateBrandSettings useMutation hook
+  // removed. Its only callers were handleSelectTemplate and
+  // handleToggleStatStrip below, both removed. The tRPC endpoint
+  // remains on the server for now.
 
   const handleSave = async () => {
     // Phase 4A Delivery 36 — the removed Settings inputs (signatory
@@ -277,20 +271,9 @@ export default function Settings() {
   // the Company Website card. Template / stat-strip toggles below
   // continue to use updateBrandSettings directly.
 
-  // Phase 4A Delivery 17 — proposal design template + stat strip toggle.
-  // Saved via the same updateBrandSettings mutation (server accepts all
-  // three fields as optional). Trigger on each click rather than waiting
-  // for a global Save — the picker is a discrete choice so persisting it
-  // immediately matches user expectation.
-  const handleSelectTemplate = (template: "modern" | "structured" | "bold") => {
-    setProposalTemplate(template);
-    updateBrandSettings.mutate({ proposalTemplate: template });
-  };
-
-  const handleToggleStatStrip = (enabled: boolean) => {
-    setCoverStatStripEnabled(enabled);
-    updateBrandSettings.mutate({ coverStatStripEnabled: enabled });
-  };
+  // Phase 4A Delivery 17 — handleSelectTemplate and handleToggleStatStrip
+  // previously lived here. Removed in the Tile-2-retirement delivery
+  // alongside the picker card and stat-strip toggle they served.
 
   // Tab state from URL params
   const [location, setLocation] = useLocation();
@@ -373,11 +356,15 @@ export default function Settings() {
 
       {/* Phase 4B Delivery E.6 — "Your Branded Quotes" tab.
           Single home for everything that influences how a Branded
-          Proposal looks: logo (moved up from Profile), website URL,
-          company brochure (was its own tab), proposal design template,
-          cover stat-strip toggle. The extraction status pill at the
-          top reflects the brand-evidence pipeline (logo + website)
-          regardless of where the inputs were entered. */}
+          Proposal looks: logo (moved up from Profile), company brochure
+          (was its own tab). The extraction status pill at the top
+          reflects the brand-evidence pipeline (logo + website)
+          regardless of where the inputs were entered.
+          Phase 4B Tile-2-retirement delivery — Proposal design picker
+          (Modern / Structured / Bold) and cover stat-strip toggle
+          removed alongside Tile 2. Branded Proposals now have one path
+          (brochure-driven) and take their visual identity from the
+          user's brochure rather than a designer template. */}
       {activeTab === 'branding' && (
       <>
       {/* Intro */}
@@ -391,9 +378,9 @@ export default function Settings() {
               </CardTitle>
               <CardDescription className="mt-1.5">
                 Everything that affects how your Branded Proposals look —
-                logo, website, brochure, and design — lives here. Add
-                what you have; we'll use it to style proposals to match
-                your company.
+                your logo and your brochure — lives here. Add what you
+                have; we'll use it to style proposals to match your
+                company.
               </CardDescription>
             </div>
             {/* Extraction status pill — reflects the background job that
@@ -551,119 +538,21 @@ export default function Settings() {
           The dedicated Brochure tab was retired; the same component
           renders here verbatim. Internal tier-gating (Pro/Team) and
           all upload / extract / replace / delete handlers are
-          unchanged. Sits between brand evidence (logo) and output
-          styling (design template / stat strip) so the page reads
-          top-to-bottom as the proposal pipeline does. */}
+          unchanged.
+          Phase 4B Tile-2-retirement — brochure is now the last item
+          in this tab. Previously the design picker + stat-strip toggle
+          sat below it as the "output styling" stage of the pipeline;
+          both removed alongside Tile 2. */}
       <BrochureSettingsTab />
 
-      {/* Phase 4A Delivery 17 — Proposal design picker.
-          Compact 3-button row, one per design template (Modern / Structured
-          / Bold). Modern is the only one shipped (D18); Structured and Bold
-          show as disabled with a "Coming soon" badge until D19 / D20 land.
-          Saved immediately on click via updateBrandSettings — no global
-          Save button needed for the picker. */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            Proposal design
-          </CardTitle>
-          <CardDescription>
-            Pick the visual mood for your branded proposals. Your brand
-            colours apply to all three — only the design language differs.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {DESIGN_TEMPLATE_ORDER.map((key) => {
-              const t = DESIGN_TEMPLATES[key];
-              const isSelected = proposalTemplate === key;
-              const disabled = !t.available || updateBrandSettings.isPending;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => {
-                    if (!t.available) return;
-                    handleSelectTemplate(key as DesignTemplate);
-                  }}
-                  disabled={disabled}
-                  className={`relative text-left rounded-lg border-2 p-3 transition-all ${
-                    isSelected
-                      ? "border-primary bg-primary/5"
-                      : "border-border bg-card"
-                  } ${
-                    !t.available
-                      ? "opacity-50 cursor-not-allowed"
-                      : "hover:border-primary/60 cursor-pointer"
-                  }`}
-                  aria-pressed={isSelected}
-                >
-                  <div className="aspect-[4/5] mb-2 overflow-hidden rounded-md bg-muted">
-                    <img
-                      src={t.thumb}
-                      alt={`${t.label} template preview`}
-                      className="w-full h-full object-cover object-top"
-                      loading="lazy"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="font-semibold text-sm">{t.label}</div>
-                    {!t.available && (
-                      <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">
-                        Coming soon
-                      </span>
-                    )}
-                    {isSelected && t.available && (
-                      <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
-                    )}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground mt-1 leading-snug">
-                    {t.description}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Cover stat strip toggle — Delivery 18.
-              The lavender bar across the bottom of the cover with
-              big bold numbers (Users / SLA / Uptime / Per User Month).
-              Optional — turn off if your data doesn't lend itself or if
-              the look isn't right for your brand. */}
-          <Separator />
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1">
-              <Label htmlFor="statStripToggle" className="font-semibold">
-                Show stat strip on cover
-              </Label>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Adds a coloured bar across the bottom of the cover showing
-                key numbers from the quote (users covered, response SLA,
-                uptime, per-user monthly fee). Cells with no data are hidden
-                automatically.
-              </p>
-            </div>
-            <button
-              id="statStripToggle"
-              type="button"
-              role="switch"
-              aria-checked={coverStatStripEnabled}
-              onClick={() => handleToggleStatStrip(!coverStatStripEnabled)}
-              disabled={updateBrandSettings.isPending}
-              className={`shrink-0 inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                coverStatStripEnabled ? "bg-primary" : "bg-muted"
-              } ${updateBrandSettings.isPending ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-            >
-              <span
-                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
-                  coverStatStripEnabled ? "translate-x-5" : "translate-x-0.5"
-                }`}
-              />
-            </button>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Phase 4A Delivery 17 — Proposal design picker card removed in
+          the Tile-2-retirement delivery. The card previously held two
+          settings: the design-template picker (Modern / Structured /
+          Bold) and the cover stat-strip toggle. Both fed the now-retired
+          Tile 2 ("Use a branded colour template") path. Branded Proposals
+          now have one path only — the brochure-driven Tile 3 — and that
+          path takes its visual identity from the user's brochure cover
+          rather than from a designer template. */}
       </>
       )}
 

@@ -15,14 +15,30 @@
  *     navigating straight to /branded-proposal/:quoteId based on
  *     whether the org has a brochure uploaded.
  *
+ * Phase 4B Tile-2-retirement delivery — Tile 2 card removed from the
+ * picker entirely. The picker now offers two paths:
+ *   - Quick quote (Tile 1) — standard PDF with logo + line items.
+ *   - Branded with your artwork and company story (Tile 3) — multi-
+ *     chapter proposal built from the user's own brochure.
+ * Grid drops from 3-up to 2-up; modal width tightens from 920 to 720
+ * so the two remaining cards keep balanced proportions rather than
+ * stretching across the full original frame. The backend that
+ * powered Tile 2 (BrandChoiceModal, BrandedTemplatePickerV2, 24
+ * designed templates, slot content builder, template proposal
+ * router, design picker + stat-strip toggle in Settings) stays
+ * intact on this round so the cut is fully reversible from the UI
+ * side; cleanup of the dormant backend happens in a later delivery
+ * once we're sure.
+ *
+ * The onSelectContractTender prop stays in the interface because the
+ * locked QuoteWorkspace.tsx still passes it (handlePickerSelect-
+ * ContractTender remains wired to the dormant BrandChoiceModal). We
+ * accept the prop and ignore it — nothing inside the picker calls
+ * it any more. Same backward-compat pattern as sectorHint.
+ *
  * Shown when a Pro / Team tier user clicks "Generate PDF" on the quote
  * workspace. Solo / Trial users never reach this modal — they're
  * intercepted by SoloUpgradeModal upstream in handleGeneratePDFClick.
- *
- * Layout: now a 3-up grid on desktop, 1-up on mobile. Tile 2 keeps its
- * live cover-preview thumbnail; Tiles 1 and 3 are icon-led for visual
- * variety. The modal width is bumped from 760 to 920 to accommodate
- * three cards comfortably without crushing the preview.
  *
  * Removed in Delivery 32:
  *   - The Project / Migration "coming soon" tile (its 8-section
@@ -41,8 +57,6 @@ import {
   Wand2,
 } from "lucide-react";
 import { brand } from "@/lib/brandTheme";
-import { trpc } from "@/lib/trpc";
-import CoverPreviewSVG from "@/components/CoverPreviewSVG";
 
 interface ExportFormatPickerModalProps {
   open: boolean;
@@ -51,12 +65,14 @@ interface ExportFormatPickerModalProps {
   /** Fires when the user picks the Quick quote card. */
   onSelectQuickQuote: () => void;
   /**
-   * Fires when the user picks the "Use a branded colour template" card
-   * (formerly "Contract / Tender"). Parent (QuoteWorkspace) closes this
-   * picker and opens the BrandChoiceModal — same wiring as before; only
-   * the visible label changed in Delivery C.
+   * Legacy Tile 2 ("Use a branded colour template") selection callback.
+   * Kept in the interface so the locked QuoteWorkspace.tsx can keep
+   * passing it without a parent edit — the picker UI no longer offers
+   * Tile 2, so this is never invoked from inside the modal. Removed
+   * for good in a later delivery when the locked-file lock is broken
+   * to clean up the workspace-side BrandChoiceModal wiring.
    */
-  onSelectContractTender: () => void;
+  onSelectContractTender?: () => void;
   /**
    * Phase 4B Delivery C — fires when the user picks the new
    * "Branded with your artwork and company story" card. Parent decides
@@ -66,24 +82,17 @@ interface ExportFormatPickerModalProps {
   onSelectBrandedProposal: () => void;
   /**
    * Sector hint accepted for backward-compat with QuoteWorkspace's
-   * call site. No longer used internally — the live SVG preview is
-   * driven by org branding rather than by sector. Kept in the
+   * call site. No longer used internally — the live SVG preview that
+   * previously consumed it was removed alongside Tile 2. Kept in the
    * interface to avoid touching the (locked) QuoteWorkspace JSX.
    */
   sectorHint?: string | null;
-}
-
-// ── Hex helper — only used to validate brand colours before passing
-// them to the preview SVG, which has its own internal fallbacks too. ─
-function isValidHex(v: unknown): v is string {
-  return typeof v === "string" && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v);
 }
 
 export default function ExportFormatPickerModal({
   open,
   onDismiss,
   onSelectQuickQuote,
-  onSelectContractTender,
   onSelectBrandedProposal,
 }: ExportFormatPickerModalProps) {
   // Esc closes. Match the overlay-click-to-close behaviour below. Bound
@@ -97,41 +106,6 @@ export default function ExportFormatPickerModal({
     return () => window.removeEventListener("keydown", handler);
   }, [open, onDismiss]);
 
-  // Pull the org so the Tile 2 preview can render the user's actual
-  // logo + brand-primary. Same query BrandChoiceModal already uses, so
-  // when both modals are mounted in sequence tRPC dedupes.
-  const { data: orgProfile } = trpc.auth.orgProfile.useQuery(undefined, {
-    enabled: open,
-  });
-
-  // Resolve the brand tokens the preview needs. Read priority mirrors
-  // BrandChoiceModal's readBrandTokens helper: web-extracted hex first
-  // (when present), then logo-pixel hex, else null. The preview
-  // component falls back to brand.navy internally if both are missing.
-  const logoUrl =
-    ((orgProfile as { companyLogo?: string | null } | undefined)
-      ?.companyLogo as string | null) || null;
-  const companyName =
-    (orgProfile as { companyName?: string } | undefined)?.companyName || "";
-  const extractedPrimary = (orgProfile as { brandExtractedPrimaryColor?: string | null } | undefined)
-    ?.brandExtractedPrimaryColor;
-  const logoPrimary = (orgProfile as { brandPrimaryColor?: string | null } | undefined)
-    ?.brandPrimaryColor;
-  const previewPrimary = isValidHex(extractedPrimary)
-    ? extractedPrimary
-    : isValidHex(logoPrimary)
-      ? logoPrimary
-      : null;
-  const extractedSecondary = (orgProfile as { brandExtractedSecondaryColor?: string | null } | undefined)
-    ?.brandExtractedSecondaryColor;
-  const logoSecondary = (orgProfile as { brandSecondaryColor?: string | null } | undefined)
-    ?.brandSecondaryColor;
-  const previewSecondary = isValidHex(extractedSecondary)
-    ? extractedSecondary
-    : isValidHex(logoSecondary)
-      ? logoSecondary
-      : null;
-
   if (!open) return null;
 
   return (
@@ -144,7 +118,7 @@ export default function ExportFormatPickerModal({
       aria-labelledby="export-format-title"
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl w-[920px] max-w-[94vw] my-6 relative"
+        className="bg-white rounded-2xl shadow-2xl w-[720px] max-w-[94vw] my-6 relative"
         style={{ border: `1px solid ${brand.border}` }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -177,9 +151,11 @@ export default function ExportFormatPickerModal({
           </p>
         </div>
 
-        {/* Cards — 3-up on desktop, 1-up on mobile. */}
+        {/* Cards — 2-up on desktop, 1-up on mobile. Tile 2 retired in
+            the Tile-2-retirement delivery; the two remaining cards are
+            Quick quote and Branded with your artwork and company story. */}
         <div className="px-8 pb-7">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* ── Card 1: Quick quote (active) ── */}
             <button
               type="button"
@@ -238,90 +214,12 @@ export default function ExportFormatPickerModal({
               </div>
             </button>
 
-            {/* ── Card 2: Use a branded colour template (active) ── */}
-            {/* Phase 4B Delivery C — relabel from "Contract / Tender".
-                Routing unchanged: still handlePickerSelectContractTender
-                in QuoteWorkspace, still opens BrandChoiceModal. */}
-            <button
-              type="button"
-              onClick={onSelectContractTender}
-              className="text-left rounded-xl overflow-hidden transition-all hover:shadow-md group flex flex-col"
-              style={{
-                backgroundColor: brand.white,
-                border: `1px solid ${brand.border}`,
-                boxShadow: brand.shadow,
-              }}
-            >
-              {/* Live preview — shows the new white-strip cover layout
-                  with the user's logo + brand-primary the moment those
-                  are available, or a "Your Logo" placeholder otherwise. */}
-              <div
-                className="relative w-full overflow-hidden"
-                style={{
-                  aspectRatio: "4 / 3",
-                  backgroundColor: brand.white,
-                  borderBottom: `1px solid ${brand.border}`,
-                }}
-              >
-                <CoverPreviewSVG
-                  logoUrl={logoUrl}
-                  companyName={companyName}
-                  primaryColor={previewPrimary}
-                  secondaryColor={previewSecondary}
-                />
-              </div>
-              <div className="p-5 flex-1 flex flex-col">
-                <div className="flex justify-end mb-2">
-                  <span
-                    className="inline-flex items-center gap-1 text-[10px] font-bold tracking-wide uppercase px-2 py-0.5 rounded"
-                    style={{
-                      backgroundColor: brand.teal,
-                      color: brand.white,
-                    }}
-                  >
-                    <Sparkles className="w-2.5 h-2.5" />
-                    Pro · Team
-                  </span>
-                </div>
-                <div
-                  className="w-10 h-10 rounded-lg flex items-center justify-center mb-3"
-                  style={{ backgroundColor: brand.tealBg }}
-                >
-                  <Sparkles
-                    className="w-5 h-5"
-                    style={{ color: brand.teal }}
-                  />
-                </div>
-                <div
-                  className="text-sm font-bold mb-1"
-                  style={{ color: brand.navy }}
-                >
-                  Use a branded colour template
-                </div>
-                <div
-                  className="text-xs leading-relaxed flex-1"
-                  style={{ color: brand.navyMuted }}
-                >
-                  Multi-page proposal in one of our designed templates,
-                  themed with your logo and brand colours. Cover, exec
-                  summary, pricing, terms, signature.
-                </div>
-                <div
-                  className="text-xs font-semibold mt-3 flex items-center gap-1 transition-transform group-hover:translate-x-0.5"
-                  style={{ color: brand.teal }}
-                >
-                  Choose this
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </div>
-              </div>
-            </button>
-
-            {/* ── Card 3: Branded with your artwork and company story ── */}
-            {/* Phase 4B Delivery C — new tile. Routes through
-                onSelectBrandedProposal in QuoteWorkspace, which checks
-                brochure presence and either opens BrochureUploadModal
-                (first-run) or navigates straight to
-                /branded-proposal/:quoteId. */}
+            {/* ── Card 2: Branded with your artwork and company story ── */}
+            {/* Phase 4B Delivery C — routes through onSelectBrandedProposal
+                in QuoteWorkspace, which checks brochure presence and either
+                opens BrochureUploadModal (first-run) or navigates straight
+                to /branded-proposal/:quoteId. After the Tile-2-retirement
+                delivery this is the only branded path on offer. */}
             <button
               type="button"
               onClick={onSelectBrandedProposal}
@@ -449,19 +347,11 @@ export default function ExportFormatPickerModal({
                 </div>
               </div>
               <div className="p-5 flex-1 flex flex-col">
-                {/* Tier pill row — NEW chip + PRO·TEAM chip. Two pills
-                    so the tier requirement reads at a glance and the
-                    newness is signposted without crowding the title. */}
+                {/* Tier pill row — PRO·TEAM chip. The NEW chip was
+                    dropped alongside Tile-2 retirement; this surface is
+                    no longer the "newer of two" — it's the only branded
+                    path on offer. */}
                 <div className="flex justify-end gap-1.5 mb-2">
-                  <span
-                    className="inline-flex items-center text-[10px] font-bold tracking-wide uppercase px-2 py-0.5 rounded"
-                    style={{
-                      backgroundColor: "#fef3c7",
-                      color: "#92400e",
-                    }}
-                  >
-                    New
-                  </span>
                   <span
                     className="inline-flex items-center gap-1 text-[10px] font-bold tracking-wide uppercase px-2 py-0.5 rounded"
                     style={{

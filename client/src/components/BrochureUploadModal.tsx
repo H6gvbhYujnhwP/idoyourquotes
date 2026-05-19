@@ -31,10 +31,19 @@
  * Tier gating is done at the call site. By the time this modal opens
  * we assume the user is allowed to upload — but the server still
  * enforces, so an outdated client cache won't bypass the gate.
+ *
+ * Phase 4B Tile-2-retirement delivery — concierge offer line added
+ * between the "Best results when…" hint and the dialog footer. Shown
+ * only in the idle phase (same gating as the best-results hint). The
+ * support address is hard-coded to the active customer-facing alias —
+ * RESEND_FROM_EMAIL routes to the same mailbox, so a single point of
+ * truth on the client matches the inbound side. If that address ever
+ * changes, swap the literal below; there is no client-side env wiring
+ * for marketing copy.
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Upload, FileText, Loader2, X, AlertTriangle } from "lucide-react";
+import { Upload, FileText, Loader2, X, AlertTriangle, Mail } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -56,6 +65,11 @@ const ROLLING_PROGRESS_COPY = [
   "Tagging each page…",
   "Almost done…",
 ];
+
+// Concierge offer destination — same alias users see in the From line
+// of every transactional email we send. Hard-coded rather than env-
+// driven because this is marketing copy, not an operational endpoint.
+const CONCIERGE_EMAIL = "support@mail.idoyourquotes.com";
 
 export interface BrochureUploadResult {
   filename: string;
@@ -292,6 +306,35 @@ export default function BrochureUploadModal({
                 <p>
                   An About Us section, a Why Choose Us / USPs page, branded
                   infographics, and clear contact details.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Concierge offer — Tile-2-retirement delivery.
+            Sits between the best-results hint and the dialog footer.
+            Same idle-only gating as the hint above so the modal stays
+            focused while a file is in flight. Same muted card style
+            as the hint so the two read as peer info blocks; only the
+            icon (Mail vs FileText) and copy distinguish them. */}
+        {phase === "idle" && (
+          <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
+            <div className="flex items-start gap-2">
+              <Mail className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="font-medium text-foreground mb-0.5">
+                  Don't have one yet?
+                </p>
+                <p>
+                  For a small fee we'll design one for you — email{" "}
+                  <a
+                    href={`mailto:${CONCIERGE_EMAIL}`}
+                    className="font-medium text-foreground underline underline-offset-2 hover:text-primary"
+                  >
+                    {CONCIERGE_EMAIL}
+                  </a>
+                  .
                 </p>
               </div>
             </div>

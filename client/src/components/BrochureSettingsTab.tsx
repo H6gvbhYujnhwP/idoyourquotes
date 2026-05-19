@@ -9,7 +9,10 @@
  *      can't upload (the server blocks them too — defence in depth).
  *
  *   2. No brochure — empty-state card with a primary "Upload brochure"
- *      button that opens the BrochureUploadModal.
+ *      button that opens the BrochureUploadModal. The Tile-2-retirement
+ *      delivery adds a small "no brochure yet?" concierge line beneath
+ *      the upload button, matching the line in BrochureUploadModal so
+ *      both surfaces offer the same fallback path consistently.
  *
  *   3. Has brochure — shows brochure metadata (filename, pages,
  *      uploaded date), a summary of what was extracted (per-tag counts,
@@ -36,6 +39,7 @@ import {
   Crown,
   Loader2,
   FileText,
+  Mail,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -45,6 +49,12 @@ import BrochureUploadModal from "@/components/BrochureUploadModal";
 // Same allowed list the server uses. Kept in sync manually — there's
 // only two places (this file + the two server routers).
 const ALLOWED_TIERS = ["pro", "team"];
+
+// Concierge offer destination — kept in sync with the same constant
+// in BrochureUploadModal.tsx. Both surfaces offer the same fallback,
+// so the same address. Hard-coded rather than env-driven because
+// this is marketing copy.
+const CONCIERGE_EMAIL = "support@mail.idoyourquotes.com";
 
 // Tag → display label, used by the "What we extracted" breakdown.
 const TAG_LABELS: Record<string, string> = {
@@ -185,7 +195,7 @@ export default function BrochureSettingsTab() {
               USPs, and infographics into every Branded Proposal.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             <div className="rounded-lg border-2 border-dashed border-muted p-10 text-center">
               <div className="mx-auto h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-3">
                 <Upload className="h-5 w-5 text-muted-foreground" />
@@ -198,6 +208,33 @@ export default function BrochureSettingsTab() {
                 <Upload className="h-4 w-4 mr-2" />
                 Upload brochure
               </Button>
+            </div>
+
+            {/* Concierge offer — Tile-2-retirement delivery.
+                Mirrors the same offer shown inside BrochureUploadModal so
+                a user who lands on this tab (rather than reaching the
+                modal via the quote workspace) sees the same fallback.
+                Style matches the muted info-card pattern used in the
+                modal — Mail icon, mailto link on the address. */}
+            <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
+              <div className="flex items-start gap-2">
+                <Mail className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="font-medium text-foreground mb-0.5">
+                    Don't have one yet?
+                  </p>
+                  <p>
+                    For a small fee we'll design one for you — email{" "}
+                    <a
+                      href={`mailto:${CONCIERGE_EMAIL}`}
+                      className="font-medium text-foreground underline underline-offset-2 hover:text-primary"
+                    >
+                      {CONCIERGE_EMAIL}
+                    </a>
+                    .
+                  </p>
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>
