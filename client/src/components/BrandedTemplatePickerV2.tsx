@@ -21,7 +21,7 @@
 //   quoteId. onGenerate emits the chosen templateId string.
 
 import { useState, useMemo } from "react";
-import { ArrowLeft, X, Loader2, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Loader2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -158,7 +158,13 @@ export default function BrandedTemplatePickerV2(props: BrandedTemplatePickerV2Pr
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onDismiss(); }}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0">
+      {/* Width note: shadcn's base DialogContent ends with `sm:max-w-lg`
+          (32rem). An unprefixed `max-w-4xl` does NOT override it at the
+          sm breakpoint and up — the sm-variant wins, which is what made
+          this modal render squashed at ~32rem with the 3-col grid stuck
+          at 1 col. Override at the SAME breakpoint with `sm:max-w-4xl`,
+          and use a viewport width on small screens. */}
+      <DialogContent className="w-[95vw] sm:max-w-4xl max-h-[90vh] overflow-y-auto p-0">
         {/* Header */}
         <div className="flex items-start justify-between p-6 pb-4 border-b">
           <div className="flex items-start gap-3">
@@ -181,15 +187,11 @@ export default function BrandedTemplatePickerV2(props: BrandedTemplatePickerV2Pr
               </DialogDescription>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onDismiss}
-            disabled={generate.isPending}
-            className="text-slate-400 hover:text-slate-700 disabled:opacity-40"
-            aria-label="Close"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          {/* No custom close button here on purpose. shadcn's
+              DialogContent already renders a built-in top-right close X
+              (wired to onOpenChange → onDismiss). Adding our own put
+              TWO X's in the corner. The back arrow above is kept; it's
+              a distinct action (return to the format picker). */}
         </div>
 
         {/* Design grid */}

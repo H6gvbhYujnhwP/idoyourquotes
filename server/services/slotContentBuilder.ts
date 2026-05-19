@@ -118,9 +118,24 @@ export async function buildSlotContent(args: {
   quote: QuoteForSlots;
   organization: OrganizationForSlots;
   lineItems: LineItemForSlots[];
-  narrative: NarrativeContextForSlots;
+  /**
+   * Narrative context from the router. OPTIONAL and defaulted on
+   * purpose: an older deployed router may call buildSlotContent
+   * WITHOUT this argument (Phase 2 signature). When that happens we
+   * must NOT crash — we fall back to AI-disabled deterministic prose,
+   * which is exactly the Phase 2 behaviour. This makes the module
+   * backward-compatible with the old router and forward-compatible
+   * with the Phase 2.5 one. (Regression guard: the live crash
+   * `Cannot read properties of undefined (reading 'aiEnabled')` was
+   * caused precisely by this argument being absent at runtime.)
+   */
+  narrative?: NarrativeContextForSlots | null;
 }): Promise<SlotContent> {
-  const { quote, organization, lineItems, narrative } = args;
+  const { quote, organization, lineItems } = args;
+  // Hard default: never trust the caller to have supplied this. A
+  // missing / null narrative === AI disabled === deterministic prose.
+  const narrative: NarrativeContextForSlots =
+    args.narrative ?? { aiEnabled: false, sectorLabel: null };
   const companyName = organization.companyName ?? organization.name;
   const today = formatDateUK(new Date());
 
@@ -227,9 +242,11 @@ async function buildNarrative(args: {
   organization: OrganizationForSlots;
   companyName: string;
   lineItems: LineItemForSlots[];
-  narrative: NarrativeContextForSlots;
+  narrative?: NarrativeContextForSlots | null;
 }): Promise<NarrativeBlocks> {
-  const { quote, organization, companyName, lineItems, narrative } = args;
+  const { quote, organization, companyName, lineItems } = args;
+  const narrative: NarrativeContextForSlots =
+    args.narrative ?? { aiEnabled: false, sectorLabel: null };
 
   // The deterministic blocks double as the guaranteed fallback.
   const fallback: NarrativeBlocks = {
@@ -238,8 +255,12 @@ async function buildNarrative(args: {
     methodology: buildMethodologyTextDeterministic(),
   };
 
-  // Router's gate said no (tier/trial/payment) — skip the LLM entirely.
-  if (!narrative.aiEnabled) return fallback;
+  // Router's gate said no (tier/trial/payment), OR no narrative context
+  // was supplied at all by an older caller — either way skip the LLM
+  // entirely and use deterministic prose. Optional-chaining here is the
+  // last line of defence against the `undefined.aiEnabled` crash even
+  // if a future refactor bypasses the public-API default.
+  if (!narrative?.aiEnabled) return fallback;
 
   try {
     const ai = await enhanceNarrativeWithAI({

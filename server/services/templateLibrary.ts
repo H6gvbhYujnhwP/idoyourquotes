@@ -82,19 +82,77 @@ export const SECTOR_META: Record<SectorId, { name: string }> = {
 // ── Library root resolution ─────────────────────────────────────────
 
 /**
- * Resolve the library root directory. Override via env var when running
- * in unusual environments (tests, deployment quirks); otherwise computed
- * relative to this file's location.
+ * Resolve the library root directory.
  *
- * In production on Render the file layout after build looks like:
- *   /opt/render/project/src/server/templates/library/<sector>/<style>/
- * which is where this resolver points by default.
+ * THE BUG THIS FIXES
+ *   The library lives in the repo at server/templates/library/. The
+ *   old resolver was `path.resolve(_dirname, "..", "templates",
+ *   "library")`, which assumed _dirname === server/services/. That
+ *   holds under tsx in dev, but the PRODUCTION build is bundled by
+ *   esbuild to dist/index.js and started as `node dist/index.js`, so
+ *   at runtime import.meta.url → /opt/render/project/src/dist/, and
+ *   "../templates/library" resolved to
+ *   /opt/render/project/src/templates/library — missing the `server/`
+ *   segment. fs.existsSync failed, getTemplate() returned null, and
+ *   every render died with "Unknown templateId: it-services/...".
+ *
+ * THE FIX
+ *   Probe an ordered list of candidate roots and return the first that
+ *   actually exists on disk. This is robust to the dev (tsx, _dirname =
+ *   server/services) vs prod (bundled, _dirname = dist, cwd = repo
+ *   root) split without hard-coding either layout. The
+ *   TEMPLATE_LIBRARY_ROOT env override still wins when set, as the
+ *   ultimate escape hatch for unusual environments.
+ *
+ * Result is memoised — the directory doesn't move at runtime and the
+ * probe touches the filesystem.
  */
+let _libraryRootCache: string | null = null;
+
 function getLibraryRoot(): string {
   const override = process.env.TEMPLATE_LIBRARY_ROOT;
   if (override) return override;
-  // From server/services/templateLibrary.ts → server/templates/library
-  return path.resolve(_dirname, "..", "templates", "library");
+
+  if (_libraryRootCache) return _libraryRootCache;
+
+  // Ordered by specificity. cwd-based paths are the reliable ones in
+  // the bundled production build (Render cwd = /opt/render/project/src);
+  // _dirname-based paths keep tsx/test runs working.
+  const candidates = [
+    // Prod: `node dist/index.js` with cwd = repo root.
+    path.resolve(process.cwd(), "server", "templates", "library"),
+    // Some hosts set cwd elsewhere but keep the tree under dist's parent.
+    path.resolve(_dirname, "..", "server", "templates", "library"),
+    // Dev (tsx): _dirname = server/services → ../templates/library.
+    path.resolve(_dirname, "..", "templates", "library"),
+    // Bundled but templates copied next to dist (defensive).
+    path.resolve(_dirname, "templates", "library"),
+    // Last-ditch: cwd directly.
+    path.resolve(process.cwd(), "templates", "library"),
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+        _libraryRootCache = candidate;
+        console.log("[templateLibrary] library root resolved:", candidate);
+        return candidate;
+      }
+    } catch {
+      // Ignore and try the next candidate.
+    }
+  }
+
+  // Nothing found — return the prod-canonical path so the eventual
+  // ENOENT error message points somewhere meaningful, and log loudly.
+  const fallback = candidates[0];
+  console.error(
+    "[templateLibrary] LIBRARY ROOT NOT FOUND. Probed:\n" +
+      candidates.map((c) => "  - " + c).join("\n") +
+      "\nFalling back to: " + fallback +
+      "\nSet TEMPLATE_LIBRARY_ROOT to override.",
+  );
+  return fallback;
 }
 
 // ── Public API ──────────────────────────────────────────────────────
