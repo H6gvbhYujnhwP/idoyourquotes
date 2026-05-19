@@ -1845,7 +1845,7 @@ export default function QuoteWorkspace() {
         open={showBrochureUploadModal}
         onOpenChange={setShowBrochureUploadModal}
         title="First, let's add your brochure"
-        description="To build a branded proposal, we need your company brochure once. We'll pick out your About Us, USPs and key infographics, and weave them into every Tile 3 proposal you generate from now on."
+        description="To build a branded proposal, we need your company brochure once. We'll pick out your About Us, USPs and key infographics, and weave them into every branded proposal you generate from now on."
         onUploaded={() => {
           setShowBrochureUploadModal(false);
           setLocation(`/branded-proposal/${quoteId}`);
