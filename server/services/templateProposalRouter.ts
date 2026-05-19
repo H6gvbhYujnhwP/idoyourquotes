@@ -72,7 +72,8 @@ import {
 } from "./templateLibrary";
 import { buildSlotContent } from "./slotContentBuilder";
 import { canUseAIFeatures } from "./stripe";
-import { uploadToR2, isR2Configured } from "../r2Storage";
+import { uploadToR2, isR2Configured, getFileBuffer } from "../r2Storage";
+import sharp from "sharp";
 
 // ── Constants ───────────────────────────────────────────────────────
 
@@ -135,6 +136,104 @@ function resolveTemplateId(args: {
  *  (templateId is "<sector>/<style>" — the slash can't go in a name). */
 function templateSlug(templateId: string): string {
   return templateId.replace(/[^a-zA-Z0-9._-]+/g, "-");
+}
+
+// ── Logo resolution ─────────────────────────────────────────────────
+//
+// THE BUG THIS FIXES
+//   templateRenderer loads the template HTML via file:// and injects
+//   the logo as <img src="<logoUrl>">. org.companyLogo is a RELATIVE
+//   path ("/api/file/logos/<orgId>/<file>.png"). Under a file:// base
+//   URL the browser resolves that to file:///api/file/... which does
+//   not exist on the render host, so the <img> fails silently and the
+//   cover/contact logo placeholder renders empty. (It works in the
+//   user's browser only because there the base is https://.)
+//
+// THE FIX
+//   Resolve the logo to a SELF-CONTAINED data: URI server-side before
+//   handing it to the renderer. A data: URI has no base-URL dependency,
+//   so it renders correctly under file://. This mirrors the proven
+//   fetchAndNormaliseLogo helper in brandedProposalRouter.ts (R2 fetch
+//   → PNG/JPEG magic-byte detect → sharp fallback for other formats),
+//   the difference being we emit a base64 data: URI rather than raw
+//   bytes (that helper feeds pdf-lib; we feed an <img> src).
+//
+//   Best-effort throughout: any failure (no logo set, non-/api/file
+//   URL, R2 miss, undecodable image) returns null. The renderer
+//   already treats a null logoUrl as "no logo" and skips the swap, so
+//   a logo problem never blocks or breaks a proposal render.
+
+/** PNG: 89 50 4E 47   JPEG: FF D8 FF — same magic-number check as
+ *  brandedProposalRouter.detectImageFormat. */
+function detectLogoFormat(bytes: Uint8Array): "png" | "jpeg" | null {
+  if (bytes.length < 4) return null;
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+    return "png";
+  }
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "jpeg";
+  }
+  return null;
+}
+
+/**
+ * Resolve org.companyLogo to a data: URI usable as an <img> src under
+ * a file:// base. Returns null on any failure (caller passes null to
+ * the renderer, which then renders without a logo).
+ */
+async function resolveLogoDataUri(
+  rawLogoUrl: string | null | undefined,
+): Promise<string | null> {
+  if (!rawLogoUrl) return null;
+
+  // Logos uploaded via Settings always land at /api/file/{key}. Only
+  // that form is supported — external URLs (legacy seed data, manual
+  // DB edits) are skipped rather than risking an unbounded outbound
+  // fetch from the render endpoint. Same stance as brandedProposalRouter.
+  if (!rawLogoUrl.startsWith("/api/file/")) {
+    console.warn(
+      "[generateBrandedProposalV2] Logo URL is not /api/file/{key}, " +
+        "rendering without logo:",
+      rawLogoUrl,
+    );
+    return null;
+  }
+  const key = rawLogoUrl.slice("/api/file/".length);
+
+  let buffer: Buffer;
+  try {
+    buffer = await getFileBuffer(key);
+  } catch (err) {
+    console.warn(
+      "[generateBrandedProposalV2] Failed to fetch logo bytes from R2, " +
+        "rendering without logo:",
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
+
+  const bytes = new Uint8Array(buffer);
+  const detected = detectLogoFormat(bytes);
+  if (detected) {
+    const mime = detected === "png" ? "image/png" : "image/jpeg";
+    return `data:${mime};base64,${buffer.toString("base64")}`;
+  }
+
+  // Not directly a PNG/JPEG (SVG, WEBP, GIF, AVIF…). Normalise to PNG
+  // via sharp — already a runtime dependency, same approach as the
+  // Tile 3 logo helper. Any failure here means the logo is genuinely
+  // unrenderable; skip it and the proposal still ships.
+  try {
+    const png = await sharp(buffer).png().toBuffer();
+    return `data:image/png;base64,${png.toString("base64")}`;
+  } catch (err) {
+    console.warn(
+      "[generateBrandedProposalV2] sharp could not normalise logo to " +
+        "PNG, rendering without logo:",
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
 }
 
 // ── Router ──────────────────────────────────────────────────────────
@@ -300,9 +399,16 @@ export const templateProposalRouter = router({
         }
       }
 
-      // 6. Render — brand colours + logo straight off the org row.
+      // 6. Render — brand colours + logo.
+      //    The logo is resolved to a self-contained data: URI here
+      //    (see resolveLogoDataUri). Passing org.companyLogo's raw
+      //    "/api/file/..." path straight through was the bug: it can't
+      //    resolve under the renderer's file:// base, so the logo
+      //    silently failed to load. data: URIs have no base dependency.
       //    Accent is null until a later phase adds the schema column +
       //    picker UI; colourUtils derives one from the primary.
+      const logoDataUri = await resolveLogoDataUri(org.companyLogo);
+
       const result = await renderTemplate({
         templateId,
         brand: {
@@ -311,7 +417,7 @@ export const templateProposalRouter = router({
           accent: null,
         },
         slotContent,
-        logoUrl: org.companyLogo,
+        logoUrl: logoDataUri,
       });
 
       console.log(
