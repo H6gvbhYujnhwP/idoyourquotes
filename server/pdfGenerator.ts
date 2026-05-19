@@ -865,6 +865,21 @@ ${assumptions.map((a: any) => `• ${escapeHtml(typeof a === "string" ? a : a.te
       </div>`;
     })()}
 
+    ${(() => {
+      // Phase 4B Custom-Sections — user-authored heading/body blocks
+      // rendered after Assumptions. Each section gets its own terms-box,
+      // matching the Terms & Conditions block's standalone shape. Bails
+      // cleanly if the array is missing, not an array, or empty — in
+      // which case the rendered PDF is byte-identical to pre-delivery.
+      const customSections = data.tenderContext?.customSections;
+      if (!customSections || !Array.isArray(customSections) || customSections.length === 0) return "";
+      return customSections.map((s: any) => `
+      <div class="terms-box" style="margin-top: 12pt;">
+        <div class="terms-label">${escapeHtml(typeof s?.heading === "string" ? s.heading : "")}</div>
+        <div class="terms-content">${escapeHtml(typeof s?.body === "string" ? s.body : "")}</div>
+      </div>`).join("");
+    })()}
+
     <div class="footer">
       <p>Thank you for your business</p>
     </div>

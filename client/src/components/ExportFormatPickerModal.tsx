@@ -17,7 +17,10 @@
  *
  * Phase 4B Tile-2-retirement delivery — Tile 2 card removed from the
  * picker entirely. The picker now offers two paths:
- *   - Quick quote (Tile 1) — standard PDF with logo + line items.
+ *   - Standard quote (Tile 1) — standard PDF with logo + line items.
+ *     Title relabelled from "Quick quote" in the Custom-Sections
+ *     delivery; pairs more cleanly with "Branded" and matches the
+ *     body copy ("Standard PDF with your logo…").
  *   - Branded with your artwork and company story (Tile 3) — multi-
  *     chapter proposal built from the user's own brochure.
  * Grid drops from 3-up to 2-up; modal width tightens from 920 to 720
@@ -196,7 +199,7 @@ export default function ExportFormatPickerModal({
                 className="text-sm font-bold mb-1"
                 style={{ color: brand.navy }}
               >
-                Quick quote
+                Standard quote
               </div>
               <div
                 className="text-xs leading-relaxed flex-1"

@@ -392,7 +392,12 @@ export type InsertQuoteInput = typeof quoteInputs.$inferInsert;
 
 /**
  * Tender Context - interpretation layer for a quote
- * Stores symbol mappings, abbreviations, and confirmed meanings
+ * Stores symbol mappings, abbreviations, and confirmed meanings.
+ *
+ * Phase 4B Custom-Sections delivery — adds `customSections`, a per-quote
+ * array of user-authored heading/body blocks that the Standard Quote
+ * PDF renders after Assumptions. Each block is independent; the array
+ * preserves the order in which the user added them in the Review modal.
  */
 export const tenderContexts = pgTable("tender_contexts", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
@@ -400,6 +405,10 @@ export const tenderContexts = pgTable("tender_contexts", {
   symbolMappings: json("symbol_mappings").$type<Record<string, { meaning: string; confirmed: boolean; confidence?: number }>>(),
   assumptions: json("assumptions").$type<Array<{ text: string; confirmed: boolean }>>(),
   exclusions: json("exclusions").$type<Array<{ text: string; confirmed: boolean }>>(),
+  // Phase 4B Custom-Sections — user-authored heading/body blocks rendered
+  // after Assumptions on the Standard Quote PDF. Nullable; an empty or
+  // missing value renders nothing (PDF stays byte-identical to today).
+  customSections: json("custom_sections").$type<Array<{ heading: string; body: string }>>(),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

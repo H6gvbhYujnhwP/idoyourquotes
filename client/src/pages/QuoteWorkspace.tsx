@@ -1613,6 +1613,9 @@ export default function QuoteWorkspace() {
         initialExclusions={
           (fullQuote as any)?.tenderContext?.exclusions ?? null
         }
+        initialCustomSections={
+          (fullQuote as any)?.tenderContext?.customSections ?? null
+        }
         orgDefaults={{
           defaultTerms: (orgProfile as any)?.defaultTerms ?? null,
           defaultExclusions: (orgProfile as any)?.defaultExclusions ?? null,

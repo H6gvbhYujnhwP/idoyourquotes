@@ -3662,6 +3662,30 @@ Rules:
         const { quoteId, ...data } = input;
         return upsertTenderContext(quoteId, data);
       }),
+
+    // Phase 4B Custom-Sections — additive endpoint for the Standard
+    // Quote Review modal. Writes ONLY the custom_sections column on
+    // the tender_contexts row; existing fields (assumptions/exclusions/
+    // notes/symbolMappings) are preserved because the Drizzle helper
+    // only updates columns present in the SET clause. The Review modal
+    // calls this in parallel with tenderContext.upsert on save when
+    // the custom-sections list is dirty.
+    upsertCustomSections: protectedProcedure
+      .input(z.object({
+        quoteId: z.number(),
+        customSections: z.array(z.object({
+          heading: z.string(),
+          body: z.string(),
+        })),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+
+        return upsertTenderContext(input.quoteId, {
+          customSections: input.customSections,
+        });
+      }),
   }),
 
   // ============ INTERNAL ESTIMATE ============

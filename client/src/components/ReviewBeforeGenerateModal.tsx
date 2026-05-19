@@ -89,7 +89,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertCircle, Check, Download, Loader2, Pencil } from "lucide-react";
+import { AlertCircle, Check, Download, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { brand } from "@/lib/brandTheme";
 import {
   defaultsFor,
@@ -191,6 +191,13 @@ interface ReviewBeforeGenerateModalProps {
   // shows a hint that the override is ignored for that template.
   selectedTemplate?: "modern" | "bold" | "structured";
   initialCoverStatCellsOverride?: Array<{ num: string; label: string }> | null;
+  // Phase 4B Custom-Sections — per-quote user-authored heading/body
+  // blocks for the Standard Quote PDF. Quick mode only. Optional —
+  // when omitted (or null), the modal opens with an empty list and
+  // the user can add sections from scratch. When provided, the modal
+  // hydrates from this list so existing custom sections are visible
+  // and editable on re-open. Same shape as the storage column.
+  initialCustomSections?: Array<{ heading: string; body: string }> | null;
   // Organization defaults — used for cascade fallback when per-quote
   // values are blank, so the modal shows what the renderer would
   // actually produce.
@@ -626,6 +633,8 @@ export default function ReviewBeforeGenerateModal({
   // Phase 4A Delivery 40 — editable cover stat strip inputs.
   selectedTemplate,
   initialCoverStatCellsOverride,
+  // Phase 4B Custom-Sections — Quick mode user-authored sections.
+  initialCustomSections,
   orgDefaults,
   onConfirm,
 }: ReviewBeforeGenerateModalProps) {
@@ -845,6 +854,28 @@ export default function ReviewBeforeGenerateModal({
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Phase 4B Custom-Sections — Quick-mode-only user-authored blocks.
+  // The list is variable-length (unlike the fixed SECTION_META rows),
+  // so it lives in its own state alongside the existing values map.
+  // Editing semantics:
+  //   - editingCustomIdx is the index of the section currently in
+  //     edit mode (null = none). Only one editable at a time.
+  //   - customSectionsTouched is the dirty flag. Set on any add /
+  //     edit / delete. Reset on modal open. Used by handleConfirm to
+  //     decide whether to fire the tenderContext.upsertCustomSections
+  //     mutation on save.
+  //   - initialCustomSectionsSnapshot is a deep copy of the list as
+  //     it was on modal open. Used by Cancel to know whether an entry
+  //     was newly added (in which case Cancel removes it) or existing
+  //     (in which case Cancel reverts heading/body to the snapshot).
+  const [customSections, setCustomSections] = useState<
+    Array<{ heading: string; body: string }>
+  >([]);
+  const [editingCustomIdx, setEditingCustomIdx] = useState<number | null>(null);
+  const [customSectionsTouched, setCustomSectionsTouched] = useState(false);
+  const [initialCustomSectionsSnapshot, setInitialCustomSectionsSnapshot] =
+    useState<Array<{ heading: string; body: string }>>([]);
+
   // Reset on open. Snapshot of initial values is held for the duration
   // of the open session so the parent's fullQuote refetching mid-review
   // doesn't wipe in-progress edits.
@@ -927,6 +958,21 @@ export default function ReviewBeforeGenerateModal({
     // D40 — clear the cover-stats edit-tracking flags on every open.
     setCoverStatsExplicitlyEdited(false);
     setCoverStatsRevertToAuto(false);
+    // Phase 4B Custom-Sections — hydrate from initialCustomSections on
+    // open. Deep-clone the array AND each entry so subsequent edits
+    // don't mutate the prop or the snapshot.
+    const initCustom = Array.isArray(initialCustomSections)
+      ? initialCustomSections
+          .filter(
+            (s): s is { heading: string; body: string } =>
+              !!s && typeof s.heading === "string" && typeof s.body === "string",
+          )
+          .map((s) => ({ heading: s.heading, body: s.body }))
+      : [];
+    setCustomSections(initCustom.map((s) => ({ ...s })));
+    setInitialCustomSectionsSnapshot(initCustom.map((s) => ({ ...s })));
+    setEditingCustomIdx(null);
+    setCustomSectionsTouched(false);
     setInlineError(null);
     setIsSaving(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -935,6 +981,65 @@ export default function ReviewBeforeGenerateModal({
   const updateQuote = trpc.quotes.update.useMutation();
   const upsertTenderContext = trpc.tenderContext.upsert.useMutation();
   const updateProfile = trpc.auth.updateProfile.useMutation();
+  // Phase 4B Custom-Sections — separate endpoint that only touches the
+  // custom_sections column. Called in parallel with upsertTenderContext
+  // on save when the list is dirty. Kept independent because routers.ts
+  // is locked to add-only: extending the existing upsert's zod schema
+  // would have been a "change to an existing procedure" instead.
+  const upsertCustomSections =
+    trpc.tenderContext.upsertCustomSections.useMutation();
+
+  // Phase 4B Custom-Sections — handlers for the variable-length list.
+  // Kept here near the other state-management code rather than in a
+  // separate file because they're tightly coupled to the modal's state
+  // shape.
+  const handleCustomSectionAdd = () => {
+    setCustomSections((arr) => [...arr, { heading: "", body: "" }]);
+    // The new entry sits at the previous end of the array, so its
+    // index is the pre-add length.
+    setEditingCustomIdx(customSections.length);
+    setCustomSectionsTouched(true);
+  };
+  const handleCustomSectionUpdate = (
+    idx: number,
+    field: "heading" | "body",
+    val: string,
+  ) => {
+    setCustomSections((arr) =>
+      arr.map((s, i) => (i === idx ? { ...s, [field]: val } : s)),
+    );
+    setCustomSectionsTouched(true);
+  };
+  const handleCustomSectionEdit = (idx: number) => {
+    setEditingCustomIdx(idx);
+  };
+  const handleCustomSectionSavePerItem = (_idx: number) => {
+    // Per-item Save just collapses the editor; the modal-level
+    // handleConfirm writes the whole list on Generate / Close.
+    setEditingCustomIdx(null);
+  };
+  const handleCustomSectionCancel = (idx: number) => {
+    const snapshotEntry = initialCustomSectionsSnapshot[idx];
+    if (!snapshotEntry) {
+      // Newly-added entry — Cancel removes it.
+      setCustomSections((arr) => arr.filter((_, i) => i !== idx));
+    } else {
+      // Existing entry — revert to the snapshot value.
+      setCustomSections((arr) =>
+        arr.map((s, i) => (i === idx ? { ...snapshotEntry } : s)),
+      );
+    }
+    setEditingCustomIdx(null);
+  };
+  const handleCustomSectionDelete = (idx: number) => {
+    setCustomSections((arr) => arr.filter((_, i) => i !== idx));
+    setCustomSectionsTouched(true);
+    if (editingCustomIdx === idx) setEditingCustomIdx(null);
+    else if (editingCustomIdx !== null && editingCustomIdx > idx) {
+      // Editing index shifts down when a section before it is removed.
+      setEditingCustomIdx(editingCustomIdx - 1);
+    }
+  };
 
   // Phase 4A Delivery 40 — auto-derived cover stat preview.
   //
@@ -1363,6 +1468,21 @@ export default function ReviewBeforeGenerateModal({
         );
       }
 
+      // ── 4. Custom-sections save (tenderContext.upsertCustomSections) ──
+      // Quick-mode-only. Fires when the list has been touched since
+      // modal open (add / edit / delete). Independent of the existing
+      // tenderContext.upsert above because the backend endpoint only
+      // writes the custom_sections column — assumptions/exclusions/
+      // notes stay untouched if their own dirty flags didn't fire.
+      if (mode === "quick" && customSectionsTouched) {
+        tasks.push(
+          upsertCustomSections.mutateAsync({
+            quoteId,
+            customSections,
+          }),
+        );
+      }
+
       if (tasks.length > 0) {
         await Promise.all(tasks);
         invalidateAfterWrite();
@@ -1642,6 +1762,172 @@ export default function ReviewBeforeGenerateModal({
 
         <div className="py-1 max-h-[60vh] overflow-y-auto pr-1">
           {sectionIds.map(renderSection)}
+
+          {/* Phase 4B Custom-Sections — Quick-mode-only user-authored
+              blocks. Variable-length list (unlike the fixed registry
+              above), so rendered inline rather than via renderSection.
+              Each entry mirrors the section-card visual style — slate
+              card with an uppercase muted-navy label — for consistency
+              with Terms / Exclusions / Assumptions. Branded mode does
+              NOT show custom sections; the multi-chapter branded
+              proposal has its own narrative structure that custom
+              sections would compete with. */}
+          {mode === "quick" && (
+            <>
+              {customSections.map((s, idx) => {
+                const isEditing = editingCustomIdx === idx;
+                return (
+                  <div
+                    key={`custom-${idx}`}
+                    className="rounded-lg p-4 mb-3"
+                    style={{
+                      backgroundColor: brand.slate,
+                      border: `1px solid ${brand.border}`,
+                    }}
+                  >
+                    <div className="flex items-center justify-between mb-2 gap-2">
+                      <div
+                        className="text-[11px] font-bold uppercase tracking-wide truncate"
+                        style={{ color: brand.navyMuted }}
+                      >
+                        {/* In read mode, prefer the heading the user
+                            entered; fall back to a generic label if
+                            the heading is empty (shouldn't normally
+                            happen — heading-blank entries get the
+                            placeholder shown in the editor — but a
+                            partial save could land here). */}
+                        {isEditing
+                          ? "Custom section"
+                          : s.heading.trim() || "Custom section"}
+                      </div>
+                      {!isEditing && (
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleCustomSectionEdit(idx)}
+                            className="text-xs flex items-center gap-1 px-2 py-1 rounded border hover:bg-white"
+                            style={{
+                              borderColor: brand.tealBorder,
+                              color: brand.teal,
+                            }}
+                          >
+                            <Pencil className="w-3 h-3" />
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleCustomSectionDelete(idx)}
+                            className="text-xs flex items-center gap-1 px-2 py-1 rounded border hover:bg-white"
+                            style={{
+                              borderColor: brand.border,
+                              color: "#b91c1c",
+                            }}
+                            title="Delete this section"
+                            aria-label="Delete custom section"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {!isEditing ? (
+                      // Read view — body shown as preserved-newline text
+                      // so paragraph breaks the user typed render
+                      // visibly in the modal. The PDF renderer escapes
+                      // and emits the same body inside its terms-content
+                      // block.
+                      <p
+                        className="text-sm leading-relaxed whitespace-pre-wrap"
+                        style={{ color: brand.navy }}
+                      >
+                        {s.body.trim() || (
+                          <span
+                            className="italic"
+                            style={{ color: brand.navyMuted }}
+                          >
+                            (No content yet. Click Edit to add.)
+                          </span>
+                        )}
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        <Input
+                          value={s.heading}
+                          onChange={(e) =>
+                            handleCustomSectionUpdate(
+                              idx,
+                              "heading",
+                              e.target.value,
+                            )
+                          }
+                          placeholder="Section heading — e.g. Onboarding plan, Warranty, Reference sites"
+                          className="text-sm font-medium"
+                          autoFocus
+                        />
+                        <Textarea
+                          value={s.body}
+                          onChange={(e) =>
+                            handleCustomSectionUpdate(
+                              idx,
+                              "body",
+                              e.target.value,
+                            )
+                          }
+                          placeholder="Section content. Plain text — line breaks are preserved on the PDF."
+                          className="text-sm w-full"
+                          style={{ minHeight: "100px" }}
+                        />
+                        <div className="flex items-center justify-between mt-3 gap-3 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => handleCustomSectionCancel(idx)}
+                            disabled={isSaving}
+                            className="text-xs px-3 py-1.5 rounded border hover:bg-white"
+                            style={{
+                              borderColor: brand.border,
+                              color: brand.navyMuted,
+                            }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleCustomSectionSavePerItem(idx)
+                            }
+                            disabled={isSaving}
+                            className="text-xs flex items-center gap-1 px-3 py-1.5 rounded text-white"
+                            style={{ backgroundColor: brand.teal }}
+                          >
+                            <Check className="w-3 h-3" />
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Add-a-section button. Disabled while another section
+                  is in edit mode so the user can't add a second new
+                  entry while the previous one is still incomplete. */}
+              <button
+                type="button"
+                onClick={handleCustomSectionAdd}
+                disabled={editingCustomIdx !== null || isSaving}
+                className="w-full text-xs flex items-center justify-center gap-1.5 px-3 py-2 rounded border border-dashed hover:bg-white mb-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{
+                  borderColor: brand.tealBorder,
+                  color: brand.teal,
+                }}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add a custom section
+              </button>
+            </>
+          )}
 
           {inlineError && (
             <div
