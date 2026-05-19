@@ -1,182 +1,320 @@
-# Next chat — handover prompt
+# IdoYourQuotes — Next Session Handover (Tile 2 continuation)
 
-Paste this as your first message in the new chat. Attach the IdoYourQuotes repo zip alongside it.
-
----
-
-## Context
-
-Wez is the sole developer and dogfood customer of **IdoYourQuotes** (idoyourquotes.com) — AI-powered quoting/proposal SaaS for UK trades and service businesses. Production-live on Render, Postgres 16, Cloudflare R2 for files. Wez runs Sweetbyte Ltd (IT MSP) on the Pro tier as the only live customer. **Marketing launch is imminent** — launch sequencing is flexible if needed.
-
-Wez is a non-coder owner. You handle all code. He thinks in app terms and reacts in short directional signals.
-
-Blueprint at `IdoYourQuotes-Blueprint.md` (v3.10 — Document History changelog up to E.24, May 9 2026). Recent sessions' work has NOT been written into the blueprint yet — see "On the roadmap → blueprint sweep" below.
-
-## How we work
-
-**Communication:**
-- Wez writes in short directional signals: "go", "continue", "yes", single-letter approvals → full greenlights, proceed without re-confirmation.
-- Match the tone: direct, minimal, decisive. Don't ramble. Don't present open questions when you can recommend.
-- Describe changes in **app terms** (what the user sees) before any code-terms (file paths, function names). Code-terms appear only at delivery time.
-- Get architectural alignment first; never write code without explicit alignment confirmation.
-- **No interactive pop-ups (no `ask_user_input_v0`).** Ask in prose, he answers in the prompt field.
-- For UX proposals, show 2-3 rendered mockup options side-by-side using the Visualizer tool rather than describing them in words.
-
-**Delivery:**
-- **Complete files only** — never patches or diffs. Every delivery is a full file replacement (or a new file).
-- **Folder location next to every filename** in delivery summaries (e.g. `server/services`, `client/src/pages`, `repo root`).
-- **Hold the TypeScript baseline of 69 errors exactly.** Verify with `node node_modules/typescript/lib/tsc.js --noEmit` (NOT `npx tsc` — `--ignore-scripts` skips the `.bin` symlink).
-- Zero new TS errors in any modified file. Always run the check before delivering.
-- Stage all deliverable files in `/mnt/user-data/outputs/<delivery-name>/<repo-relative-path>/` and use `present_files` so Wez can pull them down.
-
-**Locked files:**
-- `server/pdfGenerator.ts` — **NEVER modify under any circumstance.** ⚠️ **This file is the centre of the next session's work.** Do NOT touch it directly. Either: (a) propose unlocking it explicitly and get Wez's one-time greenlight, or (b) build a new alternative generator file (e.g. `server/pdfGeneratorV2.ts`) and leave the original as the rollback. **Default to (b).** Read-only inspection (viewing imports to identify the PDF library in use) is permitted — the locked-file rule applies to writes only.
-- `server/routers.ts` — add-only. Don't refactor existing entries. Adding a new sub-router import + mount line is acceptable.
-- `client/src/pages/QuoteWorkspace.tsx` — explicit permission required.
-- `client/src/pages/AdminPanel.tsx` — explicit permission required.
-
-**Schema rules:**
-- Direct SQL only on Render shell. `drizzle-kit push` is broken on Render for enum-rename scenarios.
-- **Dual schema rule:** `shared/schema.ts` and `drizzle/schema.ts` must always be updated identically.
-- Prefix every Render shell command with `echo go;` — the terminal eats the first ~8 characters on paste.
-
-**Dependencies:**
-- If adding an npm dependency, update `pnpm-lock.yaml` (authoritative) alongside `package.json`. Render ignores `package-lock.json`.
-- Use the pnpm version pinned in `packageManager` (currently `pnpm@10.4.1`). Install globally first if needed: `npm install -g pnpm@10.4.1`.
-- Regenerate with `pnpm install --ignore-scripts --no-frozen-lockfile`. State the exact pinned version in the delivery summary.
-
-**Sector scope:**
-- **Electrical sector is permanently deleted** — not paused. Four GTM sectors remain: IT Services, Commercial Cleaning, Website & Digital Marketing, Pest Control.
-- Of the four, **IT Services is where active development energy goes** — Wez's own sector, the deepest catalogue, the most AI-prompt addendum tuning.
+**Read this first.** This is a self-contained handover. A fresh Claude chat
+reading this, plus the prior `SESSION-START-tile2-blueprint.md`, has
+everything needed to continue. Read the blueprint too — this document
+assumes its context (project, stack, pathways, hard-won lessons,
+communication style) and only records what changed *after* it.
 
 ---
 
-## What shipped in the previous session
+## 0. One-paragraph orientation
 
-### 1. Three audit bugs closed (all deployed and confirmed working in prod)
-
-**Bug 1 — MIME validation on uploads.** New helper `server/_core/uploadValidation.ts` using `file-type@^22.0.1`. Validates the actual bytes of uploaded files against a per-`inputType` allowlist (pdf / image / audio / email / document). Mounted in `server/routers.ts` on `uploadFile` (line ~2010) AND `uploadLogo` (line ~351) — both insertions are add-only. Closes the XSS vector where a forged Content-Type could ship malicious HTML disguised as a PDF.
-
-**Bug 2 — Rate limiting on auth endpoints.** New helper `server/_core/rateLimit.ts` using `express-rate-limit@^8.5.1`. 10 attempts per 15 min per IP, `skipSuccessfulRequests: true` so legitimate logins don't burn quota. 429 response shape matches existing auth error JSON. Mounted in `server/_core/oauth.ts` on `/api/auth/login` and `/api/auth/register` ONLY (no other auth routes). `app.set("trust proxy", 1)` added in `server/_core/index.ts` immediately after `const app = express()` so the limiter sees the real client IP via Render's X-Forwarded-For. Wez confirmed the rate limit works in production — got locked out at attempt 11, restart of the Render service cleared the in-memory bucket immediately. **Future note:** the limiter is in-memory (no Redis/Postgres backing); a service restart resets all buckets. Acceptable for V1; revisit if scaling to multiple Render instances.
-
-**Bug 3 — Document enum verified on prod.** Confirmed via Render shell that `input_type` enum already includes `'document'`. Output: `pdf, image, audio, email, text, document` (6 rows). No migration needed.
-
-### 2. Distributor pricing investigation (DECISION: do not build for V1)
-
-Long architecture exploration on adding live distributor pricing (Ingram Micro, Pax8, TD SYNNEX) to the AI quote generation, prompted by a Manus-AI strategic brief Wez received. Four shapes considered: full distributor API integration with BYOC credentials; public web-scraping via cloud fetch; commercial pricing APIs (SerpAPI / Bright Data / Keepa); Anthropic web search during AI generation.
-
-Empirical findings:
-- Direct cloud-IP fetches to retailers (Amazon, Currys, Ebuyer, Scan, Google Shopping) all return **403 Forbidden** — Cloudflare/Akamai bot protection. Same blocking would happen from Render. Tested live in the session.
-- Anthropic web search CAN reach UK price aggregators (PriceSpy, idealo, PriceRunner) and trade resellers (Ballicom, Senetic, BT Shop) — but data quality has a 7-link chain of trust (retailer wrong → aggregator stale → wrong product match → snippet outdated → AI misreads → etc.). PriceSpy's own docs confirm prices update only 3-5×/day and tell users to verify before purchase.
-- **Most importantly:** real-world test on a quote with 9 mixed hardware items (3× 27-inch monitors, 5× Yealink handsets, 4× 16GB DDR4 RAM, 2× routers, 1× firewall, 1× 24-port switch, 2× WAPs, 6× Cat6 patches, 1× 2U rack) showed the existing AI engine **already produces sensible UK trade estimates for ALL hardware items**, not the £0.00 passthrough rows the prompt rules strictly predicted. Static trace predicted 2 of 9 lines at £0.00; reality showed all 9 lines populated with defensible UK trade prices (£8 Cat6 patch, £45 RAM stick, £85 entry handset, £150 server rack, £180 router, £180 WAP, £220 monitor, £320 24-port switch, £450 firewall), all correctly flagged with amber `ESTIMATE` chips. The model goes outside the explicit anchor list and produces reasonable estimates from training data.
-
-The case for distributor integration weakened significantly. **Wez chose: park the distributor roadmap; keep the AI prompt as-is.** Distributor-objection conversation about competitors seeing pricing data also reinforced this decision.
-
-### 3. UX confusion identified (NOT FIXED — open task, low priority)
-
-In `QuoteWorkspace`, every line item shows a green `Catalog ▾` dropdown on the left. This is the catalogue-picker action button (in `client/src/components/CatalogPicker.tsx`), not a status indicator — but its visual style (filled green, "Catalog" label) competes with the actual `Catalog` source-badge chip (same green, same word) in `SourceBadge.tsx`. Users would reasonably misread the green button as "this row is from my catalogue" when it's actually the trigger to LINK a catalogue item. Especially confusing on an all-estimated quote where every row shows both a green `Catalog ▾` button AND an amber `ESTIMATE` chip — those two messages contradict each other to a fresh user.
-
-**Recommended fix (not yet shipped):**
-- Rename button label from `Catalog ▾` to `+ Link ▾` in `client/src/components/CatalogPicker.tsx` (~2 lines, no locked-file touch).
-- Optionally hide the button on already-matched rows in `client/src/pages/QuoteWorkspace.tsx` (~5 lines, **locked file — requires permission**).
-
-Wez confirmed "no" to the fix in this session — keep on the roadmap, not launch-blocking.
+Wez is the sole developer of IdoYourQuotes (idoyourquotes.com, Sweetbyte
+Ltd). UK SaaS generating AI proposal PDFs for tradespeople/SMEs. Stack:
+React/TS+Vite, tRPC, Drizzle, PostgreSQL, Stripe, Cloudflare R2, OpenAI,
+Claude. Deploys on Render via GitHub Desktop on Windows, pnpm@10.4.1.
+Four GTM sectors: IT Services, Commercial Cleaning, Web & Digital
+Marketing, Pest Control. Wez communicates in short signals ("go", "yes"
+= full greenlight). **Hard rules that still apply:** TypeScript baseline
+is exactly **69** errors (all pre-existing in electrical/admin/stripe/
+core; every delivery must hold at 69, zero new). Locked files
+(`routers.ts`, `QuoteWorkspace.tsx`) get idempotent patch scripts, not
+full files. Dual-schema rule. drizzle-kit push is broken — schema
+changes via raw SQL on Render shell. Never trust the repo zip for file
+state; verify live. Render shell paste eats first ~8 chars — prefix
+multi-line commands with `echo go;`.
 
 ---
 
-## Next task — Schedule of Works + PDF "Jazzing Up"
+## 1. What this session was about
 
-**Wez's brief verbatim:** *"add schedule of works to the quotes when generating pdf and to make the generated pdf look less boring they need jazzing up"*
-
-A **two-part PDF feature**, and both parts touch the most locked file in the repo (`server/pdfGenerator.ts`). Recommended approach: build a new generator alongside the original.
-
-### Part A — Schedule of Works section
-
-A new optional section in the generated PDF showing the implementation timeline for the quoted work. Possible formats: phased list ("Phase 1: Discovery", "Phase 2: Install"), week-by-week milestone table, Gantt-style bars.
-
-**Architectural decisions to align with Wez before code:**
-
-1. **AI-generated, manual, or hybrid?**
-   - AI: lives in the engine output (`server/engines/generalEngine.ts`); needs prompt addendum + new field on quote schema.
-   - Manual: lives as a new editable section in `QuoteWorkspace.tsx` (locked) + new schema column (`quotes.schedule_of_works` JSONB).
-   - **Recommended: Hybrid** — AI drafts a sensible default from the line items, user edits in workspace before generating PDF. Best of both. AI infers phases from line types (installation lines → install phase; subscription lines → activation; training lines → onboarding).
-
-2. **Visual format in the PDF:** timeline bar, phased table, milestone list, week-by-week? Recommend showing Wez 2-3 mockup options.
-
-3. **Default-on or opt-in per quote?** Recommended: opt-in toggle in the workspace, default-off so existing quotes aren't disrupted on first deploy.
-
-4. **Where the toggle/editor lives in the workspace UI.** Likely a new collapsible section between line items and totals, similar to how notes/terms currently render.
-
-### Part B — PDF visual redesign ("jazzing up")
-
-Current PDF is functional but plain. Wez wants visual personality. Likely candidates:
-- Better typography (font pairing, hierarchy).
-- Accent colours pulled from the org's brand (already extracted in `server/services/brandExtraction.ts` — that pipeline produces a brand palette JSON that's currently underused in the PDF).
-- Section headers with visual weight.
-- Cover page.
-- "Your project at a glance" summary block.
-- Icons next to line items by category.
-
-**Critical constraint:** `server/pdfGenerator.ts` is **permanently locked.** Two paths:
-
-**Path 1 — Build a new generator alongside (RECOMMENDED).**
-- Create `server/pdfGeneratorV2.ts` as the new "jazzed up" generator.
-- Feature-flag at the call site in `server/routers.ts` — env var `PDF_GENERATOR_VERSION=v2` or per-org flag in `organizations.feature_flags` JSONB.
-- Original `pdfGenerator.ts` stays as rollback. If V2 breaks, flip the flag, original returns instantly.
-- Once V2 proven, original can be deleted in a future session with explicit unlock.
-
-**Path 2 — Ask for one-time unlock on `pdfGenerator.ts`.**
-- Higher risk: no rollback path other than git revert.
-- Only choose if Wez explicitly says "yes, unlocked for this session" at the start.
-
-**Default to Path 1 unless Wez says otherwise.**
-
-**Architectural decisions to align with Wez before code:**
-
-1. Path 1 (parallel V2 file) or Path 2 (unlock original)?
-2. What does "jazzed up" look like? — **propose 2-3 visual PDF mockups side-by-side** using the Visualizer (mockup module) with the existing brand colour palette. Let Wez pick.
-3. Cover page yes/no?
-4. Per-line icons by category yes/no?
-5. "Project at a glance" summary block yes/no?
-6. Check the PDF library in use first — inspect `pdfGenerator.ts` imports (likely PDFKit, pdf-lib, or Puppeteer). Does it support the richness needed, or does this require switching libraries? Puppeteer (HTML→PDF) gives full CSS control but adds significant cost and complexity; PDFKit is leaner but harder to style. **Inspecting the imports is read-only — locked-file rule still applies for writes.**
-
-### Suggested session sequencing
-
-1. **Inspect `pdfGenerator.ts` imports (read-only)** to identify the current PDF library — this constrains everything downstream.
-2. **Architectural alignment.** Show 2-3 mockup PDF designs side-by-side. Get Wez's pick on visual direction, AI-vs-manual schedule, parallel-vs-unlock approach. **No code until aligned.**
-3. **Schema additions** if needed for schedule storage (`quotes.schedule_of_works` JSONB, nullable). Direct SQL on Render shell. Dual-schema (`shared/schema.ts` + `drizzle/schema.ts`).
-4. **Part A (schedule)** first — smaller, more contained, doesn't require the V2 generator yet if rendered into the existing PDF structure or as a separate section.
-5. **Part B (visual redesign)** second — bigger, requires the V2 generator decision.
-6. **Feature flag** so V2 can ship to staging without affecting prod customers (Sweetbyte) until validated.
+The blueprint left Tile 2 ("Use a branded colour template") verified
+working with 24 templates. This session: Wez asked for **Phase 2.5 (AI
+content enhancement)**, then a cascade of real-world bugs surfaced as he
+tested on production with a real quote (quoteId 201, Sweetbyte Ltd org,
+26-user Headway Essex IT tender). Everything below was found and fixed
+by testing against live Render output, not theory.
 
 ---
 
-## On the roadmap (priority order)
+## 2. What shipped this session (all verified)
 
-### Critical before marketing launch
-1. **Blueprint sweep — E.25 through E.30** retroactive entries:
-   - E.25 — Catalogue Category dropdown
-   - E.26 — IT seed 22 → 88 expansion + AI addendum hardening
-   - E.27 — Polish bundle (Trial cap 100→200, Dashboard nudge softened, demo-quote auto-seed removed, supportKnowledge staleness fix, dictation auto-restart)
-   - E.28 — Public Quote Assistant chatbot (prospect_threads / prospect_messages tables, /, /features, /pricing, /register, /404)
-   - E.29 — Email scheduler piggyback fix (emailFlags JSONB column with transitional read-merge)
-   - E.30 — Audit bugs (MIME validation on uploadFile + uploadLogo, auth rate limiting on login + register, trust proxy added)
-2. **Public chatbot smoke-test feedback** — needs a pass with real prospect-style questions before marketing fires.
-3. **CatalogPicker rename** (`Catalog ▾` → `+ Link ▾`) — Wez deferred; revisit only if it surfaces in beta feedback.
+Delivered in order. Each is a complete file unless noted. **All hold the
+TypeScript baseline at exactly 69.**
 
-### After launch (parked)
-- Distributor pricing integration (Ingram / Pax8 / TD SYNNEX) — **parked indefinitely**; revisit only if real users complain about hardware pricing accuracy. AI estimates were demonstrated good enough in the previous session.
-- Various parked items in `todo.md`.
+### 2.1 Phase 2.5 — AI narrative enhancement
+- **File:** `server/services/slotContentBuilder.ts` (complete file, 581 lines)
+- The three narrative slots (`about-text`, `summary-text`,
+  `methodology-text`) are now AI-written via the codebase-standard
+  `invokeLLM` wrapper (`response_format: json_object`, `temperature:
+  0.4`, `maxTokens: 900`) in a single round-trip, tailored to client/
+  job/sector. Deterministic Phase-2 prose retained as guaranteed
+  fallback for ANY AI failure or when `narrative.aiEnabled` is false.
+- **Key discovery:** the zip's `templateProposalRouter.ts` was already
+  wired for this contract (`narrative: { aiEnabled, sectorLabel }`),
+  but the deployed router was the OLD Phase-2 one. The builder's
+  `narrative` arg was made **optional and defaulted** (`{ aiEnabled:
+  false }`) so a missing arg can never crash — backward- and
+  forward-compatible with either router. This is why `narrative` is
+  optional with optional-chained guards; do not "tidy" that away.
+- Terms stay deterministic by design (legal text; codebase has
+  separate VAT-clause handling).
+- **Confirmed live:** AI narrative is genuinely good — proposals
+  mention the client's actual mission, scope, cloud migration, etc.
+
+### 2.2 Crash fix — `Cannot read properties of undefined (reading 'aiEnabled')`
+- Same file (2.1). Root cause: deployed router (old Phase-2) called
+  `buildSlotContent` without a `narrative` arg → new builder threw.
+  The optional-default fix above resolves it. Verified gone in live
+  logs.
+
+### 2.3 "Unknown templateId" fix
+- **File:** `server/services/templateLibrary.ts` (complete file, 278 lines)
+- Root cause: `getLibraryRoot()` resolved relative to `_dirname`,
+  correct under tsx (dev) but WRONG in the esbuild-bundled prod build
+  (`dist/index.js` → pointed at `src/templates/library`, missing the
+  `server/` segment). `fs.existsSync` failed → every template
+  "unknown".
+- Fix: ordered multi-candidate probe (cwd-first for prod, `_dirname`
+  for dev), memoised, `TEMPLATE_LIBRARY_ROOT` env override retained.
+- **Confirmed live:** logs show `library root resolved: /opt/render/
+  project/src/server/templates/library`.
+
+### 2.4 Modal UI fixes
+- **File:** `client/src/components/BrandedTemplatePickerV2.tsx`
+  (complete file, 304 lines)
+- Squashed/narrow modal: shadcn base `sm:max-w-lg` wasn't overridden
+  by unprefixed `max-w-4xl`. Changed to `w-[95vw] sm:max-w-4xl`.
+- Double X: removed the custom close button (shadcn `DialogContent`
+  renders its own); removed now-unused `X` import.
+- Also updated (see 2.6) to prefer `fileUrl` delivery.
+
+### 2.5 "Failed to fetch" — PDF delivery rearchitected
+- **File:** `server/services/templateProposalRouter.ts` (complete file,
+  508 lines)
+- Root cause: endpoint base64-encoded the ~2.85 MB PDF into the tRPC
+  JSON response (~3.36 MB on the wire, ~8 s). Browser fetch dropped
+  the oversized/slow response (network-layer error, not HTTP).
+- Fix: render → `uploadToR2()` → return a small `{ fileUrl: "/api/
+  file/branded-proposals/<orgId>/...pdf" }` payload. Client downloads
+  directly from the existing authenticated `/api/file` streaming route
+  (same path logos use). Base64 retained ONLY as fallback when R2
+  unconfigured/upload fails. Client (`BrandedTemplatePickerV2.tsx`)
+  prefers `fileUrl`, falls back to `pdfBase64`.
+- **Confirmed live:** PDF downloads cleanly.
+
+### 2.6 Logo fix
+- Same file as 2.5. Root cause: renderer loads templates via `file://`
+  and `org.companyLogo` is a relative `/api/file/{key}` path → resolves
+  to non-existent `file:///api/file/...` server-side (worked in-browser
+  only because base is https).
+- Fix: `resolveLogoDataUri()` in the router resolves the logo to a
+  self-contained base64 `data:` URI before render (R2 fetch via
+  `getFileBuffer` → PNG/JPEG magic-byte detect → `sharp`→PNG fallback),
+  mirroring the proven `fetchAndNormaliseLogo` in
+  `brandedProposalRouter.ts`. Renderer unchanged. Best-effort/null-safe.
+- **Confirmed live:** Sweetbyte logo renders on cover.
+
+### 2.7 Template-quality fixes 1, 2, 5 (the big one)
+- **Deliverable:** `apply-template-quality-fixes.mjs` (repo root,
+  idempotent patch script, 290 lines) — NOT a hand-placed file.
+- After full audit of all 6 designs: **all 24 templates share one
+  byte-identical 702-line `base.css`** (plus `_shared/base.css`, which
+  is a different unreferenced source artifact). One CSS fix block
+  corrects all 24.
+- **Fix 1 (near-black images):** `.duotone-wrap img` used `grayscale +
+  mix-blend-mode:multiply` over `background:var(--brand-primary)` —
+  multiply × dark brand = black (proven by pixel math). Replaced with
+  inline-filter neutralisation (`!important`), full-tonal photo +
+  translucent brand `::after` wash; pale-brand + duotone-light/accent
+  variants handled.
+- **Fix 2 (logo/image collision):** injected `img[data-injected-logo]`
+  constrained (max 220×64, contain), cover content gutter + image
+  clipping.
+- **Fix 5 (LOGO 1-4 boxes):** audited — strip appears 3× with 2 parent
+  structures. Hide `[data-slot="accreditation-strip"]` +
+  `.logo-placeholder` everywhere; collapse ONLY the scoped
+  `margin-top:1.5rem` label-wrapper via `:has()` (Chromium 138) to
+  avoid orphaning the "Technology Partners" label AND avoid wrongly
+  hiding the cover/about content column. Slot kept in DOM for a future
+  partner-logo feature.
+- **The script:** mirrors `apply-phaseN-patches.mjs`. Unique-anchor
+  append, idempotent, scoped md5 dual-rule check (24 served files;
+  `_shared` informational — it was never byte-identical in stock lib).
+  Verified against pristine-from-zip: produces **byte-exact match to
+  the hand-tested split-screen file (md5 `817360ff80fed6cd5feacd5595
+  76403b`)**, idempotent on re-run, all 24 designs carry all 3 fixes.
+- **Confirmed live:** split-screen visually verified (images visible,
+  logo clean, no LOGO boxes). All 24 templates render successfully on
+  Render (`testTemplateRender.ts --all` → 24/24 ✓ after patch).
 
 ---
 
-## House style reminders
+## 3. CURRENT STATE / WHAT WEZ MUST STILL DO
 
-- App-terms before code-terms.
-- No code without alignment.
-- 69 TS-error baseline, locked files respected, dual schema rule, complete files only with folder paths.
-- No interactive pop-ups for questions — prose only.
-- Visual mockups (Visualizer) for UX proposals.
-- `echo go;` prefix on every Render shell command.
+**This is the most important section. The work is done but NOT all
+deployed.**
 
-When ready, start with: *"Read the next session prompt. I'll wait."*
+1. **Code files (2.1–2.6):** these are complete files Wez needs in his
+   repo. STATUS: delivered as files. He must place them, commit via
+   GitHub Desktop, deploy. **VERIFY with Wez whether these are already
+   committed/deployed** — some were confirmed working live (logo, R2
+   delivery, AI narrative, path fix), implying they ARE deployed, but
+   confirm rather than assume (lesson #1).
+
+2. **Template fix script (2.7):** STATUS: Wez ran
+   `apply-template-quality-fixes.mjs` **on the Render shell** — output
+   was clean (`newly patched: 24`, md5 `817360ff` confirmed). **BUT
+   the Render filesystem is ephemeral — that shell run is NOT persisted
+   and reverts on next deploy/restart.** Wez MUST:
+   - Run `node apply-template-quality-fixes.mjs` in his **local
+     Windows repo checkout** (idempotent; will reproduce md5
+     `817360ff`).
+   - Commit the 25 changed `base.css` files via GitHub Desktop.
+   - Push/deploy.
+   Until this local-run-and-commit happens, the template fixes are NOT
+   permanently live.
+
+3. **Visual verification still outstanding:** Wez has only visually
+   confirmed **split-screen**. The other 5 designs (magazine,
+   dark-premium, cards-grid, geometric, clean-tech) render successfully
+   (24/24 ✓) but have NOT been eyeballed. The shared-CSS fix should
+   carry across all, but "should" ≠ confirmed. Recommend: after deploy,
+   generate real proposals on `02-magazine` and `03-dark-premium`
+   (most likely to surface issues) before sending any to a client.
+   - One tunable knob if a design needs it: duotone wash strength is
+     `opacity: 0.28` (and `0.16` for pale brands) in the fix block.
+
+---
+
+## 4. The big open decision (Wez was mid-deliberation)
+
+Wez had **second thoughts about Tile 2's templates** — "designs are
+awful, text runs off, blank spaces, greyscale images." After the fixes
+he decided: **keep Tile 2, fix the templates** (chose this over
+pivoting to Tile 3 for tenders). Fixes 1/2/5 done. Still on the table
+from the audit:
+
+- **Problem 3 — text run-off:** Manus already added "v2.1 OVERFLOW FIX"
+  blocks per design; split-screen contains its text. Needs a visual
+  render-audit of the OTHER 5 designs to size whether run-off is still
+  systemic. PARKED — Wez to decide.
+- **Problem 4 — blank space / content-density mismatch:** STRUCTURAL,
+  not CSS. Templates allocate fixed full-page regions designed for
+  sparser content than a 13-page real tender (page 2 ~95% empty, etc).
+  This is the one genuinely large piece. Honest framing given to Wez:
+  these 24 templates were designed as showcases, not dense-tender
+  containers; "fixing" this may mean per-design page-break
+  restructuring OR repositioning Tile 2 as the "fast simple proposal"
+  tile with Tile 3 (brochure-driven) owning dense tenders. This is a
+  PRODUCT decision, not engineering — do not proceed without Wez's
+  explicit direction. PARKED.
+
+---
+
+## 5. The OTHER big workstream: Tile 2 full editable-text parity (Delivery B)
+
+Wez explicitly asked for this: **"these will be full-on tender quotes
+... we need all text to be editable ... same treatment for 2nd [Tile 2]
+as 3rd [Tile 3]."** NOT STARTED. Architecture was agreed before the
+template-quality detour:
+
+**Key finding that shrinks this dramatically:** Tile 3's editor has
+**NO persistence and NO schema** — it's stateless (`brandedProposal
+Router.ts` line ~24: "persistence can be added in a later delivery").
+Edits live in client React state and are passed back at render time
+(`generateDraft` → user edits → `renderPdf`). So Tile 2 parity needs
+the SAME stateless pattern — **no schema change, no migration, no
+override store.** Much smaller/lower-risk than first feared.
+
+**Agreed architecture (phased, each verifiable on Render before next):**
+- **B1** — Add `prepareBrandedProposalV2` (returns resolved editable
+  slot map + editable-slot manifest to client; does NOT render).
+  Adapt the render endpoint to accept edited slots back (falls back to
+  building its own if none passed — backward compatible). No UI. Proves
+  the data path. Mirrors Tile 3's `generateDraft`/`renderPdf` exactly.
+- **B2** — Editor UI in `BrandedTemplatePickerV2.tsx`: select design →
+  prepare → edit every text slot (about, summary, methodology, terms,
+  stats, testimonials, service descriptions, titles) in React state →
+  render. Structured pricing tables stay computed/read-only (same as
+  Tile 3 — editing a computed VAT table by hand is a footgun).
+- **B3** — Parity polish: per-section AI-regenerate buttons (Tile 3 has
+  `regenerateChapter`), slot-coverage gaps.
+
+**Phasing was agreed: B1 → B2 → B3, each verified on Render before the
+next** (the discipline that kept the baseline clean throughout).
+
+---
+
+## 6. Deferred / parked (from blueprint + this session)
+
+In rough priority:
+- **Delivery B** (section 5) — the explicitly-requested big one.
+- **Problem 4** (section 4) — structural blank-space / product decision.
+- **Problem 3** (section 4) — text run-off audit on 5 unverified designs.
+- **Partner-logo upload feature** — the `[data-slot="accreditation-
+  strip"]` is hidden but retained in DOM; a future feature lets users
+  upload partner/accreditation logos and stops hiding it.
+- From blueprint, still parked: per-user preview thumbnails;
+  `brandAccentColor` schema column + UI; PDF caching to R2 by content
+  hash (the R2 upload is now done in 2.5, caching is the remaining
+  add-on); Schedule of Works workspace UI; tiered pricing toggle;
+  cleanup (remove `BrandChoiceModal`, legacy `generateBrandedProposal`,
+  `brandedProposalRenderer`, drop legacy `proposal_template` column);
+  phantom contract-term line item; EDR boundary; soft tender
+  requirements; IT catalogue expansion; M365 anchor; R2 storage
+  hygiene (brochure replacement orphans old file); support chat
+  widget / ticket form / SEO.
+
+---
+
+## 7. File map — everything changed this session
+
+| Path | Folder | This session |
+|------|--------|--------------|
+| `server/services/slotContentBuilder.ts` | server/services | COMPLETE FILE — Phase 2.5 AI narrative + optional-narrative crash fix |
+| `server/services/templateLibrary.ts` | server/services | COMPLETE FILE — multi-candidate `getLibraryRoot()` |
+| `server/services/templateProposalRouter.ts` | server/services | COMPLETE FILE — R2 delivery + `resolveLogoDataUri` logo fix |
+| `client/src/components/BrandedTemplatePickerV2.tsx` | client/src/components | COMPLETE FILE — modal width/double-X + `fileUrl` download |
+| `apply-template-quality-fixes.mjs` | repo root | NEW idempotent script — propagates duotone/logo/strip fixes to all 24 `base.css` + `_shared` |
+| (25× `base.css`) | server/templates/library/**/assets/ + _shared | MODIFIED BY THE SCRIPT — do not hand-edit; run the script |
+
+Untouched/locked, as always: `pdfGenerator.ts`,
+`brandedProposalRenderer.ts`, `brandedProposalAssembler.ts`,
+`BrandChoiceModal.tsx`, `routers.ts` (only the existing Phase-2 mount),
+`QuoteWorkspace.tsx`.
+
+---
+
+## 8. Verification protocol (to confirm nothing regressed)
+
+1. TypeScript: `node node_modules/typescript/lib/tsc.js --noEmit` →
+   exactly **69** errors, none in the 4 changed `.ts/.tsx` files.
+2. Template script: `node apply-template-quality-fixes.mjs` (local) →
+   `newly patched` + `already patched` = 25, `skipped (no anchor): 0`,
+   `✓ All 24 served template base.css are byte-identical (md5
+   817360ff80fed6cd5feacd559576403b)`. Re-run = `newly patched: 0`
+   (idempotent).
+3. Render shell: `echo go; npx tsx server/scripts/testTemplateRender.ts
+   --all` → 24/24 ✓.
+4. Live app: generate a Pro/Team proposal on 2-3 designs → PDF
+   downloads (R2 path, fast), logo present, images visible (not black),
+   no "LOGO 1-4" boxes, AI narrative client-specific, pricing correct.
+
+---
+
+## 9. Immediate next action for the new chat
+
+Open by confirming with Wez:
+- (a) Are the section-2 code files committed/deployed? (logo, R2,
+  AI narrative, path fix all confirmed working live — likely yes, but
+  verify.)
+- (b) Has he run the template script **locally** and committed the 25
+  `base.css` files? (Shell run does NOT persist.)
+- (c) Has he visually checked a non-split-screen design?
+
+Then ask which he wants next: **Delivery B (editable-text parity — the
+explicitly requested big one)**, Problem 4 (structural/product
+decision), Problem 3 (run-off audit), or a parked item. Architecture
+first, alignment, then code. Hold baseline at 69.
