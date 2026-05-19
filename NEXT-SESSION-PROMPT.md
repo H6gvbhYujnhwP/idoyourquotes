@@ -1,10 +1,18 @@
 # IdoYourQuotes — Next Session Handover (Tile 2 continuation)
 
 **Read this first.** This is a self-contained handover. A fresh Claude chat
-reading this, plus the prior `SESSION-START-tile2-blueprint.md`, has
+reading this, plus `IdoYourQuotes-Blueprint.md` (v3.10, the project
+context — the "SESSION-START / blueprint" doc Wez refers to), has
 everything needed to continue. Read the blueprint too — this document
 assumes its context (project, stack, pathways, hard-won lessons,
 communication style) and only records what changed *after* it.
+
+> **Lineage note:** this is v2 of this handover. The prior session did
+> the Tile 2 template-quality work (sections 2.1–2.7). The session in
+> between (this one) did **no code** — it was verification-only and
+> resolved two of the three open confirmations from file state.
+> Sections 1–8 are carried forward intact from v1; **Section 0.5 and
+> Section 3 are the only things that changed.** Nothing shipped since v1.
 
 ---
 
@@ -27,10 +35,32 @@ multi-line commands with `echo go;`.
 
 ---
 
-## 1. What this session was about
+## 0.5. STATUS OF THE THREE CONFIRMATIONS (updated this session)
+
+The previous handover opened with three things to confirm with Wez
+before proposing work. This session verified file state against the
+zip Wez supplied (`idoyourquotes-main__33_.zip`). Outcome:
+
+| # | Confirmation | Status after this session |
+|---|---|---|
+| 1 | Section-2 code files committed/deployed | **LIKELY DONE — verify the deploy.** All five deliverables present at *exact* handover line counts (slotContentBuilder.ts 581, templateLibrary.ts 278, templateProposalRouter.ts 508, BrandedTemplatePickerV2.tsx 304, apply-template-quality-fixes.mjs 290). Zip has no git metadata so deploy can't be proven from files — but presence at exact line counts + handover's "confirmed live" notes (logo, R2, AI narrative, path fix) make committed/deployed the strong reading. **Still ask Wez to confirm the deploy went out.** |
+| 2 | Template script run locally + 25 base.css committed | **NOT DONE — this is the blocking next action.** The zip is in the pre-script state: 23 of 24 served `base.css` are pristine (md5 `6adeba3f6101baa75835afbce6bdaf4d`, 702 lines); only `it-services/01-split-screen/assets/base.css` carries the fix (md5 `817360ff80fed6cd5feacd559576403b`, 851 lines — the single hand-tested file). If the script had been run-and-committed, all 24 would be `817360ff`. `_shared/base.css` untouched (`080a5c02…`, 763 lines) — expected, it's informational only. Script itself re-verified correct & idempotent this session (dry-run on a tree copy: `newly patched: 24, already patched: 1, skipped: 0`, all 24 → `817360ff`; tree then restored to as-received). |
+| 3 | Visual check of a non-split-screen design | **UNKNOWN — only Wez can answer.** Not derivable from files. Carried forward unchanged. |
+
+**Net:** the one hard blocker is confirmation 2. Until Wez runs
+`node apply-template-quality-fixes.mjs` in his **local Windows repo
+checkout** and commits the resulting 25 `base.css` files via GitHub
+Desktop, 23 of 24 templates are still serving the unfixed CSS in
+production (black duotone images, logo collision, LOGO 1-4 boxes). It
+is a ~2-minute, zero-code-risk action for Wez. **The new chat should
+push on this first**, then proceed to the chosen workstream.
+
+---
+
+## 1. What the prior (code) session was about
 
 The blueprint left Tile 2 ("Use a branded colour template") verified
-working with 24 templates. This session: Wez asked for **Phase 2.5 (AI
+working with 24 templates. That session: Wez asked for **Phase 2.5 (AI
 content enhancement)**, then a cascade of real-world bugs surfaced as he
 tested on production with a real quote (quoteId 201, Sweetbyte Ltd org,
 26-user Headway Essex IT tender). Everything below was found and fixed
@@ -38,7 +68,7 @@ by testing against live Render output, not theory.
 
 ---
 
-## 2. What shipped this session (all verified)
+## 2. What shipped in the prior session (all verified)
 
 Delivered in order. Each is a complete file unless noted. **All hold the
 TypeScript baseline at exactly 69.**
@@ -153,36 +183,44 @@ TypeScript baseline at exactly 69.**
 
 ## 3. CURRENT STATE / WHAT WEZ MUST STILL DO
 
-**This is the most important section. The work is done but NOT all
-deployed.**
+**This is the most important section. The prior session's work is done
+but NOT all deployed. This session (verification-only) tightened the
+picture — see Section 0.5 for the at-a-glance table.**
 
-1. **Code files (2.1–2.6):** these are complete files Wez needs in his
-   repo. STATUS: delivered as files. He must place them, commit via
-   GitHub Desktop, deploy. **VERIFY with Wez whether these are already
-   committed/deployed** — some were confirmed working live (logo, R2
-   delivery, AI narrative, path fix), implying they ARE deployed, but
-   confirm rather than assume (lesson #1).
+1. **Code files (2.1–2.6):** complete files Wez needed in his repo.
+   STATUS: **present in the zip at exact handover line counts**, and
+   handover records logo/R2/AI-narrative/path-fix all confirmed working
+   live — so these are almost certainly committed AND deployed. The zip
+   carries no git metadata, so the *deploy* itself still can't be
+   proven from files. **Action for new chat:** one quick confirm with
+   Wez that the section-2 deploy went out and is the version running.
+   Treat as done unless he says otherwise.
 
-2. **Template fix script (2.7):** STATUS: Wez ran
-   `apply-template-quality-fixes.mjs` **on the Render shell** — output
-   was clean (`newly patched: 24`, md5 `817360ff` confirmed). **BUT
-   the Render filesystem is ephemeral — that shell run is NOT persisted
-   and reverts on next deploy/restart.** Wez MUST:
+2. **Template fix script (2.7): THIS IS THE BLOCKER. NOT DONE in the
+   zip Wez supplied.** Verified this session: 23/24 served `base.css`
+   are pristine (`6adeba3f…`, 702L); only
+   `it-services/01-split-screen` is patched (`817360ff…`, 851L). The
+   earlier clean run was on the **Render shell**, which is ephemeral
+   and reverts on deploy/restart — so 23 templates are STILL serving
+   the unfixed CSS (black duotone images, logo collision, LOGO 1-4
+   boxes) in production. Wez MUST:
    - Run `node apply-template-quality-fixes.mjs` in his **local
-     Windows repo checkout** (idempotent; will reproduce md5
-     `817360ff`).
+     Windows repo checkout** (idempotent; reproduces md5 `817360ff`;
+     this session's dry-run confirms it will report
+     `newly patched: 24, already patched: 1`).
    - Commit the 25 changed `base.css` files via GitHub Desktop.
    - Push/deploy.
-   Until this local-run-and-commit happens, the template fixes are NOT
-   permanently live.
+   Until this local-run-and-commit-and-deploy happens, the template
+   fixes are NOT permanently live. **New chat: push on this first.**
 
 3. **Visual verification still outstanding:** Wez has only visually
    confirmed **split-screen**. The other 5 designs (magazine,
    dark-premium, cards-grid, geometric, clean-tech) render successfully
    (24/24 ✓) but have NOT been eyeballed. The shared-CSS fix should
-   carry across all, but "should" ≠ confirmed. Recommend: after deploy,
-   generate real proposals on `02-magazine` and `03-dark-premium`
-   (most likely to surface issues) before sending any to a client.
+   carry across all, but "should" ≠ confirmed. Recommend: after the
+   item-2 deploy, generate real proposals on `02-magazine` and
+   `03-dark-premium` (most likely to surface issues) before sending
+   any to a client. Cannot be derived from files — ask Wez.
    - One tunable knob if a design needs it: duotone wash strength is
      `opacity: 0.28` (and `0.16` for pale brands) in the fix block.
 
@@ -247,7 +285,7 @@ next** (the discipline that kept the baseline clean throughout).
 
 ---
 
-## 6. Deferred / parked (from blueprint + this session)
+## 6. Deferred / parked (from blueprint + prior session)
 
 In rough priority:
 - **Delivery B** (section 5) — the explicitly-requested big one.
@@ -269,21 +307,23 @@ In rough priority:
 
 ---
 
-## 7. File map — everything changed this session
+## 7. File map — everything changed in the prior code session
 
-| Path | Folder | This session |
+| Path | Folder | Prior session |
 |------|--------|--------------|
 | `server/services/slotContentBuilder.ts` | server/services | COMPLETE FILE — Phase 2.5 AI narrative + optional-narrative crash fix |
 | `server/services/templateLibrary.ts` | server/services | COMPLETE FILE — multi-candidate `getLibraryRoot()` |
 | `server/services/templateProposalRouter.ts` | server/services | COMPLETE FILE — R2 delivery + `resolveLogoDataUri` logo fix |
 | `client/src/components/BrandedTemplatePickerV2.tsx` | client/src/components | COMPLETE FILE — modal width/double-X + `fileUrl` download |
 | `apply-template-quality-fixes.mjs` | repo root | NEW idempotent script — propagates duotone/logo/strip fixes to all 24 `base.css` + `_shared` |
-| (25× `base.css`) | server/templates/library/**/assets/ + _shared | MODIFIED BY THE SCRIPT — do not hand-edit; run the script |
+| (25× `base.css`) | server/templates/library/**/assets/ + _shared | TO BE MODIFIED BY THE SCRIPT — do not hand-edit; Wez must run the script locally + commit (see §3.2 — STILL OUTSTANDING) |
 
 Untouched/locked, as always: `pdfGenerator.ts`,
 `brandedProposalRenderer.ts`, `brandedProposalAssembler.ts`,
 `BrandChoiceModal.tsx`, `routers.ts` (only the existing Phase-2 mount),
 `QuoteWorkspace.tsx`.
+
+This (verification-only) session changed **no files**.
 
 ---
 
@@ -291,11 +331,13 @@ Untouched/locked, as always: `pdfGenerator.ts`,
 
 1. TypeScript: `node node_modules/typescript/lib/tsc.js --noEmit` →
    exactly **69** errors, none in the 4 changed `.ts/.tsx` files.
+   (Note: a fresh zip has no `node_modules`; `pnpm install` first if
+   running the baseline in a clean checkout.)
 2. Template script: `node apply-template-quality-fixes.mjs` (local) →
-   `newly patched` + `already patched` = 25, `skipped (no anchor): 0`,
-   `✓ All 24 served template base.css are byte-identical (md5
-   817360ff80fed6cd5feacd559576403b)`. Re-run = `newly patched: 0`
-   (idempotent).
+   from a pristine zip expect `newly patched: 24`, `already patched:
+   1`, `skipped (no anchor): 0`, `✓ All 24 served template base.css
+   are byte-identical (md5 817360ff80fed6cd5feacd559576403b)`. Re-run
+   = `newly patched: 0` (idempotent).
 3. Render shell: `echo go; npx tsx server/scripts/testTemplateRender.ts
    --all` → 24/24 ✓.
 4. Live app: generate a Pro/Team proposal on 2-3 designs → PDF
@@ -306,15 +348,22 @@ Untouched/locked, as always: `pdfGenerator.ts`,
 
 ## 9. Immediate next action for the new chat
 
-Open by confirming with Wez:
-- (a) Are the section-2 code files committed/deployed? (logo, R2,
-  AI narrative, path fix all confirmed working live — likely yes, but
-  verify.)
-- (b) Has he run the template script **locally** and committed the 25
-  `base.css` files? (Shell run does NOT persist.)
-- (c) Has he visually checked a non-split-screen design?
+The two file-derivable confirmations are already resolved (Section
+0.5). So the new chat should:
 
-Then ask which he wants next: **Delivery B (editable-text parity — the
-explicitly requested big one)**, Problem 4 (structural/product
-decision), Problem 3 (run-off audit), or a parked item. Architecture
-first, alignment, then code. Hold baseline at 69.
+1. **Lead with the blocker.** Tell Wez plainly: in the zip he supplied,
+   23 of 24 templates are still on the unfixed CSS. He needs to run
+   `node apply-template-quality-fixes.mjs` locally on Windows, commit
+   the 25 `base.css` files via GitHub Desktop, and deploy. ~2 min,
+   zero code risk. Nothing else should ship before this.
+2. **Quick-confirm** the section-2 deploy is the version running live
+   (treat as done unless Wez says otherwise — files are present at
+   exact line counts).
+3. **Ask** whether he's visually checked a non-split-screen design
+   (only Wez can answer; not file-derivable).
+4. Then ask which workstream he wants: **Delivery B (editable-text
+   parity — the explicitly requested big one; B1→B2→B3)**, Problem 4
+   (structural/product decision), Problem 3 (run-off audit), or a
+   parked item. Architecture first, get alignment, then code. Hold
+   baseline at 69. Locked files get idempotent patch scripts. Folder
+   location with every deliverable.
