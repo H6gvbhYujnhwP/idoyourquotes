@@ -34,7 +34,7 @@ export const TIER_CONFIG = {
     name: 'Solo',
     priceId: process.env.STRIPE_PRICE_SOLO || '',
     maxUsers: 1,
-    maxQuotesPerMonth: 10,
+    maxQuotesPerMonth: 5,
     maxCatalogItems: 200,
     monthlyPrice: 5900, // pence
     features: ['ai_takeoff', 'quote_generation', 'pdf_export', 'basic_catalog', 'email_support'],

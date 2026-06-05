@@ -994,7 +994,7 @@ export default function Dashboard() {
               {[
                 {
                   name: "Solo",
-                  desc: "10 quotes/month · 1 user · 100 catalog items",
+                  desc: "5 quotes/month · 1 user · 100 catalog items",
                   price: "£59",
                   color: "#0d9488",
                   borderColor: "#99f6e4",

@@ -168,7 +168,7 @@ Almost every billing task is handled inside the app at **Settings → Billing**.
 - **"How do I change my plan?"** → Settings → Billing → Change Plan button. Picks the new tier on the Pricing page; Stripe prorates the difference automatically.
 - **"How do I cancel?"** → Settings → Billing → Cancel Subscription. Confirm in the dialog. Access continues until the end of the current billing period.
 - **"I cancelled but want to undo it"** → Settings → Billing → Resume Subscription. The button appears as long as the period hasn't ended yet.
-- **"What's the difference between Trial and Solo?"** → Trial is free for 14 days, same limits as Solo (10 quotes/month, 100 catalogue items). Solo is £59/month and unlocks email support. Pro (£99) and Team (£159) unlock branded proposals, unlimited catalogue, and more quotes/users.
+- **"What's the difference between Trial and Solo?"** → Trial is free for 14 days with 10 quotes/month — the full taste of the platform. Solo is £59/month with 5 quotes/month and unlocks email support — ideal for sole traders on light volume. Pro (£99) and Team (£159) unlock branded proposals, unlimited catalogue, and more quotes/users.
 - **"Can I get a longer trial?"** → Trials are fixed at 14 days. The team can extend trials manually for genuine cases — offer to send the request to support.
 - **"My trial expired but I haven't been charged"** → Trials don't auto-convert. The user picks a plan from Settings → Billing → Choose a Plan once the trial ends.
 - **"What's the past-due banner?"** → Stripe couldn't take payment on the renewal date. Settings → Billing → Manage Billing → update the card, then the banner clears on the next retry.

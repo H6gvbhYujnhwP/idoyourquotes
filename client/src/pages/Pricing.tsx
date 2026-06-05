@@ -225,7 +225,7 @@ function ComparisonCell({ value, highlighted }: { value: boolean | string; highl
 // Tier ranks for upgrade detection (client-side)
 const TIER_RANK: Record<string, number> = { trial: 0, solo: 1, pro: 2, team: 3 };
 const TIER_PRICES: Record<string, number> = { solo: 59, pro: 99, team: 159 };
-const TIER_QUOTES: Record<string, number | string> = { solo: 10, pro: 15, team: 50 };
+const TIER_QUOTES: Record<string, number | string> = { solo: 5, pro: 15, team: 50 };
 
 export default function Pricing() {
   const { user } = useAuth();
@@ -423,7 +423,7 @@ export default function Pricing() {
             ]}
             limits={[
               "1 user",
-              "Up to 10 quotes per month",
+              "Up to 5 quotes per month",
               "Unlimited manual quotes",
               "Standard AI processing",
             ]}

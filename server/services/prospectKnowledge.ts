@@ -84,7 +84,7 @@ The AI never sends anything automatically. The user reviews and approves every q
 Four tiers available. Prices ex VAT.
 
 - **Trial** — free, 14 days, 1 user, 10 quotes/month, 200 catalogue items. Lets the user experience the full product before committing.
-- **Solo** — £59/month, 1 user, 10 quotes/month, 200 catalogue items. Best for sole traders.
+- **Solo** — £59/month, 1 user, 5 quotes/month, 200 catalogue items. Best for sole traders.
 - **Pro** — £99/month, 2 users, 15 quotes/month, unlimited catalogue, shared catalogue, scope control, branded proposal feature, priority support. Best for small teams.
 - **Team** — £159/month, 5 users, 50 quotes/month, unlimited catalogue, everything in Pro plus advanced modelling. Best for established small businesses with regular tendering volume.
 
