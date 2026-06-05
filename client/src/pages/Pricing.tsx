@@ -567,7 +567,7 @@ export default function Pricing() {
               <tbody>
                 {[
                   ["Users", "1", "Up to 2", "Up to 5"],
-                  ["AI quotes per month", "10", "15", "50"],
+                  ["AI quotes per month", "5", "15", "50"],
                   ["Unlimited manual quotes", true, true, true],
                   ["PDF tenders & specifications", true, true, true],
                   ["Voice notes & dictation", true, true, true],

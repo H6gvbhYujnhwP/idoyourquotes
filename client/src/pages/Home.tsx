@@ -314,7 +314,7 @@ export default function Home() {
                 £59<span className="text-base font-normal text-gray-400">/mo</span>
               </div>
               <p className="text-xs text-gray-400 mt-0.5">£70.80 inc VAT</p>
-              <p className="text-sm text-gray-500 mt-3">1 user · 10 AI quotes/month</p>
+              <p className="text-sm text-gray-500 mt-3">1 user · 5 AI quotes/month</p>
             </div>
             <div className="rounded-2xl p-6 text-left relative overflow-hidden" style={{ background: NAVY }}>
               <div className="absolute top-3 right-3 text-white text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: TEAL }}>

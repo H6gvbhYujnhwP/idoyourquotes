@@ -42,7 +42,7 @@ The active sectors are: **IT Services**, **Commercial Cleaning**, **Website & Di
 | Plan   | Price/mo | Quotes/mo | Catalogue items | Users | Branded proposals |
 |--------|----------|-----------|-----------------|-------|-------------------|
 | Trial  | Free     | 10        | 100             | 1     | No                |
-| Solo   | £59      | 10        | 100             | 1     | No                |
+| Solo   | £59      | 5         | 100             | 1     | No                |
 | Pro    | £99      | 15        | Unlimited       | 2     | Yes               |
 | Team   | £159     | 50        | Unlimited       | 5     | Yes               |
 
@@ -239,7 +239,7 @@ Settings → Profile → scroll to the bottom → Delete account. An exit survey
 The two big upgrades on Pro:
 1. **Branded proposals** with the user's brochure (Solo can't use this).
 2. **Unlimited catalogue items** (Solo caps at 100).
-3. Plus 5 more quotes per month (15 vs 10) and a second user seat.
+3. Plus 10 more quotes per month (15 vs 5) and a second user seat.
 
 If the user mostly sends Simple-quote PDFs to clients, Solo is fine. If they want to compete on professional-looking documents, Pro is the upgrade.
 
