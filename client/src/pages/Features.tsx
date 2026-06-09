@@ -746,8 +746,8 @@ export default function Features() {
               <h4 className="text-white font-semibold text-sm mb-3">Company</h4>
               <ul className="space-y-2 text-sm">
                 <li><span className="opacity-60">Contact</span></li>
-                <li><span className="opacity-60">Privacy Policy</span></li>
-                <li><span className="opacity-60">Terms of Service</span></li>
+                <li><Link href="/privacy" className="hover:text-[#0d9488] transition-colors">Privacy Policy</Link></li>
+                <li><Link href="/terms" className="hover:text-[#0d9488] transition-colors">Terms of Service</Link></li>
               </ul>
             </div>
             <div>

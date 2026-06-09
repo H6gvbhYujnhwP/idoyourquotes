@@ -225,7 +225,7 @@ function ComparisonCell({ value, highlighted }: { value: boolean | string; highl
 // Tier ranks for upgrade detection (client-side)
 const TIER_RANK: Record<string, number> = { trial: 0, solo: 1, pro: 2, team: 3 };
 const TIER_PRICES: Record<string, number> = { solo: 59, pro: 99, team: 159 };
-const TIER_QUOTES: Record<string, number | string> = { solo: 5, pro: 15, team: 50 };
+const TIER_QUOTES: Record<string, number | string> = { solo: 10, pro: 15, team: 50 };
 
 export default function Pricing() {
   const { user } = useAuth();
@@ -423,7 +423,7 @@ export default function Pricing() {
             ]}
             limits={[
               "1 user",
-              "Up to 5 quotes per month",
+              "Up to 10 quotes per month",
               "Unlimited manual quotes",
               "Standard AI processing",
             ]}
@@ -567,7 +567,7 @@ export default function Pricing() {
               <tbody>
                 {[
                   ["Users", "1", "Up to 2", "Up to 5"],
-                  ["AI quotes per month", "5", "15", "50"],
+                  ["AI quotes per month", "10", "15", "50"],
                   ["Unlimited manual quotes", true, true, true],
                   ["PDF tenders & specifications", true, true, true],
                   ["Voice notes & dictation", true, true, true],
@@ -716,8 +716,8 @@ export default function Pricing() {
               <h4 className="text-white font-semibold text-sm mb-3">Company</h4>
               <ul className="space-y-2 text-sm">
                 <li><span className="opacity-60">Contact</span></li>
-                <li><span className="opacity-60">Privacy Policy</span></li>
-                <li><span className="opacity-60">Terms of Service</span></li>
+                <li><Link href="/privacy" className="hover:text-[#0d9488] transition-colors">Privacy Policy</Link></li>
+                <li><Link href="/terms" className="hover:text-[#0d9488] transition-colors">Terms of Service</Link></li>
               </ul>
             </div>
             <div>
