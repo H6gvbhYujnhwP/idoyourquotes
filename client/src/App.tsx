@@ -11,6 +11,8 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Pricing from "./pages/Pricing";
 import Features from "./pages/Features";
+import Privacy from "./pages/Privacy";
+import Terms from "./pages/Terms";
 import Dashboard from "./pages/Dashboard";
 import QuoteRouter from "./pages/QuoteRouter";
 import Catalog from "./pages/Catalog";
@@ -28,6 +30,14 @@ function Router() {
       {/* Public marketing pages */}
       <Route path="/features" component={Features} />
       <Route path="/pricing" component={Pricing} />
+
+      {/* Public legal pages — must be reachable with no login.
+          /privacy is the canonical URL we use on Facebook/Meta lead
+          ads, so it must stay stable. Both pages are bare (no
+          DashboardLayout) and excluded from PublicChatWidget so
+          they read cleanly as official, distraction-free documents. */}
+      <Route path="/privacy" component={Privacy} />
+      <Route path="/terms" component={Terms} />
       
       {/* Auth pages */}
       <Route path="/login" component={Login} />

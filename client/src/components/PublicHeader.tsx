@@ -18,7 +18,14 @@ import { ArrowRight, Menu, X } from "lucide-react";
 
 const TEAL = "#0d9488";
 
-export type PublicPage = "home" | "features" | "pricing" | "login" | "register";
+export type PublicPage =
+  | "home"
+  | "features"
+  | "pricing"
+  | "login"
+  | "register"
+  | "privacy"
+  | "terms";
 
 interface Props {
   currentPage: PublicPage;
