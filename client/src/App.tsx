@@ -5,6 +5,7 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import DashboardLayout from "./components/DashboardLayout";
 import PublicChatWidget from "./components/PublicChatWidget";
+import MetaPixelTracker from "./components/MetaPixelTracker";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
@@ -101,6 +102,11 @@ function App() {
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster />
+          {/* Meta Pixel PageView tracker — listens to wouter route
+              changes and fires fbq('track', 'PageView') on each one.
+              Pairs with the base pixel snippet in client/index.html
+              which handles the initial PageView. Renders nothing. */}
+          <MetaPixelTracker />
           <Router />
           {/* Quote Assistant — public-prospect chat widget. Renders only
               on public marketing routes (Home, Features, Pricing, Register,
