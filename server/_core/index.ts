@@ -13,6 +13,7 @@ import { getSessionCookieOptions } from "./cookies";
 import { serveStatic, setupVite } from "./vite";
 import { registerStripeWebhook } from "../services/stripeWebhook";
 import { startEmailScheduler } from "../services/emailScheduler";
+import { registerWorktrackrBridge } from "./worktrackrBridge";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -207,6 +208,12 @@ async function startServer() {
       }
     }
   });
+
+  // ── WorkTrackr bridge ───────────────────────────────────────────────────────
+  // Read-only catalogue + quotes pull for WorkTrackr. Verifies X-WT-Signature
+  // against WORKTRACKR_BRIDGE_SECRET and scopes to WORKTRACKR_BRIDGE_ADMIN_EMAIL's
+  // account. Must be before serveStatic so the SPA handler doesn't intercept it.
+  registerWorktrackrBridge(app);
 
   // tRPC API
   app.use(
