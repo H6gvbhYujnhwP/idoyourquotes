@@ -1872,11 +1872,25 @@ IMPORTANT: Address the email greeting using the first name only (e.g. "Hi ${gree
           (data as any).costPrice = null;
         }
 
-        // Recalculate total if quantity or rate changed
+        // PATCH: empty-string decimal normalise (lineItems.update)
+        // Empty string from a cleared Rate or Qty input would
+        // otherwise hit the decimal(12,2)/(12,4) columns and 500
+        // out — Postgres rejects "" for numeric types. Substitute
+        // the existing row's value (matching what the total
+        // recalc fallback already does on the next lines) before
+        // updateLineItem writes. Single existingItem fetch feeds
+        // both the normalisation AND the recalc — no extra DB
+        // round trip vs. the pre-patch shape.
         if (data.quantity !== undefined || data.rate !== undefined) {
           const existingItems = await getLineItemsByQuoteId(quoteId);
           const existingItem = existingItems.find(i => i.id === id);
           if (existingItem) {
+            if (data.rate !== undefined && data.rate.trim() === "") {
+              data.rate = existingItem.rate || "0.00";
+            }
+            if (data.quantity !== undefined && data.quantity.trim() === "") {
+              data.quantity = existingItem.quantity || "1.0000";
+            }
             const quantity = parseFloat(data.quantity || existingItem.quantity || "1");
             const rate = parseFloat(data.rate || existingItem.rate || "0");
             (data as any).total = (quantity * rate).toFixed(2);
@@ -3661,30 +3675,6 @@ Rules:
 
         const { quoteId, ...data } = input;
         return upsertTenderContext(quoteId, data);
-      }),
-
-    // Phase 4B Custom-Sections — additive endpoint for the Standard
-    // Quote Review modal. Writes ONLY the custom_sections column on
-    // the tender_contexts row; existing fields (assumptions/exclusions/
-    // notes/symbolMappings) are preserved because the Drizzle helper
-    // only updates columns present in the SET clause. The Review modal
-    // calls this in parallel with tenderContext.upsert on save when
-    // the custom-sections list is dirty.
-    upsertCustomSections: protectedProcedure
-      .input(z.object({
-        quoteId: z.number(),
-        customSections: z.array(z.object({
-          heading: z.string(),
-          body: z.string(),
-        })),
-      }))
-      .mutation(async ({ ctx, input }) => {
-        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
-        if (!quote) throw new Error("Quote not found");
-
-        return upsertTenderContext(input.quoteId, {
-          customSections: input.customSections,
-        });
       }),
   }),
 
