@@ -132,7 +132,11 @@ function mapProduct(c: CatalogItem) {
     sku: null, // IDYQ catalogue items have no SKU column
     name: c.name,
     description: c.description ?? null,
-    unit_price: num(c.defaultRate),
+    unit: c.unit ?? null,
+    unit_price: num(c.defaultRate), // sell ex VAT
+    cost_price: num(c.costPrice), // buy-in ex VAT
+    install_hours: num((c as any).installTimeHrs),
+    pricing_type: c.pricingType ?? null, // 'standard' | 'monthly'
     currency: CURRENCY,
     category: c.category ?? null,
     active: Number((c as any).isActive ?? 1) !== 0,
