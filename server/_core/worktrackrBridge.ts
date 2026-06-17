@@ -145,13 +145,25 @@ function mapProduct(c: CatalogItem) {
 }
 
 function mapLine(l: QuoteLineItem) {
+  const qty = num(l.quantity);
+  const unitCost = num(l.costPrice); // buy-in ex VAT, per unit (null if not set)
+  const lineTotal = num(l.total); // sell ex VAT, line total
+  // IDYQ derives profit in its UI (sell − buy-in × qty); compute the same here so
+  // WorkTrackr matches the quote to the penny. No cost set -> full sell is profit.
+  const profit =
+    lineTotal === null
+      ? null
+      : Math.round((lineTotal - (unitCost ?? 0) * (qty ?? 0)) * 100) / 100;
   return {
     product_id: null, // IDYQ line items aren't linked to catalogue items
     sku: null,
     description: l.description ?? (l as any).itemName ?? null,
-    qty: num(l.quantity),
+    qty,
     unit_price: num(l.rate),
-    line_total: num(l.total),
+    line_total: lineTotal,
+    cost_price: unitCost, // NEW: buy-in ex VAT (per unit)
+    profit, // NEW: line profit ex VAT (sell − buy-in × qty)
+    pricing_type: l.pricingType ?? null, // NEW: 'one_off' | 'annual' | 'monthly' …
   };
 }
 
