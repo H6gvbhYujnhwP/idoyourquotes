@@ -78,7 +78,14 @@ export async function invokeClaude(params: ClaudeInvokeParams): Promise<ClaudeIn
   }
 
   const payload = {
-    model: "claude-sonnet-4-20250514",
+    // Note: previous model "claude-sonnet-4-20250514" was retired by
+    // Anthropic on June 15, 2026 — that ID now 404s. See:
+    // https://docs.claude.com/en/docs/about-claude/model-deprecations
+    // The direct successor is claude-sonnet-4-6 (dateless canonical
+    // ID for the 4.6 generation — not an alias, maps to a fixed
+    // snapshot). Swap to claude-sonnet-5 if you want the newer
+    // generation once you've smoke-tested output quality.
+    model: "claude-sonnet-4-6",
     max_tokens: params.maxTokens || 4096,
     system: params.system,
     messages: params.messages,
