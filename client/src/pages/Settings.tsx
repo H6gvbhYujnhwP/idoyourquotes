@@ -5,7 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase, Shield, Clock, PoundSterling, CreditCard, Users, Crown, AlertTriangle, Trash2, Mail, UserPlus, Check, ArrowRight, XCircle, RotateCcw, Download, Palette, CheckCircle2, AlertCircle } from "lucide-react";
+import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase, Shield, Clock, PoundSterling, CreditCard, Users, Crown, AlertTriangle, Trash2, Mail, UserPlus, Check, ArrowRight, XCircle, RotateCcw, Download, Palette, CheckCircle2, AlertCircle,
+  FileSignature,
+} from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog,
@@ -30,6 +32,9 @@ import { useLocation } from "wouter";
 // Lives in its own component file rather than inline so the surgical
 // delta to this 2,025-line Settings.tsx stays small.
 import BrochureSettingsTab from "@/components/BrochureSettingsTab";
+// Contract-button delivery — the Contracts tab lives in its own
+// component, same self-contained pattern as BrochureSettingsTab.
+import ContractDocumentsTab from "@/components/ContractDocumentsTab";
 
 export default function Settings() {
   const { user, logout } = useAuth();
@@ -330,6 +335,10 @@ export default function Settings() {
           // dedicated Brochure tab (logo upload moves up from Profile,
           // company brochure moves over from its retired tab).
           { id: 'branding', label: 'Your Branded Quotes', icon: Palette },
+          // Contract-button delivery — the org's Gold and Silver
+          // contract documents. Sits after Branded Quotes because it
+          // follows the same journey: a proposal becomes a contract.
+          { id: 'contracts', label: 'Contracts', icon: FileSignature },
           { id: 'billing', label: 'Billing', icon: CreditCard },
           { id: 'team', label: 'Team', icon: Users },
         ].map(tab => (
@@ -350,6 +359,9 @@ export default function Settings() {
 
       {/* Billing Tab */}
       {activeTab === 'billing' && <BillingTab />}
+
+      {/* Contracts Tab — contract-button delivery */}
+      {activeTab === 'contracts' && <ContractDocumentsTab />}
 
       {/* Team Tab */}
       {activeTab === 'team' && <TeamTab />}
