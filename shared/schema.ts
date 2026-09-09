@@ -15,7 +15,15 @@ export const orgMemberRoleEnum = pgEnum("org_member_role", ["owner", "admin", "m
 export const quoteStatusEnum = pgEnum("quote_status", ["draft", "sent", "accepted", "declined", "pdf_generated"]);
 export const inputTypeEnum = pgEnum("input_type", ["pdf", "image", "audio", "email", "text", "document"]);
 export const quoteModeEnum = pgEnum("quote_mode", ["simple", "comprehensive"]);
-export const subscriptionTierEnum = pgEnum("subscription_tier", ["trial", "solo", "pro", "business"]);
+// Tier enum alignment — "team" was missing from this declaration while
+// every runtime path (TIER_CONFIG, the upgrade endpoints, the Stripe
+// webhook) writes it. The live database enum was ALTERed to add "team"
+// on 9 Sep 2026; this declaration now matches it.
+//
+// "business" is retained as a dead label. Postgres cannot drop an enum
+// value without recreating the type, and nothing writes it, so leaving
+// it in keeps the declaration honest about what the column accepts.
+export const subscriptionTierEnum = pgEnum("subscription_tier", ["trial", "solo", "pro", "business", "team"]);
 export const subscriptionStatusEnum = pgEnum("subscription_status", ["trialing", "active", "past_due", "canceled", "unpaid", "incomplete"]);
 
 /**

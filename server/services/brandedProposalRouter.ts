@@ -57,8 +57,12 @@ import { assembleBrandedProposal } from "./brandedProposalAssembler";
 import type { BrochureKnowledge } from "./brochureExtractor";
 
 // Runtime tier values are "trial" / "solo" / "pro" / "team" — see
-// server/services/stripe.ts TIER_CONFIG. Schema files say "business"
-// but the live DB and all runtime writes use "team".
+// server/services/stripe.ts TIER_CONFIG.
+//
+// CORRECTED 9 Sep 2026: this comment previously claimed the live DB
+// used "team". It did not — the enum was trial/solo/pro/business until
+// it was ALTERed on that date to add "team". See brochureRouter.ts for
+// the full note. Gating on "team" is correct and now works.
 const ALLOWED_TIERS = ["pro", "team"] as const;
 
 // ─── Helpers ─────────────────────────────────────────────────────────

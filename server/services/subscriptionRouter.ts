@@ -107,7 +107,12 @@ export const subscriptionRouter = router({
         priceWithVat: 70.80,
         maxUsers: 1,
         maxQuotesPerMonth: 5,
-        maxCatalogItems: 200,
+        // Catalogue-cap alignment — this is the hidden duplicate of
+        // TIER_CONFIG that a public endpoint serves to the pricing
+        // page. It went stale at 200 while the canonical config moved
+        // to 100. Flagged for refactor when the Solo quota changed;
+        // still worth eliminating so there is one source of truth.
+        maxCatalogItems: 100,
         features: TIER_CONFIG.solo.features,
       },
       pro: {

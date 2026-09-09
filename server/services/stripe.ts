@@ -26,7 +26,10 @@ export const TIER_CONFIG = {
     priceId: null, // No Stripe price for trial
     maxUsers: 1,
     maxQuotesPerMonth: 10,
-    maxCatalogItems: 200,
+    // Catalogue-cap alignment — the enforced value was 200 while the
+    // pricing page, Features page, dashboard sidebar and support bot
+    // all documented 100. Code now matches what is sold.
+    maxCatalogItems: 100,
     monthlyPrice: 0,
     features: ['ai_takeoff', 'quote_generation', 'pdf_export', 'basic_catalog'],
   },
@@ -35,7 +38,8 @@ export const TIER_CONFIG = {
     priceId: process.env.STRIPE_PRICE_SOLO || '',
     maxUsers: 1,
     maxQuotesPerMonth: 5,
-    maxCatalogItems: 200,
+    // Catalogue-cap alignment — see the trial tier above.
+    maxCatalogItems: 100,
     monthlyPrice: 5900, // pence
     features: ['ai_takeoff', 'quote_generation', 'pdf_export', 'basic_catalog', 'email_support'],
   },
@@ -735,7 +739,9 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
         subscriptionCancelAtPeriodEnd: false,
         maxUsers: 1,
         maxQuotesPerMonth: 0, // No new quotes when canceled
-        maxCatalogItems: 200,
+        // Catalogue-cap alignment — a cancelled org drops to the same
+        // floor as trial/solo rather than keeping the old 200.
+        maxCatalogItems: 100,
       } as any);
 
       // Email the owner only if this wasn't a user-initiated cancel
@@ -1000,7 +1006,9 @@ export function canUseAIFeatures(org: {
 export function canAddCatalogItem(org: {
   maxCatalogItems: number | null;
 }, currentItemCount: number): { allowed: boolean; reason?: string } {
-  const max = org.maxCatalogItems ?? 200;
+  // Catalogue-cap alignment — the fallback for an org with no stored
+  // limit now matches the trial/solo cap it stands in for.
+  const max = org.maxCatalogItems ?? 100;
   if (max !== -1 && currentItemCount >= max) {
     return { allowed: false, reason: `Your plan allows up to ${max} catalogue items. Upgrade for unlimited.` };
   }
