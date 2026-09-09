@@ -28,6 +28,12 @@
  */
 
 import { z } from "zod";
+// Contract-button delivery — turning a proposal into a contract reuses
+// the same assembler with contract mode on. See renderContract below.
+import { and, eq } from "drizzle-orm";
+import { contractDocuments } from "../../shared/schema";
+import { getDb } from "../db";
+import { applyContractWording } from "./contractDocumentSeeds";
 import sharp from "sharp";
 import { router, protectedProcedure } from "../_core/trpc";
 import {
@@ -43,6 +49,7 @@ import {
   generateBrandedProposalDraft,
   regenerateSingleChapter,
   type ChapterSlot,
+  PRICING_SLOT_INDEX,
   type QuoteContext,
   type QuoteContextLineItem,
 } from "../engines/brandedProposalEngine";
@@ -537,6 +544,215 @@ export const brandedProposalRouter = router({
 
       return {
         base64,
+        filename,
+        sizeBytes: pdfBytes.byteLength,
+      };
+    }),
+
+  /**
+   * Contract-button delivery — render the SAME document as a contract.
+   *
+   * Takes the slots exactly as the workspace currently holds them, so
+   * the contract carries whatever chapter edits the user has made,
+   * then:
+   *   1. rewrites proposal wording to agreement wording in every
+   *      generated chapter body;
+   *   2. replaces the proposal's "estimated and may change" pricing
+   *      note with the contract's, which says the opposite;
+   *   3. appends the chosen package's terms, acceptance page and
+   *      signature blocks.
+   *
+   * NOT LOCKED. Wez chose that deliberately: a contract regenerates
+   * from the live quote, so editing the quote afterwards changes what
+   * a re-render produces. The acceptance page carries a generation
+   * date so two renders can be told apart.
+   */
+  renderContract: protectedProcedure
+    .input(
+      z.object({
+        quoteId: z.number(),
+        slots: z.array(ChapterSlotSchema),
+        orientation: z.enum(["portrait", "landscape"]).optional(),
+        tier: z.string().min(1).max(32),
+        /** Free text, printed verbatim, e.g. "1 October 2026". Typed
+         *  by the user rather than picked, because it is often a date
+         *  agreed on a call and not tied to today. */
+        commencementDate: z.string().min(1).max(120),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { quote, org } = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+      if (!quote) throw new Error("Quote not found");
+      if (!org) throw new Error("Organisation not found");
+
+      const orgAny = org as any;
+      if (!ALLOWED_TIERS.includes(orgAny.subscriptionTier)) {
+        throw new Error("Contracts are available on Pro and Team plans.");
+      }
+      if (!orgAny.brochureFileKey || orgAny.brochureDeletedAt) {
+        throw new Error(
+          "Brochure no longer available — re-upload your brochure to render.",
+        );
+      }
+
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+
+      const [contractDoc] = await db
+        .select()
+        .from(contractDocuments)
+        .where(
+          and(
+            eq(contractDocuments.orgId, org.id),
+            eq(contractDocuments.tier, input.tier),
+          ),
+        );
+
+      if (!contractDoc) {
+        throw new Error(
+          `No ${input.tier} contract document found. Open Settings → Contracts first.`,
+        );
+      }
+
+      const quoteContext = await gatherQuoteContext(quote, input.quoteId);
+
+      // ── Money for the acceptance page ─────────────────────────────
+      // The monthly recurring total, which is what both live Sweetbyte
+      // contracts quote on their acceptance page. Line totals already
+      // carry any discount, so this is what the client actually pays.
+      const lineItems = quoteContext.lineItems ?? [];
+      const monthlyExVat = lineItems
+        .filter((li) => li.pricingType === "monthly")
+        .reduce((sum, li) => sum + (li.total || 0), 0);
+      const vatRate = quoteContext.taxRate ?? 20;
+      const monthlyIncVat = monthlyExVat * (1 + vatRate / 100);
+      const gbp = (n: number) =>
+        `£${n.toLocaleString("en-GB", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`;
+
+      const providerName =
+        orgAny.companyName || orgAny.name || "the Provider";
+      const customerName = (quote as any).clientName || "the Customer";
+
+      // firstInvoiceMonth is derived from the commencement date where
+      // it parses, and falls back to the raw string otherwise — the
+      // field is free text, so "early October" is a legitimate value
+      // that no date parser will handle.
+      const parsed = new Date(input.commencementDate);
+      const firstInvoiceMonth = isNaN(parsed.getTime())
+        ? input.commencementDate
+        : parsed.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+
+      const values: Record<string, string> = {
+        providerName,
+        customerName,
+        commencementDate: input.commencementDate,
+        firstInvoiceMonth,
+        monthlyFeeExVat: gbp(monthlyExVat),
+        monthlyFeeIncVat: gbp(monthlyIncVat),
+        vatRate: String(vatRate),
+      };
+
+      const fill = (text: string) =>
+        text.replace(/\{\{(\w+)\}\}/g, (whole, key: string) =>
+          Object.prototype.hasOwnProperty.call(values, key) ? values[key] : whole,
+        );
+
+      // ── Proposal wording → agreement wording ──────────────────────
+      // Applied only to generated chapters. Embedded brochure pages are
+      // images of the user's own artwork and cannot be rewritten.
+      const contractSlots = (input.slots as ChapterSlot[]).map((slot) => {
+        if (slot.source !== "generate") return slot;
+        const s = slot as any;
+        const isPricingChapter = s.slotIndex === PRICING_SLOT_INDEX;
+        return {
+          ...s,
+          body: isPricingChapter
+            ? // The proposal's pricing note says the figures are
+              // estimated and may change. On a signed contract that is
+              // the opposite of the truth, so it is replaced outright
+              // rather than reworded.
+              contractDoc.pricingCaveatBody || applyContractWording(s.body ?? "")
+            : applyContractWording(s.body ?? ""),
+        };
+      });
+
+      const brochureBuffer = await getFileBuffer(orgAny.brochureFileKey);
+      const logo = await fetchAndNormaliseLogo(orgAny.companyLogo);
+      const signature = await fetchAndNormaliseLogo(
+        orgAny.contractSignatureImage,
+      );
+
+      const pdfBytes = await assembleBrandedProposal({
+        brochurePdfBytes: new Uint8Array(brochureBuffer),
+        slots: contractSlots as ChapterSlot[],
+        quoteContext,
+        companyLogoBytes: logo?.bytes,
+        companyLogoFormat: logo?.format,
+        brandPrimaryHex:
+          orgAny.brandExtractedPrimaryColor ||
+          orgAny.brandPrimaryColor ||
+          undefined,
+        targetOrientation:
+          input.orientation === "landscape" ? "landscape" : "portrait",
+        quoteReference: (quote as any).reference?.trim() || `Q-${quote.id}`,
+        quoteDateStr: new Date().toLocaleDateString("en-GB", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        }),
+        contract: {
+          displayName: contractDoc.displayName,
+          clauses: (contractDoc.clauses ?? []).map(
+            (c: { number: number; heading: string; body: string }) => ({
+            number: c.number,
+            heading: c.heading,
+              body: fill(c.body),
+            }),
+          ),
+          acceptanceBody: fill(contractDoc.acceptanceBody ?? ""),
+          thankYouBody: fill(contractDoc.thankYouBody ?? ""),
+          providerName,
+          customerName,
+          signatory: {
+            name: orgAny.contractSignatoryName,
+            title: orgAny.contractSignatoryTitle,
+            signatureBytes: signature?.bytes,
+            signatureFormat: signature?.format,
+          },
+        },
+      });
+
+      const titleSource: string =
+        ((quote as any).clientName?.trim() as string) ||
+        ((quote as any).title?.trim() as string) ||
+        "Contract";
+      const todayLabel = new Date().toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
+      const filename =
+        `Contract ${titleSource} ${todayLabel}`
+          .replace(/[^a-zA-Z0-9 \-_]/g, "")
+          .replace(/\s+/g, "_") + ".pdf";
+
+      await logUsage({
+        orgId: org.id,
+        userId: ctx.user.id,
+        actionType: "contract_render",
+        creditsUsed: 0,
+        metadata: {
+          quoteId: input.quoteId,
+          tier: input.tier,
+          pdfSizeBytes: pdfBytes.byteLength,
+        },
+      });
+
+      return {
+        base64: Buffer.from(pdfBytes).toString("base64"),
         filename,
         sizeBytes: pdfBytes.byteLength,
       };

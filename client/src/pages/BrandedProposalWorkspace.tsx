@@ -53,6 +53,7 @@ import {
   RefreshCw,
   Save,
   X,
+  FileSignature,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -192,6 +193,16 @@ export default function BrandedProposalWorkspace() {
   const regenerateChapter =
     trpc.brandedProposal.regenerateChapter.useMutation();
   const renderPdf = trpc.brandedProposal.renderPdf.useMutation();
+  // Contract-button delivery — the same document rendered as a
+  // contract. Deliberately a separate endpoint rather than a flag on
+  // renderPdf, so an accidental click can never turn a proposal
+  // download into a contract download.
+  const renderContract = trpc.brandedProposal.renderContract.useMutation();
+  const contractDocs = trpc.contractDocument.list.useQuery();
+  const [contractOpen, setContractOpen] = useState(false);
+  const [contractTier, setContractTier] = useState<string>("");
+  const [commencementDate, setCommencementDate] = useState("");
+  const [isRenderingContract, setIsRenderingContract] = useState(false);
 
   // ── Workspace state ──────────────────────────────────────────────
   const [slots, setSlots] = useState<ChapterSlot[] | null>(null);
@@ -422,6 +433,65 @@ export default function BrandedProposalWorkspace() {
     }
   }
 
+  /**
+   * Open the contract dialog.
+   *
+   * Pre-selects the package that appears most often in the quote's
+   * line items, but never decides for the user. A quote can legitimately
+   * mix tiers — Sweetbyte's own Sorrells proposal put Silver on the
+   * workstations and Gold on the servers — so guessing from the line
+   * items alone would get it wrong.
+   */
+  function handleOpenContract() {
+    if (editingIndex !== null) {
+      const ok = window.confirm(
+        "You have unsaved edits on a chapter. Continue and discard them?",
+      );
+      if (!ok) return;
+      setEditingIndex(null);
+      setEditBuffer({ title: "", body: "" });
+    }
+    const docs = contractDocs.data?.documents ?? [];
+    if (docs.length === 0) {
+      toast.error(
+        "No contract documents yet — open Settings → Contracts first.",
+      );
+      return;
+    }
+    if (!contractTier) setContractTier(docs[0].tier);
+    setContractOpen(true);
+  }
+
+  async function handleRenderContract() {
+    if (!slots) return;
+    if (isRenderingContract) return;
+    if (!commencementDate.trim()) {
+      toast.error("Enter the start date first");
+      return;
+    }
+    setIsRenderingContract(true);
+    try {
+      const result = await renderContract.mutateAsync({
+        quoteId,
+        slots,
+        orientation: renderOrientation,
+        tier: contractTier,
+        commencementDate: commencementDate.trim(),
+      });
+      const { base64, filename } = result as {
+        base64: string;
+        filename: string;
+      };
+      downloadBase64Pdf(base64, filename);
+      toast.success("Contract downloaded");
+      setContractOpen(false);
+    } catch (err: any) {
+      toast.error(err?.message || "Contract render failed");
+    } finally {
+      setIsRenderingContract(false);
+    }
+  }
+
   function handleBackToQuote() {
     if (editingIndex !== null) {
       const ok = window.confirm(
@@ -623,6 +693,20 @@ export default function BrandedProposalWorkspace() {
               <option value="landscape">Landscape</option>
             </select>
           </label>
+          {/* Contract-button delivery — sits beside Render PDF because
+              it produces the same document in its signed form. Outline
+              rather than filled: rendering the proposal stays the
+              primary action, since the contract only comes after the
+              client has said yes. */}
+          <Button
+            variant="outline"
+            onClick={handleOpenContract}
+            disabled={isRendering || isRenderingContract}
+            className="font-semibold"
+          >
+            <FileSignature className="w-4 h-4 mr-1.5" />
+            Turn into contract
+          </Button>
           <Button
             onClick={handleRenderPdf}
             disabled={isRendering}
@@ -642,6 +726,111 @@ export default function BrandedProposalWorkspace() {
           </Button>
         </div>
       </div>
+
+      {/* Contract dialog — contract-button delivery.
+          Two questions only: which package, and when does it start.
+          Everything else on the contract comes from the quote and from
+          Settings, which is the point: the terms stop being retyped. */}
+      {contractOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(15,23,42,0.45)" }}
+          onClick={() => !isRenderingContract && setContractOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl bg-white p-6 space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <h2
+                className="text-lg font-bold"
+                style={{ color: brand.navy }}
+              >
+                Turn this into a contract
+              </h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Same document, same pricing. The wording changes to
+                agreement, and your terms and signature pages are added.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Package</label>
+              <div className="flex gap-2">
+                {(contractDocs.data?.documents ?? []).map((doc: any) => (
+                  <button
+                    key={doc.tier}
+                    type="button"
+                    onClick={() => setContractTier(doc.tier)}
+                    className="flex-1 px-4 py-2 text-sm font-medium rounded-md border capitalize transition-colors"
+                    style={
+                      contractTier === doc.tier
+                        ? {
+                            background: brand.navy,
+                            color: "white",
+                            borderColor: brand.navy,
+                          }
+                        : { background: "white", borderColor: brand.border }
+                    }
+                  >
+                    {doc.tier}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                A quote can mix packages, so this is always your choice.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Start date</label>
+              <input
+                type="text"
+                value={commencementDate}
+                placeholder="e.g. 1 October 2026"
+                onChange={(e) => setCommencementDate(e.target.value)}
+                className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                style={{ borderColor: brand.border }}
+              />
+              <p className="text-xs text-muted-foreground">
+                Printed exactly as you type it, on the acceptance page.
+              </p>
+            </div>
+
+            {!contractDocs.data?.signatory?.signatureImage && (
+              <div
+                className="rounded-md border p-3 text-xs"
+                style={{ background: "#fffbeb", borderColor: "#fcd34d" }}
+              >
+                No signature on file — the contract will print a blank
+                line to sign by hand. Add one in Settings &rarr; Contracts.
+              </div>
+            )}
+
+            <div className="flex gap-2 justify-end pt-1">
+              <Button
+                variant="outline"
+                onClick={() => setContractOpen(false)}
+                disabled={isRenderingContract}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleRenderContract}
+                disabled={isRenderingContract || !contractTier}
+                style={{ backgroundColor: brand.teal, color: brand.white }}
+              >
+                {isRenderingContract ? (
+                  <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4 mr-1.5" />
+                )}
+                Generate contract
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Body — sidebar + main pane */}
       <div className="flex flex-col md:flex-row gap-4 p-4 sm:p-6">

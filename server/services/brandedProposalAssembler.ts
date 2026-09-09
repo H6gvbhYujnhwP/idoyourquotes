@@ -33,6 +33,14 @@ import {
   type PDFEmbeddedPage,
   type PDFImage,
 } from "pdf-lib";
+// Contract-button delivery — the terms and signature pages live in
+// their own module. See contractPageRenderer.ts for why they are not
+// drawn by the chapter renderer.
+import {
+  appendContractPages,
+  substitutePlaceholders,
+  type ContractSignatory,
+} from "./contractPageRenderer";
 import type {
   ChapterSlot,
   QuoteContext,
@@ -1543,7 +1551,38 @@ async function renderNarrativePages(params: {
 
 // ─── Public entry point ──────────────────────────────────────────────
 
+/**
+ * Contract-button delivery — contract mode.
+ *
+ * A contract is the same document as the proposal with three
+ * differences: the wording says "agreement" rather than "proposal",
+ * the pricing note says the opposite thing, and the terms and
+ * signature pages are appended. Everything else — chapters, brochure
+ * pages, pricing table — is identical, which is exactly why this is a
+ * mode on the existing assembler rather than a second assembler.
+ */
+export interface ContractMode {
+  displayName: string;
+  clauses: Array<{ number: number; heading: string; body: string }>;
+  acceptanceBody: string;
+  thankYouBody: string;
+  providerName: string;
+  customerName: string;
+  signatory: ContractSignatory;
+}
+
 export interface AssembleParams {
+  /**
+   * Contract-button delivery — when present, the document is rendered
+   * as a contract: the terms plus acceptance and signature pages are
+   * appended after the final chapter. Absent means an ordinary
+   * proposal, byte-identical to before this delivery.
+   *
+   * The proposal-to-agreement wording swap is applied by the CALLER to
+   * the slot bodies before they reach here, so that what the user sees
+   * on screen and what prints stay the same text.
+   */
+  contract?: ContractMode;
   /** Bytes of the source brochure PDF (loaded from R2 by the caller). */
   brochurePdfBytes: Uint8Array;
   /** Chapter slots from generateBrandedProposalDraft(). */
@@ -1772,6 +1811,31 @@ export async function assembleBrandedProposal(
         if (page) finalDoc.addPage(page);
       }
     }
+  }
+
+  // ── Contract mode — append terms and signature pages ─────────────
+  if (params.contract) {
+    const c = params.contract;
+    const values: Record<string, string> = {
+      providerName: c.providerName,
+      customerName: c.customerName,
+    };
+    await appendContractPages({
+      doc: finalDoc,
+      pageWidth: targetDim.width,
+      pageHeight: targetDim.height,
+      displayName: c.displayName,
+      clauses: c.clauses.map((cl) => ({
+        number: cl.number,
+        heading: substitutePlaceholders(cl.heading, values),
+        body: substitutePlaceholders(cl.body, values),
+      })),
+      acceptanceBody: c.acceptanceBody,
+      thankYouBody: c.thankYouBody,
+      providerName: c.providerName,
+      customerName: c.customerName,
+      signatory: c.signatory,
+    });
   }
 
   return finalDoc.save();
