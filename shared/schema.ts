@@ -70,6 +70,18 @@ export const organizations = pgTable("organizations", {
   // an enum migration. Server-side validates against the known set.
   // Defaults to 'auto' so existing orgs see no behaviour change.
   proposalOrientation: text("proposal_orientation").default("auto").notNull(),
+  // Contract-button delivery — signatory identity for the contract's
+  // acceptance page. Both of Sweetbyte's live contracts carry a signed
+  // block, which until now was added outside the app; the contract
+  // cannot assemble itself without these three.
+  //
+  // signatureImage holds an R2 object key (same convention as
+  // companyLogo). Nullable: an org that has not uploaded a signature
+  // still gets a contract, just with a blank signature line to sign by
+  // hand.
+  contractSignatureImage: text("contract_signature_image"),
+  contractSignatoryName: varchar("contract_signatory_name", { length: 255 }),
+  contractSignatoryTitle: varchar("contract_signatory_title", { length: 255 }),
   defaultTerms: text("default_terms"),
   billingEmail: varchar("billing_email", { length: 320 }),
   stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
@@ -695,6 +707,67 @@ export const catalogItems = pgTable("catalog_items", {
 
 export type CatalogItem = typeof catalogItems.$inferSelect;
 export type InsertCatalogItem = typeof catalogItems.$inferInsert;
+
+/**
+ * Contract Documents — Job 2, contract-button delivery.
+ *
+ * One row per (organisation, package tier). Sweetbyte runs two:
+ * "gold" and "silver". Confirmed with Wez that these are two entirely
+ * separate documents rather than one document with package-specific
+ * clauses, because their SLA, support hours and onsite allowance all
+ * differ and the clause numbering diverges.
+ *
+ * WHY ORG-LEVEL, NOT PER-QUOTE:
+ *   The whole point of this delivery is that the terms stop being
+ *   rewritten. They are authored once here and reused verbatim on
+ *   every contract, which is exactly what per-quote storage could not
+ *   give us.
+ *
+ * WHY CLAUSES ARE AN ARRAY, NOT ONE TEXT BLOB:
+ *   So a single clause can be edited on its own. Changing the MDR
+ *   liability wording should mean editing clause 6, not scrolling
+ *   through three pages of legal text hunting for it. The array order
+ *   is the printed order; `number` is stored rather than derived so a
+ *   clause can be inserted without silently renumbering a document a
+ *   client has already signed a copy of.
+ */
+export const contractDocuments = pgTable("contract_documents", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  orgId: bigint("org_id", { mode: "number" }).notNull(),
+  /** "gold" | "silver". Text rather than an enum so a third package
+   *  (bronze, or a sector-specific set) needs no migration. */
+  tier: varchar("tier", { length: 32 }).notNull(),
+  /** Shown in Settings and printed in the T&Cs page heading, e.g.
+   *  'IT Support/Services Contract Agreement "Gold" package'. */
+  displayName: varchar("display_name", { length: 255 }).notNull(),
+  /** The numbered terms. Printed in array order across as many pages
+   *  as needed (Sweetbyte's current documents run to three). */
+  clauses: json("clauses").$type<Array<{ number: number; heading: string; body: string }>>(),
+  /** The acceptance paragraph that opens the final page. Carries
+   *  placeholders the renderer substitutes from the quote:
+   *  {{commencementDate}}, {{firstInvoiceMonth}}, {{monthlyFeeExVat}},
+   *  {{monthlyFeeIncVat}}, {{vatRate}}, {{customerName}}. */
+  acceptanceBody: text("acceptance_body"),
+  /** Contract-only rewrite of the Next Steps chapter. The proposal
+   *  version invites the client to a call; on a signed document that
+   *  reads oddly, so the contract version covers signature, Direct
+   *  Debit mandate, onboarding and the handover document. */
+  nextStepsBody: text("next_steps_body"),
+  /** Closing line beneath the signature blocks. */
+  thankYouBody: text("thank_you_body"),
+  /** Contract-only replacement for the proposal's "at this stage this
+   *  is estimated and may change" pricing caveat, which says the
+   *  opposite of what a signed contract needs. Stored rather than
+   *  hardcoded because the two documents word it differently. */
+  pricingCaveatBody: text("pricing_caveat_body"),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ContractDocument = typeof contractDocuments.$inferSelect;
+export type InsertContractDocument = typeof contractDocuments.$inferInsert;
+
 
 // ============ COMPREHENSIVE QUOTE TYPES ============
 
