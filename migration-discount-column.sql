@@ -1,0 +1,55 @@
+-- migration-discount-column.sql
+--
+-- Discount delivery — adds a per-line negotiated discount percentage to
+-- quote_line_items.
+--
+-- WHY RAW SQL: drizzle-kit push is broken on this codebase. Schema
+-- changes are applied by hand in the Render shell psql session BEFORE
+-- the matching code is pushed, so the deployed app never boots against
+-- a database that is missing a column its queries reference.
+--
+-- SAFETY:
+--   - Column is NULLABLE with no default. Every existing row reads as
+--     NULL, which the app treats as "no discount". No backfill needed,
+--     no existing quote changes value, no existing PDF changes.
+--   - IF NOT EXISTS makes this safe to re-run.
+--   - No index: the column is never filtered or joined on, only read
+--     alongside the row it belongs to.
+--
+-- PRECISION: numeric(5,2) holds up to 999.99. The API layer clamps the
+-- accepted range to 0–100; the wider column is deliberate headroom so a
+-- bad write surfaces as an application validation error rather than a
+-- Postgres overflow 500.
+--
+-- HOW TO RUN (Render shell). Paste truncation eats the first characters
+-- of a pasted line, so the `echo go;` prefix is load-bearing:
+--
+--   echo go; psql "$DATABASE_URL"
+--
+-- ...then paste the ALTER statement below at the psql prompt.
+
+ALTER TABLE quote_line_items
+  ADD COLUMN IF NOT EXISTS discount_percent numeric(5, 2);
+
+-- ── Verification ────────────────────────────────────────────────────
+-- Run this immediately after. Expect exactly one row:
+--   discount_percent | numeric | YES | 5 | 2
+--
+--   SELECT column_name,
+--          data_type,
+--          is_nullable,
+--          numeric_precision,
+--          numeric_scale
+--     FROM information_schema.columns
+--    WHERE table_name  = 'quote_line_items'
+--      AND column_name = 'discount_percent';
+--
+-- And confirm nothing was disturbed — expect 0:
+--
+--   SELECT COUNT(*) FROM quote_line_items WHERE discount_percent IS NOT NULL;
+
+-- ── Rollback ────────────────────────────────────────────────────────
+-- Only safe BEFORE the matching code is deployed. Once the app is live
+-- against this column, dropping it will 500 the quote workspace.
+--
+--   ALTER TABLE quote_line_items DROP COLUMN IF EXISTS discount_percent;

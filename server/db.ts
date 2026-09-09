@@ -474,7 +474,24 @@ async function getQuotesWithProfit(
       // through the SQL builder.
       quote: quotes,
       totalCost: sql<string>`COALESCE(SUM(COALESCE(${quoteLineItems.costPrice}, 0) * ${quoteLineItems.quantity}), 0)::text`,
-      totalProfit: sql<string>`COALESCE(SUM((${quoteLineItems.rate} - COALESCE(${quoteLineItems.costPrice}, 0)) * ${quoteLineItems.quantity}), 0)::text`,
+      // Discount delivery — profit is now (discounted sell − buy-in) ×
+      // qty, not (list sell − buy-in) × qty.
+      //
+      // WHY THIS MATTERS: `rate` deliberately holds the LIST price so
+      // the concession stays visible on the document. Before this
+      // change, discounting a line would leave the dashboard reporting
+      // the margin that WOULD have been earned at full price. On a
+      // deal like Sorrells (11% off several lines) that overstates
+      // profit by hundreds of pounds a year, and the error is silent.
+      //
+      // COALESCE(discount_percent, 0) keeps every pre-discount row
+      // behaving exactly as before — null discount means the multiplier
+      // is (1 - 0/100) = 1, so the arithmetic is unchanged for every
+      // quote created before this delivery.
+      //
+      // Cost is untouched: a discount reduces what the customer pays,
+      // not what the supplier charges us.
+      totalProfit: sql<string>`COALESCE(SUM((${quoteLineItems.rate} * (1 - COALESCE(${quoteLineItems.discountPercent}, 0) / 100) - COALESCE(${quoteLineItems.costPrice}, 0)) * ${quoteLineItems.quantity}), 0)::text`,
       linesWithCost: sql<number>`COALESCE(SUM(CASE WHEN ${quoteLineItems.costPrice} IS NOT NULL THEN 1 ELSE 0 END), 0)::int`,
     })
     .from(quotes)

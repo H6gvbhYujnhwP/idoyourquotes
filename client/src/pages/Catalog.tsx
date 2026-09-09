@@ -311,6 +311,15 @@ export default function Catalog() {
   const [defaultRate, setDefaultRate] = useState("");
   const [costPrice, setCostPrice] = useState("");
   const [installTimeHrs, setInstallTimeHrs] = useState("");
+  // Discount delivery — billing frequency was already a property of
+  // every catalogue item (the "Pricing" dropdown in the table), but the
+  // Add box never asked for it, so every new item silently landed as
+  // "standard" (one-off) and had to be corrected afterwards. That bites
+  // hardest on a run of monthly services, where the whole batch lands
+  // in the one-off section of a quote and the monthly total comes out
+  // wrong. Defaulting to "standard" preserves the existing behaviour
+  // for anyone who ignores the field.
+  const [pricingType, setPricingType] = useState("standard");
 
   const { data: items, isLoading, refetch } = trpc.catalog.list.useQuery();
   const { user } = useAuth();
@@ -470,6 +479,7 @@ export default function Catalog() {
   const resetForm = () => {
     setName(""); setDescription(""); setCategory("");
     setUnit("each"); setDefaultRate(""); setCostPrice(""); setInstallTimeHrs("");
+    setPricingType("standard");
   };
 
   const handleAddSubmit = () => {
@@ -482,6 +492,9 @@ export default function Catalog() {
       defaultRate: defaultRate || undefined,
       costPrice: costPrice || undefined,
       installTimeHrs: installTimeHrs || undefined,
+      // The catalog.create endpoint already accepted pricingType — only
+      // the form was missing it, so no server change was needed here.
+      pricingType: pricingType as "standard" | "monthly" | "optional" | "annual",
     });
   };
 
@@ -694,10 +707,39 @@ export default function Catalog() {
                   <Input id="costPrice" type="number" step="0.01" placeholder="0.00" value={costPrice} onChange={(e) => setCostPrice(e.target.value)} />
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="installTimeHrs">Install Time (hours per unit)</Label>
-                <Input id="installTimeHrs" type="number" step="0.25" placeholder="e.g. 1.5" value={installTimeHrs} onChange={(e) => setInstallTimeHrs(e.target.value)} />
-                <p className="text-xs text-muted-foreground">Labour time per item - used to auto-calculate installation costs in quotes</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="installTimeHrs">Install Time (hours per unit)</Label>
+                  <Input id="installTimeHrs" type="number" step="0.25" placeholder="e.g. 1.5" value={installTimeHrs} onChange={(e) => setInstallTimeHrs(e.target.value)} />
+                  <p className="text-xs text-muted-foreground">Labour time per item - used to auto-calculate installation costs in quotes</p>
+                </div>
+                {/* Discount delivery — billing frequency, matching the
+                    "Pricing" column in the table below. Option labels
+                    and values are kept identical to the inline editor so
+                    the two controls can never disagree. */}
+                <div className="space-y-2">
+                  <Label htmlFor="pricingType">Pricing</Label>
+                  <select
+                    id="pricingType"
+                    value={pricingType}
+                    onChange={(e) => setPricingType(e.target.value)}
+                    className="w-full"
+                    style={{
+                      padding: "8px 10px",
+                      fontSize: 14,
+                      border: "1px solid #d1d5db",
+                      borderRadius: 6,
+                      background: "white",
+                      height: 40,
+                    }}
+                  >
+                    <option value="standard">Standard (one-off)</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="annual">Annual</option>
+                    <option value="optional">Optional</option>
+                  </select>
+                  <p className="text-xs text-muted-foreground">How this item is billed when added to a quote</p>
+                </div>
               </div>
               <Button onClick={handleAddSubmit} className="w-full" disabled={createItem.isPending}>
                 Add to Catalog

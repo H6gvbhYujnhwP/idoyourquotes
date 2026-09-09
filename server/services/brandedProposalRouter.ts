@@ -134,6 +134,15 @@ async function gatherQuoteContext(
       total: parseFloat(li.total ?? "0") || 0,
       pricingType: normalisedType,
       sortOrder: typeof li.sortOrder === "number" ? li.sortOrder : 0,
+      // Discount delivery — carried through so the proposal's pricing
+      // table can show the concession. Null stays null (no discount);
+      // a corrupt value degrades to null rather than throwing, matching
+      // how the other fields in this mapper fail soft.
+      discountPercent: (() => {
+        const raw = parseFloat(li.discountPercent ?? "");
+        if (!Number.isFinite(raw) || raw <= 0) return null;
+        return Math.min(raw, 100);
+      })(),
     };
   });
 

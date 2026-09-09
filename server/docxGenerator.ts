@@ -169,30 +169,74 @@ function tableRow(cells: { text: string; bold?: boolean; align?: "left" | "right
   return `<w:tr>${cellXml}</w:tr>`;
 }
 
+// Discount delivery — clamp helper, mirroring the server-side rule.
+// Null (no discount) resolves to 0.
+function parseDiscountPct(raw: unknown): number {
+  const n = parseFloat(String(raw ?? "0"));
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(Math.max(n, 0), 100);
+}
+
 function pricingTable(lineItems: QuoteLineItem[]): string {
+  // Discount delivery — the Discount column appears only when at least
+  // one line on this quote is actually discounted. Undiscounted quotes
+  // produce a five-column table exactly as before, so every Word export
+  // generated prior to this delivery is unchanged.
+  const hasAnyDiscount = lineItems.some(
+    (li) => parseDiscountPct((li as any).discountPercent) > 0,
+  );
+
   const tblPr = `<w:tblPr><w:tblW w:w="9000" w:type="dxa"/><w:tblBorders><w:top w:val="single" w:sz="4" w:color="000000"/><w:left w:val="single" w:sz="4" w:color="000000"/><w:bottom w:val="single" w:sz="4" w:color="000000"/><w:right w:val="single" w:sz="4" w:color="000000"/><w:insideH w:val="single" w:sz="4" w:color="CCCCCC"/><w:insideV w:val="single" w:sz="4" w:color="CCCCCC"/></w:tblBorders></w:tblPr>`;
-  const tblGrid = `<w:tblGrid><w:gridCol w:w="4500"/><w:gridCol w:w="900"/><w:gridCol w:w="900"/><w:gridCol w:w="1350"/><w:gridCol w:w="1350"/></w:tblGrid>`;
+
+  // The grid must total 9000 twips to match tblW above, or Word
+  // silently rescales the columns and the table stops lining up with
+  // the page margins. Six columns take their width out of the
+  // description column rather than widening the table.
+  const tblGrid = hasAnyDiscount
+    ? `<w:tblGrid><w:gridCol w:w="3600"/><w:gridCol w:w="900"/><w:gridCol w:w="900"/><w:gridCol w:w="1350"/><w:gridCol w:w="900"/><w:gridCol w:w="1350"/></w:tblGrid>`
+    : `<w:tblGrid><w:gridCol w:w="4500"/><w:gridCol w:w="900"/><w:gridCol w:w="900"/><w:gridCol w:w="1350"/><w:gridCol w:w="1350"/></w:tblGrid>`;
+
   const header = tableRow(
     [
       { text: "Description" },
       { text: "Qty", align: "right" },
       { text: "Unit" },
       { text: "Rate", align: "right" },
+      ...(hasAnyDiscount
+        ? [{ text: "Discount", align: "right" as const }]
+        : []),
       { text: "Total", align: "right" },
     ],
     { header: true },
   );
+
   const rows = lineItems
-    .map((li) =>
-      tableRow([
+    .map((li) => {
+      const pct = parseDiscountPct((li as any).discountPercent);
+      return tableRow([
         { text: li.description || "" },
         { text: formatQuantity(li.quantity), align: "right" },
         { text: li.unit || "each" },
         { text: formatCurrency(li.rate), align: "right" },
+        ...(hasAnyDiscount
+          ? [
+              {
+                // Em dash on undiscounted lines within a discounted
+                // quote — reads as "nothing given here" rather than
+                // implying a zero was negotiated.
+                text:
+                  pct > 0
+                    ? `${pct.toFixed(pct % 1 === 0 ? 0 : 2)}%`
+                    : "\u2014",
+                align: "right" as const,
+              },
+            ]
+          : []),
         { text: formatCurrency(li.total), align: "right" },
-      ]),
-    )
+      ]);
+    })
     .join("");
+
   return `<w:tbl>${tblPr}${tblGrid}${header}${rows}</w:tbl>`;
 }
 

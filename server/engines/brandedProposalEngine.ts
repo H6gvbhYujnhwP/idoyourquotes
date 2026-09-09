@@ -114,6 +114,18 @@ export interface QuoteContextLineItem {
    */
   pricingType: "standard" | "monthly" | "annual" | "optional";
   sortOrder: number;
+  /**
+   * Discount delivery — negotiated discount on this line, as a
+   * percentage (11 = 11% off). Optional and nullable: absent or null
+   * means no discount, which is how every line created before this
+   * delivery reads.
+   *
+   * NOTE for the AI narrative: `rate` is the LIST price and `total` is
+   * the DISCOUNTED figure, so rate x quantity will not equal total on a
+   * discounted line. The pricing table renders the discount explicitly
+   * so the arithmetic reads correctly on the page.
+   */
+  discountPercent?: number | null;
 }
 
 export interface QuoteContext {

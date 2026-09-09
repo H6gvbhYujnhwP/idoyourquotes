@@ -708,24 +708,53 @@ interface PricingTableColumns {
   unitWidth: number;
   rateX: number;
   rateWidth: number;
+  /** Discount delivery — zero width when the quote has no discounts,
+   *  in which case the column is not drawn and the remaining geometry
+   *  is byte-identical to every proposal produced before this
+   *  delivery. */
+  discountX: number;
+  discountWidth: number;
   totalX: number;
   totalWidth: number;
 }
 
-/** Compute column positions inside the chapter content area. */
-function buildColumns(layout: ReturnType<typeof computeLayout>): PricingTableColumns {
+/**
+ * Compute column positions inside the chapter content area.
+ *
+ * Discount delivery — `hasDiscount` inserts a narrow Discount column
+ * between Rate and Amount. The width is taken out of the description
+ * column, so the table still spans exactly the content width and the
+ * right-hand money columns stay put. When false, every value returned
+ * is identical to the pre-delivery layout.
+ */
+function buildColumns(
+  layout: ReturnType<typeof computeLayout>,
+  hasDiscount = false,
+): PricingTableColumns {
   const totalWidth = 70;
   const rateWidth = 60;
   const unitWidth = 50;
   const qtyWidth = 40;
+  const discountWidth = hasDiscount ? 50 : 0;
   const gap = 8;
+  // One extra gap only when the discount column is actually present.
+  const gapCount = hasDiscount ? 5 : 4;
   const descriptionWidth =
-    layout.contentWidth - totalWidth - rateWidth - unitWidth - qtyWidth - gap * 4;
+    layout.contentWidth -
+    totalWidth -
+    rateWidth -
+    discountWidth -
+    unitWidth -
+    qtyWidth -
+    gap * gapCount;
   const descriptionX = layout.marginX;
   const qtyX = descriptionX + descriptionWidth + gap;
   const unitX = qtyX + qtyWidth + gap;
   const rateX = unitX + unitWidth + gap;
-  const totalX = rateX + rateWidth + gap;
+  const discountX = rateX + rateWidth + gap;
+  const totalX = hasDiscount
+    ? discountX + discountWidth + gap
+    : rateX + rateWidth + gap;
   return {
     descriptionX,
     descriptionWidth,
@@ -735,6 +764,8 @@ function buildColumns(layout: ReturnType<typeof computeLayout>): PricingTableCol
     unitWidth,
     rateX,
     rateWidth,
+    discountX,
+    discountWidth,
     totalX,
     totalWidth,
   };
@@ -814,7 +845,13 @@ function drawPricingChapter(
   brandAccent?: RGB01 | null,
 ): PDFPage[] {
   const layout = computeLayout(dim);
-  const cols = buildColumns(layout);
+  // Discount delivery — decide once, up front, whether this quote has
+  // any discounted line. Drives both the column geometry and whether
+  // the Discount header/cells are drawn at all.
+  const hasAnyDiscount = (quoteContext.lineItems ?? []).some(
+    (li) => (li.discountPercent ?? 0) > 0,
+  );
+  const cols = buildColumns(layout, hasAnyDiscount);
   const pages: PDFPage[] = [];
 
   // Fixed pt sizes for A4 portrait pricing chapter
@@ -1005,6 +1042,19 @@ function drawPricingChapter(
       "right",
       mutedInk,
     );
+    if (hasAnyDiscount) {
+      drawTextInColumn(
+        state.page,
+        "Disc.",
+        fonts.bold,
+        tableSize,
+        cols.discountX,
+        cols.discountWidth,
+        headerY,
+        "right",
+        mutedInk,
+      );
+    }
     drawTextInColumn(
       state.page,
       "Amount",
@@ -1102,6 +1152,23 @@ function drawPricingChapter(
         "right",
         ink,
       );
+      if (hasAnyDiscount) {
+        // Em dash on undiscounted lines within a discounted quote —
+        // reads as "nothing given here" rather than implying a zero
+        // was negotiated. Whole percentages print without decimals.
+        const pct = li.discountPercent ?? 0;
+        drawTextInColumn(
+          state.page,
+          pct > 0 ? `${pct.toFixed(pct % 1 === 0 ? 0 : 2)}%` : "\u2014",
+          fonts.regular,
+          tableSize,
+          cols.discountX,
+          cols.discountWidth,
+          firstLineY,
+          "right",
+          mutedInk,
+        );
+      }
       drawTextInColumn(
         state.page,
         formatCurrency(li.total),

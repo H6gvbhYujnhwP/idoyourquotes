@@ -663,17 +663,58 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
   const optionalItems = lineItems.filter(item => item.pricingType === "optional");
   const annualItems = lineItems.filter(item => item.pricingType === "annual");
 
+  // ── Discount delivery ──────────────────────────────────────────────
+  // The Discount column is rendered ONLY when at least one line on this
+  // quote actually carries a discount. On an undiscounted quote the
+  // column is absent entirely, so every PDF produced before this
+  // delivery renders byte-identically. That was the explicit design
+  // requirement: adding the feature must not change any existing
+  // document.
+  //
+  // `rate` holds the LIST price and `total` holds the discounted
+  // figure, so the printed row reads honestly left to right:
+  //   qty × rate, less the discount shown, equals the amount.
+  const parseDiscount = (raw: unknown): number => {
+    const n = parseFloat(String(raw ?? "0"));
+    if (!Number.isFinite(n)) return 0;
+    return Math.min(Math.max(n, 0), 100);
+  };
+
+  const hasAnyDiscount = lineItems.some(
+    (item) => parseDiscount((item as any).discountPercent) > 0,
+  );
+
+  // Emitted into each of the four table headers below. Empty string
+  // collapses the column out of existence when nothing is discounted.
+  const discountHeaderCell = hasAnyDiscount
+    ? `<th style="width: 80px;">Discount</th>`
+    : "";
+
   const renderItemRows = (items: typeof lineItems) => items
     .map(
-      (item) => `
+      (item) => {
+        const discountPct = parseDiscount((item as any).discountPercent);
+        // A dash rather than "0%" on undiscounted lines within an
+        // otherwise-discounted quote — reads as "nothing given here"
+        // instead of implying a zero was negotiated.
+        const discountCell = hasAnyDiscount
+          ? `<td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; text-align: right; font-size: 10pt;">${
+              discountPct > 0
+                ? `${discountPct.toFixed(discountPct % 1 === 0 ? 0 : 2)}%`
+                : "&mdash;"
+            }</td>`
+          : "";
+        return `
       <tr>
         <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; font-size: 10pt;">${formatLineItemDescription(item.description || "")}</td>
         <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; text-align: center; font-size: 10pt;">${formatQuantity(item.quantity)}</td>
         <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; text-align: center; font-size: 10pt;">${item.unit || "each"}</td>
         <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; text-align: right; font-size: 10pt;">${formatCurrency(item.rate)}</td>
+        ${discountCell}
         <td style="padding: 8px 12px; border-bottom: 0.5pt solid #e2e8f0; text-align: right; font-weight: 700; font-size: 10pt; color: ${colors.primary};">${formatCurrency(item.total)}</td>
       </tr>
-    `
+    `;
+      }
     )
     .join("");
 
@@ -747,6 +788,7 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
           <th style="width: 70px;">Qty</th>
           <th style="width: 70px;">Unit</th>
           <th style="width: 90px;">Rate</th>
+          ${discountHeaderCell}
           <th style="width: 110px;">Amount</th>
         </tr>
       </thead>
@@ -783,6 +825,7 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
             <th style="width: 70px;">Qty</th>
             <th style="width: 70px;">Unit</th>
             <th style="width: 90px;">Rate</th>
+            ${discountHeaderCell}
             <th style="width: 110px;">Per Month</th>
           </tr>
         </thead>
@@ -807,6 +850,7 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
             <th style="width: 70px;">Qty</th>
             <th style="width: 70px;">Unit</th>
             <th style="width: 90px;">Rate</th>
+            ${discountHeaderCell}
             <th style="width: 110px;">Amount</th>
           </tr>
         </thead>
@@ -828,6 +872,7 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
             <th style="width: 70px;">Qty</th>
             <th style="width: 70px;">Unit</th>
             <th style="width: 90px;">Rate</th>
+            ${discountHeaderCell}
             <th style="width: 110px;">Per Year</th>
           </tr>
         </thead>

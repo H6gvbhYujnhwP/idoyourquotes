@@ -352,6 +352,21 @@ export const quoteLineItems = pgTable("quote_line_items", {
   category: varchar("category", { length: 100 }),
   pricingType: varchar("pricing_type", { length: 20 }).default("one_off"),
   costPrice: decimal("cost_price", { precision: 12, scale: 2 }),
+  // Discount delivery — per-line negotiated discount, expressed as a
+  // percentage (e.g. "11.00" = 11% off). Nullable: NULL and 0 both mean
+  // "no discount", and every quote created before this delivery reads
+  // as NULL, so existing quotes render byte-identically.
+  //
+  // The discounted figure is written to `total` at save time, so every
+  // downstream consumer (PDF, Word, branded proposal, quote subtotal,
+  // VAT, dashboard revenue) picks it up with no change. This column
+  // exists so the LIST price stays visible in `rate` and the concession
+  // is recorded rather than lost — editing `rate` down would destroy
+  // the record of what was given away.
+  //
+  // Precision 5, scale 2 caps the value at 999.99; the API layer
+  // additionally clamps to 0–100.
+  discountPercent: decimal("discount_percent", { precision: 5, scale: 2 }),
   // Beta-2 provenance — populated at seed time by demo quotes (Chunk 2a)
   // and by the generate-draft rewrite (Chunk 2b); consumed by the
   // frontend chips + hover pills (Chunk 3).
