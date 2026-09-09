@@ -1810,6 +1810,12 @@ IMPORTANT: Address the email greeting using the first name only (e.g. "Hi ${gree
         // decimal and the helper accepts strings unchanged.
         costPrice: z.string().optional(),
         pricingType: z.enum(['standard', 'monthly', 'optional', 'annual']).optional(),
+        // DISCOUNT_DELIVERY_LINEITEM_ENDPOINTS — per-line negotiated discount as a percentage
+        // ("11" = 11% off). String to match the rest of this shape; the
+        // column is decimal and the helper passes strings through.
+        // Optional: omitted means no discount, which computes exactly
+        // as it did before this delivery.
+        discountPercent: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         // Verify quote ownership with org-first access
@@ -1818,7 +1824,17 @@ IMPORTANT: Address the email greeting using the first name only (e.g. "Hi ${gree
 
         const quantity = parseFloat(input.quantity || "1");
         const rate = parseFloat(input.rate || "0");
-        const total = (quantity * rate).toFixed(2);
+        // Discount delivery — `rate` stays the LIST price so the
+        // concession stays visible on the document and in the record;
+        // the discounted figure lands in `total`. Clamped to 0–100 so
+        // a bad client value can never invert the sign of a line or
+        // inflate it. NaN (non-numeric input) falls back to 0.
+        const rawDiscount = parseFloat(input.discountPercent || "0");
+        const discountPct =
+          Number.isFinite(rawDiscount) ? Math.min(Math.max(rawDiscount, 0), 100) : 0;
+        // Round to the nearest penny per line, so the printed Discount
+        // column always sums to the printed total.
+        const total = (quantity * rate * (1 - discountPct / 100)).toFixed(2);
 
         const item = await createLineItem({
           quoteId: input.quoteId,
@@ -1831,6 +1847,10 @@ IMPORTANT: Address the email greeting using the first name only (e.g. "Hi ${gree
           // nullable) and the workspace shows a dash when empty.
           costPrice: input.costPrice ?? null,
           pricingType: input.pricingType || "standard",
+          // Store null rather than "0" when there is no discount, so
+          // "never discounted" and "discounted by zero" stay
+          // distinguishable and the UI can render an empty box.
+          discountPercent: discountPct > 0 ? discountPct.toFixed(2) : null,
         });
 
         // Recalculate quote totals
@@ -1854,6 +1874,10 @@ IMPORTANT: Address the email greeting using the first name only (e.g. "Hi ${gree
         // to send it. Empty-string normalised to null so a user can
         // clear a previously-set cost.
         costPrice: z.string().optional(),
+        // Discount delivery — editable from the workspace. Empty string
+        // is normalised to null below so a user can clear a discount
+        // they previously applied.
+        discountPercent: z.string().optional(),
         sortOrder: z.number().optional(),
         pricingType: z.enum(['standard', 'monthly', 'optional', 'annual']).optional(),
       }))
@@ -1872,6 +1896,12 @@ IMPORTANT: Address the email greeting using the first name only (e.g. "Hi ${gree
           (data as any).costPrice = null;
         }
 
+        // Discount delivery — same treatment for a cleared discount box.
+        // "" means "remove the discount", not "save an empty string".
+        if (data.discountPercent !== undefined && data.discountPercent.trim() === "") {
+          (data as any).discountPercent = null;
+        }
+
         // PATCH: empty-string decimal normalise (lineItems.update)
         // Empty string from a cleared Rate or Qty input would
         // otherwise hit the decimal(12,2)/(12,4) columns and 500
@@ -1881,7 +1911,15 @@ IMPORTANT: Address the email greeting using the first name only (e.g. "Hi ${gree
         // updateLineItem writes. Single existingItem fetch feeds
         // both the normalisation AND the recalc — no extra DB
         // round trip vs. the pre-patch shape.
-        if (data.quantity !== undefined || data.rate !== undefined) {
+        // Discount delivery — guard widened to include discountPercent.
+        // Without it, editing ONLY the discount would persist the new
+        // percentage but leave the previous total untouched, and the
+        // document would show a discount that had not been applied.
+        if (
+          data.quantity !== undefined ||
+          data.rate !== undefined ||
+          data.discountPercent !== undefined
+        ) {
           const existingItems = await getLineItemsByQuoteId(quoteId);
           const existingItem = existingItems.find(i => i.id === id);
           if (existingItem) {
@@ -1893,7 +1931,22 @@ IMPORTANT: Address the email greeting using the first name only (e.g. "Hi ${gree
             }
             const quantity = parseFloat(data.quantity || existingItem.quantity || "1");
             const rate = parseFloat(data.rate || existingItem.rate || "0");
-            (data as any).total = (quantity * rate).toFixed(2);
+            // Fall back to the row's stored discount when this patch
+            // did not include one (e.g. the user only changed the qty),
+            // so an existing discount survives an unrelated edit.
+            const discountSource =
+              (data as any).discountPercent !== undefined
+                ? (data as any).discountPercent
+                : existingItem.discountPercent;
+            const rawDiscount = parseFloat(discountSource || "0");
+            const discountPct =
+              Number.isFinite(rawDiscount) ? Math.min(Math.max(rawDiscount, 0), 100) : 0;
+            // Normalise the stored value too, so a clamped or scruffy
+            // input ("11.456", "-3") is persisted in canonical form.
+            if ((data as any).discountPercent !== undefined && (data as any).discountPercent !== null) {
+              (data as any).discountPercent = discountPct > 0 ? discountPct.toFixed(2) : null;
+            }
+            (data as any).total = (quantity * rate * (1 - discountPct / 100)).toFixed(2);
           }
         }
 
@@ -3675,6 +3728,30 @@ Rules:
 
         const { quoteId, ...data } = input;
         return upsertTenderContext(quoteId, data);
+      }),
+
+    // Phase 4B Custom-Sections — additive endpoint for the Standard
+    // Quote Review modal. Writes ONLY the custom_sections column on
+    // the tender_contexts row; existing fields (assumptions/exclusions/
+    // notes/symbolMappings) are preserved because the Drizzle helper
+    // only updates columns present in the SET clause. The Review modal
+    // calls this in parallel with tenderContext.upsert on save when
+    // the custom-sections list is dirty.
+    upsertCustomSections: protectedProcedure
+      .input(z.object({
+        quoteId: z.number(),
+        customSections: z.array(z.object({
+          heading: z.string(),
+          body: z.string(),
+        })),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const quote = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+        if (!quote) throw new Error("Quote not found");
+
+        return upsertTenderContext(input.quoteId, {
+          customSections: input.customSections,
+        });
       }),
   }),
 

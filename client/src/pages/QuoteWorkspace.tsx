@@ -141,6 +141,16 @@ function fmtGBP(n: number): string {
   return `£${n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
 }
 
+// Discount delivery — mirror of the server-side clamp. A discount is a
+// percentage in the range 0–100; anything outside that (or non-numeric,
+// or null for an undiscounted line) resolves to 0, which makes the
+// multiplier (1 - 0/100) = 1 and leaves the arithmetic unchanged.
+function clampDiscount(raw: unknown): number {
+  const n = parseFloat(String(raw ?? "0"));
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(Math.max(n, 0), 100);
+}
+
 function parseNum(s: string | null | undefined): number {
   if (s == null) return 0;
   const n = parseFloat(s);
@@ -531,7 +541,10 @@ export default function QuoteWorkspace() {
     let optionalProfit = 0;
     for (const li of lineItems) {
       const total =
-        parseNum(li.total) || parseNum(li.quantity) * parseNum(li.rate);
+        parseNum(li.total) ||
+        parseNum(li.quantity) *
+          parseNum(li.rate) *
+          (1 - clampDiscount((li as any).discountPercent) / 100);
       const pt = li.pricingType || "standard";
       if (pt === "monthly") monthly += total;
       else if (pt === "annual") annual += total;
@@ -552,7 +565,12 @@ export default function QuoteWorkspace() {
         String(costRaw).trim() !== "";
       if (hasCost) {
         const qty = parseNum(li.quantity);
-        const rate = parseNum(li.rate);
+        // Discount delivery — same correction as the per-row PROFIT
+        // cell, applied to the headline one-off / monthly / annual
+        // profit figures on the green totals card.
+        const listRate = parseNum(li.rate);
+        const discPct = clampDiscount((li as any).discountPercent);
+        const rate = listRate * (1 - discPct / 100);
         const profit = (rate - cost) * qty;
         if (pt === "monthly") monthlyProfit += profit;
         else if (pt === "annual") annualProfit += profit;
@@ -2966,13 +2984,24 @@ function LineItemsTable({
                 before; COST and PROFIT sit after Type with a dashed
                 left-border on COST as the visual boundary marker. The
                 grid totals to 100%: 9+24+8+8+10+10+10+9+8+4. */}
-            <th className="text-left px-2 py-2 w-[9%]">Catalog</th>
-            <th className="text-left px-4 py-2 w-[24%]">Line item</th>
-            <th className="text-right px-2 py-2 w-[8%]">Qty</th>
-            <th className="text-left px-2 py-2 w-[8%]">Unit</th>
-            <th className="text-right px-2 py-2 w-[10%]">Rate</th>
+            <th className="text-left px-2 py-2 w-[8%]">Catalog</th>
+            <th className="text-left px-4 py-2 w-[22%]">Line item</th>
+            <th className="text-right px-2 py-2 w-[7%]">Qty</th>
+            <th className="text-left px-2 py-2 w-[7%]">Unit</th>
+            <th className="text-right px-2 py-2 w-[9%]">Rate</th>
+            {/* Discount delivery — negotiated discount per line, as a
+                percentage off the Rate. Sits between Rate and Total so
+                the customer-facing arithmetic reads left to right:
+                qty × rate − discount = total. Grid rebalanced to
+                8+22+7+7+9+6+10+9+9+8+5 = 100. */}
+            <th
+              className="text-right px-2 py-2 w-[6%]"
+              title="Discount off the Rate for this line, as a percentage"
+            >
+              Disc %
+            </th>
             <th className="text-right px-2 py-2 w-[10%]">Total</th>
-            <th className="text-left px-2 py-2 w-[10%]">Type</th>
+            <th className="text-left px-2 py-2 w-[9%]">Type</th>
             <th
               className="text-right px-2 py-2 w-[9%]"
               style={{ borderLeft: `1px dashed ${brand.borderLight}` }}
@@ -2986,7 +3015,7 @@ function LineItemsTable({
             >
               Profit
             </th>
-            <th className="w-[4%]" />
+            <th className="w-[5%]" />
           </tr>
         </thead>
         <tbody>
@@ -3038,12 +3067,18 @@ function LineItemRow({
   // Chunk 3 Delivery B — only wired up for AI-estimated rows.
   onRequestAddToCatalogue: () => void;
 }) {
+  // DISCOUNT_DELIVERY_WORKSPACE — the stored total already carries the discount (the
+  // server applies it on save). This fallback only fires for a row
+  // that has no stored total yet, so it has to apply the discount
+  // itself or the Total cell flickers to the undiscounted figure
+  // between keystroke and save.
   const rowTotal = useMemo(() => {
     const q = parseNum(row.quantity);
     const r = parseNum(row.rate);
+    const d = clampDiscount((row as any).discountPercent);
     const stored = parseNum(row.total);
-    return stored || q * r;
-  }, [row.quantity, row.rate, row.total]);
+    return stored || q * r * (1 - d / 100);
+  }, [row.quantity, row.rate, row.total, (row as any).discountPercent]);
 
   const bgColor = isActive
     ? brand.tealBg
@@ -3143,6 +3178,24 @@ function LineItemRow({
           placeholder="0.00"
         />
       </td>
+      {/* Discount delivery — editable discount percentage. Blank means
+          no discount (the server normalises "" to null), so the box
+          reads empty rather than "0" on every undiscounted line, which
+          would be visual noise on a long quote. Click propagation is
+          stopped so editing doesn't toggle the row's active state,
+          matching the COST cell. */}
+      <td
+        className="px-2 py-2 text-right"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <RowCellInput
+          value={(row as any).discountPercent ?? ""}
+          onSave={(v) => onSave(row.id, { discountPercent: v })}
+          align="right"
+          inputMode="decimal"
+          placeholder="—"
+        />
+      </td>
       <td
         className="px-2 py-2 text-right text-sm font-semibold"
         style={{ color: brand.navy }}
@@ -3217,7 +3270,14 @@ function LineItemRow({
             );
           }
           const cost = parseNum(costRaw);
-          const rate = parseNum(row.rate);
+          // Discount delivery — profit and margin are computed against
+          // what the customer actually pays, not the list Rate. Without
+          // this, discounting a line would show the margin that WOULD
+          // have been earned at full price, which is silently wrong in
+          // the one place you look before agreeing a concession.
+          const listRate = parseNum(row.rate);
+          const discPct = clampDiscount((row as any).discountPercent);
+          const rate = listRate * (1 - discPct / 100);
           const profitPerUnit = rate - cost;
           const totalProfit = profitPerUnit * qty;
           const marginPct = rate > 0 ? (profitPerUnit / rate) * 100 : 0;
