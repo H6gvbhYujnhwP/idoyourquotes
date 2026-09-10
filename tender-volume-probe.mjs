@@ -20,20 +20,30 @@
  * under the Open Government Licence.
  *
  * ── A WARNING ABOUT THE API ──────────────────────────────────────────
- * The documented search parameters do not all behave as documented. A
- * test call with publishedFrom/publishedTo/stages came back having
- * ignored the dates entirely, echoing its own defaults in the response
- * `uri` and returning zero releases.
+ * TWO FAULTS FOUND ON THE FIRST LIVE RUN, both fixed here:
  *
- * So this script does two things deliberately:
- *   1. It PRINTS the `uri` the API echoes back, which is the only
- *      reliable way to see which parameters were actually honoured.
- *      Read that line before trusting any number below it.
- *   2. It filters client-side rather than relying on server-side
- *      filtering, because the search endpoint has no keyword, no CPV
- *      and no region parameter. That constraint is the single biggest
- *      thing to know before designing the real importer: you ingest
- *      the whole national feed and filter your own side.
+ *   1. PERCENT-ENCODED COLONS BREAK THE DATE FILTERS. Running the ISO
+ *      timestamp through encodeURIComponent turns "09:52:03" into
+ *      "09%3A52%3A03", and the API SILENTLY DISCARDS the parameter and
+ *      falls back to its defaults — no error, no warning, just an empty
+ *      result set. The dates must go on the query string with raw
+ *      colons. This is the single most important gotcha for the real
+ *      importer: a wrong date encoding looks exactly like "no tenders
+ *      exist".
+ *
+ *   2. THE PUBLISHED GUIDE IS OUT OF DATE. The live spec takes
+ *      `limit` (1-100), not `size`, and has no `order`/`orderBy` at
+ *      all. Pagination is by `cursor`, not by page number. Sending
+ *      unrecognised parameters appears to poison the whole query.
+ *
+ * The script still PRINTS the `uri` the API echoes back. That is the
+ * only reliable way to see which parameters were actually honoured —
+ * read it before trusting any number below it.
+ *
+ * It filters client-side because the search endpoint has no keyword,
+ * no CPV and no region parameter. That constraint is the biggest thing
+ * to know before designing the real importer: you ingest the whole
+ * national feed and filter your own side.
  */
 
 // ── Sweetbyte's qualification profile ────────────────────────────────
@@ -130,10 +140,13 @@ async function main() {
   console.log(`Window : ${iso(from)} → ${iso(to)}`);
   console.log(`Profile: £${PROFILE.minValue.toLocaleString()}–£${PROFILE.maxValue.toLocaleString()}, CPV ${PROFILE.cpvPrefixes.join("/")}\n`);
 
+  // Raw colons, NOT encodeURIComponent — see fault 1 in the header.
+  // Only parameters the live spec actually accepts: publishedFrom,
+  // publishedTo, stages, limit, cursor.
   let url =
-    `${BASE}?publishedFrom=${encodeURIComponent(iso(from))}` +
-    `&publishedTo=${encodeURIComponent(iso(to))}` +
-    `&stages=tender&size=100&order=DESC`;
+    `${BASE}?publishedFrom=${iso(from)}` +
+    `&publishedTo=${iso(to)}` +
+    `&stages=tender&limit=100`;
 
   let total = 0;
   let cpvHits = 0;
@@ -161,7 +174,18 @@ async function main() {
 
     // THE IMPORTANT LINE — what the API actually honoured, which may
     // differ from what we asked for.
-    if (page === 1) console.log(`API echoed: ${data.uri}\n`);
+    if (page === 1) {
+      console.log(`API echoed: ${data.uri}`);
+      // If publishedFrom is missing from the echo, the window was NOT
+      // applied and every number below is meaningless. Say so loudly
+      // rather than reporting a confident zero.
+      const honoured = String(data.uri ?? "").includes("publishedFrom");
+      console.log(
+        honoured
+          ? "Window honoured ✓\n"
+          : "⚠ WINDOW NOT HONOURED — the date filter was discarded.\n",
+      );
+    }
 
     const releases = data.releases ?? [];
     if (releases.length === 0) break;
@@ -193,7 +217,12 @@ async function main() {
       (hits.length > 0 ? flagged : shortlist).push(entry);
     }
 
-    url = data?.links?.next ?? null;
+    // Pagination is by cursor. links.next is supplied by the OCDS
+    // pagination extension; fall back to building it from the cursor
+    // if only that is present.
+    const next = data?.links?.next ?? null;
+    url = next && next !== url ? next : null;
+
     await new Promise((r) => setTimeout(r, 400)); // be polite
   }
 
