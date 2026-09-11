@@ -74,7 +74,13 @@ export default function Settings() {
   const [insurancePublic, setInsurancePublic] = useState("");
   const [insuranceProfessional, setInsuranceProfessional] = useState("");
   const [dayWorkLabourRate, setDayWorkLabourRate] = useState("");
-  const [defaultVatRate, setDefaultVatRate] = useState("20");
+  // VAT fix delivery — VAT is now an explicit choice, not a free number
+  // box. Before this, the box pre-filled with "20" even when nothing had
+  // ever been saved, so the screen claimed 20% while new quotes silently
+  // got 0%. The server now stores a real value for every organisation;
+  // these two pieces of state mirror it. Not registered is stored as 0.
+  const [vatRegistered, setVatRegistered] = useState(true);
+  const [vatRatePct, setVatRatePct] = useState("20");
   const [validityDays, setValidityDays] = useState("30");
   const [surfaceTreatment, setSurfaceTreatment] = useState("");
   const [returnVisitRate, setReturnVisitRate] = useState("");
@@ -135,7 +141,22 @@ export default function Settings() {
       if (org.defaultDayWorkRates) {
         const dw = org.defaultDayWorkRates as any;
         setDayWorkLabourRate(dw.labourRate?.toString() || "");
-        setDefaultVatRate(dw.defaultVatRate?.toString() || "20");
+        // VAT fix delivery — 0 is "not VAT registered". A missing value
+        // (only possible for a pre-backfill organisation) reads as
+        // registered at 20%, which is what this screen always showed.
+        const storedVat = typeof dw.defaultVatRate === "number"
+          ? dw.defaultVatRate
+          : parseFloat(dw.defaultVatRate);
+        if (Number.isFinite(storedVat) && storedVat === 0) {
+          setVatRegistered(false);
+          setVatRatePct("20");
+        } else if (Number.isFinite(storedVat) && storedVat > 0) {
+          setVatRegistered(true);
+          setVatRatePct(String(storedVat));
+        } else {
+          setVatRegistered(true);
+          setVatRatePct("20");
+        }
       }
       // Phase 4A Delivery 36 — defaultExclusions / signatoryName /
       // signatoryPosition / paymentTerms hydration retired with
@@ -207,6 +228,15 @@ export default function Settings() {
     // its Settings card was re-added; the modal also writes to the
     // same column when "Save as default" is ticked on the Terms
     // section, so the two surfaces keep in sync naturally.
+    //
+    // VAT fix delivery — validate the rate before saving. A registered
+    // business must have a positive rate; "not registered" saves 0.
+    const parsedVat = parseFloat(vatRatePct);
+    if (vatRegistered && (!Number.isFinite(parsedVat) || parsedVat <= 0 || parsedVat > 100)) {
+      toast.error("Enter a VAT rate between 0.1 and 100, or choose Not VAT registered");
+      return;
+    }
+    const vatToSave = vatRegistered ? parsedVat : 0;
     updateProfile.mutate({
       companyName: companyName || undefined,
       companyAddress: companyAddress || undefined,
@@ -226,7 +256,7 @@ export default function Settings() {
       } : undefined,
       defaultDayWorkRates: {
         labourRate: dayWorkLabourRate ? parseFloat(dayWorkLabourRate) : undefined,
-        defaultVatRate: defaultVatRate ? parseFloat(defaultVatRate) : 20,
+        defaultVatRate: vatToSave,
       },
       defaultValidityDays: validityDays ? parseInt(validityDays) : undefined,
       defaultSurfaceTreatment: surfaceTreatment || undefined,
@@ -847,16 +877,49 @@ export default function Settings() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="defaultVatRate">Default VAT Rate (%)</Label>
-              <Input
-                id="defaultVatRate"
-                type="number"
-                step="0.1"
-                placeholder="e.g. 20"
-                value={defaultVatRate}
-                onChange={(e) => setDefaultVatRate(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">Applied to all new quotes. Use 0 for non-VAT registered.</p>
+              {/* VAT fix delivery — explicit choice replaces the free
+                  number box that used to double as "0 = not registered". */}
+              <Label>VAT</Label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={vatRegistered ? "default" : "outline"}
+                  className="flex-1"
+                  onClick={() => setVatRegistered(true)}
+                >
+                  VAT registered
+                </Button>
+                <Button
+                  type="button"
+                  variant={!vatRegistered ? "default" : "outline"}
+                  className="flex-1"
+                  onClick={() => setVatRegistered(false)}
+                >
+                  Not VAT registered
+                </Button>
+              </div>
+              {vatRegistered ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="defaultVatRate"
+                    type="number"
+                    step="0.1"
+                    min="0.1"
+                    max="100"
+                    placeholder="20"
+                    value={vatRatePct}
+                    onChange={(e) => setVatRatePct(e.target.value)}
+                    className="w-28"
+                  />
+                  <span className="text-sm text-muted-foreground">% VAT</span>
+                </div>
+              ) : null}
+              <p className="text-xs text-muted-foreground">
+                {vatRegistered
+                  ? "Applied to every new quote. Prices are shown ex VAT with VAT added on top."
+                  : "New quotes carry no VAT, and proposals and contracts say no VAT is applicable."}
+                {" "}Existing quotes keep the rate they were created with.
+              </p>
             </div>
           </div>
         </CardContent>

@@ -40,6 +40,7 @@
 
 import type { SlotContent } from "./templateRenderer";
 import { invokeLLM } from "../_core/llm";
+import { parseQuoteVatRate, isVatCharged } from "./vatRate";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -151,7 +152,11 @@ export async function buildSlotContent(args: {
   const annualItems = lineItems.filter((li) => li.pricingType === "annual");
 
   // Tax rate as a number (Drizzle returns decimals as strings).
-  const taxRatePct = parseFloat(quote.taxRate ?? "20") || 20;
+  // VAT fix delivery — previously `parseFloat(quote.taxRate ?? "20") || 20`,
+  // which turned a genuine 0% ("not VAT registered") into 20% and
+  // printed VAT the business can't charge. 0 now stays 0 and the table
+  // below prints "No VAT applicable" instead of a VAT column.
+  const taxRatePct = parseQuoteVatRate(quote.taxRate);
 
   // Two-table pricing structure — first slot one-off, second slot
   // recurring (monthly + any annuals). If only one bucket has items
@@ -490,6 +495,11 @@ function buildPricingTableInner(
   mode: "one_off" | "recurring",
 ): string {
   const taxFactor = taxRatePct / 100;
+  // VAT fix delivery — when no VAT applies, the table keeps its four
+  // columns (every template's CSS is built for four) but the VAT cells
+  // show a dash and the footer states plainly that no VAT applies,
+  // rather than printing "VAT (0%)" rows that read like an error.
+  const charged = isVatCharged(taxRatePct);
 
   let subtotal = 0;
   const rowsHtml = items
@@ -512,7 +522,7 @@ function buildPricingTableInner(
       return `<tr>` +
         `<td>${desc}</td>` +
         `<td>${formatGBP(lineTotal)}</td>` +
-        `<td>${formatGBP(vat)}</td>` +
+        `<td>${charged ? formatGBP(vat) : "&mdash;"}</td>` +
         `<td>${formatGBP(gross)}</td>` +
         `</tr>`;
     })
@@ -520,6 +530,18 @@ function buildPricingTableInner(
 
   const totalVat = subtotal * taxFactor;
   const totalGross = subtotal + totalVat;
+
+  if (!charged) {
+    return `<thead><tr>` +
+      `<th>Description</th><th>Net</th><th>VAT</th><th>Total</th>` +
+      `</tr></thead>` +
+      `<tbody>${rowsHtml}</tbody>` +
+      `<tfoot>` +
+      `<tr><td colspan="3">No VAT applicable</td><td>&mdash;</td></tr>` +
+      `<tr class="total-row"><td colspan="3"><strong>Total</strong></td>` +
+      `<td><strong>${formatGBP(subtotal)}</strong></td></tr>` +
+      `</tfoot>`;
+  }
 
   return `<thead><tr>` +
     `<th>Description</th><th>Net</th><th>VAT (${taxRatePct}%)</th><th>Gross</th>` +

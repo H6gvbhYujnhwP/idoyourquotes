@@ -4,6 +4,8 @@ import pg from "pg";
 import bcrypt from "bcryptjs";
 import { getCatalogSeedForSector } from "./catalogSeeds";
 import { getDemoQuoteForSector } from "./demoQuotes";
+// VAT fix delivery — single definition of an organisation's VAT rate.
+import { DEFAULT_UK_VAT_RATE, resolveOrgVatRate } from "./services/vatRate";
 import { 
   InsertUser, 
   users, 
@@ -114,6 +116,13 @@ export async function createOrganization(data: {
     companyPhone: data.companyPhone,
     companyEmail: data.companyEmail,
     trialEndsAt: data.trialEndsAt ?? null,
+    // VAT fix delivery — every new organisation starts VAT registered
+    // at the UK standard rate. Before this, the column was left empty
+    // while Settings displayed "20%", so the first quotes an org made
+    // silently carried 0% until someone happened to press Save on the
+    // Settings page. The user can switch to "Not VAT registered" in
+    // Settings at any time.
+    defaultDayWorkRates: { defaultVatRate: DEFAULT_UK_VAT_RATE },
   } as any).returning();
 
   return result;
@@ -548,6 +557,18 @@ export async function createQuote(data: Partial<InsertQuote> & { userId: number;
 
   const reference = data.reference || `Q-${Date.now()}`;
 
+  // VAT fix delivery — a quote must never be created without a VAT
+  // rate, because 0% now means "no VAT applicable" and is printed as
+  // such. If the caller didn't supply one (the demo-quote seeder, or
+  // quote creation for an org that has no stored rate), take the
+  // organisation's rate. An explicit rate from the caller — including
+  // an explicit "0.00" — is always respected.
+  let taxRate = data.taxRate;
+  if ((taxRate === undefined || taxRate === null || taxRate === "") && data.orgId) {
+    const org = await getOrganizationById(data.orgId);
+    taxRate = resolveOrgVatRate(org).toFixed(2);
+  }
+
   const [result] = await db.insert(quotes).values({
     userId: data.userId,
     orgId: data.orgId,
@@ -563,7 +584,7 @@ export async function createQuote(data: Partial<InsertQuote> & { userId: number;
     terms: data.terms,
     validUntil: data.validUntil,
     subtotal: data.subtotal || "0.00",
-    taxRate: data.taxRate || "0.00",
+    taxRate: taxRate || "0.00",
     taxAmount: data.taxAmount || "0.00",
     total: data.total || "0.00",
     quoteMode: data.quoteMode || "simple",

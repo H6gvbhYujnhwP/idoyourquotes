@@ -55,6 +55,7 @@
 
 import { deflateRawSync } from "zlib";
 import { Quote, QuoteLineItem, User, Organization } from "../drizzle/schema";
+import { parseQuoteVatRate, isVatCharged } from "./services/vatRate";
 
 interface DOCXQuoteData {
   quote: Quote;
@@ -277,14 +278,19 @@ function buildDocumentXml(data: DOCXQuoteData): string {
       (acc, li) => acc + parseFloat(li.total || "0"),
       0,
     );
-    const taxRate = parseFloat((quote as any).taxRate || "0");
+    const taxRate = parseQuoteVatRate((quote as any).taxRate);
     const vat = subtotal * (taxRate / 100);
     const total = subtotal + vat;
 
+    // VAT fix delivery — a quote at 0% belongs to a business that is
+    // not VAT registered. Say so, rather than printing "VAT (0%): £0.00"
+    // which reads like a mistake on a client-facing document.
     parts.push(paragraph(""));
     parts.push(
       paragraph(
-        `Subtotal: ${formatCurrency(subtotal)}\nVAT (${taxRate}%): ${formatCurrency(vat)}\nTotal: ${formatCurrency(total)}`,
+        isVatCharged(taxRate)
+          ? `Subtotal: ${formatCurrency(subtotal)}\nVAT (${taxRate}%): ${formatCurrency(vat)}\nTotal: ${formatCurrency(total)}`
+          : `Total: ${formatCurrency(total)}\nNo VAT applicable`,
         { bold: false },
       ),
     );
