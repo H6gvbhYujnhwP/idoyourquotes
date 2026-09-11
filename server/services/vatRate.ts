@@ -77,3 +77,12 @@ export function parseQuoteVatRate(raw: unknown): number {
 export function isVatCharged(rate: number): boolean {
   return rate > 0;
 }
+
+/**
+ * A rate as printed on a document: whole numbers without decimals
+ * ("20"), fractional rates kept ("17.5"). Replaces the original quote
+ * PDF's `.toFixed(0)`, which rounded 17.5% up to "18%".
+ */
+export function formatVatRate(rate: number): string {
+  return String(Number(rate.toFixed(2)));
+}

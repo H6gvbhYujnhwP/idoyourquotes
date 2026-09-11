@@ -178,6 +178,47 @@ function parseDiscountPct(raw: unknown): number {
   return Math.min(Math.max(n, 0), 100);
 }
 
+/**
+ * VAT fix delivery (Word totals) — line classification, mirroring
+ * recalculateQuoteTotals in server/db.ts exactly so the Word export can
+ * never disagree with the totals the app shows:
+ *   - optional = is_optional flag OR pricingType "optional"; excluded
+ *     from every total
+ *   - one-off  = pricingType null / "standard" / "one_off"
+ *   - monthly and annual as named
+ */
+type LineBucket = "one_off" | "monthly" | "annual" | "optional";
+
+function lineBucket(li: QuoteLineItem): LineBucket {
+  const pt = ((li as any).pricingType ?? "") as string;
+  if ((li as any).isOptional || pt === "optional") return "optional";
+  if (pt === "monthly") return "monthly";
+  if (pt === "annual") return "annual";
+  return "one_off";
+}
+
+function cadenceSuffix(li: QuoteLineItem): string {
+  switch (lineBucket(li)) {
+    case "monthly":
+      return " (per month)";
+    case "annual":
+      return " (per year)";
+    case "optional":
+      return " (optional)";
+    default:
+      return "";
+  }
+}
+
+/** Description plus its cadence suffix, unless the description already
+ *  says it (a user who typed "Backup (optional)" doesn't get it twice). */
+function withCadence(li: QuoteLineItem): string {
+  const desc = li.description || "";
+  const suffix = cadenceSuffix(li);
+  if (!suffix) return desc;
+  return desc.toLowerCase().includes(suffix.trim().toLowerCase()) ? desc : `${desc}${suffix}`;
+}
+
 function pricingTable(lineItems: QuoteLineItem[]): string {
   // Discount delivery — the Discount column appears only when at least
   // one line on this quote is actually discounted. Undiscounted quotes
@@ -215,7 +256,11 @@ function pricingTable(lineItems: QuoteLineItem[]): string {
     .map((li) => {
       const pct = parseDiscountPct((li as any).discountPercent);
       return tableRow([
-        { text: li.description || "" },
+        // VAT fix delivery (Word totals) — the totals strip below now
+        // splits one-off, monthly and annual the way the app does, so
+        // each row says which bucket it belongs to. One-off rows carry
+        // no suffix, matching every other export.
+        { text: withCadence(li) },
         { text: formatQuantity(li.quantity), align: "right" },
         { text: li.unit || "each" },
         { text: formatCurrency(li.rate), align: "right" },
@@ -270,30 +315,53 @@ function buildDocumentXml(data: DOCXQuoteData): string {
     parts.push(heading("Pricing", 2));
     parts.push(pricingTable(lineItems));
 
-    // Totals — subtotal / VAT / total. We compute these here rather
-    // than adding extra rows to the pricing table because Word's
-    // alignment is cleaner with separate paragraphs for the totals
-    // strip, especially when a user wants to mark the table up.
-    const subtotal = lineItems.reduce(
-      (acc, li) => acc + parseFloat(li.total || "0"),
-      0,
-    );
-    const taxRate = parseQuoteVatRate((quote as any).taxRate);
-    const vat = subtotal * (taxRate / 100);
-    const total = subtotal + vat;
+    // Totals — computed here rather than as extra table rows because
+    // Word's alignment is cleaner with separate paragraphs for the
+    // totals strip, especially when a user wants to mark the table up.
+    //
+    // VAT fix delivery (Word totals) — previously every line (monthly,
+    // annual and optional included) was summed into one "Subtotal" and
+    // VAT charged on the lot, so a quote with £500 one-off + £270/month
+    // + £420/year exported as "£1,190 + VAT". The strip now mirrors the
+    // app: VAT is added to the one-off subtotal only, recurring totals
+    // are stated per period ex VAT, and optional lines are left out.
+    // A quote at 0% belongs to a business that is not VAT registered and
+    // says so, rather than printing "VAT (0%): £0.00".
+    const sumBucket = (bucket: LineBucket) =>
+      lineItems
+        .filter((li) => lineBucket(li) === bucket)
+        .reduce((acc, li) => acc + (parseFloat(li.total || "0") || 0), 0);
+    const oneOff = sumBucket("one_off");
+    const monthly = sumBucket("monthly");
+    const annual = sumBucket("annual");
+    const hasOneOff = lineItems.some((li) => lineBucket(li) === "one_off");
+    const hasMonthly = lineItems.some((li) => lineBucket(li) === "monthly");
+    const hasAnnual = lineItems.some((li) => lineBucket(li) === "annual");
+    const hasOptional = lineItems.some((li) => lineBucket(li) === "optional");
 
-    // VAT fix delivery — a quote at 0% belongs to a business that is
-    // not VAT registered. Say so, rather than printing "VAT (0%): £0.00"
-    // which reads like a mistake on a client-facing document.
+    const taxRate = parseQuoteVatRate((quote as any).taxRate);
+    const charged = isVatCharged(taxRate);
+    const vat = oneOff * (taxRate / 100);
+    const plusVat = charged ? " + VAT" : "";
+
+    const lines: string[] = [];
+    if (hasOneOff) {
+      if (charged) {
+        lines.push(`One-off subtotal: ${formatCurrency(oneOff)}`);
+        lines.push(`VAT (${taxRate}%): ${formatCurrency(vat)}`);
+        lines.push(`One-off total: ${formatCurrency(oneOff + vat)}`);
+      } else {
+        lines.push(`One-off total: ${formatCurrency(oneOff)}`);
+      }
+    }
+    if (hasMonthly) lines.push(`Monthly: ${formatCurrency(monthly)} per month${plusVat}`);
+    if (hasAnnual) lines.push(`Annual: ${formatCurrency(annual)} per year${plusVat}`);
+    if (lines.length === 0) lines.push(`Total: ${formatCurrency(0)}`);
+    if (!charged) lines.push("No VAT applicable");
+    if (hasOptional) lines.push("Optional items are not included in these totals.");
+
     parts.push(paragraph(""));
-    parts.push(
-      paragraph(
-        isVatCharged(taxRate)
-          ? `Subtotal: ${formatCurrency(subtotal)}\nVAT (${taxRate}%): ${formatCurrency(vat)}\nTotal: ${formatCurrency(total)}`
-          : `Total: ${formatCurrency(total)}\nNo VAT applicable`,
-        { bold: false },
-      ),
-    );
+    parts.push(paragraph(lines.join("\n"), { bold: false }));
   }
 
   // Assumptions

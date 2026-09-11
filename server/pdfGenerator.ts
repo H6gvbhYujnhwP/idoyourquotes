@@ -3,6 +3,9 @@
 
 import { Quote, QuoteLineItem, User, Organization, ComprehensiveConfig } from "../drizzle/schema";
 import { getPresignedUrl } from "./r2Storage";
+// VAT fix delivery — explicit owner permission (11 Sep 2026) to break
+// the lock for the two live VAT totals rows only. See vatRate.ts.
+import { parseQuoteVatRate, isVatCharged, formatVatRate } from "./services/vatRate";
 interface PDFQuoteData {
   quote: Quote;
   lineItems: QuoteLineItem[];
@@ -799,18 +802,27 @@ function generateSimpleQuoteHTML(data: PDFQuoteData): string {
 
     <div class="totals">
       <div class="totals-table">
+        ${isVatCharged(parseQuoteVatRate(quote.taxRate)) ? `
         <div class="totals-row">
           <span class="totals-label">Subtotal (ex VAT)</span>
           <span class="totals-value">${formatCurrency(quote.subtotal)}</span>
         </div>
         <div class="totals-row">
-          <span class="totals-label">VAT (${parseFloat(quote.taxRate || "0").toFixed(0)}%)</span>
+          <span class="totals-label">VAT (${formatVatRate(parseQuoteVatRate(quote.taxRate))}%)</span>
           <span class="totals-value">${formatCurrency(quote.taxAmount)}</span>
         </div>
         <div class="totals-row total">
           <span class="totals-label">Total (inc VAT)</span>
           <span class="totals-value">${formatCurrency(quote.total)}</span>
+        </div>` : `
+        <div class="totals-row">
+          <span class="totals-label">No VAT applicable</span>
+          <span class="totals-value">&mdash;</span>
         </div>
+        <div class="totals-row total">
+          <span class="totals-label">Total</span>
+          <span class="totals-value">${formatCurrency(quote.total)}</span>
+        </div>`}
       </div>
     </div>` : ""}
 
@@ -1080,18 +1092,27 @@ function generateComprehensiveProposalHTML(data: PDFQuoteData): string {
   html += `
     <div class="totals" style="margin-top: 8mm;">
       <div class="totals-table">
+        ${isVatCharged(parseQuoteVatRate(quote.taxRate)) ? `
         <div class="totals-row">
           <span class="totals-label">Subtotal (ex VAT)</span>
           <span class="totals-value">${formatCurrency(quote.subtotal)}</span>
         </div>
         <div class="totals-row">
-          <span class="totals-label">VAT (${parseFloat(quote.taxRate || "0").toFixed(0)}%)</span>
+          <span class="totals-label">VAT (${formatVatRate(parseQuoteVatRate(quote.taxRate))}%)</span>
           <span class="totals-value">${formatCurrency(quote.taxAmount)}</span>
         </div>
         <div class="totals-row total">
           <span class="totals-label">Total (inc VAT)</span>
           <span class="totals-value">${formatCurrency(quote.total)}</span>
+        </div>` : `
+        <div class="totals-row">
+          <span class="totals-label">No VAT applicable</span>
+          <span class="totals-value">&mdash;</span>
         </div>
+        <div class="totals-row total">
+          <span class="totals-label">Total</span>
+          <span class="totals-value">${formatCurrency(quote.total)}</span>
+        </div>`}
       </div>
     </div>
   </div>`;
@@ -1451,9 +1472,9 @@ function generateComprehensiveProposalHTML(data: PDFQuoteData): string {
           <span class="totals-label">Subtotal (excl. VAT)</span>
           <span class="totals-value">${formatCurrency(quote.subtotal)}</span>
         </div>
-        ${parseFloat(quote.taxRate || "0") > 0 ? `
+        ${isVatCharged(parseQuoteVatRate(quote.taxRate)) ? `
         <div class="totals-row">
-          <span class="totals-label">VAT @ ${quote.taxRate}%</span>
+          <span class="totals-label">VAT @ ${formatVatRate(parseQuoteVatRate(quote.taxRate))}%</span>
           <span class="totals-value">${formatCurrency(quote.taxAmount)}</span>
         </div>` : ""}
         <div class="totals-row total">

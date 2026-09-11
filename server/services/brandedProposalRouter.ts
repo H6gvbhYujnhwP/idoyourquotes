@@ -34,6 +34,7 @@ import { and, eq } from "drizzle-orm";
 import { contractDocuments } from "../../shared/schema";
 import { getDb } from "../db";
 import { applyContractWording } from "./contractDocumentSeeds";
+import { parseQuoteVatRate, isVatCharged, formatVatRate } from "./vatRate";
 import sharp from "sharp";
 import { router, protectedProcedure } from "../_core/trpc";
 import {
@@ -628,7 +629,12 @@ export const brandedProposalRouter = router({
       const monthlyExVat = lineItems
         .filter((li) => li.pricingType === "monthly")
         .reduce((sum, li) => sum + (li.total || 0), 0);
-      const vatRate = quoteContext.taxRate ?? 20;
+      // VAT fix delivery — previously `quoteContext.taxRate ?? 20`. The
+      // fallback never fired (taxRate is already coerced to a number), so
+      // a quote at 0% printed "including VAT at 0%". 0 now means the
+      // business is not VAT registered and the wording says so.
+      const vatRate = parseQuoteVatRate(quoteContext.taxRate);
+      const vatCharged = isVatCharged(vatRate);
       const monthlyIncVat = monthlyExVat * (1 + vatRate / 100);
       const gbp = (n: number) =>
         `£${n.toLocaleString("en-GB", {
@@ -656,13 +662,30 @@ export const brandedProposalRouter = router({
         firstInvoiceMonth,
         monthlyFeeExVat: gbp(monthlyExVat),
         monthlyFeeIncVat: gbp(monthlyIncVat),
-        vatRate: String(vatRate),
+        vatRate: formatVatRate(vatRate),
+        // VAT fix delivery — the whole fee phrase, VAT-aware. Registered:
+        // "£1,240.00 + VAT (£1,488.00 including VAT at 20%)" — byte-for-
+        // byte the wording Sweetbyte's documents already produce.
+        // Not registered: "£1,240.00 (no VAT applicable)".
+        monthlyFee: vatCharged
+          ? `${gbp(monthlyExVat)} + VAT (${gbp(monthlyIncVat)} including VAT at ${formatVatRate(vatRate)}%)`
+          : `${gbp(monthlyExVat)} (no VAT applicable)`,
       };
 
+      // VAT fix delivery — the shipped acceptance wording spells the fee
+      // out from three separate placeholders. Where a document still
+      // carries that exact phrase, it is collapsed to {{monthlyFee}}
+      // before filling, so the same document reads correctly whether or
+      // not the business is VAT registered. Any other use of the three
+      // individual placeholders is left exactly as written.
+      const LEGACY_FEE_PHRASE =
+        /\{\{monthlyFeeExVat\}\}\s*\+\s*VAT\s*\(\s*\{\{monthlyFeeIncVat\}\}\s*including\s+VAT\s+at\s*\{\{vatRate\}\}\s*%\s*\)/g;
       const fill = (text: string) =>
-        text.replace(/\{\{(\w+)\}\}/g, (whole, key: string) =>
-          Object.prototype.hasOwnProperty.call(values, key) ? values[key] : whole,
-        );
+        text
+          .replace(LEGACY_FEE_PHRASE, "{{monthlyFee}}")
+          .replace(/\{\{(\w+)\}\}/g, (whole, key: string) =>
+            Object.prototype.hasOwnProperty.call(values, key) ? values[key] : whole,
+          );
 
       // ── Proposal wording → agreement wording ──────────────────────
       // Applied only to generated chapters. Embedded brochure pages are

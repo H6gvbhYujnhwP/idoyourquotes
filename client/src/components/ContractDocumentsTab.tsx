@@ -97,6 +97,11 @@ const PLACEHOLDERS: Array<{ token: string; meaning: string }> = [
   { token: "{{customerName}}", meaning: "the client on the quote" },
   { token: "{{commencementDate}}", meaning: "the start date you type" },
   { token: "{{firstInvoiceMonth}}", meaning: "month of the first invoice" },
+  // VAT fix delivery — the whole fee phrase with the right VAT wording:
+  // "£X + VAT (£Y including VAT at 20%)", or "£X (no VAT applicable)"
+  // for a business that is not VAT registered. Recommended over the
+  // three separate figures below.
+  { token: "{{monthlyFee}}", meaning: "monthly fee, worded for your VAT status" },
   { token: "{{monthlyFeeExVat}}", meaning: "monthly total, excluding VAT" },
   { token: "{{monthlyFeeIncVat}}", meaning: "monthly total, including VAT" },
   { token: "{{vatRate}}", meaning: "the VAT percentage" },
