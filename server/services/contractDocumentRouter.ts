@@ -1,30 +1,47 @@
 /**
  * Contract Document tRPC sub-router.
  *
- * Contract-button delivery, stage 2a. Manages the organisation's Gold
- * and Silver contract documents, and the signatory identity that the
- * contract's acceptance page prints.
+ * Contract-button delivery, stage 2a. Manages the organisation's contract
+ * documents, and the signatory identity that the contract's acceptance
+ * page prints.
  *
  * Endpoints:
- *   - list:      return the org's contract documents, seeding them from
- *                the shipped defaults on first call.
+ *   - list:      return the org's contract documents (seeding Sweetbyte's
+ *                Gold and Silver on first call, for allow-listed orgs only
+ *                — see SHIPPED DEFAULTS below).
+ *   - create:    add a new, empty contract document with the user's name.
+ *   - remove:    delete one contract document.
  *   - save:      upsert one document (clauses + the four body texts).
  *   - resetTier: discard the org's edits for one tier and restore the
- *                shipped default.
+ *                shipped default (allow-listed orgs, shipped tiers only).
  *   - getSignatory:    signatory name, title and signature image.
  *   - saveSignatory:   update name and title.
  *   - uploadSignature: receive a base64 image, store in R2, save key.
  *   - deleteSignature: clear the stored signature.
  *
- * SEED-ON-READ, NOT SEED-ON-SIGNUP:
- *   `list` creates the two rows the first time an org asks for them.
- *   Doing it here rather than at signup means no backfill is needed for
- *   existing orgs, and an org that never opens the Contracts tab never
- *   accumulates rows it does not use. Once seeded, the org's copy is
- *   authoritative — a later change to the shipped defaults never
- *   overwrites it, because silently reverting Wez's edited clause on a
- *   deploy would be the worst possible failure mode for a legal
- *   document.
+ * SHIPPED DEFAULTS ARE SWEETBYTE'S, AND ONLY SWEETBYTE GETS THEM
+ * (contracts-per-business delivery, delivery 2 of the Xero sequence):
+ *   The Gold and Silver documents in contractDocumentSeeds.ts are
+ *   Sweetbyte's own live contracts — its SLA hours, onsite allowance,
+ *   notice period and Direct Debit wording. Previously every org that
+ *   opened the Contracts tab was seeded with them, so another MSP (or a
+ *   pest-control firm) would have issued Sweetbyte's service terms under
+ *   its own name. Now only organisations listed in the Render setting
+ *   CONTRACT_SEED_ORG_IDS (comma-separated org ids, e.g. "10") receive
+ *   them. Every other organisation starts with no contract documents and
+ *   adds its own via `create`. Unset / empty = nobody is seeded.
+ *
+ *   Confirmed on 11 Sep 2026 that contract_documents held zero rows for
+ *   every org before this delivery, so no existing org had been seeded.
+ *
+ * SEED ONCE, ON FIRST READ:
+ *   An allow-listed org is seeded only when it has NO documents at all.
+ *   Previously the rule was "any shipped tier missing", which — now that
+ *   documents can be deleted — would silently resurrect a package the
+ *   user had just removed. Once seeded, the org's copy is authoritative:
+ *   a later change to the shipped defaults never overwrites it, because
+ *   silently reverting an edited clause on a deploy would be the worst
+ *   possible failure mode for a legal document.
  *
  * TIER GATING:
  *   Contracts follow Branded Proposals: Pro and Team only, since the
@@ -59,6 +76,68 @@ const MAX_SIGNATURE_BYTES = 2 * 1024 * 1024;
 
 const ALLOWED_SIGNATURE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 
+/** Most contract documents one organisation can hold. Generous — real
+ *  businesses run one to three — but stops a runaway client loop. */
+const MAX_DOCUMENTS_PER_ORG = 20;
+
+/**
+ * Org ids allowed to receive the shipped (Sweetbyte) documents, read
+ * from CONTRACT_SEED_ORG_IDS on every call so a Render env change takes
+ * effect on the next restart without a code change.
+ */
+function seedOrgIds(): Set<number> {
+  const raw = process.env.CONTRACT_SEED_ORG_IDS ?? "";
+  return new Set(
+    raw
+      .split(",")
+      .map((v) => parseInt(v.trim(), 10))
+      .filter((n) => Number.isInteger(n) && n > 0),
+  );
+}
+
+function orgGetsShippedDefaults(orgId: number): boolean {
+  return seedOrgIds().has(orgId);
+}
+
+/**
+ * The neutral starting point for a contract a user adds themselves.
+ * Deliberately contains no terms: IDYQ must not author another
+ * business's legal wording. The acceptance paragraph only states facts
+ * the renderer fills in (who, when, how much), using {{monthlyFee}} so
+ * it reads correctly whether or not the business is VAT registered.
+ * The pricing note is NOT passed through placeholder substitution by
+ * the renderer, so it carries no placeholders.
+ */
+const BLANK_DOCUMENT_TEXTS = {
+  acceptanceBody:
+    "This agreement between {{providerName}} and {{customerName}} will commence on {{commencementDate}}. The first invoice will be issued for {{firstInvoiceMonth}}. The monthly fee for the services set out in this agreement is {{monthlyFee}}.",
+  nextStepsBody: "",
+  thankYouBody: "Thank you for choosing {{providerName}}.",
+  pricingCaveatBody:
+    "The prices set out in this agreement are the agreed prices for the services described.",
+};
+
+/**
+ * Turn a user-given name into the row's `tier` key: lower-case letters,
+ * digits and hyphens, at most 32 characters (the column width), unique
+ * within the org. "Managed Services Agreement" -> "managed-services-agreement".
+ */
+function slugForName(name: string, taken: Set<string>): string {
+  const base =
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 28)
+      .replace(/-+$/g, "") || "contract";
+  if (!taken.has(base)) return base;
+  for (let i = 2; i < 1000; i++) {
+    const candidate = `${base}-${i}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return `${base}-${Date.now().toString(36)}`.slice(0, 32);
+}
+
 const ClauseSchema = z.object({
   number: z.number().int().min(1).max(999),
   heading: z.string().min(1).max(255),
@@ -80,8 +159,12 @@ async function loadOrSeed(orgId: number) {
     .from(contractDocuments)
     .where(eq(contractDocuments.orgId, orgId));
 
-  const haveTiers = new Set(existing.map((d: { tier: string }) => d.tier));
-  const missing = CONTRACT_DOCUMENT_SEEDS.filter((s) => !haveTiers.has(s.tier));
+  // Seed only an allow-listed org that has no documents at all. See
+  // SHIPPED DEFAULTS and SEED ONCE in the header.
+  const missing =
+    existing.length === 0 && orgGetsShippedDefaults(orgId)
+      ? CONTRACT_DOCUMENT_SEEDS
+      : [];
 
   if (missing.length > 0) {
     await db.insert(contractDocuments).values(
@@ -136,6 +219,12 @@ export const contractDocumentRouter = router({
 
     return {
       documents,
+      // Tiers this org may "Reset to default". Empty for every org that
+      // isn't allow-listed, so the Reset button never offers another
+      // business Sweetbyte's wording.
+      shippedDefaults: orgGetsShippedDefaults(org.id)
+        ? CONTRACT_DOCUMENT_SEEDS.map((s) => s.tier as string)
+        : ([] as string[]),
       canGenerateContracts: ALLOWED_TIERS.includes(orgAny.subscriptionTier),
       signatory: {
         name: orgAny.contractSignatoryName ?? null,
@@ -144,6 +233,77 @@ export const contractDocumentRouter = router({
       },
     };
   }),
+
+  /**
+   * Add a new contract document. Starts with no clauses and the neutral
+   * texts above; the user writes their own terms in Settings.
+   */
+  create: protectedProcedure
+    .input(z.object({ displayName: z.string().trim().min(1).max(255) }))
+    .mutation(async ({ ctx, input }) => {
+      const org = await getUserPrimaryOrg(ctx.user.id);
+      if (!org) throw new Error("Organisation not found");
+
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+
+      // Seed first, so an allow-listed org adding a third contract before
+      // ever opening the tab still receives Gold and Silver.
+      const existing = await loadOrSeed(org.id);
+      if (existing.length >= MAX_DOCUMENTS_PER_ORG) {
+        throw new Error(
+          `You can hold up to ${MAX_DOCUMENTS_PER_ORG} contract documents.`,
+        );
+      }
+
+      const taken = new Set<string>(
+        existing.map((d: { tier: string }) => d.tier as string),
+      );
+      const tier = slugForName(input.displayName, taken);
+
+      const [created] = await db
+        .insert(contractDocuments)
+        .values({
+          orgId: org.id,
+          tier,
+          displayName: input.displayName,
+          clauses: [],
+          ...BLANK_DOCUMENT_TEXTS,
+        })
+        .returning();
+
+      return created;
+    }),
+
+  /**
+   * Delete one contract document. Contracts are rendered on demand and
+   * never stored, so no already-issued contract depends on this row.
+   * The client confirms first.
+   */
+  remove: protectedProcedure
+    .input(z.object({ tier: z.string().min(1).max(32) }))
+    .mutation(async ({ ctx, input }) => {
+      const org = await getUserPrimaryOrg(ctx.user.id);
+      if (!org) throw new Error("Organisation not found");
+
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+
+      const deleted = await db
+        .delete(contractDocuments)
+        .where(
+          and(
+            eq(contractDocuments.orgId, org.id),
+            eq(contractDocuments.tier, input.tier),
+          ),
+        )
+        .returning();
+
+      if (deleted.length === 0) {
+        throw new Error("That contract document no longer exists.");
+      }
+      return { success: true };
+    }),
 
   /**
    * Save one document. Whole-document upsert rather than per-clause
@@ -170,8 +330,8 @@ export const contractDocumentRouter = router({
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
 
-      // Seed first so an org saving before it has ever read still ends
-      // up with both rows present rather than just the one it edited.
+      // Seed first so an allow-listed org saving before it has ever read
+      // still ends up with its shipped rows present.
       await loadOrSeed(org.id);
 
       const [updated] = await db
@@ -207,8 +367,12 @@ export const contractDocumentRouter = router({
       const org = await getUserPrimaryOrg(ctx.user.id);
       if (!org) throw new Error("Organisation not found");
 
+      // Only an allow-listed org may restore Sweetbyte's shipped wording.
+      if (!orgGetsShippedDefaults(org.id)) {
+        throw new Error("This contract has no shipped default to restore.");
+      }
       const seed = CONTRACT_DOCUMENT_SEEDS.find((s) => s.tier === input.tier);
-      if (!seed) throw new Error(`No shipped default for tier "${input.tier}"`);
+      if (!seed) throw new Error("This contract has no shipped default to restore.");
 
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
@@ -237,7 +401,8 @@ export const contractDocumentRouter = router({
       return restored;
     }),
 
-  /** Signatory name and title for the provider signature block. */
+  /** Signatory name and title for the provider signature block.
+   *  Shared by all of the org's contract documents. */
   saveSignatory: protectedProcedure
     .input(
       z.object({

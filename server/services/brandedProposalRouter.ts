@@ -615,7 +615,15 @@ export const brandedProposalRouter = router({
 
       if (!contractDoc) {
         throw new Error(
-          `No ${input.tier} contract document found. Open Settings → Contracts first.`,
+          "That contract no longer exists. Open Settings → Contracts to choose or add one.",
+        );
+      }
+      // Contracts-per-business delivery — a contract a business adds
+      // itself starts with no clauses. Rendering it would print an empty
+      // "Terms and conditions" page, so stop here with a clear pointer.
+      if (!Array.isArray(contractDoc.clauses) || contractDoc.clauses.length === 0) {
+        throw new Error(
+          `"${contractDoc.displayName}" has no clauses yet. Add your terms in Settings → Contracts, then try again.`,
         );
       }
 

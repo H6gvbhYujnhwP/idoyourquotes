@@ -158,6 +158,18 @@ function describeEmbedTag(slotName: string): string {
 
 // ─── Component ───────────────────────────────────────────────────────
 
+/** Contracts-per-business delivery — label for a contract document:
+ *  Sweetbyte's shipped tiers keep "Gold" / "Silver"; anything else uses
+ *  the name its owner gave it. Mirrors docLabel in ContractDocumentsTab. */
+const CONTRACT_TIER_LABELS: Record<string, string> = {
+  gold: "Gold",
+  silver: "Silver",
+};
+function contractDocLabel(doc: { tier: string; displayName?: string | null } | undefined): string {
+  if (!doc) return "";
+  return CONTRACT_TIER_LABELS[doc.tier] ?? (doc.displayName?.trim() || doc.tier);
+}
+
 export default function BrandedProposalWorkspace() {
   const params = useParams<{ quoteId: string }>();
   const quoteId = parseInt(params.quoteId || "0", 10);
@@ -454,11 +466,15 @@ export default function BrandedProposalWorkspace() {
     const docs = contractDocs.data?.documents ?? [];
     if (docs.length === 0) {
       toast.error(
-        "No contract documents yet — open Settings → Contracts first.",
+        "Add a contract first — open Settings → Contracts.",
       );
       return;
     }
-    if (!contractTier) setContractTier(docs[0].tier);
+    // Contracts-per-business delivery — also re-selects when the stored
+    // choice no longer exists (the contract was deleted in Settings).
+    if (!contractTier || !docs.some((d: any) => d.tier === contractTier)) {
+      setContractTier(docs[0].tier);
+    }
     setContractOpen(true);
   }
 
@@ -754,15 +770,27 @@ export default function BrandedProposalWorkspace() {
               </p>
             </div>
 
+            {/* Contracts-per-business delivery — one contract: no picker,
+                just its name. Several: a picker labelled with the
+                business's own names (Sweetbyte's shipped tiers keep their
+                short Gold / Silver labels). */}
+            {(contractDocs.data?.documents ?? []).length === 1 ? (
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Contract</label>
+                <p className="text-sm">
+                  {contractDocLabel((contractDocs.data?.documents ?? [])[0])}
+                </p>
+              </div>
+            ) : (
             <div className="space-y-2">
-              <label className="text-sm font-medium">Package</label>
-              <div className="flex gap-2">
+              <label className="text-sm font-medium">Contract</label>
+              <div className="flex flex-wrap gap-2">
                 {(contractDocs.data?.documents ?? []).map((doc: any) => (
                   <button
                     key={doc.tier}
                     type="button"
                     onClick={() => setContractTier(doc.tier)}
-                    className="flex-1 px-4 py-2 text-sm font-medium rounded-md border capitalize transition-colors"
+                    className="flex-1 px-4 py-2 text-sm font-medium rounded-md border transition-colors"
                     style={
                       contractTier === doc.tier
                         ? {
@@ -773,7 +801,7 @@ export default function BrandedProposalWorkspace() {
                         : { background: "white", borderColor: brand.border }
                     }
                   >
-                    {doc.tier}
+                    {contractDocLabel(doc)}
                   </button>
                 ))}
               </div>
@@ -781,6 +809,7 @@ export default function BrandedProposalWorkspace() {
                 A quote can mix packages, so this is always your choice.
               </p>
             </div>
+            )}
 
             <div className="space-y-2">
               <label className="text-sm font-medium">Start date</label>

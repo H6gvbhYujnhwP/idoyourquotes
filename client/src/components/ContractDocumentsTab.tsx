@@ -2,7 +2,16 @@
  * ContractDocumentsTab.tsx
  *
  * Contract-button delivery, stage 2b — the Settings screen where the
- * organisation's Gold and Silver contract documents are authored.
+ * organisation's contract documents are authored.
+ *
+ * CONTRACTS-PER-BUSINESS DELIVERY (delivery 2 of the Xero sequence):
+ *   Gold and Silver are Sweetbyte's own documents and now appear only for
+ *   organisations on the server's CONTRACT_SEED_ORG_IDS list. Every other
+ *   organisation starts with none and uses "Add contract" to create its
+ *   own, named however it likes. Contracts can be deleted. "Reset to
+ *   default" only shows on documents that have a shipped version
+ *   (data.shippedDefaults), so another business is never offered
+ *   Sweetbyte's wording.
  *
  * Rendered from the "Contracts" tab in client/src/pages/Settings.tsx,
  * following the same self-contained pattern as BrochureSettingsTab: the
@@ -10,10 +19,12 @@
  * own data fetching, state and mutations.
  *
  * WHAT THE USER SEES:
- *   - A package switcher (Gold / Silver). They are two entirely
- *     separate documents, not one document with variants — confirmed
- *     with Wez, because their SLA, support hours, onsite allowance and
- *     clause wording all differ.
+ *   - A switcher across the org's contract documents (Sweetbyte: Gold /
+ *     Silver) plus "Add contract". Each is an entirely separate document,
+ *     not one document with variants — confirmed with Wez, because
+ *     Sweetbyte's SLA, support hours, onsite allowance and clause wording
+ *     differ between packages.
+ *   - With no documents yet: an "Add your first contract" prompt.
  *   - The numbered clauses, each independently editable, with add,
  *     delete and reorder. Editing clause 6 must not mean scrolling
  *     through three pages of legal text hunting for it.
@@ -30,10 +41,9 @@
  * click. The Save button enables only when something has changed, and
  * a warning appears if the user switches package with unsaved edits.
  *
- * SEEDING: the documents seed themselves server-side on first read, so
- * this screen is never empty. Both packages arrive pre-filled with the
- * twelve clauses transcribed from the live Howgates and Sorrells
- * contracts.
+ * SEEDING: allow-listed organisations (Sweetbyte) are seeded server-side
+ * on first read with the twelve clauses transcribed from the live
+ * Howgates and Sorrells contracts. Everyone else starts empty.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -80,11 +90,17 @@ interface DocumentDraft {
   pricingCaveatBody: string;
 }
 
-/** Human labels for the tier ids the server stores. */
+/** Short labels for Sweetbyte's shipped tier ids. Any other document is
+ *  labelled with the name its owner gave it. */
 const TIER_LABELS: Record<string, string> = {
   gold: "Gold",
   silver: "Silver",
 };
+
+/** The label shown on switchers and buttons for one document. */
+function docLabel(doc: { tier: string; displayName?: string | null }): string {
+  return TIER_LABELS[doc.tier] ?? (doc.displayName?.trim() || doc.tier);
+}
 
 /**
  * The placeholders the renderer substitutes at generation time. Shown
@@ -127,19 +143,33 @@ export default function ContractDocumentsTab() {
   const [draft, setDraft] = useState<DocumentDraft | null>(null);
   const [signatoryName, setSignatoryName] = useState("");
   const [signatoryTitle, setSignatoryTitle] = useState("");
+  const [newName, setNewName] = useState("");
+  const [adding, setAdding] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Load server state into local editing state ───────────────────
   // Only seeds the draft when the tier changes or nothing is loaded
   // yet, so a refetch (after saving the signatory, say) never wipes
   // clause edits the user is part-way through typing.
+  //
+  // Contracts-per-business delivery: also handles an org with no
+  // documents (draft stays null, the empty state shows) and a document
+  // that has just been deleted (falls back to the first remaining one).
   useEffect(() => {
-    if (!data?.documents?.length) return;
-    const tier = activeTier ?? data.documents[0].tier;
-    if (activeTier === null) setActiveTier(tier);
+    if (!data) return;
+    const docs: any[] = data.documents ?? [];
+    if (docs.length === 0) {
+      if (activeTier !== null) setActiveTier(null);
+      setDraft(null);
+      return;
+    }
+    const stillThere =
+      activeTier !== null && docs.some((d: any) => d.tier === activeTier);
+    const tier = stillThere ? (activeTier as string) : docs[0].tier;
+    if (tier !== activeTier) setActiveTier(tier);
     setDraft((prev) => {
       if (prev && prev.tier === tier) return prev;
-      const doc = data.documents.find((d: any) => d.tier === tier);
+      const doc = docs.find((d: any) => d.tier === tier);
       return doc ? toDraft(doc) : prev;
     });
   }, [data, activeTier]);
@@ -181,6 +211,31 @@ export default function ContractDocumentsTab() {
     onError: (e: any) => toast.error("Could not reset: " + e.message),
   });
 
+  // Contracts-per-business delivery — add and delete. Both wait for the
+  // list to refetch before moving the selection, so the effect above
+  // never sees a selection that the cached list doesn't yet contain.
+  const createDoc = trpc.contractDocument.create.useMutation({
+    onSuccess: async (created: any) => {
+      await utils.contractDocument.list.invalidate();
+      setActiveTier(created.tier);
+      setDraft(toDraft(created));
+      setNewName("");
+      setAdding(false);
+      toast.success(`"${docLabel(created)}" added — now write its terms`);
+    },
+    onError: (e: any) => toast.error("Could not add: " + e.message),
+  });
+
+  const removeDoc = trpc.contractDocument.remove.useMutation({
+    onSuccess: async () => {
+      await utils.contractDocument.list.invalidate();
+      setActiveTier(null);
+      setDraft(null);
+      toast.success("Contract deleted");
+    },
+    onError: (e: any) => toast.error("Could not delete: " + e.message),
+  });
+
   const saveSignatory = trpc.contractDocument.saveSignatory.useMutation({
     onSuccess: () => {
       toast.success("Signatory saved");
@@ -210,7 +265,7 @@ export default function ContractDocumentsTab() {
   const switchTier = (tier: string) => {
     if (isDirty) {
       const ok = window.confirm(
-        "You have unsaved changes to this contract. Switching package will discard them. Continue?",
+        "You have unsaved changes to this contract. Switching will discard them. Continue?",
       );
       if (!ok) return;
     }
@@ -299,10 +354,34 @@ export default function ContractDocumentsTab() {
   const handleReset = () => {
     if (!draft) return;
     const ok = window.confirm(
-      `Restore the ${TIER_LABELS[draft.tier] ?? draft.tier} contract to the shipped default? Your edits to this package will be lost.`,
+      `Restore the ${docLabel(draft)} contract to the shipped default? Your edits to it will be lost.`,
     );
     if (!ok) return;
     resetTier.mutate({ tier: draft.tier });
+  };
+
+  const handleAdd = () => {
+    const name = newName.trim();
+    if (!name) {
+      toast.error("Give the contract a name first");
+      return;
+    }
+    if (isDirty) {
+      const ok = window.confirm(
+        "You have unsaved changes to this contract. Adding a new one will discard them. Continue?",
+      );
+      if (!ok) return;
+    }
+    createDoc.mutate({ displayName: name });
+  };
+
+  const handleDelete = () => {
+    if (!draft) return;
+    const ok = window.confirm(
+      `Delete "${docLabel(draft)}"? Its clauses and wording are removed for good. Contracts you have already sent are not affected.`,
+    );
+    if (!ok) return;
+    removeDoc.mutate({ tier: draft.tier });
   };
 
   const handleSignatureFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -334,13 +413,53 @@ export default function ContractDocumentsTab() {
     );
   }
 
-  if (!draft || !data) {
+  if (!data) {
     return (
       <p className="py-12 text-muted-foreground">
-        No contract documents available.
+        Your contract documents couldn&rsquo;t be loaded. Refresh the page to
+        try again.
       </p>
     );
   }
+
+  const documents: any[] = data.documents ?? [];
+  const shippedDefaults: string[] = (data as any).shippedDefaults ?? [];
+
+  // The inline "name your contract" form, shared by the empty state and
+  // the "Add contract" button.
+  const addForm = (
+    <div className="flex flex-col sm:flex-row gap-2">
+      <Input
+        value={newName}
+        placeholder="e.g. Managed Services Agreement"
+        maxLength={255}
+        onChange={(e) => setNewName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") handleAdd();
+        }}
+        className="sm:max-w-sm"
+      />
+      <Button onClick={handleAdd} disabled={createDoc.isPending}>
+        {createDoc.isPending ? (
+          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+        ) : (
+          <Plus className="h-4 w-4 mr-2" />
+        )}
+        Add contract
+      </Button>
+      {documents.length > 0 && (
+        <Button
+          variant="outline"
+          onClick={() => {
+            setAdding(false);
+            setNewName("");
+          }}
+        >
+          Cancel
+        </Button>
+      )}
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -365,13 +484,28 @@ export default function ContractDocumentsTab() {
           </CardTitle>
           <CardDescription>
             Your terms, written once and used word-for-word on every contract.
-            Gold and Silver are two separate documents.
+            Each contract is a separate document.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Package switcher */}
-          <div className="flex gap-2">
-            {data.documents.map((doc: any) => (
+          {documents.length === 0 ? (
+            /* Empty state — every organisation except the allow-listed
+               ones starts here. */
+            <div className="space-y-3">
+              <div>
+                <p className="font-medium">Add your first contract</p>
+                <p className="text-sm text-muted-foreground">
+                  Name it, then write your own clauses. It&rsquo;s printed on
+                  every contract you issue from a branded proposal.
+                </p>
+              </div>
+              {addForm}
+            </div>
+          ) : (
+          <>
+          {/* Contract switcher */}
+          <div className="flex flex-wrap gap-2">
+            {documents.map((doc: any) => (
               <button
                 key={doc.tier}
                 type="button"
@@ -387,11 +521,26 @@ export default function ContractDocumentsTab() {
                     : { background: "white", borderColor: "#d1d5db" }
                 }
               >
-                {TIER_LABELS[doc.tier] ?? doc.tier}
+                {docLabel(doc)}
               </button>
             ))}
+            {!adding && (
+              <button
+                type="button"
+                onClick={() => setAdding(true)}
+                className="px-4 py-2 text-sm font-medium rounded-md border border-dashed transition-colors inline-flex items-center"
+                style={{ background: "white", borderColor: "#d1d5db" }}
+              >
+                <Plus className="h-3.5 w-3.5 mr-1.5" />
+                Add contract
+              </button>
+            )}
           </div>
 
+          {adding && addForm}
+
+          {draft && (
+          <>
           <div className="space-y-2">
             <Label htmlFor="displayName">Document title</Label>
             <Input
@@ -424,9 +573,15 @@ export default function ContractDocumentsTab() {
               ))}
             </div>
           </div>
+          </>
+          )}
+          </>
+          )}
         </CardContent>
       </Card>
 
+      {draft && (
+      <>
       {/* Clauses */}
       <Card>
         <CardHeader>
@@ -581,31 +736,46 @@ export default function ContractDocumentsTab() {
         </CardContent>
       </Card>
 
-      {/* Save / reset */}
-      <div className="flex items-center gap-3">
+      {/* Save / reset / delete */}
+      <div className="flex flex-wrap items-center gap-3">
         <Button onClick={handleSave} disabled={!isDirty || save.isPending}>
           {save.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-          Save {TIER_LABELS[draft.tier] ?? draft.tier} contract
+          Save {docLabel(draft)} contract
         </Button>
+        {/* Only documents with a shipped version can be reset — in
+            practice Sweetbyte's Gold and Silver. */}
+        {shippedDefaults.includes(draft.tier) && (
+          <Button
+            variant="outline"
+            onClick={handleReset}
+            disabled={resetTier.isPending}
+          >
+            <RotateCcw className="h-4 w-4 mr-2" />
+            Reset to default
+          </Button>
+        )}
         <Button
           variant="outline"
-          onClick={handleReset}
-          disabled={resetTier.isPending}
+          onClick={handleDelete}
+          disabled={removeDoc.isPending}
+          className="text-red-600 hover:text-red-700"
         >
-          <RotateCcw className="h-4 w-4 mr-2" />
-          Reset to default
+          <Trash2 className="h-4 w-4 mr-2" />
+          Delete contract
         </Button>
         {isDirty && (
           <span className="text-xs text-muted-foreground">Unsaved changes</span>
         )}
       </div>
+      </>
+      )}
 
       {/* Signatory */}
       <Card>
         <CardHeader>
           <CardTitle>Who signs</CardTitle>
           <CardDescription>
-            Printed in the provider signature block. Shared by both packages.
+            Printed in the provider signature block. Shared by all your contracts.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

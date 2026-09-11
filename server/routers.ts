@@ -8,6 +8,7 @@ import { subscriptionRouter } from "./services/subscriptionRouter";
 import { adminRouter } from "./services/adminRouter";
 import { brochureRouter } from "./services/brochureRouter";
 import { brandedProposalRouter } from "./services/brandedProposalRouter";
+import { contractDocumentRouter } from "./services/contractDocumentRouter";
 import { templateProposalRouter } from "./services/templateProposalRouter";
 import { supportRouter } from "./services/supportRouter";
 import { prospectBotRouter } from "./services/prospectBotRouter";
@@ -4133,6 +4134,23 @@ Rules:
   brochure: brochureRouter,
   brandedProposal: brandedProposalRouter,
   templateProposal: templateProposalRouter,
+
+  // ============ CONTRACT DOCUMENTS (contract-button delivery) ========
+  // The org's contract documents — the numbered terms, acceptance
+  // paragraph, contract-only Next Steps wording, and the signatory
+  // identity printed on the signature page. Authored once in Settings
+  // and reused verbatim on every contract, which is the whole point:
+  // the terms stop being rewritten per document. Sweetbyte's Gold and
+  // Silver are seeded only for orgs on CONTRACT_SEED_ORG_IDS; every
+  // other business adds its own (contracts-per-business delivery).
+  //
+  // Reads are open to all tiers so a Solo user sees the tab and an
+  // upgrade prompt rather than a blank screen; contract GENERATION is
+  // gated to Pro and Team, mirroring Branded Proposals, because a
+  // contract is produced from a branded proposal.
+  //
+  // See server/services/contractDocumentRouter.ts.
+  contractDocument: contractDocumentRouter,
 
   // ============ SUPPORT BOT (Phase 4B Delivery E.13) ============
   // In-app help drawer + escalation. See server/services/supportRouter.ts.
