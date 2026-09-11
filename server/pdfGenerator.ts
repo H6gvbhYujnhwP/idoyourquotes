@@ -6,6 +6,9 @@ import { getPresignedUrl } from "./r2Storage";
 // VAT fix delivery — explicit owner permission (11 Sep 2026) to break
 // the lock for the two live VAT totals rows only. See vatRate.ts.
 import { parseQuoteVatRate, isVatCharged, formatVatRate } from "./services/vatRate";
+// Delivery 2.5 — the shared description rule (lock broken for
+// formatLineItemDescription only, with owner permission).
+import { parseLineItemDescription } from "../shared/lineItemDescription";
 interface PDFQuoteData {
   quote: Quote;
   lineItems: QuoteLineItem[];
@@ -68,36 +71,31 @@ function escapeHtml(text: string): string {
 }
 
 /**
- * Format a line item description for PDF rendering.
- * "||" separators → bullet list. "##" separators → numbered list.
- * Falls back to plain escaped text if no separators found.
+ * Format a line item description for the PDF: summary, then its points.
+ *
+ * Delivery 2.5 (new-line bullets) — explicit owner permission (11 Sep
+ * 2026) to break the lock for this function only. Parsing now comes from
+ * the shared rule in shared/lineItemDescription.ts, so the PDF can never
+ * disagree with the Word export, proposals, contracts or Xero:
+ *   - first line = summary; each following line = a bullet
+ *   - a line starting "1. " = a numbered step, number kept
+ *   - legacy "||" (bullets) and "##" (numbered) still understood
+ * Output markup and styling are unchanged from the previous version.
  */
 function formatLineItemDescription(text: string): string {
   if (!text) return "";
+  const { summary, points } = parseLineItemDescription(text);
+  if (points.length === 0) return escapeHtml(summary);
 
-  if (text.includes("##")) {
-    const parts = text.split("##").map(p => p.trim()).filter(Boolean);
-    const summary = parts[0];
-    const steps = parts.slice(1);
-    const summaryHtml = summary ? `<span>${escapeHtml(summary)}</span><br/>` : "";
-    const stepsHtml = steps.map((s, i) =>
-      `<span style="display:block; padding-left:10px; line-height:1.5;">${i + 1}. ${escapeHtml(s)}</span>`
-    ).join("");
-    return summaryHtml + stepsHtml;
-  }
-
-  if (text.includes("||")) {
-    const parts = text.split("||").map(p => p.trim()).filter(Boolean);
-    const summary = parts[0];
-    const bullets = parts.slice(1);
-    const summaryHtml = summary ? `<span>${escapeHtml(summary)}</span><br/>` : "";
-    const bulletsHtml = bullets.map(b =>
-      `<span style="display:block; padding-left:10px; line-height:1.5;">• ${escapeHtml(b)}</span>`
-    ).join("");
-    return summaryHtml + bulletsHtml;
-  }
-
-  return escapeHtml(text);
+  const summaryHtml = summary ? `<span>${escapeHtml(summary)}</span><br/>` : "";
+  const pointsHtml = points
+    .map((p) =>
+      `<span style="display:block; padding-left:10px; line-height:1.5;">${
+        p.number ? `${escapeHtml(p.number)}.` : "•"
+      } ${escapeHtml(p.text)}</span>`,
+    )
+    .join("");
+  return summaryHtml + pointsHtml;
 }
 
 /**

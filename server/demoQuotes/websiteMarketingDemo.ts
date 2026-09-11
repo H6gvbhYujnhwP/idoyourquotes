@@ -28,7 +28,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
   const coreLineItems: CoreDemoLineItem[] = [
     {
       description:
-        "Business Website — 10–15 Pages — Mid-size business website with 10–15 pages || Custom design and bespoke layout || Fully responsive across all devices || CMS-managed with editor training || Contact forms with CRM integration (HubSpot, Mailchimp, Salesforce) || Blog / news module included || On-page SEO optimised || Google Analytics 4 and GTM setup || 30-day post-launch support",
+        "Business Website — 10–15 Pages — Mid-size business website with 10–15 pages\nCustom design and bespoke layout\nFully responsive across all devices\nCMS-managed with editor training\nContact forms with CRM integration (HubSpot, Mailchimp, Salesforce)\nBlog / news module included\nOn-page SEO optimised\nGoogle Analytics 4 and GTM setup\n30-day post-launch support",
       quantity: "1.0000",
       unit: "Project",
       rate: "3495.00",
@@ -39,7 +39,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
     },
     {
       description:
-        "Logo Design — Custom logo design with brand discovery workshop || 3 initial concept directions || Up to 2 rounds of revisions on chosen concept || Final logo in all standard formats (SVG, PNG, JPG, PDF) || Colour and black-and-white variants || Logo usage guidelines (1-page summary)",
+        "Logo Design — Custom logo design with brand discovery workshop\n3 initial concept directions\nUp to 2 rounds of revisions on chosen concept\nFinal logo in all standard formats (SVG, PNG, JPG, PDF)\nColour and black-and-white variants\nLogo usage guidelines (1-page summary)",
       quantity: "1.0000",
       unit: "Project",
       rate: "595.00",
@@ -50,7 +50,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
     },
     {
       description:
-        "SEO Content Article — 1,000 Words — Launch-phase blog content bundle || 3 SEO-optimised articles covering core service categories || Keyword research and target keyword selection per article || Meta title, meta description, and heading structure || Internal linking and publishing direct to CMS",
+        "SEO Content Article — 1,000 Words — Launch-phase blog content bundle\n3 SEO-optimised articles covering core service categories\nKeyword research and target keyword selection per article\nMeta title, meta description, and heading structure\nInternal linking and publishing direct to CMS",
       quantity: "3.0000",
       unit: "Article",
       rate: "185.00",
@@ -61,7 +61,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
     },
     {
       description:
-        "Managed WordPress Hosting — Managed WordPress hosting with 99.9% uptime SLA || Daily automated backups (30-day retention) || Free SSL certificate (Let's Encrypt) || CDN included for global performance || Core WordPress and plugin security updates || Malware scanning and removal || Staging environment included",
+        "Managed WordPress Hosting — Managed WordPress hosting with 99.9% uptime SLA\nDaily automated backups (30-day retention)\nFree SSL certificate (Let's Encrypt)\nCDN included for global performance\nCore WordPress and plugin security updates\nMalware scanning and removal\nStaging environment included",
       quantity: "1.0000",
       unit: "Month",
       rate: "35.00",
@@ -72,7 +72,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
     },
     {
       description:
-        "Website Care Plan — Basic — Entry-level website care plan for WordPress sites || Monthly core, theme, and plugin updates || Daily backups with 30-day retention || Uptime monitoring (15-minute intervals) || Basic security hardening and malware scanning || 1 hour of content edits per month (additional hours at hourly rate) || Monthly activity report",
+        "Website Care Plan — Basic — Entry-level website care plan for WordPress sites\nMonthly core, theme, and plugin updates\nDaily backups with 30-day retention\nUptime monitoring (15-minute intervals)\nBasic security hardening and malware scanning\n1 hour of content edits per month (additional hours at hourly rate)\nMonthly activity report",
       quantity: "1.0000",
       unit: "Month",
       rate: "65.00",
@@ -83,7 +83,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
     },
     {
       description:
-        "Local SEO Retainer — Monthly local SEO retainer for single-location businesses || Google Business Profile optimisation and weekly updates || Local citation building and directory cleanup || On-page local SEO (location pages, schema, NAP consistency) || Reviews management and response support || Monthly performance report with local ranking tracking || Minimum 3-month commitment",
+        "Local SEO Retainer — Monthly local SEO retainer for single-location businesses\nGoogle Business Profile optimisation and weekly updates\nLocal citation building and directory cleanup\nOn-page local SEO (location pages, schema, NAP consistency)\nReviews management and response support\nMonthly performance report with local ranking tracking\nMinimum 3-month commitment",
       quantity: "1.0000",
       unit: "Month",
       rate: "495.00",

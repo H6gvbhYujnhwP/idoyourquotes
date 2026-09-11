@@ -56,6 +56,7 @@
 import { deflateRawSync } from "zlib";
 import { Quote, QuoteLineItem, User, Organization } from "../drizzle/schema";
 import { parseQuoteVatRate, isVatCharged } from "./services/vatRate";
+import { descriptionAsText } from "../shared/lineItemDescription";
 
 interface DOCXQuoteData {
   quote: Quote;
@@ -163,7 +164,17 @@ function tableRow(cells: { text: string; bold?: boolean; align?: "left" | "right
       const shading = opts?.header ? `<w:shd w:val="clear" w:color="auto" w:fill="EEEEEE"/>` : "";
       const tcPr = `<w:tcPr>${shading}</w:tcPr>`;
       const props = `<w:rPr>${c.bold || opts?.header ? "<w:b/>" : ""}</w:rPr>`;
-      const para = `<w:p><w:pPr>${align}</w:pPr><w:r>${props}<w:t xml:space="preserve">${escapeXml(c.text)}</w:t></w:r></w:p>`;
+      // Delivery 2.5 — a cell may hold several lines (a description's
+      // summary and its bullets). Each line becomes its own run joined by
+      // a Word line break; single-line cells produce exactly the XML they
+      // did before.
+      const runs = String(c.text)
+        .split(/\r?\n/)
+        .map((line, i, all) =>
+          `<w:r>${props}<w:t xml:space="preserve">${escapeXml(line)}</w:t>${i < all.length - 1 ? "<w:br/>" : ""}</w:r>`,
+        )
+        .join("");
+      const para = `<w:p><w:pPr>${align}</w:pPr>${runs}</w:p>`;
       return `<w:tc>${tcPr}${para}</w:tc>`;
     })
     .join("");
@@ -210,13 +221,19 @@ function cadenceSuffix(li: QuoteLineItem): string {
   }
 }
 
-/** Description plus its cadence suffix, unless the description already
- *  says it (a user who typed "Backup (optional)" doesn't get it twice). */
+/** Description as printed in the Word table: the summary with its
+ *  cadence suffix (unless the text already says it — a user who typed
+ *  "Backup (optional)" doesn't get it twice), then one bullet per line.
+ *
+ *  Delivery 2.5 — previously the raw description was printed, so "||"
+ *  separators appeared in the document. Parsed by the shared rule in
+ *  shared/lineItemDescription.ts. */
 function withCadence(li: QuoteLineItem): string {
-  const desc = li.description || "";
+  const text = descriptionAsText(li.description || "");
   const suffix = cadenceSuffix(li);
-  if (!suffix) return desc;
-  return desc.toLowerCase().includes(suffix.trim().toLowerCase()) ? desc : `${desc}${suffix}`;
+  if (!suffix || text.toLowerCase().includes(suffix.trim().toLowerCase())) return text;
+  const nl = text.indexOf("\n");
+  return nl === -1 ? `${text}${suffix}` : `${text.slice(0, nl)}${suffix}${text.slice(nl)}`;
 }
 
 function pricingTable(lineItems: QuoteLineItem[]): string {

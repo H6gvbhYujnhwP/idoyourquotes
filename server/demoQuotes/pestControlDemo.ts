@@ -29,7 +29,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
   const coreLineItems: CoreDemoLineItem[] = [
     {
       description:
-        "Food Premises Pest Control Contract — Restaurant / Café — Commercial pest control contract for restaurants, cafés, and commercial kitchens || 8 scheduled visits per year (every 6 weeks) || Rodent, crawling insect, and flying insect monitoring || EFK (electric fly killer) servicing and lamp changes || Full BRC / CIEH-compliant documentation pack || Call-back visits included within contract term || Technician trained in food-sector environments || Minimum 12-month contract || Monthly figure shown — billed quarterly in arrears",
+        "Food Premises Pest Control Contract — Restaurant / Café — Commercial pest control contract for restaurants, cafés, and commercial kitchens\n8 scheduled visits per year (every 6 weeks)\nRodent, crawling insect, and flying insect monitoring\nEFK (electric fly killer) servicing and lamp changes\nFull BRC / CIEH-compliant documentation pack\nCall-back visits included within contract term\nTechnician trained in food-sector environments\nMinimum 12-month contract\nMonthly figure shown — billed quarterly in arrears",
       quantity: "1.0000",
       unit: "Month",
       rate: "95.00",
@@ -40,7 +40,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
     },
     {
       description:
-        "Electronic Rodent Monitoring — Monthly — Electronic rodent monitoring system per unit || 24/7 remote monitoring with instant alerts to site manager and technician || Near-zero chemical use (IPM / non-toxic approach) || Automatic activity logging for compliance || 6 units across kitchen, stores, bin area, and back-of-house",
+        "Electronic Rodent Monitoring — Monthly — Electronic rodent monitoring system per unit\n24/7 remote monitoring with instant alerts to site manager and technician\nNear-zero chemical use (IPM / non-toxic approach)\nAutomatic activity logging for compliance\n6 units across kitchen, stores, bin area, and back-of-house",
       quantity: "6.0000",
       unit: "Unit",
       rate: "12.50",
@@ -51,7 +51,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
     },
     {
       description:
-        "Rodent Proofing Survey — Full rodent proofing survey of the commercial premises || Inspection of all potential entry points (gaps, vents, roof, drains) || Detailed written report with prioritised recommendations || Photographic evidence of findings || Quotation for remedial works included inline below",
+        "Rodent Proofing Survey — Full rodent proofing survey of the commercial premises\nInspection of all potential entry points (gaps, vents, roof, drains)\nDetailed written report with prioritised recommendations\nPhotographic evidence of findings\nQuotation for remedial works included inline below",
       quantity: "1.0000",
       unit: "Survey",
       rate: "145.00",
@@ -62,7 +62,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
     },
     {
       description:
-        "Rodent Proofing Works — Per Hour — Remedial proofing works identified by the survey || Sealing of gaps with wire mesh, steel wool, mortar, or sealant || Fitting of door sweeps and vent covers || Drain cap and rodent flap fitting || Materials included for this scope of works",
+        "Rodent Proofing Works — Per Hour — Remedial proofing works identified by the survey\nSealing of gaps with wire mesh, steel wool, mortar, or sealant\nFitting of door sweeps and vent covers\nDrain cap and rodent flap fitting\nMaterials included for this scope of works",
       quantity: "3.0000",
       unit: "Hour",
       rate: "65.00",
@@ -73,7 +73,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
     },
     {
       description:
-        "Initial Site Survey — Initial site survey for the commercial pest control proposal || Full site walk-round and inspection || Pest activity assessment and risk rating || Written proposal with recommended service schedule and pricing || Waived if the contract is signed within 30 days of this quote",
+        "Initial Site Survey — Initial site survey for the commercial pest control proposal\nFull site walk-round and inspection\nPest activity assessment and risk rating\nWritten proposal with recommended service schedule and pricing\nWaived if the contract is signed within 30 days of this quote",
       quantity: "1.0000",
       unit: "Survey",
       rate: "125.00",

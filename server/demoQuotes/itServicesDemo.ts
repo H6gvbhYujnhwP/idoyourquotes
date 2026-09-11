@@ -43,7 +43,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
   const coreLineItems: CoreDemoLineItem[] = [
     {
       description:
-        "Microsoft 365 Business Standard — Annual — Microsoft 365 Business Standard [NCE / 1-Year term, billed monthly — best value] || Full desktop Office apps (Word, Excel, PowerPoint, Outlook) || Exchange Online mailbox (50GB) || Teams, OneDrive (1TB), SharePoint || Installs on up to 5 PCs/Macs and 5 mobile devices per user",
+        "Microsoft 365 Business Standard — Annual — Microsoft 365 Business Standard [NCE / 1-Year term, billed monthly — best value]\nFull desktop Office apps (Word, Excel, PowerPoint, Outlook)\nExchange Online mailbox (50GB)\nTeams, OneDrive (1TB), SharePoint\nInstalls on up to 5 PCs/Macs and 5 mobile devices per user",
       quantity: "20.0000",
       unit: "User",
       rate: "10.08",
@@ -54,7 +54,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
     },
     {
       description:
-        "ESET Endpoint Protection — Business-grade endpoint security per device || Real-time anti-malware and anti-phishing || Exploit blocker and ransomware shield || Web filtering and device control || Centralised cloud management console",
+        "ESET Endpoint Protection — Business-grade endpoint security per device\nReal-time anti-malware and anti-phishing\nExploit blocker and ransomware shield\nWeb filtering and device control\nCentralised cloud management console",
       quantity: "20.0000",
       unit: "Device",
       rate: "4.00",
@@ -65,7 +65,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
     },
     {
       description:
-        "SaaS Protect Backup (Microsoft 365 Backup) — Cloud-to-cloud backup for Microsoft 365 data || 3× daily automated backups of Exchange, OneDrive, SharePoint, Teams || Unlimited retention with point-in-time restore || Granular restore at item, folder, or mailbox level || Ransomware and accidental-deletion protection",
+        "SaaS Protect Backup (Microsoft 365 Backup) — Cloud-to-cloud backup for Microsoft 365 data\n3× daily automated backups of Exchange, OneDrive, SharePoint, Teams\nUnlimited retention with point-in-time restore\nGranular restore at item, folder, or mailbox level\nRansomware and accidental-deletion protection",
       quantity: "20.0000",
       unit: "User",
       rate: "4.00",
@@ -76,7 +76,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
     },
     {
       description:
-        "Advanced Email Protection (E-Mail Protect) — Advanced email threat protection per mailbox || Anti-phishing and impersonation detection || URL rewriting and time-of-click analysis || Attachment sandboxing || Business email compromise (BEC) protection",
+        "Advanced Email Protection (E-Mail Protect) — Advanced email threat protection per mailbox\nAnti-phishing and impersonation detection\nURL rewriting and time-of-click analysis\nAttachment sandboxing\nBusiness email compromise (BEC) protection",
       quantity: "20.0000",
       unit: "User",
       rate: "2.00",
@@ -87,7 +87,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
     },
     {
       description:
-        "Silver IT Support — Unlimited Remote — Managed IT support contract per named user || Unlimited remote helpdesk during business hours (Mon–Fri 9–5) || Ticket-based support with 4-hour response SLA || Remote desktop assistance and troubleshooting || Software and application support || Monthly usage reporting",
+        "Silver IT Support — Unlimited Remote — Managed IT support contract per named user\nUnlimited remote helpdesk during business hours (Mon–Fri 9–5)\nTicket-based support with 4-hour response SLA\nRemote desktop assistance and troubleshooting\nSoftware and application support\nMonthly usage reporting",
       quantity: "20.0000",
       unit: "User",
       rate: "18.00",
@@ -98,7 +98,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
     },
     {
       description:
-        "Engineer — Onsite — Onboarding and initial setup || Site walk-round and device audit || User account provisioning and M365 tenancy setup || Endpoint protection rollout and backup verification || User handover and training session || Scheduled across 1 onsite day",
+        "Engineer — Onsite — Onboarding and initial setup\nSite walk-round and device audit\nUser account provisioning and M365 tenancy setup\nEndpoint protection rollout and backup verification\nUser handover and training session\nScheduled across 1 onsite day",
       quantity: "4.0000",
       unit: "Hour",
       rate: "99.00",

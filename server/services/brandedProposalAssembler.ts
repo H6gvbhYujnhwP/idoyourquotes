@@ -24,6 +24,7 @@
  * import.
  */
 
+import { descriptionSummary } from "../../shared/lineItemDescription";
 import {
   PDFDocument,
   StandardFonts,
@@ -695,16 +696,19 @@ function formatQuantity(value: number): string {
 }
 
 /**
- * Pull the summary (first line before any "||" or "##" sub-bullet
- * separator) from a line item description. Sub-bullet detail is
- * relevant in the AI's narrative chapters (where it informs scope
- * specifics) but would crowd the pricing table — so the table shows
+ * Pull the summary (the first line — or, for legacy descriptions, the
+ * text before any "||" or "##") from a line item description. Sub-bullet
+ * detail is relevant in the AI's narrative chapters (where it informs
+ * scope specifics) but would crowd the pricing table — so the table shows
  * the headline only.
+ *
+ * Delivery 2.5 — uses the shared rule in shared/lineItemDescription.ts.
+ * Also guarantees no line break reaches pdf-lib, whose standard fonts
+ * cannot encode one.
  */
 function extractDescriptionSummary(desc: string): string {
   if (!desc) return "";
-  const split = desc.split(/\|\||##/);
-  return split[0].trim();
+  return descriptionSummary(desc).replace(/\s+/g, " ").trim();
 }
 
 interface PricingTableColumns {

@@ -28,7 +28,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
   const coreLineItems: CoreDemoLineItem[] = [
     {
       description:
-        "Daily Office Cleaning — Medium Site (2,000–10,000 sq ft) — Recurring office cleaning contract for medium sites || Monday–Friday evening cleans (or morning, as agreed) || Full office, kitchen, and washroom cleaning || Periodic touch-points included (door handles, switches, shared surfaces) || Cleaning materials supplied; consumables restock included || Fortnightly supervisor site visit with quality audit || Minimum 12-month contract",
+        "Daily Office Cleaning — Medium Site (2,000–10,000 sq ft) — Recurring office cleaning contract for medium sites\nMonday–Friday evening cleans (or morning, as agreed)\nFull office, kitchen, and washroom cleaning\nPeriodic touch-points included (door handles, switches, shared surfaces)\nCleaning materials supplied; consumables restock included\nFortnightly supervisor site visit with quality audit\nMinimum 12-month contract",
       quantity: "1.0000",
       unit: "Month",
       rate: "1250.00",
@@ -39,7 +39,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
     },
     {
       description:
-        "Washroom Services Contract — Monthly washroom services and hygiene contract || Sanitary bin servicing (typically monthly, frequency variable) || Nappy bin servicing where applicable || Air freshener units supplied and serviced || Urinal sanitiser dosing units || Certificate of waste transfer provided || Priced per washroom — 4 washrooms on site",
+        "Washroom Services Contract — Monthly washroom services and hygiene contract\nSanitary bin servicing (typically monthly, frequency variable)\nNappy bin servicing where applicable\nAir freshener units supplied and serviced\nUrinal sanitiser dosing units\nCertificate of waste transfer provided\nPriced per washroom — 4 washrooms on site",
       quantity: "4.0000",
       unit: "Washroom",
       rate: "18.00",
@@ -50,7 +50,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
     },
     {
       description:
-        "Consumables — Monthly Supply Contract — Monthly supply of washroom and kitchen consumables || Toilet rolls, hand towels, hand soap || Kitchen cleaning products and dishwasher tablets || Delivery included; dispensers supplied on loan || Priced for a medium office (~30 users)",
+        "Consumables — Monthly Supply Contract — Monthly supply of washroom and kitchen consumables\nToilet rolls, hand towels, hand soap\nKitchen cleaning products and dishwasher tablets\nDelivery included; dispensers supplied on loan\nPriced for a medium office (~30 users)",
       quantity: "1.0000",
       unit: "Month",
       rate: "95.00",
@@ -61,7 +61,7 @@ export const getDemoQuote: DemoQuoteFactory = (): DemoQuoteBundle => {
     },
     {
       description:
-        "Deep Clean — Office (per sq ft) — One-off contract-start deep clean || Full kitchen and washroom deep clean || Upholstery vacuum and spot treatment || Hard floor strip, clean, and seal / polish || High-level dusting (vents, light fittings, tops of cabinets) || Interior window clean || Priced per square foot across 4,500 sq ft footprint",
+        "Deep Clean — Office (per sq ft) — One-off contract-start deep clean\nFull kitchen and washroom deep clean\nUpholstery vacuum and spot treatment\nHard floor strip, clean, and seal / polish\nHigh-level dusting (vents, light fittings, tops of cabinets)\nInterior window clean\nPriced per square foot across 4,500 sq ft footprint",
       quantity: "4500.0000",
       unit: "Sq ft",
       rate: "0.35",

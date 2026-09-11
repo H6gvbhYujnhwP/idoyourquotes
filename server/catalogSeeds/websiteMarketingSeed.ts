@@ -35,7 +35,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   // ───────── Web Design & Development (7) ─────────
   {
     name: "Brochure Website — 5 Pages",
-    description: "Professional brochure website with up to 5 pages || Custom design based on brand guidelines || Fully responsive across desktop, tablet, mobile || CMS-managed (WordPress or equivalent) || Contact form and Google Maps integration || On-page SEO fundamentals (meta titles, descriptions, schema) || 30-day post-launch support included",
+    description: "Professional brochure website with up to 5 pages\nCustom design based on brand guidelines\nFully responsive across desktop, tablet, mobile\nCMS-managed (WordPress or equivalent)\nContact form and Google Maps integration\nOn-page SEO fundamentals (meta titles, descriptions, schema)\n30-day post-launch support included",
     category: "Web Design & Development",
     unit: "Project",
     pricingType: "standard",
@@ -44,7 +44,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Business Website — 10–15 Pages",
-    description: "Mid-size business website with 10–15 pages || Custom design and bespoke layout || Fully responsive across all devices || CMS-managed with editor training || Contact forms with CRM integration (HubSpot, Mailchimp, Salesforce) || Blog / news module included || On-page SEO optimised || Google Analytics 4 and GTM setup || 30-day post-launch support",
+    description: "Mid-size business website with 10–15 pages\nCustom design and bespoke layout\nFully responsive across all devices\nCMS-managed with editor training\nContact forms with CRM integration (HubSpot, Mailchimp, Salesforce)\nBlog / news module included\nOn-page SEO optimised\nGoogle Analytics 4 and GTM setup\n30-day post-launch support",
     category: "Web Design & Development",
     unit: "Project",
     pricingType: "standard",
@@ -53,7 +53,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Shopify eCommerce Store",
-    description: "Shopify online store build with up to 50 products loaded || Custom theme design and development || Mobile-first responsive layout || Payment gateway setup (Stripe, PayPal, Apple Pay) || Shipping and tax configuration || Essential apps configured (reviews, upsell, abandoned cart) || Staff training on admin and order fulfilment || 30-day post-launch support",
+    description: "Shopify online store build with up to 50 products loaded\nCustom theme design and development\nMobile-first responsive layout\nPayment gateway setup (Stripe, PayPal, Apple Pay)\nShipping and tax configuration\nEssential apps configured (reviews, upsell, abandoned cart)\nStaff training on admin and order fulfilment\n30-day post-launch support",
     category: "Web Design & Development",
     unit: "Project",
     pricingType: "standard",
@@ -62,7 +62,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "WooCommerce eCommerce Store",
-    description: "WordPress WooCommerce online store with up to 50 products loaded || Custom theme and bespoke checkout flow || Mobile-first responsive layout || Payment gateway setup (Stripe, PayPal, Klarna) || Shipping zones and tax rules configured || Essential plugins configured (reviews, cross-sell, cart recovery) || Staff training on admin || 30-day post-launch support",
+    description: "WordPress WooCommerce online store with up to 50 products loaded\nCustom theme and bespoke checkout flow\nMobile-first responsive layout\nPayment gateway setup (Stripe, PayPal, Klarna)\nShipping zones and tax rules configured\nEssential plugins configured (reviews, cross-sell, cart recovery)\nStaff training on admin\n30-day post-launch support",
     category: "Web Design & Development",
     unit: "Project",
     pricingType: "standard",
@@ -71,7 +71,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Landing Page — Single Page Conversion Optimised",
-    description: "Single-page campaign landing page, conversion-optimised || Custom design tailored to campaign goal || Above-the-fold hook and CTA structure || Responsive across all devices || Lead capture form with email / CRM integration || Thank-you page and conversion tracking (GA4, Meta Pixel) || A/B testing variant option || 14-day post-launch support",
+    description: "Single-page campaign landing page, conversion-optimised\nCustom design tailored to campaign goal\nAbove-the-fold hook and CTA structure\nResponsive across all devices\nLead capture form with email / CRM integration\nThank-you page and conversion tracking (GA4, Meta Pixel)\nA/B testing variant option\n14-day post-launch support",
     category: "Web Design & Development",
     unit: "Project",
     pricingType: "standard",
@@ -80,7 +80,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Website Refresh — Existing Site Redesign",
-    description: "Visual refresh of an existing website (same CMS, new design) || New page layouts for up to 10 existing pages || Updated typography, colour, and component library || Responsive review across all devices || SEO preserved (URL structure, meta, redirects mapped) || Content migrated as-is (copy updates quoted separately) || 14-day post-launch support",
+    description: "Visual refresh of an existing website (same CMS, new design)\nNew page layouts for up to 10 existing pages\nUpdated typography, colour, and component library\nResponsive review across all devices\nSEO preserved (URL structure, meta, redirects mapped)\nContent migrated as-is (copy updates quoted separately)\n14-day post-launch support",
     category: "Web Design & Development",
     unit: "Project",
     pricingType: "standard",
@@ -89,7 +89,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Custom Development — Hourly",
-    description: "Bespoke web development work charged by the hour || Custom feature builds, plugin customisation, API integrations || Complex forms, calculators, or bespoke admin tools || Bug fixes and technical investigation outside a care plan || Work against agreed spec with scope documented in advance",
+    description: "Bespoke web development work charged by the hour\nCustom feature builds, plugin customisation, API integrations\nComplex forms, calculators, or bespoke admin tools\nBug fixes and technical investigation outside a care plan\nWork against agreed spec with scope documented in advance",
     category: "Web Design & Development",
     unit: "Hour",
     pricingType: "standard",
@@ -100,7 +100,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   // ───────── Hosting & Care Plans (4) ─────────
   {
     name: "Managed WordPress Hosting",
-    description: "Managed WordPress hosting with 99.9% uptime SLA || Daily automated backups (30-day retention) || Free SSL certificate (Let's Encrypt) || CDN included for global performance || Core WordPress and plugin security updates || Malware scanning and removal || Staging environment included || Ideal for brochure and business sites",
+    description: "Managed WordPress hosting with 99.9% uptime SLA\nDaily automated backups (30-day retention)\nFree SSL certificate (Let's Encrypt)\nCDN included for global performance\nCore WordPress and plugin security updates\nMalware scanning and removal\nStaging environment included\nIdeal for brochure and business sites",
     category: "Hosting & Care Plans",
     unit: "Month",
     pricingType: "monthly",
@@ -109,7 +109,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Website Care Plan — Basic",
-    description: "Entry-level website care plan for WordPress sites || Monthly core, theme, and plugin updates || Daily backups with 30-day retention || Uptime monitoring (15-minute intervals) || Basic security hardening and malware scanning || 1 hour of content edits per month (additional hours at hourly rate) || Monthly activity report",
+    description: "Entry-level website care plan for WordPress sites\nMonthly core, theme, and plugin updates\nDaily backups with 30-day retention\nUptime monitoring (15-minute intervals)\nBasic security hardening and malware scanning\n1 hour of content edits per month (additional hours at hourly rate)\nMonthly activity report",
     category: "Hosting & Care Plans",
     unit: "Month",
     pricingType: "monthly",
@@ -118,7 +118,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Website Care Plan — Pro",
-    description: "Premium website care plan for business-critical sites || Everything in Basic plan || Weekly core, theme, and plugin updates || 3 hours of content edits per month (additional hours at reduced rate) || Performance monitoring and optimisation || Priority support with 4-hour response SLA || Quarterly SEO health check || Monthly activity and SEO report",
+    description: "Premium website care plan for business-critical sites\nEverything in Basic plan\nWeekly core, theme, and plugin updates\n3 hours of content edits per month (additional hours at reduced rate)\nPerformance monitoring and optimisation\nPriority support with 4-hour response SLA\nQuarterly SEO health check\nMonthly activity and SEO report",
     category: "Hosting & Care Plans",
     unit: "Month",
     pricingType: "monthly",
@@ -127,7 +127,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Domain Registration & Management",
-    description: "Domain name registration and annual renewal || .co.uk, .com, or other standard TLD || DNS management and nameserver configuration || Privacy protection where available || Transfer support and renewal reminders",
+    description: "Domain name registration and annual renewal\n.co.uk, .com, or other standard TLD\nDNS management and nameserver configuration\nPrivacy protection where available\nTransfer support and renewal reminders",
     category: "Hosting & Care Plans",
     unit: "Year",
     pricingType: "annual",
@@ -147,7 +147,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   // a typical web agency needs to package alongside hosting and email.
   {
     name: "Microsoft 365 Business Basic — Monthly",
-    description: "Microsoft 365 Business Basic [NCE / 1-Month term, no annual commitment] || Web and mobile Office apps (Word, Excel, PowerPoint) || Exchange Online mailbox (50GB) || Teams, OneDrive (1TB), SharePoint || No desktop Office apps — web/mobile only",
+    description: "Microsoft 365 Business Basic [NCE / 1-Month term, no annual commitment]\nWeb and mobile Office apps (Word, Excel, PowerPoint)\nExchange Online mailbox (50GB)\nTeams, OneDrive (1TB), SharePoint\nNo desktop Office apps — web/mobile only",
     category: "Email & Productivity Licensing",
     unit: "User",
     pricingType: "monthly",
@@ -156,7 +156,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Microsoft 365 Business Basic — Annual",
-    description: "Microsoft 365 Business Basic [NCE / 1-Year term, billed monthly — best value] || Web and mobile Office apps (Word, Excel, PowerPoint) || Exchange Online mailbox (50GB) || Teams, OneDrive (1TB), SharePoint || No desktop Office apps — web/mobile only",
+    description: "Microsoft 365 Business Basic [NCE / 1-Year term, billed monthly — best value]\nWeb and mobile Office apps (Word, Excel, PowerPoint)\nExchange Online mailbox (50GB)\nTeams, OneDrive (1TB), SharePoint\nNo desktop Office apps — web/mobile only",
     category: "Email & Productivity Licensing",
     unit: "User",
     pricingType: "monthly",
@@ -165,7 +165,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Microsoft 365 Business Standard — Monthly",
-    description: "Microsoft 365 Business Standard [NCE / 1-Month term, no annual commitment] || Full desktop Office apps (Word, Excel, PowerPoint, Outlook) || Exchange Online mailbox (50GB) || Teams, OneDrive (1TB), SharePoint || Installs on up to 5 PCs/Macs and 5 mobile devices per user",
+    description: "Microsoft 365 Business Standard [NCE / 1-Month term, no annual commitment]\nFull desktop Office apps (Word, Excel, PowerPoint, Outlook)\nExchange Online mailbox (50GB)\nTeams, OneDrive (1TB), SharePoint\nInstalls on up to 5 PCs/Macs and 5 mobile devices per user",
     category: "Email & Productivity Licensing",
     unit: "User",
     pricingType: "monthly",
@@ -174,7 +174,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Microsoft 365 Business Standard — Annual",
-    description: "Microsoft 365 Business Standard [NCE / 1-Year term, billed monthly — best value] || Full desktop Office apps (Word, Excel, PowerPoint, Outlook) || Exchange Online mailbox (50GB) || Teams, OneDrive (1TB), SharePoint || Installs on up to 5 PCs/Macs and 5 mobile devices per user",
+    description: "Microsoft 365 Business Standard [NCE / 1-Year term, billed monthly — best value]\nFull desktop Office apps (Word, Excel, PowerPoint, Outlook)\nExchange Online mailbox (50GB)\nTeams, OneDrive (1TB), SharePoint\nInstalls on up to 5 PCs/Macs and 5 mobile devices per user",
     category: "Email & Productivity Licensing",
     unit: "User",
     pricingType: "monthly",
@@ -183,7 +183,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Microsoft 365 Business Premium — Monthly",
-    description: "Microsoft 365 Business Premium [NCE / 1-Month term, no annual commitment] || Everything in Business Standard || Intune mobile device management || Azure AD Premium P1 (conditional access, SSO) || Defender for Business (endpoint protection) || Information Protection and DLP",
+    description: "Microsoft 365 Business Premium [NCE / 1-Month term, no annual commitment]\nEverything in Business Standard\nIntune mobile device management\nAzure AD Premium P1 (conditional access, SSO)\nDefender for Business (endpoint protection)\nInformation Protection and DLP",
     category: "Email & Productivity Licensing",
     unit: "User",
     pricingType: "monthly",
@@ -192,7 +192,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Microsoft 365 Business Premium — Annual",
-    description: "Microsoft 365 Business Premium [NCE / 1-Year term, billed monthly — best value] || Everything in Business Standard || Intune mobile device management || Azure AD Premium P1 (conditional access, SSO) || Defender for Business (endpoint protection) || Information Protection and DLP",
+    description: "Microsoft 365 Business Premium [NCE / 1-Year term, billed monthly — best value]\nEverything in Business Standard\nIntune mobile device management\nAzure AD Premium P1 (conditional access, SSO)\nDefender for Business (endpoint protection)\nInformation Protection and DLP",
     category: "Email & Productivity Licensing",
     unit: "User",
     pricingType: "monthly",
@@ -201,7 +201,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Microsoft 365 Exchange Online Plan 1 — Monthly",
-    description: "Exchange Online Plan 1 [NCE / 1-Month term, billed monthly] || 50GB mailbox per user || Anti-spam and anti-malware filtering || Calendar, contacts, shared mailboxes || Web-based Outlook access",
+    description: "Exchange Online Plan 1 [NCE / 1-Month term, billed monthly]\n50GB mailbox per user\nAnti-spam and anti-malware filtering\nCalendar, contacts, shared mailboxes\nWeb-based Outlook access",
     category: "Email & Productivity Licensing",
     unit: "User",
     pricingType: "monthly",
@@ -210,7 +210,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Microsoft 365 Exchange Online Plan 2 — Monthly",
-    description: "Exchange Online Plan 2 [NCE / 1-Month term, billed monthly] || 100GB mailbox per user || Data Loss Prevention (DLP) policies || Hosted voicemail || Unlimited archive mailbox || In-place eDiscovery and hold",
+    description: "Exchange Online Plan 2 [NCE / 1-Month term, billed monthly]\n100GB mailbox per user\nData Loss Prevention (DLP) policies\nHosted voicemail\nUnlimited archive mailbox\nIn-place eDiscovery and hold",
     category: "Email & Productivity Licensing",
     unit: "User",
     pricingType: "monthly",
@@ -219,7 +219,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Google Workspace Business Starter — Monthly",
-    description: "Google Workspace Business Starter [Flexible / 1-Month term, no annual commitment] || Custom email at the client's domain || 30GB pooled cloud storage per user (Drive, Gmail, Photos) || Gmail, Calendar, Meet (100-participant video meetings), Chat, Docs, Sheets, Slides || Standard support || No annual commitment — cancel any month",
+    description: "Google Workspace Business Starter [Flexible / 1-Month term, no annual commitment]\nCustom email at the client's domain\n30GB pooled cloud storage per user (Drive, Gmail, Photos)\nGmail, Calendar, Meet (100-participant video meetings), Chat, Docs, Sheets, Slides\nStandard support\nNo annual commitment — cancel any month",
     category: "Email & Productivity Licensing",
     unit: "User",
     pricingType: "monthly",
@@ -228,7 +228,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Google Workspace Business Starter — Annual",
-    description: "Google Workspace Business Starter [Annual / 1-Year term, billed monthly — best value] || Custom email at the client's domain || 30GB pooled cloud storage per user || Gmail, Calendar, Meet (100-participant video meetings), Chat, Docs, Sheets, Slides || Standard support || 12-month commitment",
+    description: "Google Workspace Business Starter [Annual / 1-Year term, billed monthly — best value]\nCustom email at the client's domain\n30GB pooled cloud storage per user\nGmail, Calendar, Meet (100-participant video meetings), Chat, Docs, Sheets, Slides\nStandard support\n12-month commitment",
     category: "Email & Productivity Licensing",
     unit: "User",
     pricingType: "monthly",
@@ -237,7 +237,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Google Workspace Business Standard — Monthly",
-    description: "Google Workspace Business Standard [Flexible / 1-Month term, no annual commitment] || Custom email at the client's domain || 2TB pooled cloud storage per user || Gmail, Calendar, Meet (150-participant meetings with recording + noise cancellation), Chat, Docs, Sheets, Slides || Shared drives for teams || eSignature with Docs and PDFs || Standard support",
+    description: "Google Workspace Business Standard [Flexible / 1-Month term, no annual commitment]\nCustom email at the client's domain\n2TB pooled cloud storage per user\nGmail, Calendar, Meet (150-participant meetings with recording + noise cancellation), Chat, Docs, Sheets, Slides\nShared drives for teams\neSignature with Docs and PDFs\nStandard support",
     category: "Email & Productivity Licensing",
     unit: "User",
     pricingType: "monthly",
@@ -246,7 +246,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Google Workspace Business Standard — Annual",
-    description: "Google Workspace Business Standard [Annual / 1-Year term, billed monthly — best value] || Custom email at the client's domain || 2TB pooled cloud storage per user || Gmail, Calendar, Meet (150-participant meetings with recording + noise cancellation), Chat, Docs, Sheets, Slides || Shared drives for teams || eSignature with Docs and PDFs || 12-month commitment",
+    description: "Google Workspace Business Standard [Annual / 1-Year term, billed monthly — best value]\nCustom email at the client's domain\n2TB pooled cloud storage per user\nGmail, Calendar, Meet (150-participant meetings with recording + noise cancellation), Chat, Docs, Sheets, Slides\nShared drives for teams\neSignature with Docs and PDFs\n12-month commitment",
     category: "Email & Productivity Licensing",
     unit: "User",
     pricingType: "monthly",
@@ -255,7 +255,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Google Workspace Business Plus — Monthly",
-    description: "Google Workspace Business Plus [Flexible / 1-Month term, no annual commitment] || Custom email at the client's domain with eDiscovery and retention || 5TB pooled cloud storage per user || Gmail, Calendar, Meet (500-participant meetings with recording + attendance tracking), Chat, Docs, Sheets, Slides || Shared drives, Vault (eDiscovery + retention), enhanced security and management controls || Standard support",
+    description: "Google Workspace Business Plus [Flexible / 1-Month term, no annual commitment]\nCustom email at the client's domain with eDiscovery and retention\n5TB pooled cloud storage per user\nGmail, Calendar, Meet (500-participant meetings with recording + attendance tracking), Chat, Docs, Sheets, Slides\nShared drives, Vault (eDiscovery + retention), enhanced security and management controls\nStandard support",
     category: "Email & Productivity Licensing",
     unit: "User",
     pricingType: "monthly",
@@ -264,7 +264,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Google Workspace Business Plus — Annual",
-    description: "Google Workspace Business Plus [Annual / 1-Year term, billed monthly — best value] || Custom email at the client's domain with eDiscovery and retention || 5TB pooled cloud storage per user || Gmail, Calendar, Meet (500-participant meetings with recording + attendance tracking), Chat, Docs, Sheets, Slides || Vault and enhanced security controls || 12-month commitment",
+    description: "Google Workspace Business Plus [Annual / 1-Year term, billed monthly — best value]\nCustom email at the client's domain with eDiscovery and retention\n5TB pooled cloud storage per user\nGmail, Calendar, Meet (500-participant meetings with recording + attendance tracking), Chat, Docs, Sheets, Slides\nVault and enhanced security controls\n12-month commitment",
     category: "Email & Productivity Licensing",
     unit: "User",
     pricingType: "monthly",
@@ -273,7 +273,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Advanced Email Protection (E-Mail Protect)",
-    description: "Advanced email threat protection per mailbox || Anti-phishing and impersonation detection || URL rewriting and time-of-click analysis || Attachment sandboxing || Business email compromise (BEC) protection",
+    description: "Advanced email threat protection per mailbox\nAnti-phishing and impersonation detection\nURL rewriting and time-of-click analysis\nAttachment sandboxing\nBusiness email compromise (BEC) protection",
     category: "Email & Productivity Licensing",
     unit: "User",
     pricingType: "monthly",
@@ -282,7 +282,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Email Signature Management (Exclaimer)",
-    description: "Centralised email signature management per mailbox || Consistent branded signatures across all devices || Campaign banners and marketing content in signatures || Signatures applied server-side (mobile and desktop included) || Central admin console for updates",
+    description: "Centralised email signature management per mailbox\nConsistent branded signatures across all devices\nCampaign banners and marketing content in signatures\nSignatures applied server-side (mobile and desktop included)\nCentral admin console for updates",
     category: "Email & Productivity Licensing",
     unit: "User",
     pricingType: "monthly",
@@ -293,7 +293,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   // ───────── SEO Services (4) ─────────
   {
     name: "SEO Audit — Full Technical & Content Review",
-    description: "Comprehensive SEO audit (one-off) || Technical audit: crawlability, indexation, Core Web Vitals, schema || Content audit: keyword targeting, cannibalisation, content gaps || Backlink profile review and toxic link identification || Competitor analysis (top 3–5 competitors) || Prioritised action plan with effort and impact estimates || 45-minute findings walkthrough",
+    description: "Comprehensive SEO audit (one-off)\nTechnical audit: crawlability, indexation, Core Web Vitals, schema\nContent audit: keyword targeting, cannibalisation, content gaps\nBacklink profile review and toxic link identification\nCompetitor analysis (top 3–5 competitors)\nPrioritised action plan with effort and impact estimates\n45-minute findings walkthrough",
     category: "SEO Services",
     unit: "Project",
     pricingType: "standard",
@@ -302,7 +302,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Local SEO Retainer",
-    description: "Monthly local SEO retainer for single-location businesses || Google Business Profile optimisation and weekly updates || Local citation building and directory cleanup || On-page local SEO (location pages, schema, NAP consistency) || Reviews management and response support || Monthly performance report with local ranking tracking || Minimum 3-month commitment",
+    description: "Monthly local SEO retainer for single-location businesses\nGoogle Business Profile optimisation and weekly updates\nLocal citation building and directory cleanup\nOn-page local SEO (location pages, schema, NAP consistency)\nReviews management and response support\nMonthly performance report with local ranking tracking\nMinimum 3-month commitment",
     category: "SEO Services",
     unit: "Month",
     pricingType: "monthly",
@@ -311,7 +311,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "National SEO Retainer",
-    description: "Monthly national SEO retainer for multi-location or national businesses || Technical SEO monitoring and fixes || 2 SEO-optimised blog articles per month (1,000+ words) || Monthly link-building outreach and digital PR || Monthly keyword ranking and traffic reporting || Quarterly strategy review || Minimum 6-month commitment",
+    description: "Monthly national SEO retainer for multi-location or national businesses\nTechnical SEO monitoring and fixes\n2 SEO-optimised blog articles per month (1,000+ words)\nMonthly link-building outreach and digital PR\nMonthly keyword ranking and traffic reporting\nQuarterly strategy review\nMinimum 6-month commitment",
     category: "SEO Services",
     unit: "Month",
     pricingType: "monthly",
@@ -320,7 +320,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "SEO Content Article — 1,000 Words",
-    description: "SEO-optimised blog article or landing page copy || Keyword research and target keyword selection || 1,000 words of original, human-written content || Meta title, meta description, and heading structure || Internal linking suggestions || Up to 2 rounds of revisions || Published direct to CMS on request",
+    description: "SEO-optimised blog article or landing page copy\nKeyword research and target keyword selection\n1,000 words of original, human-written content\nMeta title, meta description, and heading structure\nInternal linking suggestions\nUp to 2 rounds of revisions\nPublished direct to CMS on request",
     category: "SEO Services",
     unit: "Article",
     pricingType: "standard",
@@ -331,7 +331,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   // ───────── Paid Media Management (3) ─────────
   {
     name: "Google Ads Management",
-    description: "Monthly Google Ads management fee || Campaign setup, keyword research, and ad copy creation || Ongoing bid management, negative keywords, and search terms review || Landing page conversion tracking setup (GA4, conversion goals) || Weekly optimisation and reporting || Monthly strategy review with client || Ad spend billed separately directly to Google || Assumes up to £5,000 monthly ad spend — tiered pricing above this",
+    description: "Monthly Google Ads management fee\nCampaign setup, keyword research, and ad copy creation\nOngoing bid management, negative keywords, and search terms review\nLanding page conversion tracking setup (GA4, conversion goals)\nWeekly optimisation and reporting\nMonthly strategy review with client\nAd spend billed separately directly to Google\nAssumes up to £5,000 monthly ad spend — tiered pricing above this",
     category: "Paid Media Management",
     unit: "Month",
     pricingType: "monthly",
@@ -340,7 +340,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Meta Ads Management (Facebook + Instagram)",
-    description: "Monthly Meta Ads management fee || Campaign setup and creative production coordination || Audience targeting, lookalikes, and retargeting setup || Ad copy and image/video asset delivery coordination || Meta Pixel setup and Conversions API || Weekly optimisation and monthly reporting || Ad spend billed separately directly to Meta || Assumes up to £3,000 monthly ad spend — tiered pricing above this",
+    description: "Monthly Meta Ads management fee\nCampaign setup and creative production coordination\nAudience targeting, lookalikes, and retargeting setup\nAd copy and image/video asset delivery coordination\nMeta Pixel setup and Conversions API\nWeekly optimisation and monthly reporting\nAd spend billed separately directly to Meta\nAssumes up to £3,000 monthly ad spend — tiered pricing above this",
     category: "Paid Media Management",
     unit: "Month",
     pricingType: "monthly",
@@ -349,7 +349,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "LinkedIn Ads Management",
-    description: "Monthly LinkedIn Ads management fee for B2B campaigns || Campaign setup and audience targeting (job titles, industries, companies) || Sponsored Content, Message Ads, and Lead Gen Forms setup || Ad copy writing and creative coordination || LinkedIn Insight Tag setup and conversion tracking || Weekly optimisation and monthly reporting || Ad spend billed separately directly to LinkedIn",
+    description: "Monthly LinkedIn Ads management fee for B2B campaigns\nCampaign setup and audience targeting (job titles, industries, companies)\nSponsored Content, Message Ads, and Lead Gen Forms setup\nAd copy writing and creative coordination\nLinkedIn Insight Tag setup and conversion tracking\nWeekly optimisation and monthly reporting\nAd spend billed separately directly to LinkedIn",
     category: "Paid Media Management",
     unit: "Month",
     pricingType: "monthly",
@@ -360,7 +360,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   // ───────── Social Media Management (3) ─────────
   {
     name: "Social Media Management — 2 Channels",
-    description: "Monthly social media management across 2 channels (e.g. LinkedIn + Instagram) || 12 static posts per month per channel (24 total) || Content planning and editorial calendar || Community management during business hours (DMs, comments, mentions) || Monthly performance report || Channel strategy review quarterly",
+    description: "Monthly social media management across 2 channels (e.g. LinkedIn + Instagram)\n12 static posts per month per channel (24 total)\nContent planning and editorial calendar\nCommunity management during business hours (DMs, comments, mentions)\nMonthly performance report\nChannel strategy review quarterly",
     category: "Social Media Management",
     unit: "Month",
     pricingType: "monthly",
@@ -369,7 +369,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Social Media Management — 4 Channels",
-    description: "Monthly social media management across 4 channels || 12 static posts per channel per month (48 total) || Content planning and editorial calendar || Community management during business hours || Monthly reels or short-form video (2 per month) || Monthly performance report with audience and engagement analysis || Quarterly strategy review",
+    description: "Monthly social media management across 4 channels\n12 static posts per channel per month (48 total)\nContent planning and editorial calendar\nCommunity management during business hours\nMonthly reels or short-form video (2 per month)\nMonthly performance report with audience and engagement analysis\nQuarterly strategy review",
     category: "Social Media Management",
     unit: "Month",
     pricingType: "monthly",
@@ -378,7 +378,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Social Content Pack — 12 Posts",
-    description: "One-off pack of 12 branded social media posts || Custom-designed graphics or curated photography || Caption writing optimised per platform || Suggested posting schedule || Supplied as a scheduled pack ready to publish or as source files || Ideal for one-off campaigns, event promotion, or topping up in-house social",
+    description: "One-off pack of 12 branded social media posts\nCustom-designed graphics or curated photography\nCaption writing optimised per platform\nSuggested posting schedule\nSupplied as a scheduled pack ready to publish or as source files\nIdeal for one-off campaigns, event promotion, or topping up in-house social",
     category: "Social Media Management",
     unit: "Pack",
     pricingType: "standard",
@@ -389,7 +389,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   // ───────── Content & Branding (4) ─────────
   {
     name: "Logo Design",
-    description: "Custom logo design with brand discovery workshop || 3 initial concept directions || Up to 2 rounds of revisions on chosen concept || Final logo in all standard formats (SVG, PNG, JPG, PDF) || Colour and black-and-white variants || Logo usage guidelines (1-page summary)",
+    description: "Custom logo design with brand discovery workshop\n3 initial concept directions\nUp to 2 rounds of revisions on chosen concept\nFinal logo in all standard formats (SVG, PNG, JPG, PDF)\nColour and black-and-white variants\nLogo usage guidelines (1-page summary)",
     category: "Content & Branding",
     unit: "Project",
     pricingType: "standard",
@@ -398,7 +398,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Full Brand Identity Package",
-    description: "Complete brand identity development || Brand discovery workshop and positioning exercise || Logo suite (primary, secondary, icon, monochrome) || Colour palette with hex, RGB, CMYK, and Pantone values || Typography system with web and print pairings || Brand guidelines document (15–20 pages) || Template starter pack (letterhead, business card, email signature)",
+    description: "Complete brand identity development\nBrand discovery workshop and positioning exercise\nLogo suite (primary, secondary, icon, monochrome)\nColour palette with hex, RGB, CMYK, and Pantone values\nTypography system with web and print pairings\nBrand guidelines document (15–20 pages)\nTemplate starter pack (letterhead, business card, email signature)",
     category: "Content & Branding",
     unit: "Project",
     pricingType: "standard",
@@ -407,7 +407,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Marketing Collateral Design",
-    description: "Branded marketing collateral design (per deliverable) || Scope can include brochures, flyers, leaflets, pitch decks, one-pagers || Print-ready and digital-ready file delivery || Up to 2 rounds of revisions || Produced to match existing brand guidelines || Print production quoted separately if required",
+    description: "Branded marketing collateral design (per deliverable)\nScope can include brochures, flyers, leaflets, pitch decks, one-pagers\nPrint-ready and digital-ready file delivery\nUp to 2 rounds of revisions\nProduced to match existing brand guidelines\nPrint production quoted separately if required",
     category: "Content & Branding",
     unit: "Deliverable",
     pricingType: "standard",
@@ -416,7 +416,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Copywriting — Website or Marketing",
-    description: "Professional copywriting per page or asset || Website page copy, sales page copy, email copy, or ad copy || Discovery brief covering tone, audience, and conversion goal || 1 round of substantive revisions included || Plain-English, UK-market-tuned writing || Ideal for business owners who want polished copy without AI-generated filler",
+    description: "Professional copywriting per page or asset\nWebsite page copy, sales page copy, email copy, or ad copy\nDiscovery brief covering tone, audience, and conversion goal\n1 round of substantive revisions included\nPlain-English, UK-market-tuned writing\nIdeal for business owners who want polished copy without AI-generated filler",
     category: "Content & Branding",
     unit: "Page",
     pricingType: "standard",
@@ -427,7 +427,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   // ───────── Labour Rates (3) ─────────
   {
     name: "Web Developer — Hourly",
-    description: "Front-end and back-end web development per hour || WordPress, Shopify, WooCommerce, custom PHP or JavaScript work || Plugin and theme customisation || API integrations || Bug fixes and technical investigation",
+    description: "Front-end and back-end web development per hour\nWordPress, Shopify, WooCommerce, custom PHP or JavaScript work\nPlugin and theme customisation\nAPI integrations\nBug fixes and technical investigation",
     category: "Labour Rates",
     unit: "Hour",
     pricingType: "standard",
@@ -436,7 +436,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Designer — Hourly",
-    description: "Graphic and web design per hour || Web page design, marketing collateral, social graphics || Photoshop, Illustrator, Figma, or equivalent || Client-facing design work outside a fixed-scope project",
+    description: "Graphic and web design per hour\nWeb page design, marketing collateral, social graphics\nPhotoshop, Illustrator, Figma, or equivalent\nClient-facing design work outside a fixed-scope project",
     category: "Labour Rates",
     unit: "Hour",
     pricingType: "standard",
@@ -445,7 +445,7 @@ export const WEBSITE_MARKETING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Digital Marketer — Hourly",
-    description: "Digital marketing specialist work per hour || Strategy sessions, ad account audits, SEO consultations || Marketing automation setup (HubSpot, Mailchimp, Klaviyo) || Analytics and reporting outside a fixed-scope retainer",
+    description: "Digital marketing specialist work per hour\nStrategy sessions, ad account audits, SEO consultations\nMarketing automation setup (HubSpot, Mailchimp, Klaviyo)\nAnalytics and reporting outside a fixed-scope retainer",
     category: "Labour Rates",
     unit: "Hour",
     pricingType: "standard",

@@ -32,6 +32,7 @@
  * the live invokeClaude helper instead of the proof's standalone client.
  */
 
+import { parseLineItemDescription } from "../../shared/lineItemDescription";
 import { invokeClaude } from "../_core/claude";
 import {
   normalizeKnowledge,
@@ -419,10 +420,9 @@ interface NarrativeChapterFromAI {
 
 /**
  * Render a single line item description with its sub-bullets / numbered
- * steps as the human-facing PDF generator does (see
- * server/pdfGenerator.ts ~line 72). Same convention:
- *   - "||"  → bullet separator (sub-detail items)
- *   - "##"  → numbered step separator (multi-step scope)
+ * steps as the human-facing PDF generator does. Same convention, from
+ * shared/lineItemDescription.ts: first line summary, following lines
+ * points, "1. " lines numbered (legacy "||" / "##" still understood).
  *
  * Reusing the convention is important: line items often carry the
  * actual contractual specifics (SLAs, scope inclusions, exclusions) in
@@ -438,25 +438,22 @@ function formatLineItemForPrompt(li: QuoteContextLineItem): string {
   const qty = li.quantity;
   const unit = li.unit || "each";
 
-  // Numbered steps take precedence over bullets if both are present
-  // (matches pdfGenerator's ordering).
-  if (desc.includes("##")) {
-    const parts = desc.split("##").map((p) => p.trim()).filter(Boolean);
-    const summary = parts[0];
-    const steps = parts.slice(1);
-    const header = `    - ${summary} (qty ${qty} ${unit} @ £${rate})`;
-    if (steps.length === 0) return header;
-    return [header, ...steps.map((s, i) => `        ${i + 1}. ${s}`)].join("\n");
-  }
-  if (desc.includes("||")) {
-    const parts = desc.split("||").map((p) => p.trim()).filter(Boolean);
-    const summary = parts[0];
-    const bullets = parts.slice(1);
-    const header = `    - ${summary} (qty ${qty} ${unit} @ £${rate})`;
-    if (bullets.length === 0) return header;
-    return [header, ...bullets.map((b) => `        • ${b}`)].join("\n");
-  }
-  return `    - ${desc} (qty ${qty} ${unit} @ £${rate})`;
+  // Delivery 2.5 — parsed by the shared rule (shared/lineItemDescription.ts):
+  // first line is the summary, each following line a point; numbered
+  // lines keep their number; legacy "||" / "##" still understood.
+  const parsed = parseLineItemDescription(desc);
+  // A description that opens with a bullet has no summary line; its
+  // first point stands in as the headline.
+  const summary = parsed.summary || parsed.points[0]?.text || desc;
+  const points = parsed.summary ? parsed.points : parsed.points.slice(1);
+  const header = `    - ${summary} (qty ${qty} ${unit} @ £${rate})`;
+  if (points.length === 0) return header;
+  return [
+    header,
+    ...points.map((p) =>
+      p.number ? `        ${p.number}. ${p.text}` : `        • ${p.text}`,
+    ),
+  ].join("\n");
 }
 
 /**

@@ -2,6 +2,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+// Delivery 2.5 — shared line-item description rule (new-line bullets).
+import { descriptionAsText, descriptionSummary } from "@shared/lineItemDescription";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -44,6 +47,7 @@ function EditableCell({
   step,
   onSave,
   minWidth,
+  multiline = false,
 }: {
   value: string;
   field: string;
@@ -55,10 +59,17 @@ function EditableCell({
   step?: string;
   onSave: (id: number, field: string, value: string) => void;
   minWidth?: number;
+  /** Delivery 2.5 — descriptions hold one feature per line. A single-line
+   *  <input> silently strips line breaks, so editing a description there
+   *  would flatten its bullets into one line. Multi-line cells edit in a
+   *  textarea: Enter adds a line, Ctrl/Cmd+Enter or clicking away saves,
+   *  Escape cancels. */
+  multiline?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [localValue, setLocalValue] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (!editing) setLocalValue(value);
@@ -68,6 +79,12 @@ function EditableCell({
     if (editing && inputRef.current) {
       inputRef.current.focus();
       inputRef.current.select();
+    }
+    if (editing && textareaRef.current) {
+      const el = textareaRef.current;
+      el.focus();
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
     }
   }, [editing]);
 
@@ -82,6 +99,43 @@ function EditableCell({
     setEditing(false);
     setLocalValue(value);
   }, [value]);
+
+  if (editing && multiline) {
+    return (
+      <textarea
+        ref={textareaRef}
+        value={localValue}
+        rows={2}
+        onChange={(e) => {
+          setLocalValue(e.target.value);
+          e.currentTarget.style.height = "auto";
+          e.currentTarget.style.height = `${e.currentTarget.scrollHeight}px`;
+        }}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            save();
+          }
+          if (e.key === "Escape") cancel();
+        }}
+        placeholder="First line: summary. Then one feature per line."
+        style={{
+          width: "100%",
+          minWidth: minWidth || 60,
+          padding: "4px 6px",
+          fontSize: 13,
+          lineHeight: 1.45,
+          border: "1px solid #0d9488",
+          borderRadius: 4,
+          outline: "none",
+          background: "#f0fdfa",
+          resize: "vertical",
+          overflow: "hidden",
+        }}
+      />
+    );
+  }
 
   if (editing) {
     return (
@@ -110,7 +164,9 @@ function EditableCell({
     );
   }
 
-  const displayValue = localValue || "";
+  // Multi-line cells show the summary and its bullets on separate lines,
+  // formatted by the shared rule (legacy "||" descriptions included).
+  const displayValue = multiline ? descriptionAsText(localValue || "") : localValue || "";
   const isEmpty = !displayValue;
 
   return (
@@ -123,7 +179,9 @@ function EditableCell({
         fontSize: 13,
         minHeight: 28,
         display: "flex",
-        alignItems: "center",
+        alignItems: multiline ? "flex-start" : "center",
+        whiteSpace: multiline ? "pre-line" : undefined,
+        lineHeight: multiline ? 1.45 : undefined,
         color: isEmpty ? "#94a3b8" : "#1a2b4a",
         transition: "background 0.15s",
       }}
@@ -618,7 +676,10 @@ export default function Catalog() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="description">Description</Label>
-                <Input id="description" placeholder="Brief description..." value={description} onChange={(e) => setDescription(e.target.value)} />
+                {/* Delivery 2.5 — multi-line: first line is the summary, each
+                    following line prints as a bullet on every document. */}
+                <Textarea id="description" rows={4} placeholder={"Summary on the first line\nThen one feature per line"} value={description} onChange={(e) => setDescription(e.target.value)} />
+                <p className="text-xs text-muted-foreground">Press Enter for a new bullet point.</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -812,7 +873,7 @@ export default function Catalog() {
                         <EditableCell value={item.name} field="name" itemId={item.id} placeholder="Item name" onSave={handleInlineSave} minWidth={140} />
                       </div>
                       <div style={{ flex: 2, minWidth: 120, padding: "0 2px" }}>
-                        <EditableCell value={item.description || ""} field="description" itemId={item.id} onSave={handleInlineSave} minWidth={100} />
+                        <EditableCell value={item.description || ""} field="description" itemId={item.id} onSave={handleInlineSave} minWidth={100} multiline />
                       </div>
                       <div style={{ flex: 1.2, minWidth: 90, padding: "0 2px" }}>
                         <CategoryCell
@@ -938,7 +999,7 @@ export default function Catalog() {
                         {categoryItems.map((item: { name: string; description: string; unit: string; defaultRate: string }) => {
                           const isInCatalog = inCatalogLower.has(item.name.toLowerCase());
                           const isSelected = selectedSeedNames.has(item.name);
-                          const firstDescSegment = item.description.split("||")[0].trim();
+                          const firstDescSegment = descriptionSummary(item.description);
                           return (
                             <label
                               key={item.name}

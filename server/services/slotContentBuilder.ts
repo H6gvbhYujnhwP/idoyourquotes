@@ -41,6 +41,7 @@
 import type { SlotContent } from "./templateRenderer";
 import { invokeLLM } from "../_core/llm";
 import { parseQuoteVatRate, isVatCharged } from "./vatRate";
+import { parseLineItemDescription } from "../../shared/lineItemDescription";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -513,10 +514,26 @@ function buildPricingTableInner(
 
       // For recurring items, suffix the description with the period
       // so the line reads correctly inside a mixed table.
-      let desc = esc((li.description ?? "").trim() || "Line item");
+      //
+      // Delivery 2.5 — previously the whole description was escaped as one
+      // string, so "||" separators printed raw in every colour template.
+      // The summary stays on the first line (with the period suffix) and
+      // each point goes on its own line beneath, per the shared rule in
+      // shared/lineItemDescription.ts.
+      const parsed = parseLineItemDescription(li.description ?? "");
+      let desc = esc(parsed.summary || parsed.points[0]?.text || "Line item");
+      const pointList = parsed.summary ? parsed.points : parsed.points.slice(1);
       if (mode === "recurring" && li.pricingType) {
         const period = li.pricingType === "annual" ? "/year" : "/month";
         desc += ` <span style="color:#6b7280;font-size:0.85em;">(${period})</span>`;
+      }
+      if (pointList.length > 0) {
+        desc += pointList
+          .map(
+            (p) =>
+              `<br/><span style="font-size:0.9em;">${p.number ? `${esc(p.number)}.` : "&bull;"} ${esc(p.text)}</span>`,
+          )
+          .join("");
       }
 
       return `<tr>` +

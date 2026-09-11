@@ -43,6 +43,7 @@
 // endpoint. Returns an HTML string; the client opens it in a print
 // window the same way the existing generatePDF path does.
 
+import { parseLineItemDescription } from "../shared/lineItemDescription";
 import { Quote, QuoteLineItem, User, Organization } from "../drizzle/schema";
 import { getPresignedUrl } from "./r2Storage";
 
@@ -149,12 +150,11 @@ export function formatDate(d: Date | string | null | undefined): string {
 /** Plain-text conversion for fields stored with our list-separator syntax. */
 export function plainLineItemText(text: string | null | undefined): string {
   if (!text) return "";
-  // Collapse both bullet (`||`) and numbered (`##`) separators into commas —
-  // the branded table cells don't need inline list markup.
-  return String(text)
-    .split(/\s*(?:\|\||##)\s*/)
-    .filter(Boolean)
-    .join(". ");
+  // Collapse the summary and its points into sentences — the branded
+  // table cells don't need inline list markup. Delivery 2.5: parsed by the
+  // shared rule (new lines, plus legacy "||" / "##").
+  const { summary, points } = parseLineItemDescription(String(text));
+  return [summary, ...points.map((p) => p.text)].filter(Boolean).join(". ");
 }
 
 // ── Phase 4A Delivery 31 — Terms / topic-coverage detection ─────────

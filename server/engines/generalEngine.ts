@@ -14,7 +14,40 @@
  */
 
 import { invokeClaude } from "../_core/claude";
+// Delivery 2.5 — the shared line-item description rule (not an engine
+// file, so guardrail G11 is respected).
+import { normaliseLineItemDescription } from "../../shared/lineItemDescription";
 import type { EngineInput, EngineOutput, SectorEngine } from "./types";
+
+/**
+ * Delivery 2.5 — keep multi-line catalogue descriptions inside their item
+ * in the prompt's COMPANY CATALOG list. Item lines start with `- "`; any
+ * other non-blank line inside the list is a continuation of the previous
+ * item's description and is indented beneath it. Everything outside the
+ * list is returned untouched, so a catalogue with single-line
+ * descriptions produces a byte-identical prompt.
+ */
+function indentCatalogContinuationLines(ctx: string): string {
+  if (!ctx) return ctx;
+  const out: string[] = [];
+  let inCatalog = false;
+  for (const line of ctx.split("\n")) {
+    if (line.startsWith("COMPANY CATALOG")) {
+      inCatalog = true;
+      out.push(line);
+      continue;
+    }
+    if (inCatalog && (line.startsWith("PRICING TYPES") || line.startsWith("IMPORTANT:"))) {
+      inCatalog = false;
+    }
+    if (inCatalog && line.trim() !== "" && !line.startsWith('- "')) {
+      out.push(`    ${line.trim()}`);
+      continue;
+    }
+    out.push(line);
+  }
+  return out.join("\n");
+}
 
 export class GeneralEngine implements SectorEngine {
   private readonly tradePreset: string | null;
@@ -87,7 +120,12 @@ export class GeneralEngine implements SectorEngine {
     const inventoryContext = inventoryBlock ? `\n\n${inventoryBlock}\n` : "";
 
     // ── Step 3: Build catalog context (already formatted by parseDictationSummary) ─
-    const catalogContext = input.catalogContext;
+    // Delivery 2.5 — catalogue descriptions now hold one feature per line.
+    // The list is built one item per line upstream (routers.ts), so a
+    // multi-line description would spill onto un-indented lines that read
+    // like new, nameless items. Indent those continuation lines so each
+    // item stays visibly one entry.
+    const catalogContext = indentCatalogContinuationLines(input.catalogContext);
 
     // ── Step 4: Build system prompt (exact copy of current parseDictationSummary prompt) ─
     //
@@ -115,7 +153,7 @@ When the evidence is an invoice, contract, statement, or service agreement, DO N
 INVOICE LINE ITEM MAPPING:
 - Each numbered/listed row on the invoice → ONE material in the output.
 - "item": the service or product name. Strip administrative prefixes like "Contract:" or "Service:" — e.g. "Contract: M365 (Mar25) - Business Standard" becomes item: "M365 Business Standard".
-- "description": preserve the full technical detail INCLUDING bracket tags that encode contract terms (e.g. "[NCE/1-Year/Monthly]", "[36-month]", "[Core]", "[Gold]", "/Baseline /Backup /Spam"). These tags matter to the client. Use the "||" separator if you expand on the service scope.
+- "description": preserve the full technical detail INCLUDING bracket tags that encode contract terms (e.g. "[NCE/1-Year/Monthly]", "[36-month]", "[Core]", "[Gold]", "/Baseline /Backup /Spam"). These tags matter to the client. If you expand on the service scope, put each point on its own line.
 - "quantity": exactly as shown on the invoice (14 for "Qty 14 - M365 Business Standard Named Users"; 6.00 for "6.00 hours of Project Engineer").
 - "unit": match the invoice's billing unit. "User" for per-user licensing, "Month" for retainers billed monthly, "Agent" or "Device" for per-agent/per-device services, "Hour" for time-billed engineer labour, "each" for one-off items.
 
@@ -373,7 +411,7 @@ When the evidence is an invoice, retainer statement, SOW, or hosting contract, D
 INVOICE LINE ITEM MAPPING:
 - Each numbered/listed row on the invoice → ONE material in the output.
 - "item": the service name. Strip administrative prefixes like "Retainer:" or "Monthly Fee:" — e.g. "Retainer: SEO — National — Feb 26" becomes item: "National SEO Retainer". Match to the user's catalog naming where possible ("Business Website — 10–15 Pages", "Managed WordPress Hosting", "Website Care Plan — Pro", "Local SEO Retainer", "Google Ads Management", "Social Media Management — 2 Channels", "Logo Design", "Full Brand Identity Package").
-- "description": preserve the technical detail including commitment terms ("[6-month minimum]", "[12-month commitment]"), included scope ("up to £5,000 monthly ad spend", "12 posts/month across 2 channels", "1,000+ word articles ×2/month"), and platform specifics ("Shopify", "WordPress + WooCommerce", "Webflow"). Use "||" separator when expanding scope.
+- "description": preserve the technical detail including commitment terms ("[6-month minimum]", "[12-month commitment]"), included scope ("up to £5,000 monthly ad spend", "12 posts/month across 2 channels", "1,000+ word articles ×2/month"), and platform specifics ("Shopify", "WordPress + WooCommerce", "Webflow"). When expanding scope, put each point on its own line.
 - "quantity": exactly as shown on the invoice (1 for a single retainer; 2 for "2 × SEO articles"; 12 for "12 social posts"; hour count for dated dev time).
 - "unit": match the invoice's billing unit. "Month" for retainers, "Year" for annual hosting or domain renewals, "Project" for one-off builds or audits, "Article" for content pieces, "Hour" for ad-hoc dev/design, "Pack" for content packs, "Page" for copywriting charged per page, "Deliverable" for marketing collateral.
 
@@ -447,7 +485,7 @@ HOW TO SUBSTITUTE:
    - Use the catalog item's exact "name" as the materials "item" field.
    - Use the catalog item's defaultRate as unitPrice. Set estimated: false.
    - Copy quantity from the evidence.
-   - Start the "description" with "Replaces existing [evidenced provider/product]" followed by "||" then the catalog description.
+   - Start the "description" with "Replaces existing [evidenced provider/product]" followed by a line break, then the catalog description (keeping its line breaks).
 4. If the category is CHANNEL-LOCKED (Google Ads, Meta Ads, LinkedIn Ads, specific CMS), match the same channel/platform at the user's catalog rate for that channel. Do NOT swap channels.
 5. If no catalog match exists in the evidenced category, fall back to UK mid-market anchors above with estimated: true.
 6. Silent substitution is a bug. Every substituted item MUST have "Replaces existing [original provider]" visible in the description so the user can review and revert in the QDS if needed.
@@ -482,7 +520,7 @@ When the evidence is an invoice, contract, or statement, DO NOT return empty mat
 INVOICE LINE ITEM MAPPING:
 - Each numbered/listed row on the invoice → ONE material in the output.
 - "item": the service name. Strip administrative prefixes like "Cleaning Services:" or "Monthly Contract:" — e.g. "Monthly Contract: Office Cleaning — Mon–Fri evenings, 3hr/night" becomes item: "Daily Office Cleaning — Medium Site (2,000–10,000 sq ft)" (mapped to the nearest catalog tier by footprint/hours). Match to user catalog naming where possible ("Daily Office Cleaning — Small / Medium / Large Site", "Retail Cleaning — Daily", "Healthcare / GP Surgery Cleaning — Daily", "Communal Area Cleaning", "Washroom Services Contract", "Deep Clean — Office").
-- "description": preserve specifics — visit frequency ("Mon–Fri evenings, 3hrs/night", "7-day retail, early-morning"), footprint ("4,500 sq ft"), scope ("office + kitchen + 2 washrooms"), compliance ("CQC-audited", "BICSc Level 2 trained", "BRC-compliant documentation"), staff arrangement ("dedicated cleaner, DBS-checked", "2-person evening team"), billing cadence ("Billed quarterly in arrears"). Use "||" between elements.
+- "description": preserve specifics — visit frequency ("Mon–Fri evenings, 3hrs/night", "7-day retail, early-morning"), footprint ("4,500 sq ft"), scope ("office + kitchen + 2 washrooms"), compliance ("CQC-audited", "BICSc Level 2 trained", "BRC-compliant documentation"), staff arrangement ("dedicated cleaner, DBS-checked", "2-person evening team"), billing cadence ("Billed quarterly in arrears"). Put each element on its own line.
 - "quantity": match the invoice's billing unit. For monthly retainers, quantity is typically 1. For consumables with a headcount, quantity may be the user headcount. For sanitary bins, quantity is the number of units. For per-sq-ft services, quantity is the area.
 - "unit": match the invoice's billing unit. "Month" for retainers, "Washroom" for washroom services per washroom, "Unit" for per-unit hygiene services (sanitary bins, air freshener units), "Sq ft" or "Sq m" for area-based pricing (deep cleans, carpet, hard floor), "Visit" for per-visit periodic cleans, "Property" for end-of-tenancy, "Chair" for upholstery cleaning, "Hour" for hourly labour, "Callout" for biohazard/emergency.
 
@@ -555,7 +593,7 @@ HOW TO SUBSTITUTE:
    - Use the catalog item's exact "name" as the materials "item" field.
    - Use the catalog item's defaultRate as unitPrice. Set estimated: false.
    - Copy quantity from the evidence (number of washrooms, headcount, sq ft, sanitary units).
-   - Start the "description" with "Replaces existing [evidenced provider]" followed by "||" then the catalog description.
+   - Start the "description" with "Replaces existing [evidenced provider]" followed by a line break, then the catalog description (keeping its line breaks).
 4. If the category is NON-SUBSTITUTABLE (compliance-driven, frequency-specific), match the incumbent's tier at the user's catalog price for that tier — or flag with estimated: true if the user has no matching tier yet.
 5. If no catalog match exists, fall back to UK mid-market anchors above with estimated: true.
 6. Silent substitution is a bug. Every substituted item MUST have "Replaces existing [original provider]" visible in the description so the user can review and revert in the QDS.
@@ -590,7 +628,7 @@ When the evidence is an invoice, contract, or audit-compliant statement, DO NOT 
 INVOICE LINE ITEM MAPPING:
 - Each numbered/listed row on the invoice → ONE material in the output.
 - "item": the service name. Strip administrative prefixes like "Service:" or "Contract:" — e.g. "Contract: Food Premises Servicing — 8 visits/yr" becomes item: "Food Premises Pest Control Contract — Restaurant / Café". Match to user catalog naming where possible ("Office / Retail Pest Control Contract", "Food Premises Pest Control Contract — Restaurant / Café", "Food Manufacturing / Warehouse Contract", "Healthcare / Pharmacy Pest Control Contract", "Schools / Nurseries Pest Control Contract", "Wasp / Hornet Nest Removal", "Rat Treatment — Residential", "Electronic Rodent Monitoring — Monthly").
-- "description": preserve specifics — visit frequency ("8 visits/year", "quarterly in arrears", "monthly", "termly"), site type ("restaurant kitchen", "food manufacturing, risk rating A"), compliance ("BRC-compliant documentation", "CQC-audited", "DBS-checked staff", "BPCA member"), pest scope ("rodents + crawling insects + flying insects + EFKs"), number of monitoring stations, number of EFKs serviced, any chemical restrictions ("no SGARs in food areas", "IPM approach"). Use "||" between elements.
+- "description": preserve specifics — visit frequency ("8 visits/year", "quarterly in arrears", "monthly", "termly"), site type ("restaurant kitchen", "food manufacturing, risk rating A"), compliance ("BRC-compliant documentation", "CQC-audited", "DBS-checked staff", "BPCA member"), pest scope ("rodents + crawling insects + flying insects + EFKs"), number of monitoring stations, number of EFKs serviced, any chemical restrictions ("no SGARs in food areas", "IPM approach"). Put each element on its own line.
 - "quantity": match the invoice's billing unit. For monthly contracts, typically 1. For electronic rodent monitoring (per-unit pricing), quantity is the number of units. For bird proofing, quantity is sq m. For mileage, quantity is miles.
 - "unit": match the invoice's billing unit. "Month" for retainers, "Unit" for per-station or per-EFK monthly services, "Treatment" for one-off domestic/commercial treatments, "Property" for whole-property treatments (bed bugs, fleas), "Hour" for hourly technician work, "Survey" for site surveys, "Sq m" for bird proofing area, "Mile" for travel charges.
 
@@ -663,7 +701,7 @@ HOW TO SUBSTITUTE:
    - Use the catalog item's exact "name" as the materials "item" field.
    - Use the catalog item's defaultRate as unitPrice. Set estimated: false.
    - Copy quantity from the evidence (number of monitoring units, number of EFKs, number of bait stations, sq m of bird proofing).
-   - Start the "description" with "Replaces existing [evidenced provider/product]" followed by "||" then the catalog description.
+   - Start the "description" with "Replaces existing [evidenced provider/product]" followed by a line break, then the catalog description (keeping its line breaks).
 4. If the category is NON-SUBSTITUTABLE (compliance, frequency, BPCA qualification, chemical restriction, IPM commitment, species-specific works), match the incumbent's tier at the user's catalog price for that tier — or flag with estimated: true if the user has no matching tier yet.
 5. If no catalog match exists, fall back to UK mid-market anchors above with estimated: true.
 6. Silent substitution is a bug. Every substituted item MUST have "Replaces existing [original provider]" visible in the description so the user can review and revert in the QDS.
@@ -764,8 +802,8 @@ Decision rule — pick exactly ONE shape, NEVER both:
 
   CASE A1 — Parent has its own price; sub-tasks are descriptive only (no separate prices in the evidence):
     → Emit ONE row: the parent, at the parent's price. Set passthrough: false.
-    → Move the sub-task names into the description field with "||" separators.
-    → Example: incumbent invoice shows "Cloud Migration Project — £8,500" with bullets describing what's included → ONE row at £8,500, description lists the sub-task names with "||" separators.
+    → Move the sub-task names into the description field, one per line (a line break before each).
+    → Example: incumbent invoice shows "Cloud Migration Project — £8,500" with bullets describing what's included → ONE row at £8,500, description lists the sub-task names one per line.
 
   CASE A2 — Sub-tasks are itemised (each appears as a discrete deliverable in the evidence, with or without individual prices):
     → Emit the SUB-TASK rows only. Do NOT emit the parent on top.
@@ -890,7 +928,7 @@ ${itInvoiceAddendum}${websiteMarketingAddendum}${commercialCleaningAddendum}${pe
   "markup": number | null,
   "sundries": number | null,
   "contingency": string | null,
-  "notes": string | null,
+  "notes": string | null,   // internal notes for the quoting business only — never shown to the client
   "isTradeRelevant": boolean
 }
 
@@ -901,17 +939,18 @@ FIELD GUIDELINES:
 - jobDescription: 2-3 detailed sentences covering the FULL scope. Include specifics — server types, cable lengths, page counts, service descriptions. Write from the perspective of the quoting business describing the work they'll do.
 - labour: Team composition summary — one entry per distinct role/mode combination. ALWAYS include the delivery mode in the role name so entries are unambiguous: "Network Engineer — Onsite", "Network Engineer — Workshop", "IT Consultant — Remote", "Engineer — Commissioning". Never write just "Network Engineer" if that person appears in multiple modes. Only include labour entries when there is genuinely separate hands-on labour not covered by catalog service items. CRITICAL: if the labour role already exists as a materials line item (e.g. "IT Labour Workshop" is a priced line), do NOT also add it to labour[]. Check every labour entry against the materials list before including it — if it's already there as a line item, omit it from labour[].
 - materials: Every billable line item with catalog-matched prices where possible. Use the EXACT "item" name from the catalog. Use the EXACT "unit" from the catalog (Per Hour, Per Month, Per 5,000, Session, etc.).
-  For "description" — choose the right format based on item type. NEVER use newlines, "•", or any other separator — only "||", "##", or plain text.
+  For "description" — choose the right format based on item type. The FIRST line is a summary sentence; each further point goes on its OWN line (use a line break, written as \n inside the JSON string). Every line after the first prints as a bullet point on the proposal, contract, Word export and the client's invoices. NEVER use "||", "##", "•", "-" or any other separator or bullet character — line breaks only.
   - SIMPLE items (single hardware unit, straightforward supply): one clear plain sentence. E.g. "24-port managed PoE switch for main communications cabinet."
-  - STANDARD items covering multiple deliverables or tasks (a labour day with several activities, a setup service with multiple components): use "||" to list each element. E.g. "1.5 days onsite installation || Vigor Router setup on Gigaclear line || WiFi access point deployment across 9 locations || VLAN testing and commissioning". Only use "||" when a breakdown genuinely helps the client understand what they're getting.
-  - SEQUENTIAL items where order matters (installation sequences, commissioning steps, phased rollouts): use "##" to list numbered steps. E.g. "Network infrastructure installation ## Remove old switch and patch panel ## Rack-mount and cable new PoE switch ## Configure VLANs and test connectivity ## Commission and handover". Use "##" when steps must happen in order.
-  - MONTHLY or ANNUAL items (contracts, retainers, ongoing services): ALWAYS use "||". The description IS the sales document. Format: summary sentence || feature 1 || feature 2 || feature 3 (minimum 4 features). Draw from the evidence AND your knowledge of what a well-structured contract at this price point includes. Examples per sector:
+  - STANDARD items covering multiple deliverables or tasks (a labour day with several activities, a setup service with multiple components): summary line, then each element on its own line. E.g. "1.5 days onsite installation\nVigor Router setup on Gigaclear line\nWiFi access point deployment across 9 locations\nVLAN testing and commissioning". Only break it down when a breakdown genuinely helps the client understand what they're getting.
+  - SEQUENTIAL items where order matters (installation sequences, commissioning steps, phased rollouts): summary line, then each step on its own line starting with its number. E.g. "Network infrastructure installation\n1. Remove old switch and patch panel\n2. Rack-mount and cable new PoE switch\n3. Configure VLANs and test connectivity\n4. Commission and handover". Number steps only when they must happen in order.
+  - MONTHLY or ANNUAL items (contracts, retainers, ongoing services): ALWAYS use a summary line followed by features, one per line. The description IS the sales document. Format: summary sentence, then feature 1, feature 2, feature 3 each on its own line (minimum 4 features). Draw from the evidence AND your knowledge of what a well-structured contract at this price point includes. Examples per sector:
     - IT/MSP: monitoring coverage, incident response SLA, included remote support hours, patch management, backup verification, reporting cadence
     - Cleaning: visit frequency, areas covered, tasks per visit, consumables, supervisor checks, emergency call-out terms
     - Maintenance/FM: planned visits per year, reactive call-out SLA, included labour hours, parts coverage, compliance docs
     - Pest control: inspection frequency, covered pests, treatment methods, certificates provided
-    Example: "Comprehensive managed support for 16-device network || 24/7 monitoring of all network devices || Security patch management and firmware updates || Remote support up to 4 hours/month || Monthly health report and configuration backups || 4-hour response SLA during business hours"
+    Example: "Comprehensive managed support for 16-device network\n24/7 monitoring of all network devices\nSecurity patch management and firmware updates\nRemote support up to 4 hours/month\nMonthly health report and configuration backups\n4-hour response SLA during business hours"
   Never leave description blank for any item.
+  The description is CLIENT-FACING. It is printed on the proposal, the contract, the Word export and every invoice the client receives. NEVER write notes to the quoting business inside it: no "NOTE:", no "confirm with client", no "please verify", no assumptions you made (e.g. "30 users assumed"), no comparison with catalogue prices (e.g. "catalog rate is £32.99", "client-stated price"), no explanation of which price or unit you chose. Put every such note in the top-level "notes" field instead — one line per note, starting with the item name (e.g. "SOGEA Broadband: client stated £29/month; catalogue rate £32.99").
 - sourceInputIds: On every materials row, an array of the input IDs whose evidence contributed to that row. Read the [INPUT_ID: N] prefix at the start of each evidence block and include those numbers here as integers. If a row comes from one evidence block, it is a single-element array (e.g. [3]). If a row merges evidence from multiple inputs (for example one block stating the item and another confirming the quantity), include every contributing ID (e.g. [3, 7]). Never omit this field. Never leave it as an empty array — every materials row must trace back to at least one input.
 - notes: Assumptions, site access requirements, items needing verification, phasing suggestions, anything the user should review.
 - isTradeRelevant: false only if the content has nothing to do with ${tradeLabel} work.
@@ -962,7 +1001,14 @@ If a field is not mentioned or cannot be determined, use null. Respond with vali
         clientPhone: parsed.clientPhone ?? null,
         jobDescription: parsed.jobDescription ?? "",
         labour: parsed.labour ?? [],
-        materials: parsed.materials ?? [],
+        // Delivery 2.5 — whatever separator the model actually used, store
+        // descriptions in the new-line format (summary line, one point per
+        // line, numbered steps as "1. "). Legacy "||" / "##" are converted.
+        materials: (parsed.materials ?? []).map((m: any) =>
+          m && typeof m.description === "string"
+            ? { ...m, description: normaliseLineItemDescription(m.description) }
+            : m,
+        ),
         markup: parsed.markup ?? null,
         sundries: parsed.sundries ?? null,
         contingency: parsed.contingency ?? null,

@@ -33,7 +33,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   // ───────── Recurring Cleaning Contracts (6) ─────────
   {
     name: "Daily Office Cleaning — Small Site (under 2,000 sq ft)",
-    description: "Recurring office cleaning contract for small sites || Monday–Friday evening cleans || Includes vacuuming, hard floor mopping, desk wipe-down, bin emptying, kitchen clean, toilet clean || Cleaning materials and consumables supplied || Cleaner background-checked and uniformed || Monthly supervisor site visit || Minimum 12-month contract",
+    description: "Recurring office cleaning contract for small sites\nMonday–Friday evening cleans\nIncludes vacuuming, hard floor mopping, desk wipe-down, bin emptying, kitchen clean, toilet clean\nCleaning materials and consumables supplied\nCleaner background-checked and uniformed\nMonthly supervisor site visit\nMinimum 12-month contract",
     category: "Recurring Cleaning Contracts",
     unit: "Month",
     pricingType: "monthly",
@@ -42,7 +42,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Daily Office Cleaning — Medium Site (2,000–10,000 sq ft)",
-    description: "Recurring office cleaning contract for medium sites || Monday–Friday evening cleans (or morning, as agreed) || Full office, kitchen, and washroom cleaning || Periodic touch-points included (door handles, switches, shared surfaces) || Cleaning materials supplied; consumables restock included || Fortnightly supervisor site visit with quality audit || Minimum 12-month contract",
+    description: "Recurring office cleaning contract for medium sites\nMonday–Friday evening cleans (or morning, as agreed)\nFull office, kitchen, and washroom cleaning\nPeriodic touch-points included (door handles, switches, shared surfaces)\nCleaning materials supplied; consumables restock included\nFortnightly supervisor site visit with quality audit\nMinimum 12-month contract",
     category: "Recurring Cleaning Contracts",
     unit: "Month",
     pricingType: "monthly",
@@ -51,7 +51,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Daily Office Cleaning — Large Site (10,000+ sq ft)",
-    description: "Recurring office cleaning contract for large sites || Team-based cleaning, Monday–Friday || Includes office, kitchen, washrooms, meeting rooms, reception || Higher-frequency touch-point cleaning || Dedicated on-site cleaning team || Weekly supervisor site visits and monthly audit report || Cleaning materials supplied; washroom consumables included || Minimum 24-month contract || Price varies significantly by exact footprint — anchor figure for ~15,000 sq ft",
+    description: "Recurring office cleaning contract for large sites\nTeam-based cleaning, Monday–Friday\nIncludes office, kitchen, washrooms, meeting rooms, reception\nHigher-frequency touch-point cleaning\nDedicated on-site cleaning team\nWeekly supervisor site visits and monthly audit report\nCleaning materials supplied; washroom consumables included\nMinimum 24-month contract\nPrice varies significantly by exact footprint — anchor figure for ~15,000 sq ft",
     category: "Recurring Cleaning Contracts",
     unit: "Month",
     pricingType: "monthly",
@@ -60,7 +60,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Retail Cleaning — Daily",
-    description: "Daily retail cleaning contract || 7-day or Mon–Sat schedule as agreed || Shop floor vacuum / mop, glass and mirror clean, till area sanitise, fitting rooms || Stockroom tidy (once weekly) || Staff area and washroom clean || Cleaning materials supplied || Minimum 12-month contract",
+    description: "Daily retail cleaning contract\n7-day or Mon–Sat schedule as agreed\nShop floor vacuum / mop, glass and mirror clean, till area sanitise, fitting rooms\nStockroom tidy (once weekly)\nStaff area and washroom clean\nCleaning materials supplied\nMinimum 12-month contract",
     category: "Recurring Cleaning Contracts",
     unit: "Month",
     pricingType: "monthly",
@@ -69,7 +69,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Healthcare / GP Surgery Cleaning — Daily",
-    description: "Daily healthcare premises cleaning contract || Infection-control protocols and colour-coded equipment || Consulting rooms, waiting areas, washrooms, staff areas || Touch-point sanitising and high-risk surface cleaning || CQC-compliant documentation and cleaning logs || Staff trained in healthcare cleaning (BICSc Level 2 minimum) || Cleaning materials and hospital-grade disinfectants supplied || Minimum 12-month contract",
+    description: "Daily healthcare premises cleaning contract\nInfection-control protocols and colour-coded equipment\nConsulting rooms, waiting areas, washrooms, staff areas\nTouch-point sanitising and high-risk surface cleaning\nCQC-compliant documentation and cleaning logs\nStaff trained in healthcare cleaning (BICSc Level 2 minimum)\nCleaning materials and hospital-grade disinfectants supplied\nMinimum 12-month contract",
     category: "Recurring Cleaning Contracts",
     unit: "Month",
     pricingType: "monthly",
@@ -78,7 +78,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Communal Area Cleaning — Residential Block / Commercial",
-    description: "Communal area cleaning contract for residential or commercial buildings || Weekly visits (frequency variable) || Entrance halls, stairwells, lifts, corridors, bin stores || Hard floor mopping and vacuuming of carpeted areas || Glass cleaning (internal doors and panels) || Cobweb removal and fitting dusting || Cleaning materials supplied || Minimum 6-month contract",
+    description: "Communal area cleaning contract for residential or commercial buildings\nWeekly visits (frequency variable)\nEntrance halls, stairwells, lifts, corridors, bin stores\nHard floor mopping and vacuuming of carpeted areas\nGlass cleaning (internal doors and panels)\nCobweb removal and fitting dusting\nCleaning materials supplied\nMinimum 6-month contract",
     category: "Recurring Cleaning Contracts",
     unit: "Month",
     pricingType: "monthly",
@@ -89,7 +89,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   // ───────── Periodic Deep Cleans (4) ─────────
   {
     name: "Deep Clean — Office (per sq ft)",
-    description: "Periodic deep clean charged per square foot || Full kitchen and washroom deep clean || Upholstery vacuum and spot treatment || Hard floor strip, clean, and seal / polish || High-level dusting (vents, light fittings, tops of cabinets) || Interior window clean || Typically scheduled annually or twice yearly on office contracts",
+    description: "Periodic deep clean charged per square foot\nFull kitchen and washroom deep clean\nUpholstery vacuum and spot treatment\nHard floor strip, clean, and seal / polish\nHigh-level dusting (vents, light fittings, tops of cabinets)\nInterior window clean\nTypically scheduled annually or twice yearly on office contracts",
     category: "Periodic Deep Cleans",
     unit: "Sq ft",
     pricingType: "standard",
@@ -98,7 +98,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Carpet Cleaning — Per Sq Ft",
-    description: "Hot water extraction carpet cleaning || Pre-treatment for stains and heavy soiling || Industrial extraction equipment || Rapid-dry process suitable for office use || Spot-treatment of visible marks included || Deodorising treatment included",
+    description: "Hot water extraction carpet cleaning\nPre-treatment for stains and heavy soiling\nIndustrial extraction equipment\nRapid-dry process suitable for office use\nSpot-treatment of visible marks included\nDeodorising treatment included",
     category: "Periodic Deep Cleans",
     unit: "Sq ft",
     pricingType: "standard",
@@ -107,7 +107,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Hard Floor Strip, Clean & Polish",
-    description: "Hard floor restoration clean || Strip of existing sealant or polish || Deep clean with industrial scrubber-dryer || Two coats of commercial-grade floor polish || Suitable for vinyl, linoleum, terrazzo, and most stone floors || Buff finish included",
+    description: "Hard floor restoration clean\nStrip of existing sealant or polish\nDeep clean with industrial scrubber-dryer\nTwo coats of commercial-grade floor polish\nSuitable for vinyl, linoleum, terrazzo, and most stone floors\nBuff finish included",
     category: "Periodic Deep Cleans",
     unit: "Sq m",
     pricingType: "standard",
@@ -116,7 +116,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Window Cleaning — Internal, Commercial Premises",
-    description: "Internal window and glass partition cleaning || All internal windows, glass doors, and partitions at reachable height || Use of extendable equipment for higher panels || Streak-free finish || Typically scheduled monthly or quarterly on recurring contracts, one-off rate shown here",
+    description: "Internal window and glass partition cleaning\nAll internal windows, glass doors, and partitions at reachable height\nUse of extendable equipment for higher panels\nStreak-free finish\nTypically scheduled monthly or quarterly on recurring contracts, one-off rate shown here",
     category: "Periodic Deep Cleans",
     unit: "Visit",
     pricingType: "standard",
@@ -127,7 +127,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   // ───────── Specialist Services (6) ─────────
   {
     name: "Post-Construction / Builders' Clean",
-    description: "Post-construction sparkle clean per square foot || Full dust removal from all surfaces (inside cabinets, ledges, skirting) || Protective film removal from windows, doors, appliances || Mortar and paint splash removal || Final polish of fixtures, fittings, and glass || Industrial vacuum of all floors and final clean || Photos of completed work provided",
+    description: "Post-construction sparkle clean per square foot\nFull dust removal from all surfaces (inside cabinets, ledges, skirting)\nProtective film removal from windows, doors, appliances\nMortar and paint splash removal\nFinal polish of fixtures, fittings, and glass\nIndustrial vacuum of all floors and final clean\nPhotos of completed work provided",
     category: "Specialist Services",
     unit: "Sq ft",
     pricingType: "standard",
@@ -136,7 +136,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "End-of-Tenancy / Void Property Clean",
-    description: "End-of-tenancy or void property clean (per property) || Full interior clean to handover standard || Kitchen deep clean including oven, extractor, fridge, freezer || Full bathroom descale and sanitise || Carpets vacuumed; spot-treatment of stains || All surfaces, skirting, doors, and handles cleaned || Windows cleaned internally || Price anchor for 3-bed residential — scales with property size",
+    description: "End-of-tenancy or void property clean (per property)\nFull interior clean to handover standard\nKitchen deep clean including oven, extractor, fridge, freezer\nFull bathroom descale and sanitise\nCarpets vacuumed; spot-treatment of stains\nAll surfaces, skirting, doors, and handles cleaned\nWindows cleaned internally\nPrice anchor for 3-bed residential — scales with property size",
     category: "Specialist Services",
     unit: "Property",
     pricingType: "standard",
@@ -145,7 +145,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Upholstery Cleaning — Per Office Chair",
-    description: "Office chair fabric cleaning || Hot water extraction process || Pre-treatment of stains and heavy soiling || Deodorising treatment || Quick-dry for next-day use || Bulk pricing available — per-chair rate shown",
+    description: "Office chair fabric cleaning\nHot water extraction process\nPre-treatment of stains and heavy soiling\nDeodorising treatment\nQuick-dry for next-day use\nBulk pricing available — per-chair rate shown",
     category: "Specialist Services",
     unit: "Chair",
     pricingType: "standard",
@@ -154,7 +154,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Pressure / Jet Washing",
-    description: "Pressure washing of external surfaces (per sq m) || Suitable for car parks, patios, walkways, external walls || Industrial pressure washer equipment || Biodegradable cleaning solution where required || Moss, algae, and general grime removal || Rinsed and swept on completion",
+    description: "Pressure washing of external surfaces (per sq m)\nSuitable for car parks, patios, walkways, external walls\nIndustrial pressure washer equipment\nBiodegradable cleaning solution where required\nMoss, algae, and general grime removal\nRinsed and swept on completion",
     category: "Specialist Services",
     unit: "Sq m",
     pricingType: "standard",
@@ -163,7 +163,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Graffiti Removal",
-    description: "Graffiti removal from external surfaces (per sq m) || Chemical graffiti remover appropriate to substrate || Pressure wash rinse || Suitable for brick, concrete, painted surfaces, and metal || Fast-response callout available on ongoing contracts",
+    description: "Graffiti removal from external surfaces (per sq m)\nChemical graffiti remover appropriate to substrate\nPressure wash rinse\nSuitable for brick, concrete, painted surfaces, and metal\nFast-response callout available on ongoing contracts",
     category: "Specialist Services",
     unit: "Sq m",
     pricingType: "standard",
@@ -172,7 +172,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Biohazard / Trauma Cleanup",
-    description: "Biohazard and specialist infection-control clean (per callout) || Trained technicians with appropriate PPE || Disposal of contaminated materials to licensed waste route || Full disinfection and sanitisation to industry standard || Documentation trail for insurance / compliance || Starting rate shown — quoted per incident based on scale",
+    description: "Biohazard and specialist infection-control clean (per callout)\nTrained technicians with appropriate PPE\nDisposal of contaminated materials to licensed waste route\nFull disinfection and sanitisation to industry standard\nDocumentation trail for insurance / compliance\nStarting rate shown — quoted per incident based on scale",
     category: "Specialist Services",
     unit: "Callout",
     pricingType: "standard",
@@ -183,7 +183,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   // ───────── Washroom & Consumables (4) ─────────
   {
     name: "Washroom Services Contract",
-    description: "Monthly washroom services and hygiene contract || Sanitary bin servicing (typically monthly, frequency variable) || Nappy bin servicing where applicable || Air freshener units supplied and serviced || Urinal sanitiser dosing units || Certificate of waste transfer provided || Price anchor per washroom — scales with number of bins and service frequency",
+    description: "Monthly washroom services and hygiene contract\nSanitary bin servicing (typically monthly, frequency variable)\nNappy bin servicing where applicable\nAir freshener units supplied and serviced\nUrinal sanitiser dosing units\nCertificate of waste transfer provided\nPrice anchor per washroom — scales with number of bins and service frequency",
     category: "Washroom & Consumables",
     unit: "Washroom",
     pricingType: "monthly",
@@ -192,7 +192,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Consumables — Monthly Supply Contract",
-    description: "Monthly supply of washroom and kitchen consumables || Toilet rolls, hand towels, hand soap || Kitchen cleaning products and dishwasher tablets || Delivery included; dispensers supplied on loan || Price anchor for a medium office (~30 users) — scales with headcount",
+    description: "Monthly supply of washroom and kitchen consumables\nToilet rolls, hand towels, hand soap\nKitchen cleaning products and dishwasher tablets\nDelivery included; dispensers supplied on loan\nPrice anchor for a medium office (~30 users) — scales with headcount",
     category: "Washroom & Consumables",
     unit: "Month",
     pricingType: "monthly",
@@ -201,7 +201,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Feminine Hygiene Unit Service",
-    description: "Sanitary disposal unit servicing || Fortnightly or monthly servicing (as agreed) || Sealed unit exchange with liner included || Certificate of waste transfer provided || Per-unit price — multiple units discounted on contract",
+    description: "Sanitary disposal unit servicing\nFortnightly or monthly servicing (as agreed)\nSealed unit exchange with liner included\nCertificate of waste transfer provided\nPer-unit price — multiple units discounted on contract",
     category: "Washroom & Consumables",
     unit: "Unit",
     pricingType: "monthly",
@@ -210,7 +210,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Air Freshener Service",
-    description: "Automatic air freshener service || Dispenser supplied on loan || Monthly or quarterly refill (as agreed) || Range of fragrance options || Per-unit price — multiple units discounted on contract",
+    description: "Automatic air freshener service\nDispenser supplied on loan\nMonthly or quarterly refill (as agreed)\nRange of fragrance options\nPer-unit price — multiple units discounted on contract",
     category: "Washroom & Consumables",
     unit: "Unit",
     pricingType: "monthly",
@@ -221,7 +221,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   // ───────── One-Off Callouts (2) ─────────
   {
     name: "One-Off Office Clean",
-    description: "Single-visit office clean (non-contract) || Standard office clean scope: floors, surfaces, kitchen, toilets, bins || Ideal for one-off event cleans, post-meeting cleans, or cover cleans || Priced per visit based on typical 3-hour scope for medium office || Scales with size and scope",
+    description: "Single-visit office clean (non-contract)\nStandard office clean scope: floors, surfaces, kitchen, toilets, bins\nIdeal for one-off event cleans, post-meeting cleans, or cover cleans\nPriced per visit based on typical 3-hour scope for medium office\nScales with size and scope",
     category: "One-Off Callouts",
     unit: "Visit",
     pricingType: "standard",
@@ -230,7 +230,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Emergency Callout — Out of Hours",
-    description: "Emergency out-of-hours cleaning callout || Response within agreed SLA (typically 2–4 hours) || Available evenings, weekends, and bank holidays || Suitable for flood, spill, vandalism, or urgent event clean || Minimum 2-hour charge || Materials and disposal included where applicable",
+    description: "Emergency out-of-hours cleaning callout\nResponse within agreed SLA (typically 2–4 hours)\nAvailable evenings, weekends, and bank holidays\nSuitable for flood, spill, vandalism, or urgent event clean\nMinimum 2-hour charge\nMaterials and disposal included where applicable",
     category: "One-Off Callouts",
     unit: "Hour",
     pricingType: "standard",
@@ -241,7 +241,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   // ───────── Labour Rates (4) ─────────
   {
     name: "Cleaner — Daytime",
-    description: "General commercial cleaner, daytime shift || Hourly rate for ad-hoc or contract work || Weekday 07:00–18:00 || Includes standard cleaning materials",
+    description: "General commercial cleaner, daytime shift\nHourly rate for ad-hoc or contract work\nWeekday 07:00–18:00\nIncludes standard cleaning materials",
     category: "Labour Rates",
     unit: "Hour",
     pricingType: "standard",
@@ -250,7 +250,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Cleaner — Out of Hours (Evening / Early Morning)",
-    description: "General commercial cleaner, out-of-hours shift || Hourly rate for work outside standard daytime || Evenings, early mornings, or split shifts || Most common rate on office contracts (evening cleans) || Includes standard cleaning materials",
+    description: "General commercial cleaner, out-of-hours shift\nHourly rate for work outside standard daytime\nEvenings, early mornings, or split shifts\nMost common rate on office contracts (evening cleans)\nIncludes standard cleaning materials",
     category: "Labour Rates",
     unit: "Hour",
     pricingType: "standard",
@@ -259,7 +259,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Cleaner — Weekend / Bank Holiday",
-    description: "General commercial cleaner, weekend or bank holiday uplift rate || Hourly rate for Saturday, Sunday, or bank holiday work || Typically 1.5× weekday rate || Includes standard cleaning materials",
+    description: "General commercial cleaner, weekend or bank holiday uplift rate\nHourly rate for Saturday, Sunday, or bank holiday work\nTypically 1.5× weekday rate\nIncludes standard cleaning materials",
     category: "Labour Rates",
     unit: "Hour",
     pricingType: "standard",
@@ -268,7 +268,7 @@ export const COMMERCIAL_CLEANING_CATALOG_SEED: readonly CatalogSeedItem[] = [
   },
   {
     name: "Supervisor / Team Leader",
-    description: "Supervisor or team leader hourly rate || Oversight of cleaning teams on larger contracts || Quality audits and site inspections || Client-facing point of contact on recurring contracts || Training and induction of new cleaners",
+    description: "Supervisor or team leader hourly rate\nOversight of cleaning teams on larger contracts\nQuality audits and site inspections\nClient-facing point of contact on recurring contracts\nTraining and induction of new cleaners",
     category: "Labour Rates",
     unit: "Hour",
     pricingType: "standard",
