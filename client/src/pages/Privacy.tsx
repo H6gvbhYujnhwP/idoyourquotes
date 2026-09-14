@@ -12,9 +12,14 @@
  * inlined dark gray-900 footer used across Home/Pricing/Features.
  *
  * Content is the practical draft Wez supplied; placeholders filled
- * with TheGreenAgents.com Ltd (the legal entity operating
- * IdoYourQuotes) and its registered office. Wez has flagged this is
- * a starting template, not legal advice, and will have it reviewed.
+ * with Sweetbyte Ltd (the legal entity operating IdoYourQuotes) and
+ * its registered office. Wez has flagged this is a starting template,
+ * not legal advice, and will have it reviewed.
+ *
+ * Delivery 2.9 (14 Sep 2026) — operator changed to Sweetbyte Ltd. This
+ * sentence also names the data controller, so it must stay matched to
+ * whichever company actually holds the Stripe account and contracts
+ * with customers.
  */
 import { Link } from "wouter";
 import PublicHeader from "@/components/PublicHeader";
@@ -76,9 +81,9 @@ export default function Privacy() {
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
           <Section number={1} title="Who we are">
             IdoYourQuotes ("we", "us") is an AI-powered quoting and
-            proposal platform operated by TheGreenAgents.com Ltd,
-            registered office Lower Barn Farm, London Road, Rayleigh,
-            Essex SS6 9ET, contact{" "}
+            proposal platform operated by Sweetbyte Ltd, registered
+            office Studio 6, Lower Barn Farm, London Road, Rayleigh
+            SS6 9ET, contact{" "}
             <a
               href="mailto:privacy@idoyourquotes.com"
               style={{ color: TEAL }}

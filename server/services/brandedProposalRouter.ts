@@ -56,6 +56,7 @@ import {
 import {
   generateBrandedProposalDraft,
   regenerateSingleChapter,
+  includedSlots,
   type ChapterSlot,
   PRICING_SLOT_INDEX,
   type QuoteContext,
@@ -176,6 +177,9 @@ async function gatherQuoteContext(
   };
 }
 
+// Delivery 2.9 — `excluded` travels with every slot. z.object strips
+// unknown keys, so without it here the flag would be silently dropped on
+// save and a chapter the user removed would come back on refresh.
 const ChapterSlotSchema = z.union([
   z.object({
     slotIndex: z.number(),
@@ -183,6 +187,7 @@ const ChapterSlotSchema = z.union([
     source: z.literal("embed"),
     brochurePageNumber: z.number(),
     reason: z.string(),
+    excluded: z.boolean().optional(),
   }),
   z.object({
     slotIndex: z.number(),
@@ -190,6 +195,7 @@ const ChapterSlotSchema = z.union([
     source: z.literal("generate"),
     title: z.string(),
     body: z.string(),
+    excluded: z.boolean().optional(),
   }),
 ]);
 
@@ -311,6 +317,27 @@ type DocumentKind = "brandedProposal" | "contract";
  * (yyyy-mm-dd from the workspace) wins; otherwise today, exactly as
  * before. Midday avoids any timezone rollover to the previous day.
  */
+/**
+ * Delivery 2.9 — retitle the Title Page for a contract.
+ *
+ * Only the FIRST line is touched (drawCover treats line 1 as the
+ * document title, line 2 as the subline, the rest as the value
+ * statement). "Proposal for Sorrells Custom Wine Cellars" becomes
+ * "Agreement for Sorrells Custom Wine Cellars"; a title with no such
+ * word is left exactly as written.
+ */
+function applyTitlePageContractWording(body: string): string {
+  const lines = body.split("\n");
+  const firstIdx = lines.findIndex((l) => l.trim().length > 0);
+  if (firstIdx === -1) return body;
+  lines[firstIdx] = lines[firstIdx]
+    .replace(/\bProposals\b/g, "Agreements")
+    .replace(/\bProposal\b/g, "Agreement")
+    .replace(/\bproposals\b/g, "agreements")
+    .replace(/\bproposal\b/g, "agreement");
+  return lines.join("\n");
+}
+
 function resolveCoverDate(coverDate?: string): string {
   const d = coverDate ? new Date(`${coverDate}T12:00:00`) : new Date();
   const safe = Number.isNaN(d.getTime()) ? new Date() : d;
@@ -604,7 +631,8 @@ export const brandedProposalRouter = router({
 
       const pdfBytes = await assembleBrandedProposal({
         brochurePdfBytes: brochureBytes,
-        slots: input.slots as ChapterSlot[],
+        // Delivery 2.9 — excluded chapters never reach the assembler.
+        slots: includedSlots(input.slots as ChapterSlot[]),
         quoteContext,
         companyLogoBytes: logo?.bytes,
         companyLogoFormat: logo?.format,
@@ -821,13 +849,26 @@ export const brandedProposalRouter = router({
       // ── Proposal wording → agreement wording ──────────────────────
       // Applied only to generated chapters. Embedded brochure pages are
       // images of the user's own artwork and cannot be rewritten.
-      const contractSlots = (input.slots as ChapterSlot[]).map((slot) => {
+      // Delivery 2.9 — excluded chapters are filtered out first, so the
+      // rewrite never runs over a chapter that isn't going in the PDF.
+      const contractSlots = includedSlots(input.slots as ChapterSlot[]).map(
+        (slot) => {
         if (slot.source !== "generate") return slot;
         const s = slot as any;
         const isPricingChapter = s.slotIndex === PRICING_SLOT_INDEX;
+        const isTitlePage = s.slotName === "Title Page";
         return {
           ...s,
-          body: isPricingChapter
+          // Delivery 2.9 — the Title Page's first line is the document's
+          // own name, drawn at 32pt on the title page. The substitution
+          // table only rewrites phrases like "in this proposal", so a
+          // signed agreement was still headed "Proposal for <client>"
+          // (seen on the 14 Sep Sorrells contract). Rewritten here
+          // rather than in the shared table so the word "proposal" in
+          // ordinary chapter prose is left alone.
+          body: isTitlePage
+            ? applyTitlePageContractWording(s.body ?? "")
+            : isPricingChapter
             ? // The proposal's pricing note says the figures are
               // estimated and may change. On a signed contract that is
               // the opposite of the truth, so it is replaced outright
@@ -835,7 +876,8 @@ export const brandedProposalRouter = router({
               contractDoc.pricingCaveatBody || applyContractWording(s.body ?? "")
             : applyContractWording(s.body ?? ""),
         };
-      });
+        },
+      );
 
       const brochureBuffer = await getFileBuffer(orgAny.brochureFileKey);
       const logo = await fetchAndNormaliseLogo(orgAny.companyLogo);

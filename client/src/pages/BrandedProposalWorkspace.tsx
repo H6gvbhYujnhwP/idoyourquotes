@@ -57,6 +57,7 @@ import {
   AlertTriangle,
   Trash2,
   Calendar,
+  Undo2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -77,6 +78,8 @@ type EmbedSlot = {
   source: "embed";
   brochurePageNumber: number;
   reason: string;
+  // Delivery 2.9 — see the note on ChapterSlot below.
+  excluded?: boolean;
 };
 
 type GenerateSlot = {
@@ -85,16 +88,35 @@ type GenerateSlot = {
   source: "generate";
   title: string;
   body: string;
+  excluded?: boolean;
 };
 
+// Delivery 2.9 — `excluded` takes a chapter out of the rendered PDF
+// WITHOUT destroying it. Delivery 2.8 removed the chapter from the array
+// outright, which was unrecoverable: the only way back was starting the
+// proposal again and paying for another draft. Excluded chapters stay in
+// the list, stay in the saved state, and are filtered out at render
+// time. Absent = included, so every proposal saved before 2.9 reads
+// correctly.
 type ChapterSlot = EmbedSlot | GenerateSlot;
 
-// Slot 15 is the Pricing Summary chapter — flagged in the sidebar with
+// Slot 16 is the Pricing Summary chapter — flagged in the sidebar with
 // an EDITABLE badge so the user can see at a glance which chapter
 // carries the pricing narrative. The actual line-item totals on the
 // quote come from the existing pricing engine and are unaffected by
 // edits to this chapter's body.
-const PRICING_SLOT_INDEX = 15;
+//
+// Delivery 2.9 — WAS 15, WHICH WAS WRONG. Phase 4B Delivery E.4.3 split
+// the old Cover slot into Cover + Title Page and renumbered everything
+// after it by one; the server's PRICING_SLOT_INDEX moved to 16 but this
+// client-side mirror was never updated. Consequences on the live site:
+// the EDITABLE badge sat on "Key Personnel" (the real slot 15), and the
+// 2.8 delete control — which exempts the pricing chapter — appeared on
+// Pricing Summary and was hidden on Key Personnel. The pricing chapter
+// was deletable. Found while proving 2.9's render changes: the proof
+// quote's pricing table never drew, because the assembler dispatches on
+// the server's 16 and the proof had followed this file's 15.
+const PRICING_SLOT_INDEX = 16;
 
 // Rolling copy shown during the initial draft generation.
 const DRAFT_PROGRESS_COPY = [
@@ -331,7 +353,20 @@ export default function BrandedProposalWorkspace() {
     // changes on every render, which would re-trigger the gate. The
     // ref + slots-null check is the real idempotency guard.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quoteId, quoteLoading, brochureLoading, brochureData, slots]);
+  }, [
+    quoteId,
+    quoteLoading,
+    brochureLoading,
+    brochureData,
+    slots,
+    // Delivery 2.9 — the saved-state query MUST be in here. The body
+    // bails out while it is still loading; without these two deps
+    // nothing woke the effect back up when it resolved, so whenever it
+    // settled after the brochure query the saved proposal was never
+    // restored.
+    savedSlots.isLoading,
+    savedSlots.data,
+  ]);
 
   // Cycle the rolling-copy index while waiting on the initial draft.
   useEffect(() => {
@@ -401,17 +436,23 @@ export default function BrandedProposalWorkspace() {
 
   function handleSaveEdit() {
     if (editingIndex === null || !slots) return;
-    setSlots(
-      slots.map((s) => {
-        if (s.slotIndex !== editingIndex) return s;
-        if (s.source !== "generate") return s;
-        return {
-          ...s,
-          title: editBuffer.title,
-          body: editBuffer.body,
-        };
-      }),
-    );
+    const next = slots.map((s) => {
+      if (s.slotIndex !== editingIndex) return s;
+      if (s.source !== "generate") return s;
+      return {
+        ...s,
+        title: editBuffer.title,
+        body: editBuffer.body,
+      };
+    });
+    setSlots(next);
+    // Delivery 2.9 — persist. This was the ONE editing path that never
+    // called persistSlots: regenerate, removal, the date control and
+    // both render buttons all saved, so an edit followed by a refresh
+    // (rather than a render) was silently thrown away and the workspace
+    // generated a fresh draft, spending credits and returning different
+    // wording.
+    persistSlots(next);
     setEditingIndex(null);
     setEditBuffer({ title: "", body: "" });
     toast.success("Chapter saved");
@@ -479,27 +520,56 @@ export default function BrandedProposalWorkspace() {
   }
 
   /**
-   * Delivery 2.8 — remove a chapter. The generated set is deliberately
-   * broad (18 slots) so it covers many kinds of engagement; a given
-   * quote usually wants fewer. Q-207 carried "Cloud Migration Approach"
-   * and "Website Hosting & Support" for a deal containing neither.
+   * Delivery 2.9 — take a chapter out of the document, or put it back.
+   *
+   * The generated set is deliberately broad (18 slots) so it covers many
+   * kinds of engagement; a given quote usually wants fewer. Q-207
+   * carried "Cloud Migration Approach" and "Website Hosting & Support"
+   * for a deal containing neither.
+   *
+   * 2.8 deleted the chapter from the array, which was a one-way door:
+   * the text was gone and the only route back was regenerating the whole
+   * draft. Now the chapter is marked excluded — greyed in the list,
+   * skipped at render time, restorable with one click, and remembered
+   * across refreshes like every other edit.
    */
-  function handleRemoveChapter(slotIndex: number) {
+  function handleToggleChapter(slotIndex: number) {
     if (!slots) return;
     const target = slots.find((s) => s.slotIndex === slotIndex);
     if (!target) return;
     if (slotIndex === PRICING_SLOT_INDEX) {
-      toast.error("The pricing chapter can't be removed");
+      toast.error("The pricing chapter can't be taken out");
       return;
     }
-    if (!window.confirm(`Remove "${target.slotName}" from this proposal?`)) return;
-    const next = slots.filter((s) => s.slotIndex !== slotIndex);
-    setSlots(next);
-    if (selectedIndex === slotIndex && next.length > 0) {
-      setSelectedIndex(next[0].slotIndex);
+    const nowExcluded = !target.excluded;
+    // Only confirm on the way out. Putting a chapter back is harmless.
+    if (
+      nowExcluded &&
+      !window.confirm(
+        `Leave "${target.slotName}" out of this document? You can put it back at any time.`,
+      )
+    ) {
+      return;
     }
+    const next = slots.map((s) =>
+      s.slotIndex === slotIndex ? { ...s, excluded: nowExcluded } : s,
+    );
+    setSlots(next);
     persistSlots(next);
-    toast.success(`"${target.slotName}" removed`);
+    toast.success(
+      nowExcluded
+        ? `"${target.slotName}" left out — click the arrow to put it back`
+        : `"${target.slotName}" put back`,
+    );
+  }
+
+  /**
+   * Delivery 2.9 — what actually goes in the PDF. Excluded chapters are
+   * stripped here, on the way to the server; the server strips them
+   * again before assembling, so a stale tab can't slip one through.
+   */
+  function slotsForRender(): ChapterSlot[] {
+    return (slots ?? []).filter((s) => !s.excluded);
   }
 
   async function handleRenderPdf() {
@@ -519,7 +589,9 @@ export default function BrandedProposalWorkspace() {
       persistSlots(slots);
       const result = await renderPdf.mutateAsync({
         quoteId,
-        slots,
+        // Delivery 2.9 — the full list is saved, the trimmed list is
+        // rendered.
+        slots: slotsForRender(),
         orientation: renderOrientation,
         coverDate: coverDate || undefined,
       });
@@ -582,7 +654,7 @@ export default function BrandedProposalWorkspace() {
     try {
       const result = await renderContract.mutateAsync({
         quoteId,
-        slots,
+        slots: slotsForRender(),
         orientation: renderOrientation,
         coverDate: coverDate || undefined,
         tier: contractTier,
@@ -774,7 +846,7 @@ export default function BrandedProposalWorkspace() {
             }}
           >
             <Info className="w-3 h-3" />
-            Edits live in this session
+            Edits saved automatically
           </span>
           {/* Phase 4B Delivery E.4 — per-render page orientation
               selector. Sits to the immediate left of the Render PDF
@@ -1076,24 +1148,48 @@ export default function BrandedProposalWorkspace() {
               const isSelected = s.slotIndex === selectedIndex;
               const isPricing = s.slotIndex === PRICING_SLOT_INDEX;
               const isRegen = regeneratingIndex === s.slotIndex;
+              // Delivery 2.9 — an excluded chapter stays in the list so
+              // it can be read and put back; it just doesn't print.
+              const isExcluded = !!s.excluded;
               return (
                 <li key={s.slotIndex} className="group relative">
-                  {/* Delivery 2.8 — remove a chapter this deal doesn't
-                      need. Pricing is exempt (the proposal must price
-                      something). Appears on hover / focus so the list
-                      stays clean. */}
+                  {/* Delivery 2.9 — take a chapter out of the document,
+                      or put it back. Pricing is exempt (the document must
+                      price something). The control appears on hover /
+                      focus so the list stays clean, but stays visible
+                      while the chapter is excluded — otherwise the way
+                      back is hidden. */}
                   {s.slotIndex !== PRICING_SLOT_INDEX && (
                     <button
                       type="button"
-                      aria-label={`Remove ${s.slotName}`}
-                      title="Remove this chapter"
+                      aria-label={
+                        isExcluded
+                          ? `Put ${s.slotName} back in`
+                          : `Leave ${s.slotName} out`
+                      }
+                      title={
+                        isExcluded
+                          ? "Put this chapter back in the document"
+                          : "Leave this chapter out of the document"
+                      }
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleRemoveChapter(s.slotIndex);
+                        handleToggleChapter(s.slotIndex);
                       }}
-                      className="absolute right-1 top-1 z-10 rounded p-1 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-red-50"
+                      className={`absolute right-1 top-1 z-10 rounded p-1 focus:opacity-100 ${
+                        isExcluded
+                          ? "opacity-100 hover:bg-teal-50"
+                          : "opacity-0 group-hover:opacity-100 hover:bg-red-50"
+                      }`}
                     >
-                      <Trash2 className="w-3.5 h-3.5" style={{ color: "#dc2626" }} />
+                      {isExcluded ? (
+                        <Undo2
+                          className="w-3.5 h-3.5"
+                          style={{ color: brand.teal }}
+                        />
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5" style={{ color: "#dc2626" }} />
+                      )}
                     </button>
                   )}
                   <button
@@ -1106,6 +1202,7 @@ export default function BrandedProposalWorkspace() {
                       border: `1px solid ${
                         isSelected ? brand.tealBorder : "transparent"
                       }`,
+                      opacity: isExcluded ? 0.45 : 1,
                     }}
                   >
                     <span
@@ -1117,10 +1214,26 @@ export default function BrandedProposalWorkspace() {
                       {pad2(s.slotIndex)}
                     </span>
                     <span className="flex-1 min-w-0">
-                      <span className="block text-[13px] font-medium leading-tight">
+                      <span
+                        className={`block text-[13px] font-medium leading-tight ${
+                          isExcluded ? "line-through" : ""
+                        }`}
+                      >
                         {s.slotName}
                       </span>
                       <span className="flex items-center gap-1 mt-1 flex-wrap">
+                        {isExcluded && (
+                          <span
+                            className="inline-flex items-center text-[9px] font-bold tracking-wide uppercase px-1.5 py-0.5 rounded"
+                            style={{
+                              backgroundColor: "#fef3c7",
+                              color: "#92400e",
+                            }}
+                            title="Kept here, but not printed in the PDF"
+                          >
+                            Left out
+                          </span>
+                        )}
                         {s.source === "embed" && (
                           <span
                             className="inline-flex items-center text-[9px] font-bold tracking-wide uppercase px-1.5 py-0.5 rounded"
@@ -1162,6 +1275,34 @@ export default function BrandedProposalWorkspace() {
 
         {/* Main pane */}
         <main className="flex-1 min-w-0">
+          {/* Delivery 2.9 — an excluded chapter is still fully readable
+              and editable here; it simply won't print until it's put
+              back. Saying so beats leaving the user wondering why the
+              PDF is missing a chapter they can plainly see. */}
+          {selectedSlot && selectedSlot.excluded && (
+            <div
+              className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border px-3 py-2 text-sm"
+              style={{ background: "#fffbeb", borderColor: "#fcd34d" }}
+            >
+              <AlertTriangle
+                className="w-4 h-4 shrink-0"
+                style={{ color: "#b45309" }}
+              />
+              <span>
+                This chapter is left out of the PDF. Nothing has been
+                deleted.
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="ml-auto"
+                onClick={() => handleToggleChapter(selectedSlot.slotIndex)}
+              >
+                <Undo2 className="w-3.5 h-3.5 mr-1.5" />
+                Put it back
+              </Button>
+            </div>
+          )}
           {selectedSlot && (
             <ChapterPane
               slot={selectedSlot}

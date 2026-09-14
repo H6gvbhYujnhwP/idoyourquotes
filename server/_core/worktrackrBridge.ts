@@ -1,6 +1,6 @@
 // ── WorkTrackr bridge ────────────────────────────────────────────────────────
 // Read-only, server-to-server endpoints that let WorkTrackr PULL a single IDYQ
-// org's catalogue and quotes. Mirrors the Studio admin-bridge verification style
+// org's catalogue and quotes. Mirrors the admin-bridge verification style
 // (constant-time HMAC + expiry), but binds the signature to the HTTP method and
 // path and reads it from the X-WT-Signature header.
 //
@@ -16,7 +16,7 @@
 //
 // Env vars (Render → idoyourquotes service):
 //   WORKTRACKR_BRIDGE_SECRET — long random hex; MUST match WorkTrackr's value;
-//                              separate from STUDIO_BRIDGE_SECRET.
+//                              separate from any other bridge secret.
 //
 // Endpoints:
 //   GET /api/external/catalogue?since=&page=     (header: X-WT-Org)
@@ -29,7 +29,7 @@
 // refs here so one tenant can't read another's data.
 //
 // Position: register AFTER body parsers and BEFORE serveStatic (same as the
-// Studio bridge), so the SPA handler doesn't intercept these routes.
+// admin bridge), so the SPA handler doesn't intercept these routes.
 
 import type { Express, Request, Response } from "express";
 import crypto from "crypto";

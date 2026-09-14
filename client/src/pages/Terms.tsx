@@ -7,8 +7,12 @@
  * point at a real, no-login URL.
  *
  * Content is the practical draft Wez supplied; placeholders filled
- * with TheGreenAgents.com Ltd contact details. Starting template,
- * not legal advice — Wez will have it reviewed.
+ * with Sweetbyte Ltd contact details. Starting template, not legal
+ * advice — Wez will have it reviewed.
+ *
+ * Delivery 2.9 (14 Sep 2026) — operator changed to Sweetbyte Ltd. This
+ * names the contracting party, so keep it matched to the company that
+ * actually bills the customer.
  */
 import { Link } from "wouter";
 import PublicHeader from "@/components/PublicHeader";
@@ -155,9 +159,9 @@ export default function Terms() {
             className="mt-12 pt-6 border-t border-gray-200 text-sm"
             style={{ color: "#64748b" }}
           >
-            IdoYourQuotes is operated by TheGreenAgents.com Ltd,
-            registered office Lower Barn Farm, London Road,
-            Rayleigh, Essex SS6 9ET.
+            IdoYourQuotes is operated by Sweetbyte Ltd, registered
+            office Studio 6, Lower Barn Farm, London Road, Rayleigh
+            SS6 9ET.
           </div>
         </div>
       </main>

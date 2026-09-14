@@ -41,6 +41,13 @@ import {
 
 // ─── Public types ────────────────────────────────────────────────────
 
+/**
+ * Delivery 2.9 — `excluded` marks a chapter the user has taken out of
+ * this proposal WITHOUT destroying it. It stays in the saved workspace
+ * state and in the chapter list so it can be put back at any time; it
+ * is filtered out immediately before the PDF is assembled. Absent or
+ * false = included, so every pre-2.9 saved state reads correctly.
+ */
 export type ChapterSlot =
   | {
       slotIndex: number;
@@ -48,6 +55,7 @@ export type ChapterSlot =
       source: "embed";
       brochurePageNumber: number;
       reason: string;
+      excluded?: boolean;
     }
   | {
       slotIndex: number;
@@ -55,7 +63,17 @@ export type ChapterSlot =
       source: "generate";
       title: string;
       body: string;
+      excluded?: boolean;
     };
+
+/**
+ * Drop excluded chapters. Applied server-side immediately before an
+ * assemble call, so a stale browser tab can never push a chapter the
+ * user removed into a rendered document.
+ */
+export function includedSlots(slots: ChapterSlot[]): ChapterSlot[] {
+  return slots.filter((s) => !s.excluded);
+}
 
 export interface BrandedProposalDraft {
   slots: ChapterSlot[];

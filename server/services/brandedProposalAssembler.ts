@@ -1343,8 +1343,18 @@ function drawPricingChapter(
         accentColor,
       );
     }
-  } else if (lineItems.length > 0) {
-    // No VAT case — just the three recurring/one-off subtotals.
+  } else if (totals.oneOffSubtotal > 0) {
+    // One-off items with no VAT charged (organisation not VAT
+    // registered, or a 0% quote).
+    //
+    // Delivery 2.9 — the guard used to be `lineItems.length > 0`, which
+    // fired for ANY quote without one-off lines, including a 20%-VAT
+    // one. It then reserved space (forcing a fresh page when the table
+    // had filled the last one), drew the top rule, and found nothing to
+    // print, because everything below is gated on a one-off subtotal.
+    // Sorrells (Q-207, monthly-only) got a page carrying a single grey
+    // rule and nothing else. Recurring quotes need no strip: each
+    // group's own subtotal already states the monthly/annual figure.
     ensureSpace(tableLineHeight * 2);
     state.page.drawLine({
       start: { x: cols.rateX - 60, y: state.y },
@@ -1463,13 +1473,14 @@ async function renderNarrativePages(params: {
   const pageIndexBySlot = new Map<number, number[]>();
   let runningIndex = 0;
 
-  // Phase 4B Delivery E.4.2 — flow state for chapter consolidation.
-  // When a short narrative chapter ends mid-page, the next narrative
-  // chapter (if it's the immediately-following slot in slot order)
-  // can flow onto the same page below a thin separator instead of
-  // forcing a fresh page break. Reset to null whenever flow must
-  // break: cover, pricing chapter, or an embed slot in between.
-  let flowState: ChapterFlowState | null = null;
+  // Delivery 2.9 — chapter consolidation REMOVED. E.4.2 allowed a short
+  // narrative chapter to flow onto the previous chapter's page below a
+  // thin separator, to avoid half-empty pages. Owner's call on 14 Sep
+  // 2026: every chapter must start on its own page, matching how
+  // Sweetbyte's manual contracts read (Q-207 printed "Cybersecurity &
+  // Compliance" under the tail of "Proposed Service Delivery"). The
+  // flow machinery in drawChapter is left in place but is never fed a
+  // prior-page cursor, so each chapter opens a fresh page.
 
   // Slot 15 (Pricing Summary) gets the structured renderer when we
   // have line items to draw from. If lineItems is empty (legacy
@@ -1481,11 +1492,8 @@ async function renderNarrativePages(params: {
 
   for (const slot of params.slots) {
     if (slot.source !== "generate") {
-      // Embed slot — splits narrative. Break flow so the next narrative
-      // chapter starts on a fresh page (it'll render on a NEW narrative
-      // page in renderNarrativePages, then assembleBrandedProposal
-      // splices the brochure pages between them).
-      flowState = null;
+      // Embed slot — the brochure page is spliced in by
+      // assembleBrandedProposal; nothing to draw here.
       continue;
     }
 
@@ -1498,7 +1506,6 @@ async function renderNarrativePages(params: {
       // immediately after, drawn here as a generated page with the
       // company logo from Settings, the AI-generated title and value
       // statement, plus the quote reference and date.
-      flowState = null;
       pages = [
         drawCover(
           doc,
@@ -1517,9 +1524,7 @@ async function renderNarrativePages(params: {
     ) {
       // Phase 4B Delivery D Phase 3 — structured pricing chapter.
       // The AI body is the intro prose; the table comes from the DB.
-      // Pricing manages its own pages via tables and section heads;
-      // doesn't share the flow model.
-      flowState = null;
+      // Pricing manages its own pages via tables and section heads.
       pages = drawPricingChapter(
         doc,
         params.pageDimensions,
@@ -1529,15 +1534,11 @@ async function renderNarrativePages(params: {
         brandAccent,
       );
     } else if (!slot.body || slot.body.trim().length === 0) {
-      // Empty body = conditional slot the tender didn't trigger. Skip
-      // without breaking flow — the previous chapter's flowState is
-      // still valid for whichever narrative chapter comes next.
+      // Empty body = conditional slot the tender didn't trigger.
       continue;
     } else {
-      // Phase 4B Delivery E.4.2 — narrative chapters flow consecutively.
-      // drawChapter checks if there's room on the previous chapter's
-      // last page and either continues there below a thin separator,
-      // or starts a fresh page. Threshold: title block + 3 body lines.
+      // Delivery 2.9 — null flow cursor: every chapter opens its own
+      // page. See the note above the loop.
       const result = drawChapter(
         doc,
         params.pageDimensions,
@@ -1545,10 +1546,9 @@ async function renderNarrativePages(params: {
         slot.body,
         fonts,
         brandAccent,
-        flowState,
+        null,
       );
       pages = result.pages;
-      flowState = { page: result.lastPage, y: result.endY };
     }
 
     const indices: number[] = [];

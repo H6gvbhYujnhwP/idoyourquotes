@@ -18,7 +18,7 @@ const FREE_EMAIL_PROVIDERS = new Set([
  * Domains in the ANTI_GAMING_BYPASS_DOMAINS env var get a fresh trial
  * every time, regardless of whether the domain has been seen before.
  *
- * Comma-separated list, e.g. "thegreenagents.co.uk,sweetbyte.co.uk".
+ * Comma-separated list, e.g. "sweetbyte.co.uk,example.co.uk".
  * Set this in Render's environment for any domain you (the platform
  * owner) use for testing the signup / trial flow.
  *
