@@ -12,6 +12,7 @@ import { registerStripeWebhook } from "../services/stripeWebhook";
 import { startEmailScheduler } from "../services/emailScheduler";
 import { registerWorktrackrBridge } from "./worktrackrBridge";
 import { registerAdminBridge } from "./adminBridge";
+import { registerXeroRoutes } from "../services/xeroRoutes";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -135,6 +136,13 @@ async function startServer() {
   // against WORKTRACKR_BRIDGE_SECRET and scopes to WORKTRACKR_BRIDGE_ADMIN_EMAIL's
   // account. Must be before serveStatic so the SPA handler doesn't intercept it.
   registerWorktrackrBridge(app);
+
+  // ── Xero OAuth ──────────────────────────────────────────────────────────────
+  // Delivery 2.11 — /api/xero/connect and /api/xero/callback. Full-page
+  // browser redirects, so Express rather than tRPC. Must be before
+  // serveStatic or the SPA handler intercepts the callback and Xero's
+  // response is swallowed by a 404 page.
+  registerXeroRoutes(app);
 
   // tRPC API
   app.use(

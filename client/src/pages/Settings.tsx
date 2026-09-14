@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Save, User, Building2, FileText, Loader2, Upload, ImageIcon, X, Briefcase, Shield, Clock, PoundSterling, CreditCard, Users, Crown, AlertTriangle, Trash2, Mail, UserPlus, Check, ArrowRight, XCircle, RotateCcw, Download, Palette, CheckCircle2, AlertCircle,
   FileSignature,
+  Link2,
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -35,6 +36,7 @@ import BrochureSettingsTab from "@/components/BrochureSettingsTab";
 // Contract-button delivery — the Contracts tab lives in its own
 // component, same self-contained pattern as BrochureSettingsTab.
 import ContractDocumentsTab from "@/components/ContractDocumentsTab";
+import XeroTab from "@/components/XeroTab";
 
 export default function Settings() {
   const { user, logout } = useAuth();
@@ -369,6 +371,10 @@ export default function Settings() {
           // contract documents. Sits after Branded Quotes because it
           // follows the same journey: a proposal becomes a contract.
           { id: 'contracts', label: 'Contracts', icon: FileSignature },
+          // Delivery 2.11 — Xero connection. Sits after Contracts
+          // because that is where the journey ends: a quote becomes a
+          // contract, the contract becomes invoices.
+          { id: 'xero', label: 'Xero', icon: Link2 },
           { id: 'billing', label: 'Billing', icon: CreditCard },
           { id: 'team', label: 'Team', icon: Users },
         ].map(tab => (
@@ -392,6 +398,9 @@ export default function Settings() {
 
       {/* Contracts Tab — contract-button delivery */}
       {activeTab === 'contracts' && <ContractDocumentsTab />}
+
+      {/* Xero Tab — delivery 2.11 */}
+      {activeTab === 'xero' && <XeroTab />}
 
       {/* Team Tab */}
       {activeTab === 'team' && <TeamTab />}

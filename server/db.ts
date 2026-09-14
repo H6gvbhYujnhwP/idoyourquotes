@@ -43,6 +43,9 @@ import {
   containmentTakeoffs,
   ContainmentTakeoff,
   InsertContainmentTakeoff,
+  xeroConnections,
+  XeroConnection,
+  InsertXeroConnection,
 } from "../drizzle/schema";
 
 /**
@@ -1449,4 +1452,56 @@ export async function deleteAllOrgData(orgId: number): Promise<{ fileKeys: strin
   await db.delete(usageLogs).where(eq(usageLogs.orgId, orgId));
 
   return { fileKeys: allFileKeys, quotesDeleted: quoteIds.length };
+}
+
+
+// ============ XERO CONNECTIONS ============
+//
+// Delivery 2.11. One row per organisation, holding encrypted tokens and
+// the tax codes read from the connected Xero tenant. Tokens are
+// encrypted by the caller (server/services/xeroTokens.ts) — nothing in
+// here ever sees a raw token, which keeps the plaintext confined to one
+// file.
+
+export async function getXeroConnectionByOrgId(
+  orgId: number,
+): Promise<XeroConnection | undefined> {
+  const db = await getDb();
+  const rows = await db
+    .select()
+    .from(xeroConnections)
+    .where(eq(xeroConnections.orgId, orgId))
+    .limit(1);
+  return rows[0];
+}
+
+/**
+ * Create or replace the org's connection.
+ *
+ * Called on connect and on every token refresh — Xero rotates the
+ * refresh token each time, so the new pair must land before the old one
+ * is discarded or the connection dies.
+ */
+export async function upsertXeroConnection(
+  data: InsertXeroConnection,
+): Promise<XeroConnection | undefined> {
+  const db = await getDb();
+  const existing = await getXeroConnectionByOrgId(data.orgId);
+  if (existing) {
+    const rows = await db
+      .update(xeroConnections)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(xeroConnections.orgId, data.orgId))
+      .returning();
+    return rows[0];
+  }
+  const rows = await db.insert(xeroConnections).values(data).returning();
+  return rows[0];
+}
+
+export async function deleteXeroConnectionByOrgId(
+  orgId: number,
+): Promise<void> {
+  const db = await getDb();
+  await db.delete(xeroConnections).where(eq(xeroConnections.orgId, orgId));
 }

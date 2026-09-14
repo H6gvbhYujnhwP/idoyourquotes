@@ -9,6 +9,7 @@ import { adminRouter } from "./services/adminRouter";
 import { brochureRouter } from "./services/brochureRouter";
 import { brandedProposalRouter } from "./services/brandedProposalRouter";
 import { contractDocumentRouter } from "./services/contractDocumentRouter";
+import { xeroRouter } from "./services/xeroRouter";
 import { templateProposalRouter } from "./services/templateProposalRouter";
 import { supportRouter } from "./services/supportRouter";
 import { prospectBotRouter } from "./services/prospectBotRouter";
@@ -4151,6 +4152,10 @@ Rules:
   //
   // See server/services/contractDocumentRouter.ts.
   contractDocument: contractDocumentRouter,
+  //   - xero: connection status, tax-rate re-read, disconnect.
+  //     Delivery 2.11. The OAuth handshake itself is a pair of Express
+  //     redirects (see server/services/xeroRoutes.ts), not tRPC.
+  xero: xeroRouter,
 
   // ============ SUPPORT BOT (Phase 4B Delivery E.13) ============
   // In-app help drawer + escalation. See server/services/supportRouter.ts.

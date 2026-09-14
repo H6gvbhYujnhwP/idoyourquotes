@@ -651,6 +651,77 @@ export const contractDocuments = pgTable("contract_documents", {
 export type ContractDocument = typeof contractDocuments.$inferSelect;
 export type InsertContractDocument = typeof contractDocuments.$inferInsert;
 
+// ============ XERO CONNECTION ============
+
+/**
+ * One row per organisation that has connected Xero.
+ *
+ * Delivery 2.11 — the connection only. Tokens, which Xero tenant they
+ * belong to, and the tax codes read from that tenant. Nothing here
+ * writes to Xero; the invoice work builds on top of it.
+ *
+ * WHY ITS OWN TABLE rather than columns on organizations:
+ *   - tokens rotate on every refresh, so this row is written far more
+ *     often than the org row and shouldn't contend with it;
+ *   - a connection is deleted outright on disconnect, which is a
+ *     cleaner guarantee than nulling six columns and hoping;
+ *   - a second accounting provider later gets its own table rather
+ *     than widening organizations again.
+ *
+ * TOKENS ARE ENCRYPTED AT REST. accessToken and refreshToken hold
+ * AES-256-GCM ciphertext, not the tokens themselves — a refresh token
+ * is a long-lived key to someone's accounts, and Xero's minimum
+ * security requirements are a commitment the app owner has signed up
+ * to. See server/services/xeroTokens.ts. The key is derived from
+ * JWT_SECRET, so rotating JWT_SECRET means every org must reconnect
+ * Xero; that is a deliberate trade against introducing a fourth
+ * secret to manage.
+ */
+export const xeroConnections = pgTable("xero_connections", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  /** One connection per org. Enforced by a unique index. */
+  orgId: bigint("org_id", { mode: "number" }).notNull(),
+  /** Xero's own id for the connected organisation. Every API call
+   *  carries this as the Xero-Tenant-Id header. */
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+  /** The Xero organisation's name, e.g. "Sweetbyte Ltd" or "Demo
+   *  Company (UK)". Shown in Settings so it is obvious at a glance
+   *  whether you are pointed at real books or the demo. */
+  tenantName: varchar("tenant_name", { length: 255 }),
+  /** AES-256-GCM ciphertext. Never the raw token. */
+  accessToken: text("access_token").notNull(),
+  refreshToken: text("refresh_token").notNull(),
+  /** When the access token dies. Xero issues 30-minute access tokens;
+   *  we refresh a minute early rather than waiting for a 401. */
+  expiresAt: timestamp("expires_at").notNull(),
+  /** The scopes actually granted, space separated, as returned by
+   *  Xero — not what we asked for. If Xero ever grants less than we
+   *  requested, this is where it shows. */
+  scopes: text("scopes"),
+  /** The tenant's own code for 20% VAT on income, read from its tax
+   *  rates at connect time (usually OUTPUT2, but read rather than
+   *  assumed). Null = no 20% output rate found, which is a real
+   *  answer for a non-VAT-registered Xero org. */
+  salesTaxType: varchar("sales_tax_type", { length: 32 }),
+  /** Every active output (sales) tax rate on the tenant, for the
+   *  invoice work to choose from and for Settings to display. */
+  taxRates: json("tax_rates").$type<Array<{
+    taxType: string;
+    name: string;
+    effectiveRate: number;
+  }>>(),
+  /** Who connected it, and when it was last refreshed — useful when a
+   *  connection stops working and nobody remembers who set it up. */
+  connectedByUserId: bigint("connected_by_user_id", { mode: "number" }),
+  connectedAt: timestamp("connected_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type XeroConnection = typeof xeroConnections.$inferSelect;
+export type InsertXeroConnection = typeof xeroConnections.$inferInsert;
+
+
 
 // ============ COMPREHENSIVE QUOTE TYPES ============
 
