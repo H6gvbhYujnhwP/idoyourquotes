@@ -78,6 +78,32 @@ export const organizations = pgTable("organizations", {
   // an enum migration. Server-side validates against the known set.
   // Defaults to 'auto' so existing orgs see no behaviour change.
   proposalOrientation: text("proposal_orientation").default("auto").notNull(),
+  /**
+   * Delivery 2.12 — Xero push options.
+   *
+   * xeroMonthYearSuffix: append "(for [Month] [Year])" beneath the item
+   * name on MONTHLY lines only. Those square brackets are Xero's own
+   * placeholders on a repeating invoice — Xero fills them in each time
+   * it raises one. Sweetbyte's hand-built templates carry this; it is
+   * off by default because it is a billing convention, not a product
+   * behaviour, and another MSP may not want it. Annual lines never get
+   * it (owner's decision, 14 Sep 2026).
+   */
+  xeroMonthYearSuffix: boolean("xero_month_year_suffix").default(false).notNull(),
+  /**
+   * Optional default sales account code for pushed lines, e.g. "200".
+   *
+   * Deliberately ONE org-level default rather than per-customer coding:
+   * IDYQ cannot know another business's chart of accounts, and the owner
+   * ruled out sending codes per customer. Null means send no account
+   * code and let Xero apply the organisation's own default — which is
+   * the preferred behaviour, kept as the default. It exists because
+   * Xero's documentation is not explicit about whether a line item may
+   * omit AccountCode on a draft repeating invoice; if a push is rejected
+   * for that reason, setting this once fixes every future push without
+   * a code change.
+   */
+  xeroSalesAccountCode: varchar("xero_sales_account_code", { length: 20 }),
   // Contract-button delivery — signatory identity for the contract's
   // acceptance page. Both of Sweetbyte's live contracts carry a signed
   // block, which until now was added outside the app; the contract
@@ -335,6 +361,29 @@ export type InsertUser = typeof users.$inferInsert;
  * assembler already agree on) rather than re-modelled here, so the two
  * can't drift apart.
  */
+/**
+ * Delivery 2.12 — the record of a push to Xero, stored on the quote.
+ *
+ * The existence of this record is what stops a re-render double-billing a
+ * client: a quote that has already been pushed shows a comparison of what
+ * changed instead of creating a second set of invoices. The ids are
+ * Xero's, and are what an update writes back to.
+ */
+export interface XeroPushRecord {
+  tenantId: string;
+  tenantName?: string | null;
+  contactId: string;
+  contactName: string;
+  monthlyRepeatingInvoiceId?: string | null;
+  annualRepeatingInvoiceId?: string | null;
+  oneOffInvoiceId?: string | null;
+  oneOffInvoiceNumber?: string | null;
+  pushedAt: string;
+  pushedByUserId?: number | null;
+  /** The commencement date used, so a later comparison can spot a change. */
+  commencementDate?: string | null;
+}
+
 export interface BrandedSlotsState {
   slots: unknown[];
   orientation?: "portrait" | "landscape";
@@ -420,6 +469,9 @@ export const quotes = pgTable("quotes", {
   // refresh or leaving the page discarded every edit and the user had to
   // redo them before each render. NULL = never opened / never edited.
   brandedSlots: json("branded_slots").$type<BrandedSlotsState>(),
+  /** Delivery 2.12 — what this quote created in Xero, if anything.
+   *  Null = never pushed. See XeroPushRecord. */
+  xeroPush: json("xero_push").$type<XeroPushRecord>(),
   quoteMode: quoteModeEnum("quote_mode").default("simple").notNull(),
   tradePreset: varchar("trade_preset", { length: 50 }),
   comprehensiveConfig: json("comprehensive_config").$type<ComprehensiveConfig>(),

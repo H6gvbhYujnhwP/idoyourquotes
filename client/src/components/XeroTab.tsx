@@ -65,6 +65,12 @@ export default function XeroTab() {
   const status = trpc.xero.status.useQuery();
   const disconnect = trpc.xero.disconnect.useMutation();
   const refreshRates = trpc.xero.refreshRates.useMutation();
+  const saveOptions = trpc.xero.saveOptions.useMutation();
+  const accounts = trpc.xero.accounts.useQuery(undefined, {
+    // Only worth a round trip once connected, and only when the user
+    // opens the picker — most organisations never need an account code.
+    enabled: false,
+  });
   const utils = trpc.useUtils();
 
   // Surface the redirect outcome once, then strip it from the URL so a
@@ -263,6 +269,98 @@ export default function XeroTab() {
           )}
         </CardContent>
       </Card>
+
+      {data.connected && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Push options</CardTitle>
+            <CardDescription>
+              How lines are written onto invoices.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <label className="flex items-start gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                defaultChecked={!!data.monthYearSuffix}
+                onChange={async (e) => {
+                  try {
+                    await saveOptions.mutateAsync({
+                      monthYearSuffix: e.target.checked,
+                    });
+                    await utils.xero.status.invalidate();
+                    toast.success("Saved");
+                  } catch (err: any) {
+                    toast.error(err?.message || "Couldn't save");
+                  }
+                }}
+                className="mt-0.5"
+              />
+              <span>
+                Add "(for [Month] [Year])" to monthly lines
+                <span className="block text-xs text-muted-foreground">
+                  Xero fills those in on each invoice it raises. Monthly
+                  lines only — yearly lines are left plain.
+                </span>
+              </span>
+            </label>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">
+                Default sales account (optional)
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Leave blank and Xero applies your own default, which is
+                usually what you want. Set one only if a push is refused
+                for a missing account code.
+              </p>
+              <div className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  defaultValue={data.salesAccountCode || ""}
+                  placeholder="e.g. 200"
+                  onBlur={async (e) => {
+                    try {
+                      await saveOptions.mutateAsync({
+                        salesAccountCode: e.target.value.trim() || null,
+                      });
+                      await utils.xero.status.invalidate();
+                      toast.success("Saved");
+                    } catch (err: any) {
+                      toast.error(err?.message || "Couldn't save");
+                    }
+                  }}
+                  className="rounded-md border px-2 py-1.5 text-sm w-40"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => accounts.refetch()}
+                  disabled={accounts.isFetching}
+                >
+                  {accounts.isFetching ? (
+                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  ) : null}
+                  Show my sales accounts
+                </Button>
+              </div>
+              {(accounts.data as any)?.accounts?.length > 0 && (
+                <div className="mt-2 rounded-md border divide-y text-sm">
+                  {(accounts.data as any).accounts.map((a: any) => (
+                    <div
+                      key={a.code}
+                      className="flex justify-between px-2 py-1.5"
+                    >
+                      <span>{a.name}</span>
+                      <code className="text-xs">{a.code}</code>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {data.connected && (data.taxRates?.length ?? 0) > 0 && (
         <Card>

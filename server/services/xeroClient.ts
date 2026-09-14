@@ -338,3 +338,258 @@ export async function xeroFetch(
     },
   });
 }
+
+// ─── Contacts, accounts and documents (delivery 2.12) ────────────────
+
+export interface XeroContactSummary {
+  contactId: string;
+  name: string;
+  email?: string | null;
+  isArchived?: boolean;
+}
+
+function mapContact(c: any): XeroContactSummary {
+  return {
+    contactId: String(c.ContactID),
+    name: String(c.Name ?? ""),
+    email: c.EmailAddress ?? null,
+    isArchived: c.ContactStatus === "ARCHIVED",
+  };
+}
+
+/**
+ * Search the tenant's contacts by name.
+ *
+ * Xero's searchTerm does a partial match across name and contact person,
+ * which is what we want: "Sorrells" should find "Sorrells Custom Wine
+ * Cellars Ltd" so the user can reuse it rather than creating a near
+ * duplicate. Archived contacts are returned but flagged — reusing one
+ * silently would be worse than showing it.
+ */
+export async function searchContacts(
+  orgId: number,
+  term: string,
+): Promise<XeroContactSummary[]> {
+  const q = encodeURIComponent(term.trim());
+  if (!q) return [];
+  const res = await xeroFetch(orgId, `/Contacts?searchTerm=${q}&page=1`);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Xero contact search failed (${res.status}): ${text}`);
+  }
+  const body = (await res.json()) as { Contacts?: any[] };
+  return (body.Contacts ?? []).map(mapContact);
+}
+
+export interface NewContactInput {
+  name: string;
+  contactPerson?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+}
+
+/**
+ * Create a contact. Every field is whatever the user confirmed on the
+ * preview screen — the quote only ever pre-fills it, because a typo here
+ * becomes a permanent record in someone's accounts.
+ *
+ * The quote holds one free-text address block, so it is split across
+ * Xero's address lines rather than guessed at: the last line becomes the
+ * postcode only if it looks like one.
+ */
+export async function createContact(
+  orgId: number,
+  input: NewContactInput,
+): Promise<XeroContactSummary> {
+  const contact: Record<string, unknown> = { Name: input.name.trim() };
+
+  if (input.email?.trim()) contact.EmailAddress = input.email.trim();
+
+  if (input.contactPerson?.trim()) {
+    const parts = input.contactPerson.trim().split(/\s+/);
+    contact.FirstName = parts[0];
+    if (parts.length > 1) contact.LastName = parts.slice(1).join(" ");
+  }
+
+  if (input.phone?.trim()) {
+    contact.Phones = [
+      { PhoneType: "DEFAULT", PhoneNumber: input.phone.trim() },
+    ];
+  }
+
+  if (input.address?.trim()) {
+    const lines = input.address
+      .split(/\r?\n|,/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    const looksLikePostcode = (v: string) =>
+      /^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i.test(v);
+    const postal =
+      lines.length > 0 && looksLikePostcode(lines[lines.length - 1])
+        ? lines.pop()
+        : undefined;
+    contact.Addresses = [
+      {
+        AddressType: "STREET",
+        AddressLine1: lines[0] ?? "",
+        AddressLine2: lines[1] ?? "",
+        AddressLine3: lines[2] ?? "",
+        AddressLine4: lines[3] ?? "",
+        City: lines.length > 1 ? lines[lines.length - 1] : "",
+        PostalCode: postal ?? "",
+      },
+    ];
+  }
+
+  const res = await xeroFetch(orgId, "/Contacts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ Contacts: [contact] }),
+  });
+  if (!res.ok) {
+    throw new Error(await describeXeroError(res, "create the customer"));
+  }
+  const body = (await res.json()) as { Contacts?: any[] };
+  const created = (body.Contacts ?? [])[0];
+  if (!created) throw new Error("Xero accepted the customer but returned nothing");
+  return mapContact(created);
+}
+
+export interface XeroAccountSummary {
+  code: string;
+  name: string;
+  taxType?: string | null;
+}
+
+/**
+ * Revenue accounts only — the codes a sales line may legitimately use.
+ * Offering an expense account would produce a Xero rejection the user
+ * couldn't diagnose.
+ */
+export async function fetchRevenueAccounts(
+  orgId: number,
+): Promise<XeroAccountSummary[]> {
+  const res = await xeroFetch(orgId, "/Accounts");
+  if (!res.ok) {
+    throw new Error(await describeXeroError(res, "read the account list"));
+  }
+  const body = (await res.json()) as { Accounts?: any[] };
+  return (body.Accounts ?? [])
+    .filter(
+      (a) =>
+        (a.Status ?? "ACTIVE") === "ACTIVE" &&
+        ["REVENUE", "SALES", "OTHERINCOME"].includes(String(a.Type ?? "")),
+    )
+    .map((a) => ({
+      code: String(a.Code ?? ""),
+      name: String(a.Name ?? ""),
+      taxType: a.TaxType ?? null,
+    }))
+    .filter((a) => a.code.length > 0);
+}
+
+/**
+ * Xero's validation errors arrive nested and are useless verbatim. Pull
+ * out the messages that actually say what is wrong, so the user sees
+ * "Account code must be specified" rather than a 400.
+ */
+async function describeXeroError(res: Response, doing: string): Promise<string> {
+  let detail = "";
+  try {
+    const body: any = await res.json();
+    const messages: string[] = [];
+    const walk = (node: any) => {
+      if (!node || typeof node !== "object") return;
+      if (Array.isArray(node)) {
+        node.forEach(walk);
+        return;
+      }
+      if (typeof node.Message === "string") messages.push(node.Message);
+      Object.values(node).forEach(walk);
+    };
+    walk(body);
+    detail = Array.from(new Set(messages)).slice(0, 4).join(" · ");
+    if (!detail && typeof body?.Detail === "string") detail = body.Detail;
+  } catch {
+    detail = await res.text().catch(() => "");
+  }
+  return `Xero refused to ${doing} (${res.status})${detail ? `: ${detail}` : ""}`;
+}
+
+export async function createRepeatingInvoice(
+  orgId: number,
+  payload: Record<string, unknown>,
+): Promise<{ id: string }> {
+  const res = await xeroFetch(orgId, "/RepeatingInvoices", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ RepeatingInvoices: [payload] }),
+  });
+  if (!res.ok) {
+    throw new Error(await describeXeroError(res, "create the repeating invoice"));
+  }
+  const body = (await res.json()) as { RepeatingInvoices?: any[] };
+  const created = (body.RepeatingInvoices ?? [])[0];
+  if (!created?.RepeatingInvoiceID) {
+    throw new Error("Xero accepted the repeating invoice but returned no id");
+  }
+  return { id: String(created.RepeatingInvoiceID) };
+}
+
+export async function updateRepeatingInvoice(
+  orgId: number,
+  repeatingInvoiceId: string,
+  payload: Record<string, unknown>,
+): Promise<{ id: string }> {
+  const res = await xeroFetch(orgId, "/RepeatingInvoices", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      RepeatingInvoices: [
+        { ...payload, RepeatingInvoiceID: repeatingInvoiceId },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(await describeXeroError(res, "update the repeating invoice"));
+  }
+  return { id: repeatingInvoiceId };
+}
+
+export async function getRepeatingInvoice(
+  orgId: number,
+  repeatingInvoiceId: string,
+): Promise<any | null> {
+  const res = await xeroFetch(
+    orgId,
+    `/RepeatingInvoices/${encodeURIComponent(repeatingInvoiceId)}`,
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) return null;
+  const body = (await res.json()) as { RepeatingInvoices?: any[] };
+  return (body.RepeatingInvoices ?? [])[0] ?? null;
+}
+
+export async function createInvoice(
+  orgId: number,
+  payload: Record<string, unknown>,
+): Promise<{ id: string; number: string | null }> {
+  const res = await xeroFetch(orgId, "/Invoices", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ Invoices: [payload] }),
+  });
+  if (!res.ok) {
+    throw new Error(await describeXeroError(res, "create the invoice"));
+  }
+  const body = (await res.json()) as { Invoices?: any[] };
+  const created = (body.Invoices ?? [])[0];
+  if (!created?.InvoiceID) {
+    throw new Error("Xero accepted the invoice but returned no id");
+  }
+  return {
+    id: String(created.InvoiceID),
+    number: created.InvoiceNumber ? String(created.InvoiceNumber) : null,
+  };
+}

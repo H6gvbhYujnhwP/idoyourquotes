@@ -64,6 +64,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { brand } from "@/lib/brandTheme";
 import { trpc } from "@/lib/trpc";
+import XeroPushDialog from "@/components/XeroPushDialog";
 
 // ─── Types ───────────────────────────────────────────────────────────
 //
@@ -257,6 +258,11 @@ export default function BrandedProposalWorkspace() {
   const [contractTier, setContractTier] = useState<string>("");
   const [commencementDate, setCommencementDate] = useState("");
   const [isRenderingContract, setIsRenderingContract] = useState(false);
+  // Delivery 2.12 — tick box on the contract dialog, and the preview it
+  // opens. The preview writes nothing; the push happens inside it.
+  const [alsoPushXero, setAlsoPushXero] = useState(false);
+  const [xeroPreviewOpen, setXeroPreviewOpen] = useState(false);
+  const xeroStatus = trpc.xero.status.useQuery();
 
   // ── Workspace state ──────────────────────────────────────────────
   const [slots, setSlots] = useState<ChapterSlot[] | null>(null);
@@ -668,6 +674,10 @@ export default function BrandedProposalWorkspace() {
       documents.refetch();
       toast.success("Contract downloaded");
       setContractOpen(false);
+      // Delivery 2.12 — the Xero preview opens only AFTER the contract
+      // has rendered successfully. Pushing invoices for a document that
+      // failed to produce would be the wrong order entirely.
+      if (alsoPushXero) setXeroPreviewOpen(true);
     } catch (err: any) {
       toast.error(err?.message || "Contract render failed");
     } finally {
@@ -1089,6 +1099,30 @@ export default function BrandedProposalWorkspace() {
               </p>
             </div>
 
+            {/* Delivery 2.12 — Xero. Only offered when Xero is actually
+                connected; otherwise the tick box would promise something
+                that cannot happen. */}
+            {(xeroStatus.data as any)?.connected && (
+              <label className="flex items-start gap-2 text-sm rounded-md border p-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={alsoPushXero}
+                  onChange={(e) => setAlsoPushXero(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>
+                  Also set this up in{" "}
+                  <strong>
+                    {(xeroStatus.data as any)?.tenantName || "Xero"}
+                  </strong>
+                  <span className="block text-xs text-muted-foreground">
+                    You'll see exactly what will be created before anything
+                    happens.
+                  </span>
+                </span>
+              </label>
+            )}
+
             {!contractDocs.data?.signatory?.signatureImage && (
               <div
                 className="rounded-md border p-3 text-xs"
@@ -1348,6 +1382,17 @@ export default function BrandedProposalWorkspace() {
             <ExternalLink className="w-3 h-3" />
           </button>
         </div>
+      )}
+
+      {/* Delivery 2.12 — Xero preview. Carries the same start date the
+          contract was rendered with, so the repeating invoices and the
+          signed document agree. */}
+      {xeroPreviewOpen && (
+        <XeroPushDialog
+          quoteId={quoteId}
+          commencementDate={commencementDate.trim()}
+          onClose={() => setXeroPreviewOpen(false)}
+        />
       )}
 
       {/* Render-PDF blocking overlay */}
