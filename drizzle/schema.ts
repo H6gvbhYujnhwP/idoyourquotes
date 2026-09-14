@@ -265,8 +265,8 @@ export type InsertUser = typeof users.$inferInsert;
  * IMPORTANT: Column names use snake_case to match PostgreSQL
  */
 // Delivery 2.6b — type shared with shared/schema.ts (dual-schema rule).
-export type { GeneratedDocument, GeneratedDocuments } from "../shared/schema";
-import type { GeneratedDocuments } from "../shared/schema";
+export type { GeneratedDocument, GeneratedDocuments, BrandedSlotsState } from "../shared/schema";
+import type { GeneratedDocuments, BrandedSlotsState } from "../shared/schema";
 
 export const quotes = pgTable("quotes", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
@@ -304,6 +304,12 @@ export const quotes = pgTable("quotes", {
   // Delivery 2.6b — latest generated proposal / contract PDF per quote.
   // See GeneratedDocuments above. NULL = nothing generated yet.
   generatedDocuments: json("generated_documents").$type<GeneratedDocuments>(),
+  // Delivery 2.8 — the branded proposal's chapters as the user last left
+  // them (edited text, removed chapters, orientation, cover date).
+  // Previously the workspace held these in browser memory only, so a
+  // refresh or leaving the page discarded every edit and the user had to
+  // redo them before each render. NULL = never opened / never edited.
+  brandedSlots: json("branded_slots").$type<BrandedSlotsState>(),
   // Comprehensive quote fields
   quoteMode: quoteModeEnum("quote_mode").default("simple").notNull(),
   tradePreset: varchar("trade_preset", { length: 50 }),

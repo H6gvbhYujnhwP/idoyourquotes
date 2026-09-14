@@ -330,6 +330,19 @@ export type InsertUser = typeof users.$inferInsert;
  * IMPORTANT: Column names use snake_case to match PostgreSQL
  */
 /**
+ * Delivery 2.8 — saved state of the branded proposal workspace.
+ * `slots` is stored as-is (the ChapterSlot shape the workspace and the
+ * assembler already agree on) rather than re-modelled here, so the two
+ * can't drift apart.
+ */
+export interface BrandedSlotsState {
+  slots: unknown[];
+  orientation?: "portrait" | "landscape";
+  coverDate?: string;
+  savedAt: string;
+}
+
+/**
  * Delivery 2.6b — the latest generated document of each kind, kept
  * against the quote so the user can go back to it instead of
  * regenerating (and re-spending AI credits) every time.
@@ -401,6 +414,12 @@ export const quotes = pgTable("quotes", {
   // Delivery 2.6b — latest generated proposal / contract PDF per quote.
   // See GeneratedDocuments above. NULL = nothing generated yet.
   generatedDocuments: json("generated_documents").$type<GeneratedDocuments>(),
+  // Delivery 2.8 — the branded proposal's chapters as the user last left
+  // them (edited text, removed chapters, orientation, cover date).
+  // Previously the workspace held these in browser memory only, so a
+  // refresh or leaving the page discarded every edit and the user had to
+  // redo them before each render. NULL = never opened / never edited.
+  brandedSlots: json("branded_slots").$type<BrandedSlotsState>(),
   quoteMode: quoteModeEnum("quote_mode").default("simple").notNull(),
   tradePreset: varchar("trade_preset", { length: 50 }),
   comprehensiveConfig: json("comprehensive_config").$type<ComprehensiveConfig>(),

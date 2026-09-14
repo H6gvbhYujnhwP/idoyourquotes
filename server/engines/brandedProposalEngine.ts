@@ -311,7 +311,7 @@ const SLOT_DEFS: SlotDef[] = [
     preferredTags: [],
     generateTitle: "Service Level Agreement",
     generateGuidance:
-      "Response times, resolution targets, escalation, reporting, review meetings. Match the tender's stated SLA expectations precisely where given.",
+      "Response times, resolution targets, escalation, reporting, review meetings. Match the tender's stated SLA expectations precisely where given. Delivery 2.8 — NEVER invent support hours, response times or onsite allowances: state only figures that appear in the evidence or the line items (Q-207 printed 'Mon-Fri 9-5' for a service contracted at 8:30am-5:30pm). Where a figure is not given, describe the commitment without a number rather than guessing one.",
   },
   {
     slotIndex: 14,

@@ -55,6 +55,8 @@ import {
   X,
   FileSignature,
   AlertTriangle,
+  Trash2,
+  Calendar,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -214,6 +216,15 @@ export default function BrandedProposalWorkspace() {
     { enabled: Number.isFinite(quoteId) },
   );
   const getDocumentUrl = trpc.brandedProposal.getDocumentUrl.useMutation();
+  // Delivery 2.8 — chapter edits, removals, orientation and cover date
+  // are saved against the quote. Previously they lived in browser memory
+  // only, so a refresh discarded everything and the user had to redo it
+  // before every render.
+  const savedSlots = trpc.brandedProposal.loadSlots.useQuery(
+    { quoteId },
+    { enabled: Number.isFinite(quoteId) },
+  );
+  const saveSlots = trpc.brandedProposal.saveSlots.useMutation();
   // Contract-button delivery — the same document rendered as a
   // contract. Deliberately a separate endpoint rather than a flag on
   // renderPdf, so an accidental click can never turn a proposal
@@ -227,6 +238,9 @@ export default function BrandedProposalWorkspace() {
 
   // ── Workspace state ──────────────────────────────────────────────
   const [slots, setSlots] = useState<ChapterSlot[] | null>(null);
+  // Delivery 2.8 — the cover date printed on the title page. Empty means
+  // "today", which is what every render did before this.
+  const [coverDate, setCoverDate] = useState<string>("");
   const [draftError, setDraftError] = useState<string | null>(null);
   const [draftErrorIsBrochure, setDraftErrorIsBrochure] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number>(1);
@@ -274,6 +288,21 @@ export default function BrandedProposalWorkspace() {
       );
       setDraftErrorIsBrochure(true);
       draftKickedOffRef.current = true;
+      return;
+    }
+
+    // Delivery 2.8 — restore the saved workspace state before falling
+    // back to generating a fresh draft. Generation costs AI credits, so
+    // reopening a proposal must not silently re-spend them and discard
+    // the user's edits.
+    if (savedSlots.isLoading) return;
+    const restored = (savedSlots.data as any)?.saved;
+    if (restored?.slots?.length) {
+      draftKickedOffRef.current = true;
+      setSlots(restored.slots as ChapterSlot[]);
+      setSelectedIndex((restored.slots as ChapterSlot[])[0].slotIndex);
+      if (restored.orientation) setRenderOrientation(restored.orientation);
+      if (restored.coverDate) setCoverDate(restored.coverDate);
       return;
     }
 
@@ -413,13 +442,64 @@ export default function BrandedProposalWorkspace() {
         currentSlots: slots,
       });
       const updated = (result as { slot: ChapterSlot }).slot;
-      setSlots(slots.map((s) => (s.slotIndex === slot.slotIndex ? updated : s)));
+      {
+        const next = slots.map((s) =>
+          s.slotIndex === slot.slotIndex ? updated : s,
+        );
+        setSlots(next);
+        persistSlots(next); // Delivery 2.8 — edits survive a refresh.
+      }
       toast.success(`Regenerated "${slot.slotName}"`);
     } catch (err: any) {
       toast.error(err?.message || "Regenerate failed");
     } finally {
       setRegeneratingIndex(null);
     }
+  }
+
+  /**
+   * Delivery 2.8 — persist the workspace state. Best-effort and quiet:
+   * a save failure must never interrupt editing or block a render, and
+   * the state is still in memory either way.
+   */
+  function persistSlots(
+    nextSlots: ChapterSlot[],
+    nextOrientation = renderOrientation,
+    nextCoverDate = coverDate,
+  ) {
+    if (!Number.isFinite(quoteId) || nextSlots.length === 0) return;
+    saveSlots
+      .mutateAsync({
+        quoteId,
+        slots: nextSlots as any,
+        orientation: nextOrientation,
+        coverDate: nextCoverDate || undefined,
+      })
+      .catch(() => {});
+  }
+
+  /**
+   * Delivery 2.8 — remove a chapter. The generated set is deliberately
+   * broad (18 slots) so it covers many kinds of engagement; a given
+   * quote usually wants fewer. Q-207 carried "Cloud Migration Approach"
+   * and "Website Hosting & Support" for a deal containing neither.
+   */
+  function handleRemoveChapter(slotIndex: number) {
+    if (!slots) return;
+    const target = slots.find((s) => s.slotIndex === slotIndex);
+    if (!target) return;
+    if (slotIndex === PRICING_SLOT_INDEX) {
+      toast.error("The pricing chapter can't be removed");
+      return;
+    }
+    if (!window.confirm(`Remove "${target.slotName}" from this proposal?`)) return;
+    const next = slots.filter((s) => s.slotIndex !== slotIndex);
+    setSlots(next);
+    if (selectedIndex === slotIndex && next.length > 0) {
+      setSelectedIndex(next[0].slotIndex);
+    }
+    persistSlots(next);
+    toast.success(`"${target.slotName}" removed`);
   }
 
   async function handleRenderPdf() {
@@ -436,10 +516,12 @@ export default function BrandedProposalWorkspace() {
     setIsRendering(true);
     setRenderRollingIdx(0);
     try {
+      persistSlots(slots);
       const result = await renderPdf.mutateAsync({
         quoteId,
         slots,
         orientation: renderOrientation,
+        coverDate: coverDate || undefined,
       });
       const { base64, filename } = result as {
         base64: string;
@@ -502,6 +584,7 @@ export default function BrandedProposalWorkspace() {
         quoteId,
         slots,
         orientation: renderOrientation,
+        coverDate: coverDate || undefined,
         tier: contractTier,
         commencementDate: commencementDate.trim(),
       });
@@ -720,6 +803,26 @@ export default function BrandedProposalWorkspace() {
               <option value="portrait">Portrait</option>
               <option value="landscape">Landscape</option>
             </select>
+          </label>
+          {/* Delivery 2.8 — the date printed on the title page. Blank
+              means today, which is what every render did before. Needed
+              because a contract agreed on 22 August was restamped with
+              the render date every time it was produced. */}
+          <label className="flex items-center gap-1.5 text-xs">
+            <Calendar className="w-3.5 h-3.5" style={{ color: brand.navyMuted }} />
+            <span className="text-muted-foreground">Date</span>
+            <input
+              type="date"
+              value={coverDate}
+              onChange={(e) => {
+                setCoverDate(e.target.value);
+                if (slots) persistSlots(slots, renderOrientation, e.target.value);
+              }}
+              disabled={isRendering}
+              title="Date printed on the title page — leave blank for today"
+              className="rounded-md border bg-background px-2 py-1 text-xs focus:outline-none"
+              style={{ borderColor: brand.border }}
+            />
           </label>
           {/* Contract-button delivery — sits beside Render PDF because
               it produces the same document in its signed form. Outline
@@ -974,7 +1077,25 @@ export default function BrandedProposalWorkspace() {
               const isPricing = s.slotIndex === PRICING_SLOT_INDEX;
               const isRegen = regeneratingIndex === s.slotIndex;
               return (
-                <li key={s.slotIndex}>
+                <li key={s.slotIndex} className="group relative">
+                  {/* Delivery 2.8 — remove a chapter this deal doesn't
+                      need. Pricing is exempt (the proposal must price
+                      something). Appears on hover / focus so the list
+                      stays clean. */}
+                  {s.slotIndex !== PRICING_SLOT_INDEX && (
+                    <button
+                      type="button"
+                      aria-label={`Remove ${s.slotName}`}
+                      title="Remove this chapter"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveChapter(s.slotIndex);
+                      }}
+                      className="absolute right-1 top-1 z-10 rounded p-1 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-red-50"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" style={{ color: "#dc2626" }} />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => handlePickChapter(s.slotIndex)}

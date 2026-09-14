@@ -1106,10 +1106,20 @@ function drawPricingChapter(
     drawTableHeader();
 
     // Rows — each row may need 1 or more lines for description wrapping
-    for (const li of group.items) {
+    for (let rowIdx = 0; rowIdx < group.items.length; rowIdx++) {
+      const li = group.items[rowIdx];
       const desc = extractDescriptionSummary(li.description) || "(no description)";
       const wrappedDesc = wrapText(desc, fonts.regular, tableSize, cols.descriptionWidth);
-      const rowHeight = tableLineHeight * wrappedDesc.length;
+      // Delivery 2.8 — keep the group total with its table. Previously
+      // only the row's own height was reserved, so a last row that fitted
+      // exactly pushed the subtotal onto a page of its own: Q-207 printed
+      // a near-empty page carrying nothing but "Monthly total (ex VAT)
+      // £1,370.51". Reserving the subtotal's height alongside the final
+      // row moves them to the next page together.
+      const isLastRow = rowIdx === group.items.length - 1;
+      const subtotalReserve =
+        isLastRow && group.showSubtotal ? tableLineHeight * 1.4 : 0;
+      const rowHeight = tableLineHeight * wrappedDesc.length + subtotalReserve;
 
       // Page break BEFORE drawing the row if it won't fit. Re-emit
       // header on the new page so the table reads coherently.
@@ -1589,6 +1599,17 @@ export interface AssembleParams {
   contract?: ContractMode;
   /** Bytes of the source brochure PDF (loaded from R2 by the caller). */
   brochurePdfBytes: Uint8Array;
+  /**
+   * Delivery 2.8 — append the brochure's LAST page as a back cover.
+   *
+   * The proposal already opens with brochure page 1 verbatim (the Cover
+   * slot); it had no closing page, so a generated proposal simply
+   * stopped after the last chapter while Sweetbyte's manual contracts
+   * ended on the logo-and-strapline page. Applies to proposals AND
+   * contracts. Ignored when the brochure has only one page — that page
+   * is already the cover and would otherwise be printed twice.
+   */
+  includeBackCover?: boolean;
   /** Chapter slots from generateBrandedProposalDraft(). */
   slots: ChapterSlot[];
   /**
@@ -1714,6 +1735,15 @@ export async function assembleBrandedProposal(
   const brochurePagesNeeded = new Set<number>();
   const narrativePagesNeeded = new Set<number>();
 
+  // Delivery 2.8 — the brochure's last page, appended as a back cover.
+  // Resolved here so it travels the same copy / letterbox path as every
+  // other embedded brochure page.
+  const backCoverIdx =
+    params.includeBackCover && brochureDoc.getPageCount() > 1
+      ? brochureDoc.getPageCount() - 1
+      : null;
+  if (backCoverIdx !== null) brochurePagesNeeded.add(backCoverIdx);
+
   for (const slot of params.slots) {
     if (slot.source === "embed") {
       brochurePagesNeeded.add(slot.brochurePageNumber - 1); // 1-indexed → 0-indexed
@@ -1817,6 +1847,29 @@ export async function assembleBrandedProposal(
     }
   }
 
+  // Delivery 2.8 — helper so the back cover is appended through exactly
+  // the same path as the cover, whichever mode the render is in.
+  const appendBrochurePage = (srcIdx: number) => {
+    if (needsLetterbox) {
+      const embed = brochureEmbedByIdx.get(srcIdx);
+      if (!embed) return;
+      const srcPage = brochureDoc.getPage(srcIdx);
+      const { width: srcW, height: srcH } = srcPage.getSize();
+      const targetPage = finalDoc.addPage([targetDim.width, targetDim.height]);
+      drawBrochurePageLetterboxed(
+        targetPage,
+        embed,
+        srcW,
+        srcH,
+        targetDim.width,
+        targetDim.height,
+      );
+    } else {
+      const page = brochureCopiedByIdx.get(srcIdx);
+      if (page) finalDoc.addPage(page);
+    }
+  };
+
   // ── Contract mode — append terms and signature pages ─────────────
   if (params.contract) {
     const c = params.contract;
@@ -1841,6 +1894,11 @@ export async function assembleBrandedProposal(
       signatory: c.signatory,
     });
   }
+
+  // Delivery 2.8 — back cover LAST, after any contract terms and
+  // signature pages, so it closes the whole document exactly as
+  // Sweetbyte's manual contracts do.
+  if (backCoverIdx !== null) appendBrochurePage(backCoverIdx);
 
   return finalDoc.save();
 }

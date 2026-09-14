@@ -304,6 +304,24 @@ async function fetchAndNormaliseLogo(
 type DocumentKind = "brandedProposal" | "contract";
 
 /**
+ * Delivery 2.8 — the date printed on the title page.
+ *
+ * Previously always "today", so re-rendering a contract agreed on
+ * 22 August restamped it with the render date. An explicit coverDate
+ * (yyyy-mm-dd from the workspace) wins; otherwise today, exactly as
+ * before. Midday avoids any timezone rollover to the previous day.
+ */
+function resolveCoverDate(coverDate?: string): string {
+  const d = coverDate ? new Date(`${coverDate}T12:00:00`) : new Date();
+  const safe = Number.isNaN(d.getTime()) ? new Date() : d;
+  return safe.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+/**
  * Store a freshly rendered PDF as the latest document of its kind.
  * Best-effort: if R2 is not configured or the upload fails, the render
  * still succeeds and the user still gets their download — they just
@@ -520,6 +538,8 @@ export const brandedProposalRouter = router({
         // missing or unrecognised, defaults to portrait (the E.1
         // default).
         orientation: z.enum(["portrait", "landscape"]).optional(),
+        // Delivery 2.8 — cover date, yyyy-mm-dd. Omitted means today.
+        coverDate: z.string().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -580,10 +600,7 @@ export const brandedProposalRouter = router({
       // current render date in long British format ("30 April 2026").
       const quoteRefForTitle: string =
         (quote as any).reference?.trim() || `Q-${quote.id}`;
-      const quoteDateStrForTitle: string = new Date().toLocaleDateString(
-        "en-GB",
-        { day: "numeric", month: "long", year: "numeric" },
-      );
+      const quoteDateStrForTitle: string = resolveCoverDate(input.coverDate);
 
       const pdfBytes = await assembleBrandedProposal({
         brochurePdfBytes: brochureBytes,
@@ -595,6 +612,8 @@ export const brandedProposalRouter = router({
         targetOrientation,
         quoteReference: quoteRefForTitle,
         quoteDateStr: quoteDateStrForTitle,
+        // Delivery 2.8 — close on the brochure's last page.
+        includeBackCover: true,
       });
 
       // Phase 4B Delivery E.8 — branded PDF filename. Format is
@@ -680,6 +699,8 @@ export const brandedProposalRouter = router({
         quoteId: z.number(),
         slots: z.array(ChapterSlotSchema),
         orientation: z.enum(["portrait", "landscape"]).optional(),
+        // Delivery 2.8 — cover date, yyyy-mm-dd. Omitted means today.
+        coverDate: z.string().optional(),
         tier: z.string().min(1).max(32),
         /** Free text, printed verbatim, e.g. "1 October 2026". Typed
          *  by the user rather than picked, because it is often a date
@@ -835,11 +856,9 @@ export const brandedProposalRouter = router({
         targetOrientation:
           input.orientation === "landscape" ? "landscape" : "portrait",
         quoteReference: (quote as any).reference?.trim() || `Q-${quote.id}`,
-        quoteDateStr: new Date().toLocaleDateString("en-GB", {
-          day: "numeric",
-          month: "long",
-          year: "numeric",
-        }),
+        quoteDateStr: resolveCoverDate(input.coverDate),
+        // Delivery 2.8 — contracts close on the brochure's last page too.
+        includeBackCover: true,
         contract: {
           displayName: contractDoc.displayName,
           clauses: (contractDoc.clauses ?? []).map(
@@ -903,6 +922,58 @@ export const brandedProposalRouter = router({
         filename,
         sizeBytes: pdfBytes.byteLength,
       };
+    }),
+
+  /**
+   * Delivery 2.8 — save the workspace state (chapter text, which
+   * chapters remain, orientation, cover date) against the quote.
+   *
+   * Called on a debounce as the user edits, and before each render.
+   * Whole-state replace rather than per-chapter patching: the workspace
+   * holds the authoritative array, and a partial merge could resurrect a
+   * chapter the user had just removed.
+   */
+  saveSlots: protectedProcedure
+    .input(
+      z.object({
+        quoteId: z.number(),
+        slots: z.array(ChapterSlotSchema),
+        orientation: z.enum(["portrait", "landscape"]).optional(),
+        coverDate: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+      await db
+        .update(quotes)
+        .set({
+          brandedSlots: {
+            slots: input.slots,
+            orientation: input.orientation,
+            coverDate: input.coverDate,
+            savedAt: new Date().toISOString(),
+          },
+        })
+        .where(eq(quotes.id, input.quoteId));
+      return { success: true };
+    }),
+
+  /**
+   * Delivery 2.8 — the saved workspace state, or null when the quote has
+   * never been opened in the branded workspace (in which case the client
+   * generates a fresh draft exactly as before).
+   */
+  loadSlots: protectedProcedure
+    .input(z.object({ quoteId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const { quote } = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+      const saved = (quote as any).brandedSlots as any;
+      if (!saved || !Array.isArray(saved.slots) || saved.slots.length === 0) {
+        return { saved: null as any };
+      }
+      return { saved };
     }),
 
   /**
