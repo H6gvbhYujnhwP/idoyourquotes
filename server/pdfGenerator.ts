@@ -6,6 +6,7 @@ import { getPresignedUrl } from "./r2Storage";
 // VAT fix delivery — explicit owner permission (11 Sep 2026) to break
 // the lock for the two live VAT totals rows only. See vatRate.ts.
 import { parseQuoteVatRate, isVatCharged, formatVatRate } from "./services/vatRate";
+import { formatWorkingHoursLabel } from "./services/workingHours";
 // Delivery 2.5 — the shared description rule (lock broken for
 // formatLineItemDescription only, with owner permission).
 import { parseLineItemDescription } from "../shared/lineItemDescription";
@@ -1218,7 +1219,20 @@ function generateComprehensiveProposalHTML(data: PDFQuoteData): string {
   const siteData = config?.sections?.siteRequirements;
   if (siteData?.enabled && siteData.data) {
     const sd = siteData.data;
-    const hasSiteContent = sd.workingHours || (sd.accessRestrictions && sd.accessRestrictions.length > 0) ||
+    // Delivery 2.10 — LOCK BROKEN with explicit owner permission
+    // (14 Sep 2026), scoped to this Working Hours row only.
+    // The hours printed here came from the quote's site data, i.e.
+    // whatever the model echoed when it wrote the draft, so the same
+    // organisation could state one set of hours here and another in its
+    // proposal and contract. Settings → Working Hours now wins; the
+    // quote's own site data is kept only as a fallback for an
+    // organisation that has never set its hours.
+    const workingHoursLabel =
+      formatWorkingHoursLabel(organization as any) ||
+      (sd.workingHours
+        ? `${sd.workingHours.start} - ${sd.workingHours.end} (${sd.workingHours.days})`
+        : null);
+    const hasSiteContent = workingHoursLabel || (sd.accessRestrictions && sd.accessRestrictions.length > 0) ||
       (sd.safetyRequirements && sd.safetyRequirements.length > 0) || sd.parkingStorage ||
       (sd.permitNeeds && sd.permitNeeds.length > 0) || (sd.constraints && sd.constraints.length > 0);
 
@@ -1227,10 +1241,10 @@ function generateComprehensiveProposalHTML(data: PDFQuoteData): string {
   <div class="container page-break">
     <h1>Site Requirements</h1>
 
-    ${sd.workingHours ? `
+    ${workingHoursLabel ? `
     <div class="detail-row">
       <span class="label">Working Hours:</span>
-      <span class="value">${escapeHtml(sd.workingHours.start)} - ${escapeHtml(sd.workingHours.end)} (${escapeHtml(sd.workingHours.days)})</span>
+      <span class="value">${escapeHtml(workingHoursLabel)}</span>
     </div>` : ""}
 
     ${sd.parkingStorage ? `

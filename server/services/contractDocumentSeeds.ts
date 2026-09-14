@@ -100,7 +100,7 @@ export const GOLD_CONTRACT_SEED: ContractDocumentSeed = {
     {
       number: 3,
       heading: "Gold IT Support",
-      body: "{{providerName}} will provide unlimited remote IT Helpdesk Support for the agreed users and supported services described in this Agreement. During contracted support hours, {{providerName}} will provide a 4-hour response SLA for support incidents and will begin work on diagnosis and resolution as soon as practicable. There is no fixed time-to-resolution guarantee, as resolution may depend on third-party suppliers, hardware availability, external services or the nature of the fault. Support not used in a calendar month is not refundable or transferable. Gold IT Support includes six hours of pooled onsite engineering per month; onsite work beyond the included allowance may be chargeable. Contracted support hours are Monday-Friday 9am-5pm excluding UK Bank Holidays. The IT Support service is provided on a rolling monthly basis with 90 days' cancellation notice and is reviewed every 12 months.",
+      body: "{{providerName}} will provide unlimited remote IT Helpdesk Support for the agreed users and supported services described in this Agreement. During contracted support hours, {{providerName}} will provide a 4-hour response SLA for support incidents and will begin work on diagnosis and resolution as soon as practicable. There is no fixed time-to-resolution guarantee, as resolution may depend on third-party suppliers, hardware availability, external services or the nature of the fault. Support not used in a calendar month is not refundable or transferable. Gold IT Support includes six hours of pooled onsite engineering per month; onsite work beyond the included allowance may be chargeable. Contracted support hours are {{supportHours}} excluding UK Bank Holidays. The IT Support service is provided on a rolling monthly basis with 90 days' cancellation notice and is reviewed every 12 months.",
     },
     {
       number: 4,
@@ -136,7 +136,7 @@ export const GOLD_CONTRACT_SEED: ContractDocumentSeed = {
     {
       number: 11,
       heading: "Contracted IT Support Hours",
-      body: "Standard support hours are Monday-Friday 9am-5pm, excluding UK public holidays. Support requested outside these hours is not included unless separately agreed and may be chargeable.",
+      body: "Standard support hours are {{supportHours}}, excluding UK public holidays. Support requested outside these hours is not included unless separately agreed and may be chargeable.",
     },
     {
       number: 12,
@@ -175,7 +175,7 @@ export const SILVER_CONTRACT_SEED: ContractDocumentSeed = {
     {
       number: 3,
       heading: "Silver IT Support",
-      body: "{{providerName}} will provide unlimited remote IT Helpdesk Support for the agreed IT inventory and services described in this Agreement. During contracted support hours, {{providerName}} will provide a 2-hour response SLA for priority support incidents and will begin work on diagnosis and resolution as soon as practicable. There is no fixed time-to-resolution guarantee, as resolution may depend on third-party suppliers, hardware availability, external services or the nature of the fault. Support not used in a calendar month is not refundable or transferable. The Silver IT Support service includes the monthly onsite engineering allowance stated in the Pricing Summary; onsite work beyond the included allowance may be chargeable. Contracted support hours are Monday-Friday 8:30am-5:30pm excluding UK Bank Holidays. The IT Support service is provided on a rolling monthly basis with 90 days' cancellation notice and is reviewed every 12 months.",
+      body: "{{providerName}} will provide unlimited remote IT Helpdesk Support for the agreed IT inventory and services described in this Agreement. During contracted support hours, {{providerName}} will provide a 2-hour response SLA for priority support incidents and will begin work on diagnosis and resolution as soon as practicable. There is no fixed time-to-resolution guarantee, as resolution may depend on third-party suppliers, hardware availability, external services or the nature of the fault. Support not used in a calendar month is not refundable or transferable. The Silver IT Support service includes the monthly onsite engineering allowance stated in the Pricing Summary; onsite work beyond the included allowance may be chargeable. Contracted support hours are {{supportHours}} excluding UK Bank Holidays. The IT Support service is provided on a rolling monthly basis with 90 days' cancellation notice and is reviewed every 12 months.",
     },
     {
       number: 4,
@@ -211,7 +211,7 @@ export const SILVER_CONTRACT_SEED: ContractDocumentSeed = {
     {
       number: 11,
       heading: "Contracted IT Support Hours",
-      body: "Standard support hours are Monday-Friday 8:30am-5:30pm, excluding UK public holidays. Support requested outside these hours is not included unless separately agreed and may be chargeable.",
+      body: "Standard support hours are {{supportHours}}, excluding UK public holidays. Support requested outside these hours is not included unless separately agreed and may be chargeable.",
     },
     {
       number: 12,

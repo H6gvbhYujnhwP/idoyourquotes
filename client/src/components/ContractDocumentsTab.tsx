@@ -118,6 +118,10 @@ const PLACEHOLDERS: Array<{ token: string; meaning: string }> = [
   // for a business that is not VAT registered. Recommended over the
   // three separate figures below.
   { token: "{{monthlyFee}}", meaning: "monthly fee, worded for your VAT status" },
+  {
+    token: "{{supportHours}}",
+    meaning: "your contracted hours from Settings → Working Hours",
+  },
   { token: "{{monthlyFeeExVat}}", meaning: "monthly total, excluding VAT" },
   { token: "{{monthlyFeeIncVat}}", meaning: "monthly total, including VAT" },
   { token: "{{vatRate}}", meaning: "the VAT percentage" },

@@ -166,6 +166,15 @@ export interface QuoteContext {
   taxRate?: number;
   /** All line items on the quote, ordered by sortOrder. */
   lineItems?: QuoteContextLineItem[];
+  /**
+   * Delivery 2.10 — the supplier's contracted working hours from
+   * Settings, already formatted ("Monday to Friday, 8:30am-5:30pm").
+   * Null when the organisation hasn't set them, in which case the
+   * model is told to describe availability without a figure rather
+   * than guess one. Before this, the engine had no hours at all and
+   * invented "Mon-Fri 9am-5pm" on a service contracted 8:30-5:30.
+   */
+  supportHours?: string | null;
 }
 
 // ─── Slot index constants — Phase 4B Delivery D Phase 3 ──────────────
@@ -329,7 +338,7 @@ const SLOT_DEFS: SlotDef[] = [
     preferredTags: [],
     generateTitle: "Service Level Agreement",
     generateGuidance:
-      "Response times, resolution targets, escalation, reporting, review meetings. Match the tender's stated SLA expectations precisely where given. Delivery 2.8 — NEVER invent support hours, response times or onsite allowances: state only figures that appear in the evidence or the line items (Q-207 printed 'Mon-Fri 9-5' for a service contracted at 8:30am-5:30pm). Where a figure is not given, describe the commitment without a number rather than guessing one.",
+      "Response times, resolution targets, escalation, reporting, review meetings. Match the tender's stated SLA expectations precisely where given. NEVER invent support hours, response times or onsite allowances: state only figures that appear in the evidence or the line items. Delivery 2.10 — the supplier's contracted working hours appear in the quote facts block; where they are given, use THOSE hours verbatim and no others, and where they are absent state no hours at all. Where any other figure is not given, describe the commitment without a number rather than guessing one.",
   },
   {
     slotIndex: 14,
@@ -516,6 +525,16 @@ function buildQuoteFactsBlock(qc: QuoteContext | undefined): string {
   if (qc.contactName) lines.push(`Client contact: ${qc.contactName}`);
   if (typeof qc.taxRate === "number" && qc.taxRate > 0) {
     lines.push(`VAT rate: ${qc.taxRate}%`);
+  }
+  // Delivery 2.10 — authoritative, from the supplier's own Settings.
+  if (qc.supportHours && qc.supportHours.trim().length > 0) {
+    lines.push(
+      `Contracted support / working hours: ${qc.supportHours} (THE supplier's hours — use these verbatim wherever a chapter states when support is available; never write different hours)`,
+    );
+  } else {
+    lines.push(
+      `Contracted support / working hours: (NOT SET — do NOT state any support hours, opening times or days anywhere in the proposal. Describe availability in words only, e.g. "during contracted support hours".)`,
+    );
   }
 
   const items = qc.lineItems ?? [];

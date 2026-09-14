@@ -36,6 +36,7 @@ import type { GeneratedDocument, GeneratedDocuments } from "../../shared/schema"
 import { getDb } from "../db";
 import { applyContractWording } from "./contractDocumentSeeds";
 import { parseQuoteVatRate, isVatCharged, formatVatRate } from "./vatRate";
+import { formatWorkingHours } from "./workingHours";
 import sharp from "sharp";
 import { router, protectedProcedure } from "../_core/trpc";
 import {
@@ -131,9 +132,15 @@ async function gatherTenderText(quoteId: number): Promise<string> {
  *     for that field rather than throw — a single corrupt row
  *     shouldn't block proposal generation.
  */
+/**
+ * Delivery 2.10 — `org` is now required so the supplier's contracted
+ * working hours travel with the quote facts. Without them the engine
+ * invented its own.
+ */
 async function gatherQuoteContext(
   quote: any,
   quoteId: number,
+  org?: any,
 ): Promise<QuoteContext> {
   const dbLineItems = await getLineItemsByQuoteId(quoteId);
 
@@ -174,6 +181,9 @@ async function gatherQuoteContext(
     reference: quote.reference ?? null,
     taxRate: parseFloat(quote.taxRate ?? "0") || 0,
     lineItems,
+    // Delivery 2.10 — from Settings → Working Hours. Null when unset,
+    // which the engine reads as "state no hours at all".
+    supportHours: formatWorkingHours(org),
   };
 }
 
@@ -452,7 +462,7 @@ export const brandedProposalRouter = router({
       // consumed by it (Phase 2 wires this into the cover and chapter
       // prompts so we stop saying "Your Organisation" and stop
       // inventing service specifics).
-      const quoteContext = await gatherQuoteContext(quote, input.quoteId);
+      const quoteContext = await gatherQuoteContext(quote, input.quoteId, org);
 
       const draft = await generateBrandedProposalDraft({
         tenderText,
@@ -516,7 +526,7 @@ export const brandedProposalRouter = router({
       // Phase 4B Delivery D Phase 1 — same structured context the
       // initial draft endpoint receives. Phase 2 will use this to keep
       // regenerated chapters consistent with the line items.
-      const quoteContext = await gatherQuoteContext(quote, input.quoteId);
+      const quoteContext = await gatherQuoteContext(quote, input.quoteId, org);
 
       const result = await regenerateSingleChapter({
         slotIndex: input.slotIndex,
@@ -592,7 +602,7 @@ export const brandedProposalRouter = router({
       // assembler. Phase 1 plumbs but doesn't render this; Phase 3
       // will use the line items to draw a real pricing table for
       // slot 15 (Pricing Summary).
-      const quoteContext = await gatherQuoteContext(quote, input.quoteId);
+      const quoteContext = await gatherQuoteContext(quote, input.quoteId, org);
 
       // Phase 4B Delivery E.3 — fetch the supplier company logo for
       // the cover. Best-effort. Any failure is logged and the render
@@ -778,7 +788,7 @@ export const brandedProposalRouter = router({
         );
       }
 
-      const quoteContext = await gatherQuoteContext(quote, input.quoteId);
+      const quoteContext = await gatherQuoteContext(quote, input.quoteId, org);
 
       // ── Money for the acceptance page ─────────────────────────────
       // The monthly recurring total, which is what both live Sweetbyte
@@ -829,6 +839,13 @@ export const brandedProposalRouter = router({
         monthlyFee: vatCharged
           ? `${gbp(monthlyExVat)} + VAT (${gbp(monthlyIncVat)} including VAT at ${formatVatRate(vatRate)}%)`
           : `${gbp(monthlyExVat)} (no VAT applicable)`,
+        // Delivery 2.10 — the supplier's contracted hours from Settings.
+        // The shipped clauses used to have these typed in (Gold said
+        // 9am-5pm, Silver 8:30am-5:30pm), so the terms could contradict
+        // the narrative inside one signed document. When Settings is
+        // blank the phrase degrades to "as agreed" rather than printing
+        // a plausible but wrong time on a contract.
+        supportHours: formatWorkingHours(orgAny) ?? "as agreed",
       };
 
       // VAT fix delivery — the shipped acceptance wording spells the fee

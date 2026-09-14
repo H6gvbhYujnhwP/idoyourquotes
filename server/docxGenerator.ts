@@ -56,6 +56,7 @@
 import { deflateRawSync } from "zlib";
 import { Quote, QuoteLineItem, User, Organization } from "../drizzle/schema";
 import { parseQuoteVatRate, isVatCharged } from "./services/vatRate";
+import { formatWorkingHoursLabel } from "./services/workingHours";
 import { descriptionAsText } from "../shared/lineItemDescription";
 
 interface DOCXQuoteData {
@@ -379,6 +380,16 @@ function buildDocumentXml(data: DOCXQuoteData): string {
 
     parts.push(paragraph(""));
     parts.push(paragraph(lines.join("\n"), { bold: false }));
+  }
+
+  // Working hours — Delivery 2.10. The Word export never carried these,
+  // so the same quote stated the supplier's hours on the PDF and said
+  // nothing in Word. Read from Settings → Working Hours, not from the
+  // AI's site data. Omitted entirely when unset.
+  const workingHoursLabel = formatWorkingHoursLabel(organization as any);
+  if (workingHoursLabel) {
+    parts.push(heading("Working hours", 2));
+    parts.push(paragraph(workingHoursLabel));
   }
 
   // Assumptions
