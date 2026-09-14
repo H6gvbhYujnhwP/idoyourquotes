@@ -329,6 +329,42 @@ export type InsertUser = typeof users.$inferInsert;
  * Now owned by organization, with created_by tracking
  * IMPORTANT: Column names use snake_case to match PostgreSQL
  */
+/**
+ * Delivery 2.6b — the latest generated document of each kind, kept
+ * against the quote so the user can go back to it instead of
+ * regenerating (and re-spending AI credits) every time.
+ *
+ * ONE ENTRY PER KIND, LATEST ONLY (Wez's choice): a new render of the
+ * same kind replaces the previous entry and its stored file is deleted.
+ *
+ * `generatedAt` is compared against the quote's updatedAt and its line
+ * items' updatedAt to decide whether the stored file is stale — i.e.
+ * whether the quote has been edited since it was made. Nothing ever
+ * regenerates on its own; the user presses Regenerate.
+ *
+ * The Word export is deliberately NOT stored: it is built from the live
+ * quote on every click, so it is always current by construction.
+ * The plain quote PDF is not stored either — it is produced by the
+ * browser's print dialog from returned HTML, so no PDF bytes ever
+ * reach the server.
+ */
+export interface GeneratedDocument {
+  /** R2 object key of the stored PDF. */
+  key: string;
+  /** Download filename shown to the user. */
+  filename: string;
+  /** ISO timestamp of the render. */
+  generatedAt: string;
+  sizeBytes: number;
+  /** Contract only — which contract document was used, e.g. "gold". */
+  tier?: string;
+}
+
+export interface GeneratedDocuments {
+  brandedProposal?: GeneratedDocument;
+  contract?: GeneratedDocument;
+}
+
 export const quotes = pgTable("quotes", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   orgId: bigint("org_id", { mode: "number" }),
@@ -362,6 +398,9 @@ export const quotes = pgTable("quotes", {
   sentAt: timestamp("sent_at"),
   acceptedAt: timestamp("accepted_at"),
   // Comprehensive quote fields
+  // Delivery 2.6b — latest generated proposal / contract PDF per quote.
+  // See GeneratedDocuments above. NULL = nothing generated yet.
+  generatedDocuments: json("generated_documents").$type<GeneratedDocuments>(),
   quoteMode: quoteModeEnum("quote_mode").default("simple").notNull(),
   tradePreset: varchar("trade_preset", { length: 50 }),
   comprehensiveConfig: json("comprehensive_config").$type<ComprehensiveConfig>(),

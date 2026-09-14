@@ -557,11 +557,80 @@ export default function Catalog() {
   };
 
   // Inline save - called by EditableCell on blur/Enter
+  // ── Delivery 2.6b — bulk category move ────────────────────────────────
+  // Changing ONE item's category already works via the CategoryCell on
+  // each row. What was missing is doing it to many at once — e.g. after
+  // adding a batch of items without a category, or reorganising the
+  // whole catalogue. Selection is by item id so it survives re-sorting
+  // and the search filter.
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkCategory, setBulkCategory] = useState("");
+  const [bulkNewCategory, setBulkNewCategory] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  const toggleSelected = useCallback((id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }, []);
+
   const handleInlineSave = useCallback((id: number, field: string, value: string) => {
     const payload: any = { id };
     payload[field] = value || undefined;
     updateItem.mutate(payload);
   }, [updateItem]);
+
+  /**
+   * Apply one category to every selected item. Uses the existing
+   * catalog.update endpoint one item at a time (mutateAsync) rather
+   * than a new bulk endpoint, so nothing server-side changes; a small
+   * concurrency limit keeps a 100-item move from opening 100 parallel
+   * requests.
+   */
+  const applyBulkCategory = async () => {
+    const target =
+      bulkCategory === NEW_CATEGORY_SENTINEL
+        ? bulkNewCategory.trim()
+        : bulkCategory.trim();
+    if (!target) {
+      toast.error("Choose a category first");
+      return;
+    }
+    const ids = Array.from(selectedIds);
+    setBulkBusy(true);
+    let moved = 0;
+    let failed = 0;
+    try {
+      const BATCH = 5;
+      for (let i = 0; i < ids.length; i += BATCH) {
+        const batch = ids.slice(i, i + BATCH);
+        const results = await Promise.allSettled(
+          batch.map((id) => updateItem.mutateAsync({ id, category: target })),
+        );
+        for (const r of results) {
+          r.status === "fulfilled" ? moved++ : failed++;
+        }
+      }
+      if (moved > 0) {
+        toast.success(
+          `${moved} item${moved === 1 ? "" : "s"} moved to "${target}"` +
+            (failed > 0 ? ` — ${failed} failed` : ""),
+        );
+      }
+      if (moved === 0 && failed > 0) {
+        toast.error("Could not move those items — please try again");
+      }
+      if (failed === 0) {
+        setSelectedIds(new Set());
+        setBulkCategory("");
+        setBulkNewCategory("");
+      }
+    } finally {
+      setBulkBusy(false);
+    }
+  };
 
   const filteredItems = items?.filter((item: CatalogItemData) => {
     if (!searchQuery) return true;
@@ -851,6 +920,61 @@ export default function Catalog() {
         </Card>
       ) : (
         <div className="space-y-6">
+          {/* Delivery 2.6b — bulk move bar. Appears only when something is
+              selected, so it never occupies space in normal use. */}
+          {selectedIds.size > 0 && (
+            <div
+              className="sticky top-2 z-20 flex flex-wrap items-center gap-3 rounded-lg border bg-white px-4 py-3 shadow-sm"
+            >
+              <span className="text-sm font-medium">
+                {selectedIds.size} selected
+              </span>
+              <select
+                value={bulkCategory}
+                onChange={(e) => setBulkCategory(e.target.value)}
+                disabled={bulkBusy}
+                className="rounded border px-2 py-1.5 text-sm"
+                aria-label="Move to category"
+              >
+                <option value="">Move to category…</option>
+                {suggestedCategories.length > 0 && (
+                  <optgroup label="Suggested for your sector">
+                    {suggestedCategories.map((c) => (
+                      <option key={`bs-${c}`} value={c}>{c}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {customCategories.length > 0 && (
+                  <optgroup label="Your custom categories">
+                    {customCategories.map((c) => (
+                      <option key={`bc-${c}`} value={c}>{c}</option>
+                    ))}
+                  </optgroup>
+                )}
+                <option value={NEW_CATEGORY_SENTINEL}>+ New category…</option>
+              </select>
+              {bulkCategory === NEW_CATEGORY_SENTINEL && (
+                <Input
+                  value={bulkNewCategory}
+                  onChange={(e) => setBulkNewCategory(e.target.value)}
+                  placeholder="New category name"
+                  disabled={bulkBusy}
+                  className="h-9 w-48"
+                />
+              )}
+              <Button size="sm" onClick={applyBulkCategory} disabled={bulkBusy}>
+                {bulkBusy ? "Moving…" : "Apply"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setSelectedIds(new Set())}
+                disabled={bulkBusy}
+              >
+                Clear
+              </Button>
+            </div>
+          )}
           {categories.map((cat) => (
             <Card key={cat}>
               <CardHeader className="pb-2">
@@ -859,6 +983,27 @@ export default function Catalog() {
               <CardContent className="p-0" style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
                 {/* Column headers */}
                 <div style={{ display: "flex", alignItems: "center", padding: "8px 16px", borderBottom: "1px solid #e8ecf1", background: "#f8fafc", minWidth: 800 }}>
+                  {/* Delivery 2.6b — select every item in this category. */}
+                  <div style={{ width: 28, flex: "0 0 28px" }}>
+                    <input
+                      type="checkbox"
+                      aria-label={`Select all in ${cat}`}
+                      checked={
+                        groupedItems![cat].length > 0 &&
+                        groupedItems![cat].every((i: CatalogItemData) => selectedIds.has(i.id))
+                      }
+                      onChange={(e) => {
+                        const ids = groupedItems![cat].map((i: CatalogItemData) => i.id);
+                        setSelectedIds((prev) => {
+                          const next = new Set(prev);
+                          e.target.checked
+                            ? ids.forEach((id: number) => next.add(id))
+                            : ids.forEach((id: number) => next.delete(id));
+                          return next;
+                        });
+                      }}
+                    />
+                  </div>
                   {columns.map((col) => (
                     <div key={col.label} style={{ flex: col.flex, minWidth: col.mw, fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase" as const, letterSpacing: 0.5, padding: "0 6px" }}>
                       {col.label}
@@ -868,7 +1013,15 @@ export default function Catalog() {
                 {/* Rows */}
                 <div style={{ minWidth: 800 }}>
                   {groupedItems![cat].map((item: CatalogItemData, index: number) => (
-                    <div key={item.id} style={{ display: "flex", alignItems: "center", padding: "6px 16px", borderBottom: "1px solid #f1f5f9", background: index % 2 === 1 ? "#fafbfc" : "white" }}>
+                    <div key={item.id} style={{ display: "flex", alignItems: "center", padding: "6px 16px", borderBottom: "1px solid #f1f5f9", background: selectedIds.has(item.id) ? "#ecfdf5" : index % 2 === 1 ? "#fafbfc" : "white" }}>
+                      <div style={{ width: 28, flex: "0 0 28px" }}>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${item.name}`}
+                          checked={selectedIds.has(item.id)}
+                          onChange={() => toggleSelected(item.id)}
+                        />
+                      </div>
                       <div style={{ flex: 2.5, minWidth: 160, padding: "0 2px" }}>
                         <EditableCell value={item.name} field="name" itemId={item.id} placeholder="Item name" onSave={handleInlineSave} minWidth={140} />
                       </div>

@@ -264,6 +264,10 @@ export type InsertUser = typeof users.$inferInsert;
  * Now owned by organization, with created_by tracking
  * IMPORTANT: Column names use snake_case to match PostgreSQL
  */
+// Delivery 2.6b — type shared with shared/schema.ts (dual-schema rule).
+export type { GeneratedDocument, GeneratedDocuments } from "../shared/schema";
+import type { GeneratedDocuments } from "../shared/schema";
+
 export const quotes = pgTable("quotes", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   orgId: bigint("org_id", { mode: "number" }),
@@ -297,6 +301,9 @@ export const quotes = pgTable("quotes", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   sentAt: timestamp("sent_at"),
   acceptedAt: timestamp("accepted_at"),
+  // Delivery 2.6b — latest generated proposal / contract PDF per quote.
+  // See GeneratedDocuments above. NULL = nothing generated yet.
+  generatedDocuments: json("generated_documents").$type<GeneratedDocuments>(),
   // Comprehensive quote fields
   quoteMode: quoteModeEnum("quote_mode").default("simple").notNull(),
   tradePreset: varchar("trade_preset", { length: 50 }),

@@ -54,6 +54,7 @@ import {
   Save,
   X,
   FileSignature,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -205,6 +206,14 @@ export default function BrandedProposalWorkspace() {
   const regenerateChapter =
     trpc.brandedProposal.regenerateChapter.useMutation();
   const renderPdf = trpc.brandedProposal.renderPdf.useMutation();
+  // Delivery 2.6b — the Documents panel. Previously a rendered PDF only
+  // existed in browser memory, so pressing Back lost it and the user had
+  // to re-render (re-spending AI credits) just to look at it again.
+  const documents = trpc.brandedProposal.listDocuments.useQuery(
+    { quoteId },
+    { enabled: Number.isFinite(quoteId) },
+  );
+  const getDocumentUrl = trpc.brandedProposal.getDocumentUrl.useMutation();
   // Contract-button delivery — the same document rendered as a
   // contract. Deliberately a separate endpoint rather than a flag on
   // renderPdf, so an accidental click can never turn a proposal
@@ -437,6 +446,8 @@ export default function BrandedProposalWorkspace() {
         filename: string;
       };
       downloadBase64Pdf(base64, filename);
+      // The server stored this render; refresh the panel so it shows.
+      documents.refetch();
       toast.success("Proposal downloaded");
     } catch (err: any) {
       toast.error(err?.message || "Render failed");
@@ -499,6 +510,7 @@ export default function BrandedProposalWorkspace() {
         filename: string;
       };
       downloadBase64Pdf(base64, filename);
+      documents.refetch();
       toast.success("Contract downloaded");
       setContractOpen(false);
     } catch (err: any) {
@@ -742,6 +754,82 @@ export default function BrandedProposalWorkspace() {
           </Button>
         </div>
       </div>
+
+      {/* Delivery 2.6b — Documents: the latest proposal and contract are
+          kept against the quote, so leaving the page and coming back
+          doesn't mean paying to render again. "Quote edited since" is
+          derived server-side from the quote's and line items' updated
+          timestamps; nothing ever re-renders on its own. */}
+      {(documents.data?.documents?.length ?? 0) > 0 && (
+        <div className="mt-6 rounded-xl border bg-white p-4">
+          <p className="text-sm font-semibold mb-3">Documents</p>
+          <div className="space-y-2">
+            {documents.data!.documents.map((doc: any) => (
+              <div
+                key={doc.kind}
+                className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border px-3 py-2"
+              >
+                <FileText className="w-4 h-4 shrink-0 text-muted-foreground" />
+                <span className="text-sm font-medium">
+                  {doc.kind === "contract"
+                    ? `Contract${doc.tier ? ` — ${contractDocLabel({ tier: doc.tier })}` : ""}`
+                    : "Branded proposal"}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {new Date(doc.generatedAt).toLocaleString("en-GB", {
+                    day: "numeric",
+                    month: "short",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+                {doc.stale && (
+                  <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-amber-700 bg-amber-50">
+                    <AlertTriangle className="w-3 h-3" />
+                    Quote edited since
+                  </span>
+                )}
+                <div className="ml-auto flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={getDocumentUrl.isPending}
+                    onClick={async () => {
+                      try {
+                        const { url } = await getDocumentUrl.mutateAsync({
+                          quoteId,
+                          kind: doc.kind,
+                        });
+                        window.open(url, "_blank", "noopener");
+                      } catch (e: any) {
+                        toast.error(e?.message || "Could not open that document");
+                      }
+                    }}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
+                    View
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={doc.stale ? "default" : "outline"}
+                    disabled={isRendering || isRenderingContract}
+                    onClick={
+                      doc.kind === "contract" ? handleOpenContract : handleRenderPdf
+                    }
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                    Regenerate
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Only the most recent of each is kept. The Word export always
+            reflects the current quote, so it isn&rsquo;t stored here.
+          </p>
+        </div>
+      )}
 
       {/* Contract dialog — contract-button delivery.
           Two questions only: which package, and when does it start.

@@ -31,7 +31,8 @@ import { z } from "zod";
 // Contract-button delivery — turning a proposal into a contract reuses
 // the same assembler with contract mode on. See renderContract below.
 import { and, eq } from "drizzle-orm";
-import { contractDocuments } from "../../shared/schema";
+import { contractDocuments, quotes, quoteLineItems } from "../../shared/schema";
+import type { GeneratedDocument, GeneratedDocuments } from "../../shared/schema";
 import { getDb } from "../db";
 import { applyContractWording } from "./contractDocumentSeeds";
 import { parseQuoteVatRate, isVatCharged, formatVatRate } from "./vatRate";
@@ -45,7 +46,13 @@ import {
   getLineItemsByQuoteId,
   logUsage,
 } from "../db";
-import { getFileBuffer } from "../r2Storage";
+import {
+  getFileBuffer,
+  uploadToR2,
+  getPresignedUrl,
+  deleteFromR2,
+  isR2Configured,
+} from "../r2Storage";
 import {
   generateBrandedProposalDraft,
   regenerateSingleChapter,
@@ -274,6 +281,90 @@ async function fetchAndNormaliseLogo(
 }
 
 // ─── Router ──────────────────────────────────────────────────────────
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Delivery 2.6b — stored documents.
+ *
+ * PROBLEM THIS SOLVES: a rendered PDF only ever existed in the
+ * browser's memory. Pressing Back discarded it, so the user had to
+ * re-render — re-spending AI credits — just to look at what they had
+ * already made. The latest proposal and contract are now stored in R2
+ * against the quote.
+ *
+ * LATEST ONLY: a new render of the same kind replaces the previous one
+ * and deletes its file, so storage does not grow per quote.
+ *
+ * STALENESS is derived, never stored: a document is stale when the
+ * quote or any of its line items was updated after generatedAt. That
+ * way an edit made anywhere — workspace, catalogue apply, discount
+ * change — is reflected without every edit path having to remember to
+ * flag it.
+ * ───────────────────────────────────────────────────────────────── */
+
+type DocumentKind = "brandedProposal" | "contract";
+
+/**
+ * Store a freshly rendered PDF as the latest document of its kind.
+ * Best-effort: if R2 is not configured or the upload fails, the render
+ * still succeeds and the user still gets their download — they just
+ * don't get the stored copy. Never throw from here.
+ */
+async function storeGeneratedDocument(
+  orgId: number,
+  quoteId: number,
+  kind: DocumentKind,
+  pdfBytes: Uint8Array,
+  filename: string,
+  tier?: string,
+): Promise<void> {
+  try {
+    if (!isR2Configured()) return;
+    const db = await getDb();
+    if (!db) return;
+
+    const [row] = await db
+      .select({ generatedDocuments: quotes.generatedDocuments })
+      .from(quotes)
+      .where(eq(quotes.id, quoteId))
+      .limit(1);
+    const existing: GeneratedDocuments = (row?.generatedDocuments as any) ?? {};
+
+    // uploadToR2 generates its own unique key; the folder keeps each
+    // org's quote documents together.
+    const { key } = await uploadToR2(
+      Buffer.from(pdfBytes),
+      filename,
+      "application/pdf",
+      `orgs/${orgId}/quotes/${quoteId}`,
+    );
+
+    const previous = existing[kind];
+    const entry: GeneratedDocument = {
+      key,
+      filename,
+      generatedAt: new Date().toISOString(),
+      sizeBytes: pdfBytes.byteLength,
+      ...(tier ? { tier } : {}),
+    };
+
+    // Write the new entry before deleting the old file, so a failure
+    // here can never leave the quote pointing at a deleted object.
+    await db
+      .update(quotes)
+      .set({ generatedDocuments: { ...existing, [kind]: entry } })
+      .where(eq(quotes.id, quoteId));
+
+    if (previous?.key && previous.key !== key) {
+      try {
+        await deleteFromR2(previous.key);
+      } catch {
+        // Orphaned object only — the quote already points at the new one.
+      }
+    }
+  } catch (err) {
+    console.error("[storeGeneratedDocument] non-fatal:", err);
+  }
+}
 
 export const brandedProposalRouter = router({
   /**
@@ -547,12 +638,23 @@ export const brandedProposalRouter = router({
         },
       });
 
+      // Delivery 2.6b — keep this render so the user can reopen it
+      // without paying to regenerate.
+      await storeGeneratedDocument(
+        org.id,
+        input.quoteId,
+        "brandedProposal",
+        pdfBytes,
+        filename,
+      );
+
       return {
         base64,
         filename,
         sizeBytes: pdfBytes.byteLength,
       };
     }),
+
 
   /**
    * Contract-button delivery — render the SAME document as a contract.
@@ -786,10 +888,89 @@ export const brandedProposalRouter = router({
         },
       });
 
+      // Delivery 2.6b — keep this render (see storeGeneratedDocument).
+      await storeGeneratedDocument(
+        org.id,
+        input.quoteId,
+        "contract",
+        pdfBytes,
+        filename,
+        input.tier,
+      );
+
       return {
         base64: Buffer.from(pdfBytes).toString("base64"),
         filename,
         sizeBytes: pdfBytes.byteLength,
       };
+    }),
+
+  /**
+   * Delivery 2.6b — what has been generated for this quote, and whether
+   * the quote has changed since. Drives the Documents panel.
+   */
+  listDocuments: protectedProcedure
+    .input(z.object({ quoteId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const { quote } = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+
+      const db = await getDb();
+      if (!db) return { documents: [] as any[] };
+
+      // The quote counts as edited when the quote row or ANY of its line
+      // items changed after the document was generated.
+      const lines = await db
+        .select({ updatedAt: quoteLineItems.updatedAt })
+        .from(quoteLineItems)
+        .where(eq(quoteLineItems.quoteId, input.quoteId));
+      const lastEdited = [
+        (quote as any).updatedAt as Date | null,
+        ...lines.map((l: { updatedAt: Date | null }) => l.updatedAt),
+      ]
+        .filter(Boolean)
+        .reduce<number>((max, d) => Math.max(max, new Date(d as Date).getTime()), 0);
+
+      const stored: GeneratedDocuments =
+        ((quote as any).generatedDocuments as any) ?? {};
+
+      const documents = (["brandedProposal", "contract"] as DocumentKind[])
+        .map((kind) => {
+          const doc = stored[kind];
+          if (!doc) return null;
+          return {
+            kind,
+            filename: doc.filename,
+            generatedAt: doc.generatedAt,
+            sizeBytes: doc.sizeBytes,
+            tier: doc.tier ?? null,
+            stale: lastEdited > new Date(doc.generatedAt).getTime(),
+          };
+        })
+        .filter(Boolean);
+
+      return { documents };
+    }),
+
+  /**
+   * Delivery 2.6b — a short-lived link to a stored document. Generated
+   * on demand rather than stored, so the link can't leak from the
+   * database and can't outlive its expiry.
+   */
+  getDocumentUrl: protectedProcedure
+    .input(
+      z.object({
+        quoteId: z.number(),
+        kind: z.enum(["brandedProposal", "contract"]),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { quote } = await getQuoteWithOrgAccess(input.quoteId, ctx.user.id);
+      const stored: GeneratedDocuments =
+        ((quote as any).generatedDocuments as any) ?? {};
+      const doc = stored[input.kind as DocumentKind];
+      if (!doc) {
+        throw new Error("That document hasn't been generated yet.");
+      }
+      return { url: await getPresignedUrl(doc.key), filename: doc.filename };
     }),
 });
