@@ -4776,6 +4776,20 @@ CRITICAL: Look at the "Pricing:" field shown next to each catalog item above. If
                   evidenceCategory: m.evidenceCategory ?? null,
                   substitutable: m.substitutable ?? null,
                   estimated: m.estimated === true,
+                  // Delivery 2.7 (LOCK BROKEN with owner permission,
+                  // 14 Sep 2026, scoped to this procedure). The engine can
+                  // now express a negotiated discount instead of baking it
+                  // into the rate, and can flag where a stated price beat
+                  // the catalogue. Both are threaded to line-item creation
+                  // below; neither changes how rate or total are computed.
+                  discountPercent:
+                    m.discountPercent != null && Number.isFinite(Number(m.discountPercent))
+                      ? Number(m.discountPercent)
+                      : null,
+                  catalogPriceDiffers:
+                    m.catalogPriceDiffers != null && Number.isFinite(Number(m.catalogPriceDiffers))
+                      ? Number(m.catalogPriceDiffers)
+                      : null,
                 } as any);
               }
             }
@@ -5414,6 +5428,13 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
           // null. Lines that don't match any catalog still write
           // null, surfacing as a dash in the workspace exactly as
           // before — no false data invented.
+          // Delivery 2.7 — notes the user should see before sending, built
+          // as the lines are created. Today: every line where a price
+          // stated in the evidence differed from the catalogue rate. The
+          // stated price is used (see PRICE PRECEDENCE in generalEngine.ts)
+          // and the difference is recorded here rather than lost.
+          const priceNotes: string[] = [];
+
           const catalogByName = new Map<string, typeof catalogItems[number]>();
           for (const c of catalogItems || []) {
             const key = (c.name || "").toLowerCase().trim();
@@ -5424,7 +5445,29 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
             const item = itemsToCreate[i];
             const quantity = parseFloat(String(item.quantity)) || 1;
             const rate = parseFloat(String(item.rate)) || 0;
-            const total = quantity * rate;
+            // Delivery 2.7 — negotiated discount, mirroring the manual
+            // line-item endpoint exactly (clamped 0–100; total carries the
+            // reduction so the Total column always sums to the printed
+            // figure; stored null rather than "0" so "never discounted"
+            // and "discounted by zero" stay distinguishable).
+            const rawDiscount = Number((item as any).discountPercent);
+            const discountPct =
+              Number.isFinite(rawDiscount) && rawDiscount > 0
+                ? Math.min(100, rawDiscount)
+                : 0;
+            const total = quantity * rate * (1 - discountPct / 100);
+
+            // Delivery 2.7 — record a stated-price / catalogue difference.
+            const catRate = Number((item as any).catalogPriceDiffers);
+            if (Number.isFinite(catRate) && catRate > 0 && Math.abs(catRate - rate) >= 0.01) {
+              const label =
+                (item as any).itemName ||
+                String(item.description || "").split(" — ")[0] ||
+                "Line";
+              priceNotes.push(
+                `${label}: used the stated £${rate.toFixed(2)}; catalogue holds £${catRate.toFixed(2)} — confirm which is right.`,
+              );
+            }
 
             // ── Chunk 2b-ii: provenance + pricing-vocabulary mapping ───────
             // The engines and AI-draft path both still emit the legacy
@@ -5491,6 +5534,10 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
               // chips / hover pills find real data on every row regardless
               // of how the row was produced (engine QDS, engine labour /
               // plantHire, or AI-draft comprehensive).
+              // Delivery 2.7 — the concession is recorded, not baked into
+              // the rate, so the Discount column prints it and the client
+              // never sees the arithmetic in the description.
+              discountPercent: discountPct > 0 ? discountPct.toFixed(2) : null,
               itemName,
               isPassthrough: (item as any).passthrough === true,
               evidenceCategory: (item as any).evidenceCategory ?? null,
@@ -5546,11 +5593,32 @@ ${boqContext}${companyDefaultsContext}${catalogContext}${takeoffDedupContext}${p
             });
           }
 
-          // Update internal estimate with risk notes
-          if (draft.riskNotes) {
-            await upsertInternalEstimate(input.quoteId, {
-              riskNotes: draft.riskNotes,
-            });
+          // Update internal estimate with risk notes.
+          //
+          // Delivery 2.7 — also save the draft's own notes and the
+          // stated-price differences collected above. Before this the
+          // engine's "notes" field was discarded, so the AI had nowhere to
+          // put anything meant for the quoter and wrote it into the
+          // client-facing descriptions instead. Never printed on any
+          // document; surfaced in the workspace's "Notes from the draft"
+          // panel. Failure here must never fail the draft — the quote and
+          // its lines are already saved by this point.
+          const draftNotes = [
+            ...(typeof draft.notes === "string" && draft.notes.trim()
+              ? [draft.notes.trim()]
+              : []),
+            ...priceNotes,
+          ].join("\n");
+
+          if (draft.riskNotes || draftNotes) {
+            try {
+              await upsertInternalEstimate(input.quoteId, {
+                ...(draft.riskNotes ? { riskNotes: draft.riskNotes } : {}),
+                ...(draftNotes ? { notes: draftNotes } : {}),
+              });
+            } catch (e) {
+              console.error("[generateDraft] internal estimate save failed (non-fatal):", e);
+            }
           }
 
           // Apply org VAT default if the quote currently has no VAT set

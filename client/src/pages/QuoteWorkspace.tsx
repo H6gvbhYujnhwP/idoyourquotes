@@ -241,6 +241,61 @@ function detectInputType(
 
 // ─── Main component ───────────────────────────────────────────────────────
 
+/**
+ * Delivery 2.7 — "Notes from the draft" (internal only).
+ *
+ * Collapsed by default so it never competes with the line table; the
+ * count is visible at a glance. Renders nothing at all when the draft
+ * produced no notes, so quotes written by hand are unaffected.
+ */
+function DraftNotesPanel({
+  notes,
+  riskNotes,
+}: {
+  notes: string | null;
+  riskNotes: string | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const lines = [
+    ...String(notes ?? "").split("\n"),
+    ...String(riskNotes ?? "").split("\n"),
+  ]
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) return null;
+
+  return (
+    <div className="mb-3 rounded-lg border" style={{ background: "#fffbeb", borderColor: "#fde68a" }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left"
+      >
+        <Info className="h-4 w-4 shrink-0" style={{ color: "#b45309" }} />
+        <span className="text-sm font-semibold" style={{ color: "#92400e" }}>
+          Notes from the draft ({lines.length})
+        </span>
+        <span className="text-xs" style={{ color: "#b45309" }}>
+          Internal — never shown to the client
+        </span>
+        <span className="ml-auto text-xs" style={{ color: "#b45309" }}>
+          {open ? "Hide" : "Show"}
+        </span>
+      </button>
+      {open && (
+        <ul className="space-y-1 px-3 pb-3 pl-9">
+          {lines.map((line, i) => (
+            <li key={i} className="text-sm" style={{ color: "#78350f" }}>
+              {line}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export default function QuoteWorkspace() {
   const params = useParams<{ id: string }>();
   const quoteId = parseInt(params.id || "0", 10);
@@ -1496,6 +1551,18 @@ export default function QuoteWorkspace() {
               generationCount={generationCount}
             />
           ) : (
+            <>
+            {/* Delivery 2.7 (LOCK BROKEN with owner permission, 14 Sep
+                2026 — scoped to this panel only; no existing line in this
+                file is changed). "Notes from the draft": what the AI
+                wants the QUOTER to know — stated prices that differ from
+                the catalogue, assumed quantities, anything to confirm
+                before sending. Previously the engine emitted these and
+                the server discarded them, so the AI wrote them into
+                client-facing descriptions instead (Q-205 told the client
+                the catalogue rate was higher than the quote). Internal
+                only: never printed on any PDF, proposal, contract or
+                Word export. */}
             <EditorPanel
               lineItems={lineItems}
               catalogItems={catalogItems}
@@ -1546,6 +1613,7 @@ export default function QuoteWorkspace() {
               }}
               onRequestAddToCatalogue={handleRequestAddToCatalogue}
             />
+            </>
           )}
         </div>
       </div>

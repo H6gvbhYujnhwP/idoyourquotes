@@ -332,7 +332,14 @@ FIELD EMISSION — every material row from this addendum MUST carry evidenceCate
 - Client-specific row (firewall, specific hardware SKU, telephony, productivity suite, named model) → passthrough: false, evidenceCategory: <category>, substitutable: false
 - Passthrough row (substitutable category, no catalog semantic match) → passthrough: true, evidenceCategory: <category>, substitutable: true
 
-ANTI-FABRICATION RULE — NON-NEGOTIABLE:
+PRICE PRECEDENCE — READ BEFORE THE ANTI-FABRICATION RULE (delivery 2.7):
+When the evidence STATES a price for a line (an agreed order, a signed contract, a renewal the user has confirmed — i.e. the user's OWN pricing, not a competitor's invoice or a tender document), that stated price WINS over the catalog defaultRate. Emit the stated price as unitPrice, and set "catalogPriceDiffers" to the catalog's defaultRate so the difference can be flagged to the user. The same applies to "unit": if the evidence states a unit ("per device", "per server", "per line"), use the evidence's unit.
+This does NOT license inventing prices. It applies ONLY where the evidence itself contains the figure. Where the evidence states no price, the catalog defaultRate governs exactly as below.
+Competitor pricing is different: on a takeover or tender, prices in the document belong to someone else — the catalog governs, and the anti-fabrication rule below applies in full.
+
+DISCOUNTS (delivery 2.7): when the evidence states a discount ("11% discount", "less 10%"), emit unitPrice as the FULL undiscounted rate and put the percentage in "discountPercent" (a number, e.g. 11). NEVER pre-multiply the discount into unitPrice, and NEVER write the discount, the list price or the arithmetic into the description — the quote has a Discount column that does this properly, and the client should not be shown the sum.
+
+ANTI-FABRICATION RULE — NON-NEGOTIABLE (subject to PRICE PRECEDENCE above):
 If you use a catalog item's "name" on a material row, you MUST also use that item's EXACT "unit" and EXACT "defaultRate" from the catalog. You may NOT change a catalog item's unit or price to fit evidence that doesn't match. If the evidence doesn't fit any catalog item's unit / pricing model, apply the PASSTHROUGH FALLBACK instead of reusing a near-miss catalog SKU at an invented price or invented unit. The moment you find yourself typing a unitPrice that is not the evidence price, not a catalog defaultRate, and not one of the UK MSP anchor rates above — stop. That is fabrication. Use passthrough (with unitPrice 0 if no price is known) and let the user set the price in the QDS.
 
 THE "REPLACES EXISTING" PREFIX RULE — STRICT:
@@ -928,7 +935,7 @@ ${itInvoiceAddendum}${websiteMarketingAddendum}${commercialCleaningAddendum}${pe
   "markup": number | null,
   "sundries": number | null,
   "contingency": string | null,
-  "notes": string | null,   // internal notes for the quoting business only — never shown to the client
+  "notes": string | null,   // internal notes for the quoting business only — never shown to the client. One short line per point, each starting with the item name. ALWAYS record here: any line where you used a stated price that differs from the catalog rate (e.g. "Copilot licence: used stated £26.52; catalogue holds £19.32"), any assumed quantity or user count, and anything the user should confirm before sending.
   "isTradeRelevant": boolean
 }
 
@@ -939,6 +946,8 @@ FIELD GUIDELINES:
 - jobDescription: 2-3 detailed sentences covering the FULL scope. Include specifics — server types, cable lengths, page counts, service descriptions. Write from the perspective of the quoting business describing the work they'll do.
 - labour: Team composition summary — one entry per distinct role/mode combination. ALWAYS include the delivery mode in the role name so entries are unambiguous: "Network Engineer — Onsite", "Network Engineer — Workshop", "IT Consultant — Remote", "Engineer — Commissioning". Never write just "Network Engineer" if that person appears in multiple modes. Only include labour entries when there is genuinely separate hands-on labour not covered by catalog service items. CRITICAL: if the labour role already exists as a materials line item (e.g. "IT Labour Workshop" is a priced line), do NOT also add it to labour[]. Check every labour entry against the materials list before including it — if it's already there as a line item, omit it from labour[].
 - materials: Every billable line item with catalog-matched prices where possible. Use the EXACT "item" name from the catalog. Use the EXACT "unit" from the catalog (Per Hour, Per Month, Per 5,000, Session, etc.).
+  For "discountPercent" — include ONLY when the evidence states a discount for that line. A number, e.g. 11. Omit it entirely otherwise. unitPrice must stay the full pre-discount rate.
+  For "catalogPriceDiffers" — include ONLY when you used a price from the evidence that differs from the catalog defaultRate for the item you named. Set it to the catalog's rate. Omit it otherwise.
   For "description" — choose the right format based on item type. The FIRST line is a summary sentence; each further point goes on its OWN line (use a line break, written as \n inside the JSON string). Every line after the first prints as a bullet point on the proposal, contract, Word export and the client's invoices. NEVER use "||", "##", "•", "-" or any other separator or bullet character — line breaks only.
   - SIMPLE items (single hardware unit, straightforward supply): one clear plain sentence. E.g. "24-port managed PoE switch for main communications cabinet."
   - STANDARD items covering multiple deliverables or tasks (a labour day with several activities, a setup service with multiple components): summary line, then each element on its own line. E.g. "1.5 days onsite installation\nVigor Router setup on Gigaclear line\nWiFi access point deployment across 9 locations\nVLAN testing and commissioning". Only break it down when a breakdown genuinely helps the client understand what they're getting.

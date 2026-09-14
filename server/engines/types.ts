@@ -104,6 +104,29 @@ export interface EngineOutputMaterial {
   estimated: boolean;
 
   /**
+   * Delivery 2.7 — negotiated discount on this line, as a percentage of
+   * unitPrice (e.g. 11 for "11% off"). Present only when the evidence
+   * states a discount.
+   *
+   * WHY: before this, the engine had no way to express a discount, so it
+   * baked it into unitPrice — £20.00 less 11% was emitted as £17.80 with
+   * the arithmetic spelled out in the description. The line total was
+   * right but the concession was invisible in the Discount column, and
+   * the client saw the list price and the sum. unitPrice is now always
+   * the FULL rate and this carries the reduction.
+   */
+  discountPercent?: number;
+
+  /**
+   * Delivery 2.7 — set when the evidence stated a price for this line
+   * that differs from the catalogue's rate for the item used. The stated
+   * price wins (see the PRICE PRECEDENCE rule in generalEngine.ts); this
+   * records what the catalogue held so the difference can be surfaced in
+   * the draft notes rather than silently lost.
+   */
+  catalogPriceDiffers?: number;
+
+  /**
    * When true, this row is a PASSTHROUGH from source evidence — the engine
    * could not semantically map the evidenced item to any catalog item in a
    * substitutable commodity category, and is echoing the source item name,
