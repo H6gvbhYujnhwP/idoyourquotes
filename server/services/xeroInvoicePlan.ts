@@ -125,6 +125,28 @@ export function normaliseCadence(pricingType?: string | null): Cadence {
 }
 
 /**
+ * Remove a leading repeat of the item name from a description, with any
+ * dash, colon or bullet that separated it. Case-insensitive, because
+ * catalogue entries are not consistent about it. Returns "" when the
+ * description was nothing but the name.
+ */
+function stripLeadingName(body: string, name: string): string {
+  const trimmedBody = body.trim();
+  const trimmedName = name.trim();
+  if (!trimmedBody || !trimmedName) return trimmedBody;
+  if (trimmedBody.toLowerCase() === trimmedName.toLowerCase()) return "";
+  if (!trimmedBody.toLowerCase().startsWith(trimmedName.toLowerCase())) {
+    return trimmedBody;
+  }
+  const rest = trimmedBody.slice(trimmedName.length);
+  // Only treat it as a repeat when a separator follows; otherwise
+  // "Backup" would wrongly swallow the start of "Backup Device Pro".
+  const sep = /^\s*[-–—:·|]+\s*/.exec(rest);
+  if (!sep) return trimmedBody;
+  return rest.slice(sep[0].length).trim();
+}
+
+/**
  * The text a client reads on the invoice, every month, for years.
  *
  * Item name first, then Xero's month placeholder on monthly lines when
@@ -145,7 +167,14 @@ export function buildLineDescription(
     if (cadence === "monthly" && monthYearSuffix) {
       parts.push(MONTH_YEAR_PLACEHOLDER);
     }
-    if (body && body !== name) parts.push("", body);
+    // The stored description usually REPEATS the item name before its
+    // detail ("Silver IT Support — Unlimited Remote — Silver IT Support
+    // for 22 workstations..."). Printing both put the name twice on
+    // every invoice line. An exact-match check missed it because the
+    // description is the name plus more, so strip a leading copy of the
+    // name along with whatever separator follows it.
+    const deduped = stripLeadingName(body, name);
+    if (deduped) parts.push("", deduped);
   } else {
     // No item name — the description's first line is doing that job.
     if (cadence === "monthly" && monthYearSuffix) {
@@ -161,6 +190,55 @@ export function buildLineDescription(
 }
 
 /**
+ * Parse the start date a user actually types.
+ *
+ * The contract dialog tells them it is "printed exactly as you type it",
+ * so people write "1st October 2026" — and JavaScript's Date rejects the
+ * ordinal suffix outright. Delivery 2.12 shipped with that gap and the
+ * very first real push was blocked by it.
+ *
+ * Handled: ordinals (1st/2nd/3rd/4th), "1 October 2026", "October 1
+ * 2026", ISO "2026-10-01", and UK numeric "01/10/2026" — which is read
+ * DAY FIRST, because a UK user typing 01/10/2026 means October, and
+ * JavaScript would read it as January.
+ */
+function parseHumanDate(raw: string): Date | null {
+  const cleaned = raw
+    .trim()
+    .replace(/(\d+)(st|nd|rd|th)\b/gi, "$1")
+    .replace(/\s+/g, " ");
+
+  // UK numeric, day first. Checked before Date() gets its hands on it.
+  const numeric = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/.exec(cleaned);
+  if (numeric) {
+    const day = parseInt(numeric[1], 10);
+    const month = parseInt(numeric[2], 10);
+    let year = parseInt(numeric[3], 10);
+    if (year < 100) year += 2000;
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const d = new Date(year, month - 1, day);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    return null;
+  }
+
+  // ISO yyyy-mm-dd, parsed as local rather than UTC so a timezone west
+  // of London cannot roll it back a day.
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(cleaned);
+  if (iso) {
+    const d = new Date(
+      parseInt(iso[1], 10),
+      parseInt(iso[2], 10) - 1,
+      parseInt(iso[3], 10),
+    );
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  const d = new Date(cleaned);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/**
  * The first of the month on or after the commencement date.
  *
  * Clause 12 of the contract says invoices are issued on the 1st, so a
@@ -172,8 +250,8 @@ export function buildLineDescription(
 export function resolveStartDate(commencementDate?: string | null): string | null {
   const raw = (commencementDate ?? "").trim();
   if (!raw) return null;
-  const parsed = new Date(raw);
-  if (isNaN(parsed.getTime())) return null;
+  const parsed = parseHumanDate(raw);
+  if (!parsed) return null;
   const y = parsed.getFullYear();
   const m = parsed.getMonth();
   const d = parsed.getDate();
