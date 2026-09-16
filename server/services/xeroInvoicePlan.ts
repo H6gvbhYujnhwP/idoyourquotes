@@ -59,6 +59,18 @@ export interface XeroLineItem {
   Quantity: number;
   UnitAmount: number;
   DiscountRate?: number;
+  /**
+   * The discounted line total, ALWAYS sent.
+   *
+   * Delivery 2.12b — omitting this looked harmless and was not. Xero
+   * fills LineAmount in itself as Quantity × UnitAmount, then validates
+   * that figure against its own discount formula and rejects the
+   * result: "The line total 440.00 does not match the expected line
+   * total 391.60". Sending it explicitly, computed the same way Xero
+   * expects, is the only reliable route.
+   *   LineAmount = Quantity × UnitAmount × (100 − DiscountRate) / 100
+   */
+  LineAmount: number;
   TaxType?: string;
   AccountCode?: string;
 }
@@ -329,6 +341,12 @@ export function buildPushPlan(
         ),
         Quantity: li.quantity,
         UnitAmount: li.rate,
+        // Rounded to pennies before sending: Xero compares this against
+        // its own calculation, and an unrounded float fails that check
+        // for the sake of a fraction of a penny.
+        LineAmount: round2(
+          li.quantity * li.rate * ((100 - (discount ?? 0)) / 100),
+        ),
       };
       if (discount !== undefined) item.DiscountRate = discount;
       if (options.taxType) item.TaxType = options.taxType;
@@ -336,17 +354,11 @@ export function buildPushPlan(
       return item;
     });
 
+    // Sum the LineAmounts we are actually sending, so the total shown on
+    // the preview is arithmetically the same figure Xero will hold —
+    // not a parallel calculation that could drift by a penny.
     const subTotal = round2(
-      rows.reduce(
-        (sum, li) =>
-          sum +
-          li.quantity *
-            li.rate *
-            (1 - (li.discountPercent && li.discountPercent > 0
-              ? Math.min(li.discountPercent, 100)
-              : 0) / 100),
-        0,
-      ),
+      lines.reduce((sum, l) => sum + l.LineAmount, 0),
     );
 
     groups.push({
@@ -372,6 +384,20 @@ export function buildPushPlan(
       code: "no-start-date",
       message:
         "Enter the start date as a real date (e.g. 1 October 2026) so the repeating invoices know when to begin.",
+    });
+  }
+
+  if (groups.length > 0 && !options.accountCode) {
+    // Delivery 2.12b — confirmed by Xero on the first real push:
+    // "Account code or ID must be specified". The documentation does not
+    // say so, and the intended behaviour was to send none and let Xero
+    // apply its own default. It will not. Caught here so the user gets
+    // an instruction rather than a validation error from an API they
+    // have never seen.
+    blockers.push({
+      code: "no-account-code",
+      message:
+        "Xero requires an account code on every line. Set a default sales account on the Xero tab in Settings (e.g. 200 Sales), then come back.",
     });
   }
 

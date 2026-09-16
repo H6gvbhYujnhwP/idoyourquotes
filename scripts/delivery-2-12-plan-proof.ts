@@ -34,7 +34,7 @@ const sorrells = [
 
 console.log("\n=== 1. Sorrells monthly total must match the signed contract ===");
 let plan = buildPushPlan(sorrells, {
-  vatRate: 20, taxType: "OUTPUT2", monthYearSuffix: true,
+  vatRate: 20, taxType: "OUTPUT2", monthYearSuffix: true, accountCode: "200",
   commencementDate: "1 October 2026", reference: "Silver IT Support & Services",
 });
 const monthly = plan.groups.find(g => g.cadence === "monthly")!;
@@ -50,7 +50,15 @@ const first = monthly.lines[0];
 ok("unit price is the LIST price 20.00", first.UnitAmount === 20);
 ok("discount sent as 11", first.DiscountRate === 11);
 ok("tax type explicit on every line", monthly.lines.every(l => l.TaxType === "OUTPUT2"));
-ok("no account code by default", monthly.lines.every(l => l.AccountCode === undefined));
+// Xero confirmed on the first real push that AccountCode is REQUIRED, so
+// the original "we send none" expectation was wrong. What matters now is
+// that the configured code reaches every line, and that none is invented
+// when the organisation has not set one.
+ok("configured account code on every line", monthly.lines.every(l => l.AccountCode === "200"));
+const noCode = buildPushPlan(sorrells, { vatRate: 20, taxType: "OUTPUT2",
+  commencementDate: "1 October 2026", reference: "R" });
+ok("no code invented when unset",
+   noCode.groups[0].lines.every(l => l.AccountCode === undefined));
 ok("undiscounted line carries no DiscountRate", monthly.lines[3].DiscountRate === undefined);
 
 console.log("\n=== 3. Month placeholder: monthly only, and only when enabled ===");
@@ -105,9 +113,9 @@ plan = buildPushPlan(sorrells, { vatRate: 20, taxType: null,
   commencementDate: "1 October 2026", reference: "R" });
 ok("no tax type + VAT registered = blocked",
    plan.blockers.some(b => b.code === "no-tax-type"));
-plan = buildPushPlan(sorrells, { vatRate: 0, taxType: null,
+plan = buildPushPlan(sorrells, { vatRate: 0, taxType: null, accountCode: "200",
   commencementDate: "1 October 2026", reference: "R" });
-ok("not VAT registered is fine", plan.blockers.length === 0);
+ok("not VAT registered is fine", plan.blockers.length === 0, plan.blockers);
 ok("and sends no tax type", plan.groups[0].lines[0].TaxType === undefined);
 
 console.log("\n=== 8. Payload shape ===");
@@ -133,13 +141,26 @@ console.log("\n=== 9. Comparison on re-push ===");
 const before = monthly.lines;
 const changed = before.map((l, i) =>
   i === 0 ? { ...l, Quantity: 25 } : l).filter((_, i) => i !== 1)
-  .concat([{ Description: "New service", Quantity: 1, UnitAmount: 99 }]);
+  .concat([{ Description: "New service", Quantity: 1, UnitAmount: 99, LineAmount: 99 }]);
 const diffs = diffLines(before, changed);
 ok("quantity change spotted", diffs.some(d => d.status === "changed" && d.after?.quantity === 25));
 ok("removed line spotted", diffs.some(d => d.status === "removed"));
 ok("added line spotted", diffs.some(d => d.status === "added" && d.description === "New service"));
 ok("untouched lines marked unchanged", diffs.filter(d => d.status === "unchanged").length === 11,
    diffs.filter(d => d.status === "unchanged").length);
+
+console.log("\n=== 10. LineAmount and account code (delivery 2.12b) ===");
+const g10 = plan.groups[0];
+ok("LineAmount sent on every line", g10.lines.every(l => typeof l.LineAmount === "number"));
+ok("matches Xero's own formula", g10.lines.every(l => {
+  const exp = Math.round(l.Quantity * l.UnitAmount * ((100 - (l.DiscountRate ?? 0)) / 100) * 100) / 100;
+  return Math.abs(l.LineAmount - exp) < 0.001;
+}));
+ok("discounted line is 391.60, the figure Xero rejected", g10.lines[0].LineAmount === 391.6, g10.lines[0].LineAmount);
+const noAcct = buildPushPlan(sorrells, { vatRate: 20, taxType: "OUTPUT2",
+  commencementDate: "1 October 2026", reference: "R" });
+ok("missing account code blocks before Xero sees it",
+   noAcct.blockers.some(b => b.code === "no-account-code"));
 
 console.log(fail === 0 ? "\nALL CHECKS PASSED" : `\n${fail} CHECK(S) FAILED`);
 process.exit(fail === 0 ? 0 : 1);
