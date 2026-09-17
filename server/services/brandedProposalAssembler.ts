@@ -33,7 +33,16 @@ import {
   type PDFFont,
   type PDFEmbeddedPage,
   type PDFImage,
+  type RGB,
 } from "pdf-lib";
+// Delivery 2.14 Chunk 4b — chapter bodies may contain tables. The
+// parser is shared with the workspace preview so the two renderers
+// cannot disagree about what a table is.
+import {
+  parseChapterBody,
+  type ChapterBlock,
+  type TableBlock,
+} from "@shared/chapterTables";
 // Contract-button delivery — the terms and signature pages live in
 // their own module. See contractPageRenderer.ts for why they are not
 // drawn by the chapter renderer.
@@ -348,7 +357,12 @@ interface DrawChapterResult {
  * body line, so the caller can flow the next chapter into the same
  * page if room remains.
  */
-function drawChapter(
+/**
+ * Delivery 2.14 Chunk 4b — exported so the delivery proof can render
+ * real pages and read back what was drawn, rather than asserting the
+ * geometry from a description of it.
+ */
+export function drawChapter(
   doc: PDFDocument,
   dim: PageDimensions,
   title: string,
@@ -383,21 +397,41 @@ function drawChapter(
   const titleInk = brandAccent ? toRgbInk(brandAccent) : fallbackTitleInk;
   const underlineInk = brandAccent ? toRgbInk(brandAccent) : fallbackUnderlineInk;
 
-  const paragraphs = body
-    .split(/\n\s*\n/)
-    .map((p) => p.replace(/\s+/g, " ").trim())
-    .filter((p) => p.length > 0);
+  // Delivery 2.14 Chunk 4b — the body is now a sequence of blocks
+  // (paragraphs and tables) rather than paragraphs alone. Parsed by the
+  // shared parser so the PDF and the workspace preview cannot disagree
+  // about what a table is. A body with no tables produces exactly the
+  // paragraphs the previous splitting produced, so every existing
+  // chapter renders byte-identically.
+  const blocks = parseChapterBody(body);
 
-  // Pre-wrap all paragraphs into individual lines + flow markers
-  const allLines: Array<{
-    text: string;
-    isParagraphStart: boolean;
-    isFirstOnChapter: boolean;
-  }> = [];
-  paragraphs.forEach((p, idx) => {
-    const wrapped = wrapText(p, fonts.regular, bodySize, layout.contentWidth);
+  // Pre-wrap all paragraphs into individual lines + flow markers.
+  // Tables are laid out as a unit later (they need their own column
+  // geometry and page-break handling), so they occupy one entry here
+  // and carry their measured height with them.
+  type ChapterLine =
+    | {
+        kind: "text";
+        text: string;
+        isParagraphStart: boolean;
+        isFirstOnChapter: boolean;
+      }
+    | { kind: "table"; table: TableLayout; isFirstOnChapter: boolean };
+
+  const allLines: ChapterLine[] = [];
+  blocks.forEach((block: ChapterBlock, idx: number) => {
+    if (block.kind === "table") {
+      allLines.push({
+        kind: "table",
+        table: layoutTable(block, fonts, bodySize, layout.contentWidth),
+        isFirstOnChapter: idx === 0,
+      });
+      return;
+    }
+    const wrapped = wrapText(block.text, fonts.regular, bodySize, layout.contentWidth);
     wrapped.forEach((line, lineIdx) => {
       allLines.push({
+        kind: "text",
         text: line,
         isParagraphStart: lineIdx === 0,
         isFirstOnChapter: idx === 0 && lineIdx === 0,
@@ -463,6 +497,27 @@ function drawChapter(
   for (let i = 0; i < allLines.length; i++) {
     const line = allLines[i];
 
+    // ── Delivery 2.14 Chunk 4b — table block ─────────────────────────
+    if (line.kind === "table") {
+      if (!line.isFirstOnChapter) y -= paragraphGap;
+      const drawn = drawTableBlock(
+        doc,
+        dim,
+        layout,
+        currentPage,
+        y,
+        line.table,
+        fonts,
+        bodySize,
+        ink,
+        underlineInk,
+      );
+      for (const p of drawn.newPages) pages.push(p);
+      currentPage = drawn.lastPage;
+      y = drawn.endY;
+      continue;
+    }
+
     // New page if we'd overflow
     if (y - lineHeight < layout.contentBottom) {
       currentPage = doc.addPage([dim.width, dim.height]);
@@ -491,6 +546,186 @@ function drawChapter(
   }
 
   return { pages, lastPage: currentPage, endY: y };
+}
+
+// ─── Chapter tables — Delivery 2.14, Chunk 4b ────────────────────────
+//
+// Generalises what drawPricingChapter has always done for line items:
+// real columns, a bold header with a rule under it, wrapped cells, and
+// a page break that repeats the header rather than orphaning rows under
+// nothing. The pricing table keeps its own bespoke implementation — its
+// columns are fixed by the quote's shape, not by the text.
+
+interface TableLayout {
+  header: string[];
+  /** Each cell pre-wrapped to its column width. */
+  rows: string[][][];
+  headerLines: string[][];
+  colWidths: number[];
+  rowHeights: number[];
+  headerHeight: number;
+}
+
+const TABLE_CELL_PADDING = 6;
+const TABLE_ROW_PADDING = 4;
+
+/**
+ * Column widths are proportional to the natural width of each column's
+ * content, then clamped so one long cell cannot starve the others.
+ * Measured with the real font, so the geometry matches what is drawn.
+ */
+function layoutTable(
+  block: TableBlock,
+  fonts: { regular: PDFFont; bold: PDFFont },
+  bodySize: number,
+  contentWidth: number,
+): TableLayout {
+  const colCount = block.header.length;
+  const gutter = TABLE_CELL_PADDING * 2;
+  const available = contentWidth - gutter * colCount;
+
+  const natural = block.header.map((h, c) => {
+    let widest = fonts.bold.widthOfTextAtSize(h, bodySize);
+    for (const row of block.rows) {
+      const w = fonts.regular.widthOfTextAtSize(row[c] ?? "", bodySize);
+      if (w > widest) widest = w;
+    }
+    return widest;
+  });
+  const naturalTotal = natural.reduce((a, b) => a + b, 0) || 1;
+
+  // Clamp: no column narrower than 15% or wider than 55% of the
+  // available width. Without the floor, a column of short labels beside
+  // a column of sentences collapses to a few characters and wraps every
+  // word onto its own line.
+  const minW = available * 0.15;
+  const maxW = available * 0.55;
+  let widths = natural.map((n) =>
+    Math.min(maxW, Math.max(minW, (n / naturalTotal) * available)),
+  );
+  const scale = available / widths.reduce((a, b) => a + b, 0);
+  widths = widths.map((w) => w * scale);
+
+  const lineHeight = bodySize * 1.35;
+  const headerLines = block.header.map((h, c) =>
+    wrapText(h, fonts.bold, bodySize, widths[c]),
+  );
+  const headerHeight =
+    Math.max(...headerLines.map((l) => l.length)) * lineHeight + TABLE_ROW_PADDING * 2;
+
+  const rows = block.rows.map((row) =>
+    row.map((cell, c) => wrapText(cell, fonts.regular, bodySize, widths[c])),
+  );
+  const rowHeights = rows.map(
+    (row) => Math.max(...row.map((l) => l.length)) * lineHeight + TABLE_ROW_PADDING * 2,
+  );
+
+  return {
+    header: block.header,
+    rows,
+    headerLines,
+    colWidths: widths,
+    rowHeights,
+    headerHeight,
+  };
+}
+
+function drawTableBlock(
+  doc: PDFDocument,
+  dim: PageDimensions,
+  layout: ReturnType<typeof computeLayout>,
+  startPage: PDFPage,
+  startY: number,
+  table: TableLayout,
+  fonts: { regular: PDFFont; bold: PDFFont },
+  bodySize: number,
+  ink: RGB,
+  ruleInk: RGB,
+): { newPages: PDFPage[]; lastPage: PDFPage; endY: number } {
+  const newPages: PDFPage[] = [];
+  let page = startPage;
+  let y = startY;
+  const lineHeight = bodySize * 1.35;
+  const rowTint = rgb(0.97, 0.97, 0.98);
+
+  const drawHeader = () => {
+    const h = table.headerHeight;
+    let x = layout.marginX;
+    table.headerLines.forEach((lines, c) => {
+      lines.forEach((ln, li) => {
+        page.drawText(ln, {
+          x: x + TABLE_CELL_PADDING,
+          y: y - TABLE_ROW_PADDING - bodySize - li * lineHeight,
+          size: bodySize,
+          font: fonts.bold,
+          color: ink,
+        });
+      });
+      x += table.colWidths[c] + TABLE_CELL_PADDING * 2;
+    });
+    y -= h;
+    page.drawLine({
+      start: { x: layout.marginX, y },
+      end: { x: layout.marginX + layout.contentWidth, y },
+      thickness: 0.75,
+      color: ruleInk,
+    });
+  };
+
+  const newPage = () => {
+    page = doc.addPage([dim.width, dim.height]);
+    newPages.push(page);
+    y = layout.contentTop;
+  };
+
+  // The header must never be the last thing on a page — a header with
+  // no rows under it reads as a mistake. Require room for it plus the
+  // first row before committing to this page.
+  if (y - table.headerHeight - (table.rowHeights[0] ?? 0) < layout.contentBottom) {
+    newPage();
+  }
+  drawHeader();
+
+  table.rows.forEach((row, r) => {
+    const h = table.rowHeights[r];
+    if (y - h < layout.contentBottom) {
+      newPage();
+      // Repeat the header so a continued table is still readable.
+      drawHeader();
+    }
+    if (r % 2 === 1) {
+      page.drawRectangle({
+        x: layout.marginX,
+        y: y - h,
+        width: layout.contentWidth,
+        height: h,
+        color: rowTint,
+      });
+    }
+    let x = layout.marginX;
+    row.forEach((lines, c) => {
+      lines.forEach((ln, li) => {
+        page.drawText(ln, {
+          x: x + TABLE_CELL_PADDING,
+          y: y - TABLE_ROW_PADDING - bodySize - li * lineHeight,
+          size: bodySize,
+          font: fonts.regular,
+          color: ink,
+        });
+      });
+      x += table.colWidths[c] + TABLE_CELL_PADDING * 2;
+    });
+    y -= h;
+  });
+
+  page.drawLine({
+    start: { x: layout.marginX, y },
+    end: { x: layout.marginX + layout.contentWidth, y },
+    thickness: 0.5,
+    color: ruleInk,
+  });
+
+  return { newPages, lastPage: page, endY: y };
 }
 
 /**

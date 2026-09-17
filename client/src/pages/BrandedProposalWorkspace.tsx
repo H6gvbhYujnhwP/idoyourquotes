@@ -69,6 +69,8 @@ import XeroPushDialog from "@/components/XeroPushDialog";
 // Replaces this file's hand-copied PRICING_SLOT_INDEX, which had
 // already drifted once (see the note further down).
 import { isPricingChapter, type ChapterRole } from "@shared/proposalChapters";
+// Delivery 2.14 Chunk 4b — same parser the PDF assembler uses.
+import { parseChapterBody } from "@shared/chapterTables";
 
 // ─── Types ───────────────────────────────────────────────────────────
 //
@@ -1658,17 +1660,82 @@ function GenerateSlotView({
           </span>
         </div>
       )}
+      {/* Delivery 2.14 Chunk 4b — a chapter may contain a table, and it
+          is shown here as one rather than as raw pipes. Editing is still
+          the raw markup (owner's decision, 17 Sep 2026) — this is the
+          read view, so what you see here is what the PDF will draw. */}
       <div
-        className="rounded-lg p-5 whitespace-pre-wrap text-sm leading-relaxed"
+        className="rounded-lg p-5 text-sm leading-relaxed"
         style={{
           backgroundColor: brand.slate,
           color: brand.navy,
           border: `1px solid ${brand.borderLight}`,
         }}
       >
-        {slot.body}
+        <ChapterBody body={slot.body} />
       </div>
     </div>
+  );
+}
+
+/**
+ * Delivery 2.14 Chunk 4b — render a chapter body's blocks.
+ *
+ * Uses the same parser as the PDF assembler, so a chapter cannot look
+ * like a table here and print as pipes in the document. A body with no
+ * table renders exactly as the previous whitespace-pre-wrap did.
+ */
+function ChapterBody({ body }: { body: string }) {
+  const blocks = useMemo(() => parseChapterBody(body || ""), [body]);
+
+  if (blocks.length === 0) {
+    return <span className="whitespace-pre-wrap">{body}</span>;
+  }
+
+  return (
+    <>
+      {blocks.map((block, i) =>
+        block.kind === "table" ? (
+          <div key={i} className="my-3 overflow-x-auto">
+            <table className="w-full border-collapse text-[13px]">
+              <thead>
+                <tr>
+                  {block.header.map((h, c) => (
+                    <th
+                      key={c}
+                      className="text-left font-semibold px-2 py-1.5 align-top"
+                      style={{ borderBottom: `1.5px solid ${brand.borderLight}` }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {block.rows.map((row, r) => (
+                  <tr
+                    key={r}
+                    style={{
+                      backgroundColor: r % 2 === 1 ? "#f8fafc" : "transparent",
+                    }}
+                  >
+                    {row.map((cell, c) => (
+                      <td key={c} className="px-2 py-1.5 align-top">
+                        {cell}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p key={i} className="mb-3 last:mb-0">
+            {block.text}
+          </p>
+        ),
+      )}
+    </>
   );
 }
 

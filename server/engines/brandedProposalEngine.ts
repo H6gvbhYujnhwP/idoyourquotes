@@ -270,6 +270,22 @@ export interface SlotDef {
   generateGuidance: string;
 }
 
+/**
+ * Delivery 2.14 Chunk 4b — the table permission, appended to the
+ * guidance of the chapters that may use one.
+ *
+ * NAMED CHAPTERS ONLY (owner's decision, 17 Sep 2026). Letting every
+ * chapter use a table produces tables where prose reads better, and
+ * gives less control over how a proposal looks. A chapter that does not
+ * carry this string is still governed by the blanket plain-text rule in
+ * both prompts.
+ *
+ * The four-column cap is stated to the model as well as enforced by the
+ * parser, so a wider table is unlikely rather than merely survivable.
+ */
+const TABLE_GUIDANCE =
+  "You MAY use a table here where it genuinely helps. Format it as a markdown pipe table: a header row, then a row of dashes, then one row per entry, e.g. 'Control area | How it is delivered' on one line, then '--- | ---' on the next. Maximum FOUR columns — a wider table cannot be drawn and will be rendered as plain lines instead. Do not use any other markup: no asterisks for emphasis, no headings.";
+
 export const SLOT_DEFS: SlotDef[] = [
   {
     // Phase 4B Delivery E.4.3 — Cover IS the brochure's own first page.
@@ -376,16 +392,13 @@ export const SLOT_DEFS: SlotDef[] = [
     preferredTags: [],
     generateTitle: "Cybersecurity & Compliance",
     generateGuidance:
-      // Delivery 2.14 Chunk 4a — WAS "Brief table-of-controls format
-      // works well here", which asked for a layout the renderer cannot
-      // draw. Chapter bodies are plain text: a markdown table prints its
-      // pipes, dashes and asterisks literally to the client. Seen live
-      // on the Sorrells proposal, 17 Sep 2026. The two-column mapping is
-      // genuinely the right way to present controls, so the content is
-      // kept and the layout is expressed as one control per line, which
-      // the renderer draws correctly. Whether chapter bodies should
-      // support real tables is a Chunk 5 question.
-      "Cover the controls the tender expects (GDPR, MFA, endpoint protection, email protection, backup verification, secure operations). Write one control per line as 'Control area — how it is delivered under this agreement', in plain sentences. Do NOT use a markdown table, pipe characters, asterisks or any other markup: the body is rendered as plain text and markup prints literally to the client.",
+      // Delivery 2.14 Chunk 4a banned tables here after a regenerated
+      // chapter printed its pipes to the client. Chunk 4b draws them
+      // instead, so the ban is lifted for this chapter specifically —
+      // a control area beside how it is delivered genuinely is a table,
+      // and it was the model's own instinct to write one.
+      "Cover the controls the tender expects (GDPR, MFA, endpoint protection, email protection, backup verification, secure operations). A two-column mapping of control area to how it is delivered under this agreement works well. " +
+      TABLE_GUIDANCE,
   },
   {
     slotIndex: 11,
@@ -415,7 +428,10 @@ export const SLOT_DEFS: SlotDef[] = [
     preferredTags: [],
     generateTitle: "Service Level Agreement",
     generateGuidance:
-      "Response times, resolution targets, escalation, reporting, review meetings. Match the tender's stated SLA expectations precisely where given. NEVER invent support hours, response times or onsite allowances: state only figures that appear in the evidence or the line items. Delivery 2.10 — the supplier's contracted working hours appear in the quote facts block; where they are given, use THOSE hours verbatim and no others, and where they are absent state no hours at all. Where any other figure is not given, describe the commitment without a number rather than guessing one.",
+      "Response times, resolution targets, escalation, reporting, review meetings. Match the tender's stated SLA expectations precisely where given. " +
+      TABLE_GUIDANCE +
+      " A priority-to-target mapping is a good use of one." +
+      " NEVER invent support hours, response times or onsite allowances: state only figures that appear in the evidence or the line items. Delivery 2.10 — the supplier's contracted working hours appear in the quote facts block; where they are given, use THOSE hours verbatim and no others, and where they are absent state no hours at all. Where any other figure is not given, describe the commitment without a number rather than guessing one.",
   },
   {
     slotIndex: 14,
@@ -943,7 +959,7 @@ Return ONLY valid JSON in this exact shape:
   ]
 }
 
-The body should be plain text with double-newlines (\\n\\n) between paragraphs. No HTML, no markdown, no headings inside body.`;
+The body should be plain text with double-newlines (\\n\\n) between paragraphs. No HTML, no markdown, no headings inside body. Delivery 2.14 Chunk 4b — the ONE exception is a markdown pipe table, and ONLY in a chapter whose own guidance explicitly permits one; those chapters say so. Everywhere else a table prints its pipes literally to the client.`;
 
   const user = `# Quote facts (the contractual scope being delivered)
 ${buildQuoteFactsBlock(params.quoteContext)}
@@ -1134,7 +1150,7 @@ When chapter content needs the CLIENT'S NAME, use the value of "Client name:" fr
 Return ONLY valid JSON:
 { "slotIndex": ${params.slotIndex}, "title": "...", "body": "..." }
 
-The body must be plain text with double-newlines (\\n\\n) between paragraphs. No HTML, no markdown, no headings inside the body, and no tables — no pipe characters, no asterisks for emphasis, no --- separator rows. Any markup you write is printed literally to the client.`;
+The body must be plain text with double-newlines (\\n\\n) between paragraphs. No HTML, no markdown, no headings inside the body, no asterisks for emphasis. Tables are allowed ONLY where this chapter's guidance above explicitly permits one; if it does not mention tables, do not write one. Any other markup you write is printed literally to the client.`;
 
   const user = `# Quote facts (the contractual scope being delivered)
 ${buildQuoteFactsBlock(params.quoteContext)}

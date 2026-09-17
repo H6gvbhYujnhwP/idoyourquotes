@@ -47,8 +47,21 @@ console.log("── Both prompts now carry a plain-text rule ──");
 // The draft prompt has always had one; the regenerate prompt had none.
 const plainTextRules = source.match(/No HTML, no markdown/g) ?? [];
 ok("prompts carrying the rule", plainTextRules.length, 2);
-ok("the regenerate prompt forbids tables", source.includes("no tables — no pipe characters"), "true");
-ok("and says why", source.includes("printed literally to the client"), "true");
+// Delivery 2.14 Chunk 4b — the rule became CONDITIONAL rather than
+// absolute: tables are drawable now, but only where a chapter's own
+// guidance permits one. Both prompts must say so, or the prompt and the
+// chapter guidance contradict each other and the model picks either.
+ok(
+  "the draft prompt scopes tables to permitting chapters",
+  source.includes("ONLY in a chapter whose own guidance explicitly permits one"),
+  "true",
+);
+ok(
+  "the regenerate prompt scopes them the same way",
+  source.includes("Tables are allowed ONLY where this chapter's guidance above explicitly permits one"),
+  "true",
+);
+ok("and both say why", source.includes("printed literally to the client"), "true");
 
 console.log("── No chapter asks for markup the renderer cannot draw ──");
 const engine = await import("../server/engines/brandedProposalEngine");
@@ -77,21 +90,37 @@ const invitesMarkup = (guidance: string) =>
     .filter((sentence) => !NEGATED.test(sentence))
     .some((sentence) => INVITES.some((re) => re.test(sentence)));
 
-const offenders = SLOT_DEFS.filter((d) => invitesMarkup(d.generateGuidance)).map(
-  (d) => d.chapterId,
-);
-ok("chapters inviting unsupported markup", offenders.join(",") || "none", "none");
+// Delivery 2.14 Chunk 4b — inviting a table is now LEGITIMATE, but only
+// for a chapter that carries the permission text, which also states the
+// four-column cap and forbids other markup. So the assertion changed
+// from "nobody invites a table" to "nobody invites one without saying
+// what is allowed".
+const PERMISSION = "You MAY use a table here";
+const offenders = SLOT_DEFS.filter(
+  (d) => invitesMarkup(d.generateGuidance) && !d.generateGuidance.includes(PERMISSION),
+).map((d) => d.chapterId);
+ok("chapters inviting a table without the permission text", offenders.join(",") || "none", "none");
 ok("chapters checked", SLOT_DEFS.length, 19);
 
-console.log("── The chapter that caused it now says the opposite ──");
+// Named chapters only — owner's decision, 17 Sep 2026. If this count
+// grows, it grew deliberately.
+const permitted = SLOT_DEFS.filter((d) => d.generateGuidance.includes(PERMISSION)).map(
+  (d) => d.chapterId,
+);
+ok("chapters permitted to use a table", permitted.join(","), "cybersecurity-compliance,service-level-agreement");
+ok("every permitted chapter states the cap", permitted.every((id) => SLOT_DEFS.find((d) => d.chapterId === id)!.generateGuidance.includes("Maximum FOUR columns")), "true");
+
+console.log("── The chapter that caused it is now permitted, with rules ──");
 const cyber = SLOT_DEFS.find((d) => d.chapterId === "cybersecurity-compliance")!;
-ok("no longer asks for a table", /table-of-controls format works well/.test(cyber.generateGuidance), "false");
-ok("explicitly forbids a markdown table", /Do NOT use a markdown table/.test(cyber.generateGuidance), "true");
-ok("forbids pipes and asterisks", /pipe characters, asterisks/.test(cyber.generateGuidance), "true");
-// The two-column mapping is the right way to present controls; only the
-// layout changed, so the substance has to survive.
+// 4a banned tables here; 4b draws them, so the ban is lifted for this
+// chapter specifically rather than everywhere.
+ok("no longer the vague original wording", /table-of-controls format works well/.test(cyber.generateGuidance), "false");
+ok("carries the permission", cyber.generateGuidance.includes(PERMISSION), "true");
+ok("states the four-column cap", /Maximum FOUR columns/.test(cyber.generateGuidance), "true");
+ok("still forbids other markup", /no asterisks for emphasis/.test(cyber.generateGuidance), "true");
+// The two-column mapping is the right way to present controls, so the
+// substance has to survive every one of these rewrites.
 ok("keeps the control-area content", /GDPR, MFA, endpoint protection/.test(cyber.generateGuidance), "true");
-ok("gives a renderable layout instead", /one control per line/.test(cyber.generateGuidance), "true");
 
 console.log("── The chapter set is otherwise untouched ──");
 ok("chapter count", SLOT_DEFS.length, 19);
