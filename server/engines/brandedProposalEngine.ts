@@ -376,7 +376,16 @@ export const SLOT_DEFS: SlotDef[] = [
     preferredTags: [],
     generateTitle: "Cybersecurity & Compliance",
     generateGuidance:
-      "Cover the controls the tender expects (GDPR, MFA, endpoint protection, email protection, backup verification, secure operations). Brief table-of-controls format works well here.",
+      // Delivery 2.14 Chunk 4a — WAS "Brief table-of-controls format
+      // works well here", which asked for a layout the renderer cannot
+      // draw. Chapter bodies are plain text: a markdown table prints its
+      // pipes, dashes and asterisks literally to the client. Seen live
+      // on the Sorrells proposal, 17 Sep 2026. The two-column mapping is
+      // genuinely the right way to present controls, so the content is
+      // kept and the layout is expressed as one control per line, which
+      // the renderer draws correctly. Whether chapter bodies should
+      // support real tables is a Chunk 5 question.
+      "Cover the controls the tender expects (GDPR, MFA, endpoint protection, email protection, backup verification, secure operations). Write one control per line as 'Control area — how it is delivered under this agreement', in plain sentences. Do NOT use a markdown table, pipe characters, asterisks or any other markup: the body is rendered as plain text and markup prints literally to the client.",
   },
   {
     slotIndex: 11,
@@ -1123,7 +1132,9 @@ ${AUTHORITY_HIERARCHY_RULES}
 When chapter content needs the CLIENT'S NAME, use the value of "Client name:" from the Quote Facts block. When it needs the PROPOSAL TITLE, use the value of "Proposal title:" from the Quote Facts block. Follow the explicit fallback instructions if either field is marked NOT SET.
 
 Return ONLY valid JSON:
-{ "slotIndex": ${params.slotIndex}, "title": "...", "body": "..." }`;
+{ "slotIndex": ${params.slotIndex}, "title": "...", "body": "..." }
+
+The body must be plain text with double-newlines (\\n\\n) between paragraphs. No HTML, no markdown, no headings inside the body, and no tables — no pipe characters, no asterisks for emphasis, no --- separator rows. Any markup you write is printed literally to the client.`;
 
   const user = `# Quote facts (the contractual scope being delivered)
 ${buildQuoteFactsBlock(params.quoteContext)}
