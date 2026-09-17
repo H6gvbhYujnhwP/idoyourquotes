@@ -58,6 +58,7 @@ ok("legacy id is the frozen IT set", LEGACY_CHAPTER_SET_ID, "it-services-v1");
 // Eleven chapters rather than nineteen, with pricing at position 9
 // instead of 16. This is the shape that breaks every assumption the
 // pre-Chunk-2 code made.
+const SIMULATED_ID = "proof-simulated-shorter-set-v1";
 const CLEANING_SET = [
   { slotIndex: 1, chapterId: "cover", slotName: "Cover" },
   { slotIndex: 2, chapterId: "title-page", slotName: "Title Page" },
@@ -71,14 +72,22 @@ const CLEANING_SET = [
   { slotIndex: 10, chapterId: "contract-terms", slotName: "Contract Terms" },
   { slotIndex: 11, chapterId: "call-to-action", slotName: "Call to Action" },
 ];
-CHAPTER_SETS["commercial-cleaning-v1"] = CLEANING_SET as any;
+// Delivery 2.14 Chunk 5 — this simulated set used to be registered as
+// "commercial-cleaning-v1". That id is now a REAL set, so the proof was
+// overwriting it and then deleting it at the end: destructive, and it
+// masked its own count assertions. A reserved id that no sector can
+// ever use keeps the simulation honest.
+CHAPTER_SETS[SIMULATED_ID] = CLEANING_SET as any;
 
-console.log("\n── Two sets now exist, and each id resolves to its own ──");
-ok("registered set count", Object.keys(CHAPTER_SETS).length, 2);
+const realSetCount = Object.keys(CHAPTER_SETS).length - 1; // minus the simulated one
+console.log("\n── A second set now exists, and each id resolves to its own ──");
+// Relative rather than absolute: Chunk 5 registered real sector sets,
+// and this proof is about resolution, not about how many sets exist.
+ok("simulated set is registered alongside the real ones", Object.keys(CHAPTER_SETS).includes(SIMULATED_ID), "true");
 ok("legacy id resolves to the IT set", getChapterSet("it-services-v1") === SLOT_DEFS, "true");
-ok("cleaning id resolves to the cleaning set", getChapterSet("commercial-cleaning-v1") === CLEANING_SET, "true");
+ok("simulated id resolves to the simulated set", getChapterSet(SIMULATED_ID) === CLEANING_SET, "true");
 ok("IT set length", getChapterSet("it-services-v1").length, 19);
-ok("cleaning set length", getChapterSet("commercial-cleaning-v1").length, 11);
+ok("simulated set length", getChapterSet(SIMULATED_ID).length, 11);
 ok("unknown id falls back to IT", getChapterSet("no-such-set") === SLOT_DEFS, "true");
 ok("no id falls back to IT", getChapterSet(undefined) === SLOT_DEFS, "true");
 
@@ -121,15 +130,15 @@ ok(
   "Cloud Migration Approach",
 );
 
-console.log("\n── A cleaning proposal resolves within the cleaning set ──");
+console.log("\n── A proposal from a shorter set resolves within it ──");
 ok(
   "its chapter 9 is Pricing Summary, not Cloud Migration",
-  resolveDef({ slotIndex: 9, chapterId: "pricing-summary" }, "commercial-cleaning-v1")?.slotName,
+  resolveDef({ slotIndex: 9, chapterId: "pricing-summary" }, SIMULATED_ID)?.slotName,
   "Pricing Summary",
 );
 ok(
   "its chapter 5 is Scope and Frequencies",
-  resolveDef({ slotIndex: 5, chapterId: "scope-and-frequencies" }, "commercial-cleaning-v1")?.slotName,
+  resolveDef({ slotIndex: 5, chapterId: "scope-and-frequencies" }, SIMULATED_ID)?.slotName,
   "Scope and Frequencies",
 );
 // THE FAULT THIS CHUNK PREVENTS. Without the stamp, regenerating a
@@ -150,12 +159,12 @@ console.log("\n── Identity beats position even when they disagree ──");
 // A chapter whose position moved between set versions is still found.
 ok(
   "pricing found by id despite a stale position",
-  resolveDef({ slotIndex: 16, chapterId: "pricing-summary" }, "commercial-cleaning-v1")?.slotIndex,
+  resolveDef({ slotIndex: 16, chapterId: "pricing-summary" }, SIMULATED_ID)?.slotIndex,
   9,
 );
 ok(
   "a chapter absent from the set resolves to nothing rather than the wrong one",
-  resolveDef({ slotIndex: 99, chapterId: "cloud-migration-approach" }, "commercial-cleaning-v1"),
+  resolveDef({ slotIndex: 99, chapterId: "cloud-migration-approach" }, SIMULATED_ID),
   "undefined",
 );
 
@@ -168,8 +177,9 @@ ok("IT pricing at position 16", isPricingChapter(SLOT_DEFS[15]), "true");
 ok("IT position 9 is not pricing", isPricingChapter(SLOT_DEFS[8]), "false");
 
 console.log("\n── Cleaning up the simulated set ──");
-delete CHAPTER_SETS["commercial-cleaning-v1"];
-ok("back to one registered set", Object.keys(CHAPTER_SETS).length, 1);
+delete CHAPTER_SETS[SIMULATED_ID];
+ok("the simulated set is gone", Object.keys(CHAPTER_SETS).includes(SIMULATED_ID), "false");
+ok("and the real sets are untouched", Object.keys(CHAPTER_SETS).length, realSetCount);
 ok("and it is still the IT set", getChapterSet(LEGACY_CHAPTER_SET_ID) === SLOT_DEFS, "true");
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -75,15 +75,19 @@ for (const key of GTM_SECTOR_KEYS) {
     `        ${key.padEnd(22)} ${c.score}/6  catalogue ${String(c.catalogueItemCount).padStart(2)} items  outstanding: ${c.outstanding.join(", ")}`,
   );
 }
-ok("it_services score", sectorCompleteness("it_services")?.score, 4);
-ok("website_marketing score", sectorCompleteness("website_marketing")?.score, 4);
-ok("commercial_cleaning score", sectorCompleteness("commercial_cleaning")?.score, 4);
-ok("pest_control score", sectorCompleteness("pest_control")?.score, 4);
+ok("it_services score", sectorCompleteness("it_services")?.score, 5);
+ok("website_marketing score", sectorCompleteness("website_marketing")?.score, 5);
+ok("commercial_cleaning score", sectorCompleteness("commercial_cleaning")?.score, 5);
+ok("pest_control score", sectorCompleteness("pest_control")?.score, 5);
 // Both outstanding artefacts are the ones Chunks 5, 7 and 8 deliver.
+// Delivery 2.14 Chunk 5 gave each go-to-market sector a chapter set of
+// its own, so every score moved 4 → 5 and only the contract starting
+// point remains. Updated rather than removed: the assertion's job is to
+// state what is still missing, and that is still worth asserting.
 ok(
   "what every GTM sector is still missing",
   sectorCompleteness("pest_control")?.outstanding.join(" + "),
-  "chapter set of its own + contract starting point",
+  "contract starting point",
 );
 ok("catalogue depth, IT", sectorCompleteness("it_services")?.catalogueItemCount, 88);
 ok("catalogue depth, web marketing", sectorCompleteness("website_marketing")?.catalogueItemCount, 44);
@@ -98,13 +102,20 @@ ok("plumbing has no demo", plumbing.demoQuote, "false");
 ok("plumbing has no designs of its own", plumbing.ownDesigns, "false");
 ok("plumbing score", plumbing.score, 1);
 
-console.log("\n── Chapter sets: every sector still points at the same one ──");
+console.log("\n── Chapter sets: a sector without one of its own borrows the default ──");
+// Delivery 2.14 Chunk 5 — WAS "every sector still points at the same
+// one", which was true when Chunk 3 shipped and is now true only of the
+// twenty-two sectors that have no set of their own. The four
+// go-to-market sectors have theirs, so the assertion narrows to the
+// fallback, which is what this chunk actually built.
 for (const key of SECTOR_KEYS) {
+  if (GTM_SECTOR_KEYS.includes(key)) continue;
   if (chapterSetIdFor(key) !== DEFAULT_CHAPTER_SET_ID) {
     fail++;
     console.log(`  FAIL  ${key} points at ${chapterSetIdFor(key)}`);
   }
 }
+ok("non-GTM sectors borrowing the default", SECTOR_KEYS.length - GTM_SECTOR_KEYS.length, 22);
 ok("default chapter set id", DEFAULT_CHAPTER_SET_ID, "it-services-v1");
 ok("unknown sector falls back", chapterSetIdFor("not-a-sector"), "it-services-v1");
 ok("null falls back", chapterSetIdFor(null), "it-services-v1");
@@ -115,7 +126,7 @@ const SLOT_DEFS = (engine as any).SLOT_DEFS as Array<{ chapterId: string; slotNa
 const getChapterSet = (engine as any).getChapterSet as (id?: string | null) => typeof SLOT_DEFS;
 const listChapterSetIds = (engine as any).listChapterSetIds as () => string[];
 
-ok("one set registered", listChapterSetIds().join(","), "it-services-v1");
+ok("the default set is registered", listChapterSetIds().includes("it-services-v1"), "true");
 // Identity, not equality — the registry must expose the very same array
 // the generation code reads, not a copy that could drift from it.
 ok("resolves to the same array object", getChapterSet(DEFAULT_CHAPTER_SET_ID) === SLOT_DEFS, "true");
@@ -133,9 +144,10 @@ console.log("\n── Every sector resolves to the same chapters as before ─�
 // carries, the chapters it would be built from are the identical list.
 let differing = 0;
 for (const key of SECTOR_KEYS) {
+  if (GTM_SECTOR_KEYS.includes(key)) continue;
   if (getChapterSet(chapterSetIdFor(key)) !== SLOT_DEFS) differing++;
 }
-ok("sectors resolving to a different chapter list", differing, 0);
+ok("non-GTM sectors resolving to a different chapter list", differing, 0);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

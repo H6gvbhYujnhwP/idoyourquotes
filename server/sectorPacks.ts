@@ -70,10 +70,32 @@ import { TRADE_PRESETS } from "./tradePresets";
  * proposals generated from the previous one — Chunk 4 stamps this into
  * the saved state for exactly that reason.
  */
-export type ChapterSetId = "it-services-v1";
+export type ChapterSetId =
+  | "it-services-v1"
+  | "commercial-cleaning-v1"
+  | "pest-control-v1"
+  | "website-marketing-v1";
 
-/** The chapter set every sector uses today. */
+/**
+ * The chapter set used by any sector that has none of its own.
+ *
+ * Delivery 2.14 Chunk 5 — this is now genuinely a FALLBACK rather than
+ * the only set. The four go-to-market sectors each have their own; the
+ * remaining twenty-two, which are engine-level only and not selectable
+ * at signup, still borrow the IT set until they are given one.
+ */
 export const DEFAULT_CHAPTER_SET_ID: ChapterSetId = "it-services-v1";
+
+/**
+ * Delivery 2.14 Chunk 5 — which set each sector's proposals are built
+ * from. A sector absent from this map falls back to the default.
+ */
+const CHAPTER_SET_BY_SECTOR: Record<string, ChapterSetId> = {
+  it_services: "it-services-v1",
+  commercial_cleaning: "commercial-cleaning-v1",
+  pest_control: "pest-control-v1",
+  website_marketing: "website-marketing-v1",
+};
 
 export interface SectorPack {
   /** Canonical underscored key — see shared/sectors.ts. */
@@ -131,7 +153,7 @@ const PACKS: Map<string, SectorPack> = new Map(
         catalogueSeed: getCatalogSeedForSector(key),
         demoQuote: getDemoQuoteForSector(key),
         templateSector,
-        chapterSetId: DEFAULT_CHAPTER_SET_ID,
+        chapterSetId: CHAPTER_SET_BY_SECTOR[key] ?? DEFAULT_CHAPTER_SET_ID,
         hasContractStartingPoint: false,
       } satisfies SectorPack,
     ];
@@ -198,11 +220,12 @@ export function sectorCompleteness(sector: string | null | undefined): SectorCom
   const catalogueSeed = pack.catalogueSeed !== null;
   const demoQuote = pack.demoQuote !== null;
   const ownDesigns = pack.templateSector !== null;
-  // "Own" means a set of its own rather than the shared default. Every
-  // sector borrows it-services-v1 today, so this is false across the
-  // board until Chunk 5 — the honest reading, and the one that stops
-  // the checklist claiming a sector is finished when it is not.
-  const ownChapterSet = pack.chapterSetId !== DEFAULT_CHAPTER_SET_ID;
+  // "Own" means a set written for this sector rather than a borrowed
+  // one. Delivery 2.14 Chunk 5 — true for all four go-to-market
+  // sectors; IT Services counts because it-services-v1 IS its own set,
+  // which the other twenty-two sectors merely borrow.
+  const ownChapterSet =
+    pack.chapterSetId !== DEFAULT_CHAPTER_SET_ID || pack.key === "it_services";
   const contractStartingPoint = pack.hasContractStartingPoint;
 
   const checks: Array<[boolean, string]> = [

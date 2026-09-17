@@ -45,6 +45,11 @@ import {
   LEGACY_IT_PRICING_SLOT_INDEX,
   LEGACY_CHAPTER_SET_ID,
 } from "@shared/proposalChapters";
+// Delivery 2.14 Chunk 5 — the three sector chapter sets, composed from
+// the shared spine. The IT set below is deliberately NOT one of them:
+// it stays here, verbatim, until it is tidied.
+import { SECTOR_CHAPTER_SETS } from "./chapterSets/index";
+import { TABLE_GUIDANCE, type SlotDef } from "./chapterSets/spine";
 
 // ─── Public types ────────────────────────────────────────────────────
 
@@ -237,54 +242,32 @@ export const PRICING_SLOT_INDEX = LEGACY_IT_PRICING_SLOT_INDEX;
 //   "always-generate": this slot is too tender-specific to ever embed.
 
 /**
- * Delivery 2.14 Chunk 2 — exported so Chunk 3 can lift this set into the
- * sector pack registry as the IT Services set, and so the delivery proof
- * can assert the set is unchanged rather than take it on trust.
+ * Delivery 2.14 Chunk 5 — SlotDef now lives in chapterSets/spine.ts,
+ * because the sector sets cannot import the engine (the engine
+ * registers them, so it would be a cycle). Re-exported here so every
+ * existing importer is unaffected.
  */
-export interface SlotDef {
-  /**
-   * Delivery 2.14 Chunk 2 — position within the set. Still used for
-   * ordering and for reading proposals saved before chapters carried
-   * identity, but NO LONGER what identifies a chapter. Nothing outside
-   * the engine should branch on this value.
-   */
-  slotIndex: number;
-  /**
-   * Delivery 2.14 Chunk 2 — stable identity, unique within the set.
-   * Survives reordering and insertion, which a position number does
-   * not. This is what sector-specific chapter sets (Chunk 5) will key
-   * against.
-   */
-  chapterId: string;
-  /**
-   * Delivery 2.14 Chunk 2 — special handling required outside the
-   * engine. Only the pricing chapter has one today: the assembler
-   * replaces its body with a real table from the line items, and the
-   * workspace hides its edit affordances. Absent means plain prose.
-   */
-  role?: ChapterRole;
-  slotName: string;
-  fillerType: "always-embed-first-page" | "embed-or-generate" | "always-generate";
-  preferredTags: string[];
-  generateTitle: string;
-  generateGuidance: string;
-}
+export type { SlotDef } from "./chapterSets/spine";
 
-/**
- * Delivery 2.14 Chunk 4b — the table permission, appended to the
- * guidance of the chapters that may use one.
- *
- * NAMED CHAPTERS ONLY (owner's decision, 17 Sep 2026). Letting every
- * chapter use a table produces tables where prose reads better, and
- * gives less control over how a proposal looks. A chapter that does not
- * carry this string is still governed by the blanket plain-text rule in
- * both prompts.
- *
- * The four-column cap is stated to the model as well as enforced by the
- * parser, so a wider table is unlikely rather than merely survivable.
- */
-const TABLE_GUIDANCE =
-  "You MAY use a table here where it genuinely helps. Format it as a markdown pipe table: a header row, then a row of dashes, then one row per entry, e.g. 'Control area | How it is delivered' on one line, then '--- | ---' on the next. Maximum FOUR columns — a wider table cannot be drawn and will be rendered as plain lines instead. Do not use any other markup: no asterisks for emphasis, no headings.";
+
+// Delivery 2.14 Chunk 5 — the content rules the IT set now shares with
+// the three sector sets. Declared here rather than imported from the
+// spine because the IT set has not moved into chapterSets yet; when it
+// does, these collapse into the spine's own helpers.
+const HOUSE_RULES =
+  " Never mention the supplier's own source documents to the reader — not the brochure, not the tender, not 'the information provided', and never that one of them lacks something. Never write the quote reference into the prose; it is printed on the title page automatically.";
+
+const onlyIfLocal = (condition: string) =>
+  " ONLY include this chapter if " +
+  condition +
+  ". If it does not, return an EMPTY body — do not write a single word, and in particular do NOT write a chapter explaining that the requirement was not mentioned, not specified or not in scope. An absent chapter is invisible to the reader; a chapter arguing for its own irrelevance is not.";
+
+const ONLY_IF_SECURITY = onlyIfLocal(
+  "the evidence raises security, compliance or data protection as a requirement, or the line items include security services",
+);
+const ONLY_IF_DR = onlyIfLocal(
+  "the evidence raises disaster recovery, business continuity or backup as a requirement, or the line items include backup services",
+);
 
 export const SLOT_DEFS: SlotDef[] = [
   {
@@ -398,7 +381,11 @@ export const SLOT_DEFS: SlotDef[] = [
       // a control area beside how it is delivered genuinely is a table,
       // and it was the model's own instinct to write one.
       "Cover the controls the tender expects (GDPR, MFA, endpoint protection, email protection, backup verification, secure operations). A two-column mapping of control area to how it is delivered under this agreement works well. " +
-      TABLE_GUIDANCE,
+      TABLE_GUIDANCE +
+      // Delivery 2.14 Chunk 5 — made conditional. A live proposal
+      // carried a full page here whose entire content was an
+      // explanation that the tender had not asked for any of it.
+      ONLY_IF_SECURITY,
   },
   {
     slotIndex: 11,
@@ -408,7 +395,8 @@ export const SLOT_DEFS: SlotDef[] = [
     preferredTags: [],
     generateTitle: "Disaster Recovery & Business Continuity",
     generateGuidance:
-      "DR plan, annual review, annual testing, backup verification, secure handling of test data. Match what the tender asks for if those details are present.",
+      "DR plan, annual review, annual testing, backup verification, secure handling of test data. Match what the tender asks for if those details are present." +
+      ONLY_IF_DR,
   },
   {
     slotIndex: 12,
@@ -451,7 +439,12 @@ export const SLOT_DEFS: SlotDef[] = [
     preferredTags: [],
     generateTitle: "Key Personnel",
     generateGuidance:
-      "Use ONLY names and roles explicitly named in the brochure. If the brochure names no one, describe the team in role terms only (helpdesk-led, account-managed) without inventing names.",
+      // Delivery 2.14 Chunk 5 — WAS "If the brochure names no one,
+      // describe the team in role terms only". The model read the
+      // absence as reportable and printed "The brochure does not name
+      // specific individuals" to a client. The instruction is now
+      // positive: describe the team in role terms, full stop.
+      "Describe the team in ROLE TERMS — helpdesk-led, account-managed, who the client deals with day to day and who oversees delivery. Use an individual's name ONLY where the evidence names them. Never invent a name, and never remark on whether anyone is named.",
   },
   {
     slotIndex: 16,
@@ -496,6 +489,33 @@ export const SLOT_DEFS: SlotDef[] = [
   },
 ];
 
+/**
+ * Delivery 2.14 Chunk 5 — the house rules reach EVERY generated chapter.
+ *
+ * Applied here rather than written into each of the nineteen guidance
+ * strings, because a rule that has to be remembered per chapter is a
+ * rule that will be missed: the two faults it prevents both came from
+ * chapters nobody thought to check. "The brochure does not name
+ * specific individuals" was printed to a client by Key Personnel, and
+ * the raw quote reference reached the reader from Contract Terms in one
+ * proposal and Pricing Summary in another — three different chapters,
+ * one missing rule.
+ *
+ * The Cover generates nothing, and the Title Page has a strict
+ * two-line format that extra instructions would only muddy, so both are
+ * left alone.
+ *
+ * The three sector sets get the same rules through the spine's
+ * houseRules() helper; when the IT set moves into chapterSets this
+ * post-process collapses into that.
+ */
+for (const def of SLOT_DEFS) {
+  if (def.fillerType === "always-embed-first-page") continue;
+  if (def.chapterId === "title-page") continue;
+  if (def.generateGuidance.includes(HOUSE_RULES.trim())) continue;
+  def.generateGuidance += HOUSE_RULES;
+}
+
 // ─── Chapter set registry — Delivery 2.14, Chunk 3 ───────────────────
 //
 // A sector pack names its chapter set by id; this is where the id is
@@ -518,6 +538,8 @@ export const SLOT_DEFS: SlotDef[] = [
 
 export const CHAPTER_SETS: Record<string, SlotDef[]> = {
   "it-services-v1": SLOT_DEFS,
+  // Delivery 2.14 Chunk 5 — the three sector sets.
+  ...SECTOR_CHAPTER_SETS,
 };
 
 /**
