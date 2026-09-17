@@ -43,6 +43,7 @@ import {
 import {
   type ChapterRole,
   LEGACY_IT_PRICING_SLOT_INDEX,
+  LEGACY_CHAPTER_SET_ID,
 } from "@shared/proposalChapters";
 
 // ─── Public types ────────────────────────────────────────────────────
@@ -91,6 +92,13 @@ export function includedSlots(slots: ChapterSlot[]): ChapterSlot[] {
 
 export interface BrandedProposalDraft {
   slots: ChapterSlot[];
+  /**
+   * Delivery 2.14 Chunk 4 — which chapter set produced these chapters.
+   * The workspace saves it alongside the chapters so that regenerating
+   * one of them later looks it up in the set it actually came from,
+   * rather than in whatever set the sector uses by then.
+   */
+  chapterSetId: string;
   /**
    * The final PDF will use the brochure's page dimensions throughout
    * (so embedded brochure pages and generated narrative pages are the
@@ -993,6 +1001,11 @@ ${slotInstructions}`;
 
   return {
     slots,
+    // Delivery 2.14 Chunk 4 — stamp the set that produced these
+    // chapters. Chunk 5 will pick the set from the quote's sector; today
+    // there is one, so the generator names it explicitly rather than
+    // leaving the workspace to assume it.
+    chapterSetId: LEGACY_CHAPTER_SET_ID,
     tokenUsage: {
       inputTokens: result.usage.inputTokens,
       outputTokens: result.usage.outputTokens,
@@ -1012,6 +1025,13 @@ ${slotInstructions}`;
  */
 export async function regenerateSingleChapter(params: {
   slotIndex: number;
+  /**
+   * Delivery 2.14 Chunk 4 — the chapter set the proposal was built
+   * from, as stamped into its saved state. Omitted or unknown means a
+   * proposal saved before stamping existed, which reads as the frozen
+   * legacy IT set.
+   */
+  chapterSetId?: string;
   currentSlots: ChapterSlot[];
   tenderText: string;
   brochureKnowledge: BrochureKnowledge;
@@ -1032,9 +1052,30 @@ export async function regenerateSingleChapter(params: {
     return { slot: target, tokenUsage: { inputTokens: 0, outputTokens: 0 } };
   }
 
-  const def = SLOT_DEFS.find((d) => d.slotIndex === params.slotIndex);
+  // Delivery 2.14 Chunk 4 — THIS LOOKUP IS WHY STAMPING EXISTS.
+  //
+  // It used to read `SLOT_DEFS.find(d => d.slotIndex === slotIndex)` and
+  // throw when it missed. With one chapter set that was safe. Once
+  // sectors have sets of their own (Chunk 5), a position number means
+  // nothing across sets: regenerating chapter 9 of a Commercial
+  // Cleaning proposal would have found IT's "Cloud Migration Approach"
+  // and rewritten the chapter as a cloud migration plan, or thrown
+  // outright on a shorter set — on documents already sent to clients.
+  //
+  // So: resolve within the set the proposal was ACTUALLY built from,
+  // and prefer the chapter's own stable id over its position. The
+  // slotIndex fallback is for proposals saved before Chunk 2, which
+  // carry no id; those are legacy-set proposals by definition, so
+  // matching them by position within the legacy set is correct.
+  const chapterSet = getChapterSet(params.chapterSetId);
+  const def =
+    (target.chapterId
+      ? chapterSet.find((d) => d.chapterId === target.chapterId)
+      : undefined) ?? chapterSet.find((d) => d.slotIndex === params.slotIndex);
   if (!def) {
-    throw new Error(`No slot definition for index ${params.slotIndex}`);
+    throw new Error(
+      `No chapter definition for ${target.chapterId ?? `index ${params.slotIndex}`} in set ${params.chapterSetId ?? "(legacy)"}`,
+    );
   }
 
   // Phase 4B Delivery E.5 — normalise to multi-tag shape on entry.

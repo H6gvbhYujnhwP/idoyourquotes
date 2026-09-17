@@ -108,6 +108,30 @@ export function isPricingChapter(chapter: ChapterIdentity | null | undefined): b
 }
 
 /**
+ * Delivery 2.14 Chunk 4 — the chapter set every proposal saved before
+ * stamping was built from.
+ *
+ * A saved state with no `chapterSetId` is read as this. It is frozen:
+ * once Chunk 5 gives sectors their own sets, "it-services-v1" must keep
+ * meaning the nineteen chapters it meant on 17 Sep 2026, because
+ * proposals already sent to clients are still resolving against it. A
+ * revised IT set is a NEW id, not an edit to this one.
+ */
+export const LEGACY_CHAPTER_SET_ID = "it-services-v1";
+
+/**
+ * Which chapter set a saved proposal was built from.
+ *
+ * Absence is the signal, and it is never back-filled — see the note on
+ * BrandedSlotsState.chapterSetId in shared/schema.ts.
+ */
+export function chapterSetIdOf(
+  saved: { chapterSetId?: string } | null | undefined,
+): string {
+  return saved?.chapterSetId || LEGACY_CHAPTER_SET_ID;
+}
+
+/**
  * True when the chapter predates chapter identity and is being read
  * through the legacy fallback. Useful for diagnostics and for Chunk 4,
  * which stamps saved states with the set that produced them.

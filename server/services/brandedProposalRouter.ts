@@ -518,6 +518,9 @@ export const brandedProposalRouter = router({
       z.object({
         quoteId: z.number(),
         slotIndex: z.number(),
+        // Delivery 2.14 Chunk 4 — the set this proposal was built from,
+        // so the chapter is looked up where it actually came from.
+        chapterSetId: z.string().max(64).optional(),
         currentSlots: z.array(ChapterSlotSchema),
       }),
     )
@@ -545,6 +548,7 @@ export const brandedProposalRouter = router({
 
       const result = await regenerateSingleChapter({
         slotIndex: input.slotIndex,
+        chapterSetId: input.chapterSetId,
         currentSlots: input.currentSlots as ChapterSlot[],
         tenderText,
         brochureKnowledge: knowledge,
@@ -1017,6 +1021,12 @@ export const brandedProposalRouter = router({
         slots: z.array(ChapterSlotSchema),
         orientation: z.enum(["portrait", "landscape"]).optional(),
         coverDate: z.string().optional(),
+        // Delivery 2.14 Chunk 4 — which chapter set produced these
+        // chapters. Optional on the wire so a browser tab loaded before
+        // this delivery can still save; such a save writes no stamp,
+        // which reads as the legacy set, which is what that tab's
+        // chapters actually came from.
+        chapterSetId: z.string().max(64).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -1030,6 +1040,7 @@ export const brandedProposalRouter = router({
             slots: input.slots,
             orientation: input.orientation,
             coverDate: input.coverDate,
+            chapterSetId: input.chapterSetId,
             savedAt: new Date().toISOString(),
           },
         })

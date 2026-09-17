@@ -293,6 +293,19 @@ export default function BrandedProposalWorkspace() {
   // Delivery 2.8 — the cover date printed on the title page. Empty means
   // "today", which is what every render did before this.
   const [coverDate, setCoverDate] = useState<string>("");
+  /**
+   * Delivery 2.14 Chunk 4 — which chapter set this proposal's chapters
+   * came from. Restored from the saved state, set by a fresh draft, and
+   * sent back on every save and every regenerate.
+   *
+   * Null means a proposal saved before stamping existed, which the
+   * server reads as the frozen legacy IT set. It is deliberately NOT
+   * defaulted to the current set here: doing so would stamp an old
+   * proposal with a set it was never built from the first time the user
+   * touched it, and from Chunk 5 that would mean regenerating a chapter
+   * against the wrong guidance.
+   */
+  const [chapterSetId, setChapterSetId] = useState<string | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
   const [draftErrorIsBrochure, setDraftErrorIsBrochure] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number>(1);
@@ -355,6 +368,9 @@ export default function BrandedProposalWorkspace() {
       setSelectedIndex((restored.slots as ChapterSlot[])[0].slotIndex);
       if (restored.orientation) setRenderOrientation(restored.orientation);
       if (restored.coverDate) setCoverDate(restored.coverDate);
+      // Delivery 2.14 Chunk 4 — absent on anything saved before this
+      // delivery, and left absent on purpose. See the note on the state.
+      setChapterSetId(restored.chapterSetId ?? null);
       return;
     }
 
@@ -364,6 +380,10 @@ export default function BrandedProposalWorkspace() {
       try {
         const result = await generateDraft.mutateAsync({ quoteId });
         const incoming = (result as { slots: ChapterSlot[] }).slots;
+        // Delivery 2.14 Chunk 4 — the generator says which set it used.
+        setChapterSetId(
+          (result as { chapterSetId?: string }).chapterSetId ?? null,
+        );
         setSlots(incoming);
         // Default selection — the cover (slot 1) is always present and
         // a useful first chapter to show.
@@ -510,6 +530,10 @@ export default function BrandedProposalWorkspace() {
       const result = await regenerateChapter.mutateAsync({
         quoteId,
         slotIndex: slot.slotIndex,
+        // Delivery 2.14 Chunk 4 — look the chapter up in the set this
+        // proposal was actually built from, not in whatever set its
+        // sector uses now.
+        chapterSetId: chapterSetId || undefined,
         currentSlots: slots,
       });
       const updated = (result as { slot: ChapterSlot }).slot;
@@ -537,6 +561,7 @@ export default function BrandedProposalWorkspace() {
     nextSlots: ChapterSlot[],
     nextOrientation = renderOrientation,
     nextCoverDate = coverDate,
+    nextChapterSetId = chapterSetId,
   ) {
     if (!Number.isFinite(quoteId) || nextSlots.length === 0) return;
     saveSlots
@@ -545,6 +570,10 @@ export default function BrandedProposalWorkspace() {
         slots: nextSlots as any,
         orientation: nextOrientation,
         coverDate: nextCoverDate || undefined,
+        // Delivery 2.14 Chunk 4 — the stamp survives the round trip.
+        // Undefined rather than null when unknown, so a legacy proposal
+        // stays unstamped rather than acquiring a set it never used.
+        chapterSetId: nextChapterSetId || undefined,
       })
       .catch(() => {});
   }

@@ -388,6 +388,30 @@ export interface BrandedSlotsState {
   slots: unknown[];
   orientation?: "portrait" | "landscape";
   coverDate?: string;
+  /**
+   * Delivery 2.14 Chunk 4 — WHICH CHAPTER SET PRODUCED THIS PROPOSAL.
+   *
+   * Until sector chapter sets exist there is one set and this is always
+   * "it-services-v1", so today the field records a fact that could be
+   * assumed. From Chunk 5 it cannot be assumed: a proposal generated
+   * from the Commercial Cleaning set and one generated from the IT set
+   * hold chapters with different ids, different counts and different
+   * guidance, and regenerating a single chapter has to know which set
+   * to look the chapter up in.
+   *
+   * ABSENT MEANS LEGACY. Every proposal saved before this delivery —
+   * including the live Sorrells one — has no stamp, and is read as the
+   * original IT set, which is frozen for exactly that purpose. The
+   * absence is the signal; it is never back-filled, because a proposal
+   * that has been sent to a client should keep rendering from the
+   * chapters it was actually built with rather than from whatever the
+   * sector's set has become since.
+   *
+   * The version is part of the id rather than a separate field, so a
+   * revised set is a different set and can never silently change a
+   * proposal generated from its predecessor.
+   */
+  chapterSetId?: string;
   savedAt: string;
 }
 
