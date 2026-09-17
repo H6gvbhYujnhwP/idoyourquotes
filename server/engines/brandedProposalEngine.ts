@@ -648,7 +648,14 @@ function formatLineItemForPrompt(li: QuoteContextLineItem): string {
  *     contractual implications, and the chapter narrative should not
  *     describe a one-off project as a monthly subscription.
  */
-function buildQuoteFactsBlock(qc: QuoteContext | undefined): string {
+/**
+ * Delivery 2.14 Chunk 4c — exported so the delivery proof can assert
+ * that the model is still given no commencement date. If a date is ever
+ * added here, the "never state when the service starts" rule must be
+ * revisited rather than left contradicting the facts block, and that
+ * assertion is what will catch it.
+ */
+export function buildQuoteFactsBlock(qc: QuoteContext | undefined): string {
   if (!qc) return "(no quote facts available)";
 
   const lines: string[] = [];
@@ -750,6 +757,8 @@ AUTHORITY HIERARCHY — when sources conflict or you need a specific number, fol
 3. BROCHURE FACTS are the supplier's general capability claims and credentials. Use them for "About Us"-style content (history, location, team size, awards, testimonials), and for capability descriptions ("our backup uses zero-knowledge architecture") — but NOT to assert engagement-specific commitments. The brochure says what the supplier CAN do; the line items say what THIS engagement IS.
 
 4. ANYTHING ELSE is forbidden. Do NOT invent: response times, storage allocations (e.g. "1TB OneDrive per user"), mailbox sizes (e.g. "50GB Exchange Email"), uptime guarantees (e.g. "99.9% uptime"), included service hours (e.g. "6 hours per month"), per-workstation setup fees (e.g. "£49 per workstation"), certifications, scope items, or any other specific number not present in the line items, tender, or brochure.
+
+5. NEVER STATE WHEN THE SERVICE STARTS. Do not write a commencement date, a start date, a go-live date, a first-invoice month, or any phrase that fixes when the agreement begins — not "from 1 September", not "commencing in October", not "starting next month". You are never given that date: it is typed by the supplier when the contract is produced, long after this text is written, and it is printed on the acceptance page and in the contract clauses. Anything you write here is a guess, and a document that names two different start dates contradicts itself in front of the client. Where the timing matters to a sentence, refer to it without a date — "from the agreed commencement date", "once the agreement begins", "from the start of the contract".
 
 If you find yourself reaching for a default like "8-hour SLA" or "1TB OneDrive" or "99.9% uptime" or "£49 per workstation" — STOP. Check the line items first, then the tender, then the brochure. If the number isn't in any of those, omit the sentence or hedge with phrasing like "as set out in your line items", "per the contract terms below", or "in line with the scope agreed with you". Capability statements ("we provide secure cloud backup") are fine; specific commitments ("with 99.9% uptime") are not, unless the line items or tender say so.
 `.trim();
