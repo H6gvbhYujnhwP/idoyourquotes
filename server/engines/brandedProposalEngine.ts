@@ -463,6 +463,52 @@ export const SLOT_DEFS: SlotDef[] = [
   },
 ];
 
+// ─── Chapter set registry — Delivery 2.14, Chunk 3 ───────────────────
+//
+// A sector pack names its chapter set by id; this is where the id is
+// resolved. The engine keeps ownership of the definitions because this
+// is where they have always lived and where the generation code reads
+// them — the pack registry only indexes them.
+//
+// TODAY THERE IS EXACTLY ONE SET and every sector points at it. The
+// nineteen chapters below are the original list, carried across word
+// for word (owner's decision, 17 Sep 2026): lifting them unchanged
+// keeps Chunk 3 a true no-op, so that if anything in a proposal looks
+// different afterwards, something has gone wrong. The tidying — the
+// chapters that argue for their own irrelevance, the Key Personnel
+// confession, the title page taking the contact's name instead of the
+// client's — belongs in Chunk 5, alongside the other sectors' sets.
+//
+// The id carries a version because a revised set must not silently
+// change proposals generated from the previous one. Chunk 4 stamps the
+// id and version into the saved state for exactly that reason.
+
+export const CHAPTER_SETS: Record<string, SlotDef[]> = {
+  "it-services-v1": SLOT_DEFS,
+};
+
+/**
+ * Resolve a chapter set id to its definitions.
+ *
+ * Falls back to the original IT set for an unknown id rather than
+ * throwing: an id can only reach this function from a sector pack or
+ * from a proposal's saved state, and a proposal that has been sent to a
+ * client must keep rendering even if its set has since been renamed.
+ * The fallback is the same set every sector uses today, so it is a
+ * no-op in practice — it exists so that a future rename degrades to
+ * "slightly wrong chapter guidance" rather than "this document will not
+ * open".
+ */
+export function getChapterSet(chapterSetId: string | null | undefined): SlotDef[] {
+  if (!chapterSetId) return SLOT_DEFS;
+  return CHAPTER_SETS[chapterSetId] ?? SLOT_DEFS;
+}
+
+/** Every chapter set id the engine knows about. */
+export function listChapterSetIds(): string[] {
+  return Object.keys(CHAPTER_SETS);
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────
 
 function extractJson<T>(text: string): T {
