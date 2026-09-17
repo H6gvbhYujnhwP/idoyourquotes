@@ -38,6 +38,12 @@ import {
   normalizeKnowledge,
   type BrochureKnowledge,
 } from "../services/brochureExtractor";
+// Delivery 2.14 Chunk 2 — chapter identity. Shared with the client so
+// the proposal workspace stops hand-copying a magic slot number.
+import {
+  type ChapterRole,
+  LEGACY_IT_PRICING_SLOT_INDEX,
+} from "@shared/proposalChapters";
 
 // ─── Public types ────────────────────────────────────────────────────
 
@@ -51,6 +57,12 @@ import {
 export type ChapterSlot =
   | {
       slotIndex: number;
+      /** Delivery 2.14 Chunk 2 — stable identity. Optional because
+       *  proposals saved before this delivery do not carry it; see
+       *  shared/proposalChapters.ts for how those are read. */
+      chapterId?: string;
+      /** Delivery 2.14 Chunk 2 — special handling outside the engine. */
+      role?: ChapterRole;
       slotName: string;
       source: "embed";
       brochurePageNumber: number;
@@ -59,6 +71,8 @@ export type ChapterSlot =
     }
   | {
       slotIndex: number;
+      chapterId?: string;
+      role?: ChapterRole;
       slotName: string;
       source: "generate";
       title: string;
@@ -186,7 +200,15 @@ export interface QuoteContext {
 // reorder the SLOT_DEFS later and the constant is the single source
 // of truth that needs updating.
 
-export const PRICING_SLOT_INDEX = 16;
+/**
+ * Delivery 2.14 Chunk 2 — DEPRECATED. Retained only so that anything
+ * still importing it keeps compiling; it now points at the shared
+ * legacy constant used to read proposals saved before chapters carried
+ * identity. New code asks isPricingChapter(slot) instead, which works
+ * across chapter sets. Comparing this number against a chapter from a
+ * sector set other than the original IT one is meaningless.
+ */
+export const PRICING_SLOT_INDEX = LEGACY_IT_PRICING_SLOT_INDEX;
 
 // ─── Slot definitions ────────────────────────────────────────────────
 // The 19 chapter slots that match the Manus Headway proposal structure.
@@ -206,8 +228,33 @@ export const PRICING_SLOT_INDEX = 16;
 //     facts.
 //   "always-generate": this slot is too tender-specific to ever embed.
 
-interface SlotDef {
+/**
+ * Delivery 2.14 Chunk 2 — exported so Chunk 3 can lift this set into the
+ * sector pack registry as the IT Services set, and so the delivery proof
+ * can assert the set is unchanged rather than take it on trust.
+ */
+export interface SlotDef {
+  /**
+   * Delivery 2.14 Chunk 2 — position within the set. Still used for
+   * ordering and for reading proposals saved before chapters carried
+   * identity, but NO LONGER what identifies a chapter. Nothing outside
+   * the engine should branch on this value.
+   */
   slotIndex: number;
+  /**
+   * Delivery 2.14 Chunk 2 — stable identity, unique within the set.
+   * Survives reordering and insertion, which a position number does
+   * not. This is what sector-specific chapter sets (Chunk 5) will key
+   * against.
+   */
+  chapterId: string;
+  /**
+   * Delivery 2.14 Chunk 2 — special handling required outside the
+   * engine. Only the pricing chapter has one today: the assembler
+   * replaces its body with a real table from the line items, and the
+   * workspace hides its edit affordances. Absent means plain prose.
+   */
+  role?: ChapterRole;
   slotName: string;
   fillerType: "always-embed-first-page" | "embed-or-generate" | "always-generate";
   preferredTags: string[];
@@ -215,13 +262,14 @@ interface SlotDef {
   generateGuidance: string;
 }
 
-const SLOT_DEFS: SlotDef[] = [
+export const SLOT_DEFS: SlotDef[] = [
   {
     // Phase 4B Delivery E.4.3 — Cover IS the brochure's own first page.
     // No generation, no overlay, no logo from Settings (the brochure
     // page already carries the supplier's brand identity). Page 1
     // verbatim is the proposal's cover.
     slotIndex: 1,
+    chapterId: "cover",
     slotName: "Cover",
     fillerType: "always-embed-first-page",
     preferredTags: [],
@@ -234,6 +282,7 @@ const SLOT_DEFS: SlotDef[] = [
     // what the old Cover slot used to render before E.4.3 split the
     // brochure cover and the formal title page into two slots.
     slotIndex: 2,
+    chapterId: "title-page",
     slotName: "Title Page",
     fillerType: "always-generate",
     preferredTags: [],
@@ -243,6 +292,7 @@ const SLOT_DEFS: SlotDef[] = [
   },
   {
     slotIndex: 3,
+    chapterId: "executive-summary",
     slotName: "Executive Summary",
     fillerType: "always-generate",
     preferredTags: [],
@@ -252,6 +302,7 @@ const SLOT_DEFS: SlotDef[] = [
   },
   {
     slotIndex: 4,
+    chapterId: "about-the-supplier",
     slotName: "About the Supplier",
     fillerType: "embed-or-generate",
     preferredTags: ["about"],
@@ -261,6 +312,7 @@ const SLOT_DEFS: SlotDef[] = [
   },
   {
     slotIndex: 5,
+    chapterId: "what-makes-us-different",
     slotName: "What Makes Us Different",
     fillerType: "embed-or-generate",
     preferredTags: ["usp"],
@@ -270,6 +322,7 @@ const SLOT_DEFS: SlotDef[] = [
   },
   {
     slotIndex: 6,
+    chapterId: "track-record",
     slotName: "Track Record",
     fillerType: "embed-or-generate",
     preferredTags: ["track-record", "testimonial"],
@@ -279,6 +332,7 @@ const SLOT_DEFS: SlotDef[] = [
   },
   {
     slotIndex: 7,
+    chapterId: "understanding-requirements",
     slotName: "Understanding Your Requirements",
     fillerType: "always-generate",
     preferredTags: [],
@@ -288,6 +342,7 @@ const SLOT_DEFS: SlotDef[] = [
   },
   {
     slotIndex: 8,
+    chapterId: "proposed-service-delivery",
     slotName: "Proposed Service Delivery",
     fillerType: "always-generate",
     preferredTags: [],
@@ -297,6 +352,7 @@ const SLOT_DEFS: SlotDef[] = [
   },
   {
     slotIndex: 9,
+    chapterId: "cloud-migration-approach",
     slotName: "Cloud Migration Approach",
     fillerType: "always-generate",
     preferredTags: [],
@@ -306,6 +362,7 @@ const SLOT_DEFS: SlotDef[] = [
   },
   {
     slotIndex: 10,
+    chapterId: "cybersecurity-compliance",
     slotName: "Cybersecurity & Compliance",
     fillerType: "always-generate",
     preferredTags: [],
@@ -315,6 +372,7 @@ const SLOT_DEFS: SlotDef[] = [
   },
   {
     slotIndex: 11,
+    chapterId: "disaster-recovery-continuity",
     slotName: "Disaster Recovery & Continuity",
     fillerType: "always-generate",
     preferredTags: [],
@@ -324,6 +382,7 @@ const SLOT_DEFS: SlotDef[] = [
   },
   {
     slotIndex: 12,
+    chapterId: "website-hosting-support",
     slotName: "Website Hosting & Support",
     fillerType: "always-generate",
     preferredTags: [],
@@ -333,6 +392,7 @@ const SLOT_DEFS: SlotDef[] = [
   },
   {
     slotIndex: 13,
+    chapterId: "service-level-agreement",
     slotName: "Service Level Agreement",
     fillerType: "always-generate",
     preferredTags: [],
@@ -342,6 +402,7 @@ const SLOT_DEFS: SlotDef[] = [
   },
   {
     slotIndex: 14,
+    chapterId: "implementation-onboarding",
     slotName: "Implementation & Onboarding",
     fillerType: "always-generate",
     preferredTags: [],
@@ -351,6 +412,7 @@ const SLOT_DEFS: SlotDef[] = [
   },
   {
     slotIndex: 15,
+    chapterId: "key-personnel",
     slotName: "Key Personnel",
     fillerType: "always-generate",
     preferredTags: [],
@@ -360,6 +422,8 @@ const SLOT_DEFS: SlotDef[] = [
   },
   {
     slotIndex: 16,
+    chapterId: "pricing-summary",
+    role: "pricing",
     slotName: "Pricing Summary",
     fillerType: "always-generate",
     preferredTags: [],
@@ -369,6 +433,7 @@ const SLOT_DEFS: SlotDef[] = [
   },
   {
     slotIndex: 17,
+    chapterId: "contract-terms",
     slotName: "Contract Terms",
     fillerType: "always-generate",
     preferredTags: [],
@@ -378,6 +443,7 @@ const SLOT_DEFS: SlotDef[] = [
   },
   {
     slotIndex: 18,
+    chapterId: "why-us",
     slotName: "Why Us",
     fillerType: "always-generate",
     preferredTags: [],
@@ -387,6 +453,7 @@ const SLOT_DEFS: SlotDef[] = [
   },
   {
     slotIndex: 19,
+    chapterId: "call-to-action",
     slotName: "Call to Action",
     fillerType: "always-generate",
     preferredTags: [],
@@ -653,6 +720,11 @@ export async function generateBrandedProposalDraft(params: {
     | {
         type: "embed";
         slotIndex: number;
+        // Delivery 2.14 Chunk 2 — identity travels with an embedded
+        // chapter too, so a brochure page that fills a roled chapter
+        // still reaches the saved state carrying that role.
+        chapterId: string;
+        role?: ChapterRole;
         slotName: string;
         brochurePageNumber: number;
         tags: string[];
@@ -713,6 +785,10 @@ export async function generateBrandedProposalDraft(params: {
       slotPlan.push({
         type: "embed",
         slotIndex: def.slotIndex,
+        // Delivery 2.14 Chunk 2 — identity travels with the chapter
+        // from the moment it is planned, so it reaches the saved state.
+        chapterId: def.chapterId,
+        role: def.role,
         slotName: def.slotName,
         brochurePageNumber: 1,
         tags: ["cover"],
@@ -730,6 +806,8 @@ export async function generateBrandedProposalDraft(params: {
       slotPlan.push({
         type: "embed",
         slotIndex: def.slotIndex,
+        chapterId: def.chapterId,
+        role: def.role,
         slotName: def.slotName,
         brochurePageNumber: match.pageNumber,
         tags: match.tags,
@@ -846,6 +924,9 @@ ${slotInstructions}`;
           : `Brochure page ${s.brochurePageNumber} classified as "${s.tags.join("/")}" with clean clarity`;
       return {
         slotIndex: s.slotIndex,
+        // Delivery 2.14 Chunk 2 — identity reaches the saved state here.
+        chapterId: s.chapterId,
+        role: s.role,
         slotName: s.slotName,
         source: "embed",
         brochurePageNumber: s.brochurePageNumber,
@@ -855,6 +936,8 @@ ${slotInstructions}`;
     const gen = generatedBySlot.get(s.def.slotIndex);
     return {
       slotIndex: s.def.slotIndex,
+      chapterId: s.def.chapterId,
+      role: s.def.role,
       slotName: s.def.slotName,
       source: "generate",
       title: gen?.title ?? s.def.generateTitle,
@@ -985,6 +1068,8 @@ ${factsBlock || "(none)"}`;
 
   const slot: ChapterSlot = {
     slotIndex: def.slotIndex,
+    chapterId: def.chapterId,
+    role: def.role,
     slotName: def.slotName,
     source: "generate",
     title: parsed.title || def.generateTitle,

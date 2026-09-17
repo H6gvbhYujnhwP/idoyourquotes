@@ -2125,6 +2125,145 @@ DEPENDENCIES:
 - Electrical supply capacity`,
     },
   },
+
+  /**
+   * Website & Digital Marketing — Delivery 2.14 Chunk 1.
+   *
+   * THIS SECTOR WAS OFFERED AT SIGNUP WITH NO PRESET. It has been one of
+   * the four go-to-market sectors since the 18 Apr 2026 narrowing, and it
+   * has a starter catalogue, a demo quote and six proposal designs — but
+   * no entry here, so its comprehensive-quote configuration and AI
+   * guidance fell through to the generic path while the other three got
+   * sector-specific handling. 26 sector options, 25 presets, and this was
+   * the missing one.
+   *
+   * Shaped like the IT Services preset because the businesses are shaped
+   * alike: recurring retainers plus one-off project work, deliverables
+   * rather than site works, and a scope that is argued over in writing
+   * before anyone starts.
+   */
+  website_marketing: {
+    name: "Website & Digital Marketing",
+    description:
+      "For web design and build projects, digital marketing retainers, SEO, paid media and hosting/support agreements",
+    sections: {
+      coverLetter: { enabled: true, template: "it_services_standard", templates: [] },
+      tradeBill: { enabled: true, format: "table" as const, templates: [] },
+      reviewForms: {
+        enabled: true,
+        templates: ["scope_of_services", "sla_requirements"],
+      },
+      technicalReview: {
+        enabled: true,
+        checklist: [
+          "Current site platform and hosting assessed",
+          "Page count and template count confirmed",
+          "Content supply responsibility agreed (client vs supplier)",
+          "Domain, DNS and email ownership confirmed",
+          "Third-party integrations identified (CRM, payments, booking)",
+          "Accessibility and browser support requirements",
+          "SEO migration and redirect plan scoped",
+          "Analytics and tracking requirements",
+          "Ad spend handled separately from management fee",
+          "Post-launch support and hosting term agreed",
+          "Number of revision rounds agreed",
+          "Ownership of assets and source on completion",
+        ],
+      },
+      drawings: {
+        enabled: true,
+        categories: ["Wireframes", "Sitemaps", "Design Mockups", "User Flows"],
+      },
+      supportingDocs: {
+        enabled: true,
+        categories: [
+          "Briefs / RFP Documents",
+          "Brand Guidelines",
+          "Existing Site Audits",
+          "Analytics Reports",
+          "Content Inventories",
+          "Specifications",
+        ],
+      },
+      siteRequirements: { enabled: true },
+      qualityCompliance: { enabled: true },
+    },
+    timeline: { enabled: true },
+    aiPrompts: {
+      documentCategorization: `Categorize website and digital marketing documents into:
+- Briefs / RFP Documents (project brief, invitation to tender, request for proposal)
+- Brand Guidelines (logo usage, colour, typography, tone of voice)
+- Existing Site Audits (technical SEO audits, performance reports, accessibility audits)
+- Analytics Reports (traffic, conversion, campaign performance)
+- Content Inventories (page lists, copy decks, asset lists)
+- Wireframes (low-fidelity layouts, sitemaps, user flows)
+- Design Mockups (high-fidelity visual designs)
+- Specifications (functional specs, integration requirements, hosting specs)
+- Trade Bills (pricing schedules, rate cards)
+- Other Supporting Documents`,
+      lineItemExtraction: `Extract line items from website and digital marketing documents.
+
+SEPARATE ONE-OFF FROM RECURRING. This is the most important distinction in
+this sector and the most commonly muddled:
+- One-off: discovery, design, build, content migration, training, launch
+- Monthly: hosting, maintenance, SEO retainer, paid media management,
+  content production, reporting
+- Annual: domains, SSL certificates, licences, annual support plans
+
+WEBSITE BUILD:
+- Templates or page types, with the NUMBER of each ("5 unique page templates")
+- CMS platform and version
+- Integrations, each as its own line (payment gateway, CRM, booking)
+- Content migration, quantified by page or post count
+- Copywriting, quantified by page
+- Photography or video, quantified by shoot day or asset
+
+DIGITAL MARKETING:
+- Retainer scope stated in hours or deliverables per month
+- AD SPEND IS NOT A FEE. Where evidence gives a media budget, keep it as
+  a separate pass-through line and never fold it into the management fee.
+- SEO work split into technical, content and off-page where the evidence
+  distinguishes them
+- Reporting frequency
+
+HOSTING & SUPPORT:
+- Hosting tier, environment count (staging vs production)
+- Support hours included per month
+- Backup frequency and retention
+- Uptime commitment
+
+REVISION ROUNDS: where the evidence states a number of revisions or
+amends, capture it — it is a scope boundary, not a courtesy.`,
+      timelineAnalysis: `Analyze a website or digital marketing project timeline.
+
+PHASES TO SUGGEST (website build):
+1. Discovery & Planning (stakeholder interviews, sitemap, requirements)
+   - Duration: 1-3 weeks typical
+2. Design (wireframes, then visual design, then revision rounds)
+   - Duration: 2-5 weeks, driven by page-template count and revision rounds
+3. Build (templates, CMS setup, integrations)
+   - Duration: 3-8 weeks depending on template and integration count
+4. Content & Migration (population, migration, redirects)
+   - Often the phase that slips; depends on who supplies content
+5. Testing & QA (cross-browser, accessibility, performance, UAT)
+   - Duration: 1-2 weeks
+6. Launch & Handover (DNS cutover, redirects live, training, documentation)
+   - Duration: a few days, plus a monitoring window
+
+PHASES TO SUGGEST (marketing retainer):
+- Onboarding and audit, then an ongoing monthly cycle. Say when results
+  are typically first measurable rather than promising an outcome.
+
+FACTORS TO CONSIDER:
+- CLIENT CONTENT SUPPLY is the single largest schedule risk — call it out
+  where the evidence makes the client responsible for content
+- Number of revision rounds agreed
+- Third-party integration dependencies and their own lead times
+- Approval chains and how many stakeholders sign off
+- Ad platform review and learning periods for paid media
+- NEVER promise a ranking, a traffic figure or a conversion rate`,
+    },
+  },
 } as const;
 
 export type TradePresetKey = keyof typeof TRADE_PRESETS;

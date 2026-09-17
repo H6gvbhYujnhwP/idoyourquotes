@@ -47,7 +47,13 @@ import type {
   QuoteContext,
   QuoteContextLineItem,
 } from "../engines/brandedProposalEngine";
-import { PRICING_SLOT_INDEX } from "../engines/brandedProposalEngine";
+// Delivery 2.14 Chunk 2 — the pricing chapter is identified by its role
+// rather than by its position. The old import of PRICING_SLOT_INDEX
+// compared against a hard-coded 16, which stops meaning anything once
+// chapter sets differ per sector. isPricingChapter() falls back to that
+// index for proposals saved before identity existed, so already-issued
+// documents render byte-identically.
+import { isPricingChapter } from "@shared/proposalChapters";
 
 interface PageDimensions {
   width: number;
@@ -1518,7 +1524,7 @@ async function renderNarrativePages(params: {
         ),
       ];
     } else if (
-      slot.slotIndex === PRICING_SLOT_INDEX &&
+      isPricingChapter(slot) &&
       hasLineItems &&
       params.quoteContext
     ) {

@@ -59,10 +59,14 @@ import {
   regenerateSingleChapter,
   includedSlots,
   type ChapterSlot,
-  PRICING_SLOT_INDEX,
   type QuoteContext,
   type QuoteContextLineItem,
 } from "../engines/brandedProposalEngine";
+// Delivery 2.14 Chunk 2 — the pricing chapter is now identified by its
+// role. PRICING_SLOT_INDEX is no longer imported here; the helper reads
+// the role where present and falls back to the legacy index for
+// proposals saved before chapters carried identity.
+import { isPricingChapter } from "@shared/proposalChapters";
 import { assembleBrandedProposal } from "./brandedProposalAssembler";
 import type { BrochureKnowledge } from "./brochureExtractor";
 
@@ -190,9 +194,18 @@ async function gatherQuoteContext(
 // Delivery 2.9 — `excluded` travels with every slot. z.object strips
 // unknown keys, so without it here the flag would be silently dropped on
 // save and a chapter the user removed would come back on refresh.
+//
+// Delivery 2.14 Chunk 2 — `chapterId` and `role` travel with every slot
+// for exactly the same reason `excluded` does: z.object strips unknown
+// keys, so without them here a chapter's identity would be silently
+// dropped the first time the workspace saved, and the proposal would
+// fall back to being read by position. Both are optional because
+// proposals saved before this delivery do not carry them.
 const ChapterSlotSchema = z.union([
   z.object({
     slotIndex: z.number(),
+    chapterId: z.string().optional(),
+    role: z.literal("pricing").optional(),
     slotName: z.string(),
     source: z.literal("embed"),
     brochurePageNumber: z.number(),
@@ -201,6 +214,8 @@ const ChapterSlotSchema = z.union([
   }),
   z.object({
     slotIndex: z.number(),
+    chapterId: z.string().optional(),
+    role: z.literal("pricing").optional(),
     slotName: z.string(),
     source: z.literal("generate"),
     title: z.string(),
@@ -872,7 +887,10 @@ export const brandedProposalRouter = router({
         (slot) => {
         if (slot.source !== "generate") return slot;
         const s = slot as any;
-        const isPricingChapter = s.slotIndex === PRICING_SLOT_INDEX;
+        // Delivery 2.14 Chunk 2 — role, not position. Shadowing the
+        // imported helper would be confusing, so the local flag is
+        // named for what it gates rather than what it is.
+        const isPricing = isPricingChapter(s);
         const isTitlePage = s.slotName === "Title Page";
         return {
           ...s,
@@ -885,7 +903,7 @@ export const brandedProposalRouter = router({
           // ordinary chapter prose is left alone.
           body: isTitlePage
             ? applyTitlePageContractWording(s.body ?? "")
-            : isPricingChapter
+            : isPricing
             ? // The proposal's pricing note says the figures are
               // estimated and may change. On a signed contract that is
               // the opposite of the truth, so it is replaced outright

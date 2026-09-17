@@ -31,20 +31,24 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
+// Delivery 2.14 Chunk 1 — the sector list, the preset resolver and the
+// display names now come from the shared vocabulary. They used to be
+// duplicated here, and the duplicate had drifted: it normalised
+// underscores (which the server copy did not) but was missing the
+// "website-marketing" alias, so Website & Digital Marketing silently
+// showed IT Services designs. The comment that used to sit here said
+// "if the library grows we can extract to shared/" — it grew.
+import {
+  TEMPLATE_SECTORS,
+  TEMPLATE_SECTOR_NAMES,
+  resolveTemplateSector,
+  type TemplateSectorId,
+} from "@shared/sectors";
 
 // ── Sector & style metadata ─────────────────────────────────────────
-//
-// Duplicated from server/services/templateLibrary.ts because client-
-// side bundling can't easily import server-only modules. Single small
-// constant; if the library grows we can extract to shared/.
 
-const SECTORS = [
-  "it-services",
-  "commercial-cleaning",
-  "web-marketing",
-  "pest-control",
-] as const;
-type SectorId = (typeof SECTORS)[number];
+const SECTORS = TEMPLATE_SECTORS;
+type SectorId = TemplateSectorId;
 
 const STYLES: Array<{
   id: string;
@@ -59,32 +63,21 @@ const STYLES: Array<{
   { id: "06-clean-tech", name: "Clean Tech", description: "White canvas with accent block. Minimal and technical." },
 ];
 
-const DEFAULT_SECTOR: SectorId = "it-services";
+// Delivery 2.14 Chunk 1 — the local DEFAULT_SECTOR constant was removed;
+// the fallback now lives in the shared vocabulary alongside the mapping
+// that decides when it applies.
 
 /**
- * Map a tradePreset string to a sector id. Tolerant of underscore /
- * hyphen / lowercase variants since historical rows may differ.
+ * Map a tradePreset string to a sector id, falling back to the default
+ * when the sector has no designs of its own.
+ *
+ * Delivery 2.14 Chunk 1 — delegates to the shared vocabulary. The local
+ * switch this replaces handled underscores but not the
+ * "website-marketing" spelling, so the one sector whose key and folder
+ * name differ never reached its own designs.
  */
 function tradePresetToSector(tradePreset: string | null | undefined): SectorId {
-  if (!tradePreset) return DEFAULT_SECTOR;
-  const normalised = tradePreset.toLowerCase().replace(/_/g, "-");
-  switch (normalised) {
-    case "it-services":
-    case "it":
-      return "it-services";
-    case "commercial-cleaning":
-    case "cleaning":
-      return "commercial-cleaning";
-    case "web-marketing":
-    case "web":
-    case "digital-marketing":
-      return "web-marketing";
-    case "pest-control":
-    case "pest":
-      return "pest-control";
-    default:
-      return DEFAULT_SECTOR;
-  }
+  return resolveTemplateSector(tradePreset);
 }
 
 // ── Props ───────────────────────────────────────────────────────────
@@ -295,10 +288,8 @@ export default function BrandedTemplatePickerV2(props: BrandedTemplatePickerV2Pr
 // ── Helpers ─────────────────────────────────────────────────────────
 
 function humaniseSector(s: SectorId): string {
-  switch (s) {
-    case "it-services": return "IT Services";
-    case "commercial-cleaning": return "Commercial Cleaning";
-    case "web-marketing": return "Web & Digital Marketing";
-    case "pest-control": return "Pest Control";
-  }
+  // Delivery 2.14 Chunk 1 — names come from the shared vocabulary so the
+  // picker and the server can't label the same sector differently. The
+  // strings are unchanged.
+  return TEMPLATE_SECTOR_NAMES[s];
 }

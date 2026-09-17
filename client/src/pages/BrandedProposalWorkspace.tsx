@@ -65,6 +65,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { brand } from "@/lib/brandTheme";
 import { trpc } from "@/lib/trpc";
 import XeroPushDialog from "@/components/XeroPushDialog";
+// Delivery 2.14 Chunk 2 — chapter identity, shared with the server.
+// Replaces this file's hand-copied PRICING_SLOT_INDEX, which had
+// already drifted once (see the note further down).
+import { isPricingChapter, type ChapterRole } from "@shared/proposalChapters";
 
 // ─── Types ───────────────────────────────────────────────────────────
 //
@@ -73,8 +77,18 @@ import XeroPushDialog from "@/components/XeroPushDialog";
 // modules — duplicating the shape locally is the existing cross-process
 // pattern (see how QuoteWorkspace handles trpc result types).
 
+// Delivery 2.14 Chunk 2 — `chapterId` and `role` are the chapter's
+// identity, mirroring the server's ChapterSlot. Both optional: a
+// proposal saved before this delivery carries neither, and is read
+// through the legacy fallback in isPricingChapter(). They are declared
+// here so the round trip through save keeps them — the server's zod
+// schema would otherwise be the only thing preserving them, and a type
+// that quietly omits a field is how the last mirror drifted.
+
 type EmbedSlot = {
   slotIndex: number;
+  chapterId?: string;
+  role?: ChapterRole;
   slotName: string;
   source: "embed";
   brochurePageNumber: number;
@@ -85,6 +99,8 @@ type EmbedSlot = {
 
 type GenerateSlot = {
   slotIndex: number;
+  chapterId?: string;
+  role?: ChapterRole;
   slotName: string;
   source: "generate";
   title: string;
@@ -117,7 +133,15 @@ type ChapterSlot = EmbedSlot | GenerateSlot;
 // was deletable. Found while proving 2.9's render changes: the proof
 // quote's pricing table never drew, because the assembler dispatches on
 // the server's 16 and the proof had followed this file's 15.
-const PRICING_SLOT_INDEX = 16;
+//
+// Delivery 2.14 Chunk 2 — THE MIRROR IS GONE. The drift above was not
+// bad luck, it was the predictable result of the same magic number
+// living in four files with nothing tying them together. The pricing
+// chapter is now identified by a role that travels with the chapter
+// itself, and isPricingChapter() is shared by the client, the engine,
+// the assembler and the router. There is nothing left here to drift,
+// and a sector chapter set with a different number of chapters (Chunk
+// 5) can no longer put the pricing table in the wrong place.
 
 // Rolling copy shown during the initial draft generation.
 const DRAFT_PROGRESS_COPY = [
@@ -543,7 +567,7 @@ export default function BrandedProposalWorkspace() {
     if (!slots) return;
     const target = slots.find((s) => s.slotIndex === slotIndex);
     if (!target) return;
-    if (slotIndex === PRICING_SLOT_INDEX) {
+    if (isPricingChapter(target)) {
       toast.error("The pricing chapter can't be taken out");
       return;
     }
@@ -1185,7 +1209,7 @@ export default function BrandedProposalWorkspace() {
           <ul className="p-1 max-h-[70vh] md:max-h-[calc(100vh-200px)] overflow-y-auto">
             {slots.map((s) => {
               const isSelected = s.slotIndex === selectedIndex;
-              const isPricing = s.slotIndex === PRICING_SLOT_INDEX;
+              const isPricing = isPricingChapter(s);
               const isRegen = regeneratingIndex === s.slotIndex;
               // Delivery 2.9 — an excluded chapter stays in the list so
               // it can be read and put back; it just doesn't print.
@@ -1198,7 +1222,7 @@ export default function BrandedProposalWorkspace() {
                       focus so the list stays clean, but stays visible
                       while the chapter is excluded — otherwise the way
                       back is hidden. */}
-                  {s.slotIndex !== PRICING_SLOT_INDEX && (
+                  {!isPricing && (
                     <button
                       type="button"
                       aria-label={
@@ -1345,7 +1369,7 @@ export default function BrandedProposalWorkspace() {
           {selectedSlot && (
             <ChapterPane
               slot={selectedSlot}
-              isPricing={selectedSlot.slotIndex === PRICING_SLOT_INDEX}
+              isPricing={isPricingChapter(selectedSlot)}
               isEditing={editingIndex === selectedSlot.slotIndex}
               isRegenerating={regeneratingIndex === selectedSlot.slotIndex}
               editBuffer={editBuffer}

@@ -16,6 +16,18 @@
 import * as path from "path";
 import * as fs from "fs";
 import { fileURLToPath } from "url";
+// Delivery 2.14 Chunk 1 — the canonical sector vocabulary. This module
+// is the only place that knows how a stored trade preset relates to a
+// template library folder, and it is shared with the client so the
+// picker and the server default can no longer drift apart.
+import {
+  TEMPLATE_SECTORS,
+  TEMPLATE_SECTOR_NAMES,
+  DEFAULT_TEMPLATE_SECTOR,
+  templateSectorFor,
+  resolveTemplateSector,
+  type TemplateSectorId,
+} from "@shared/sectors";
 
 // ESM equivalent of __dirname. The repo uses "type": "module" so the
 // CommonJS __dirname global isn't available.
@@ -24,11 +36,19 @@ const _dirname = path.dirname(_filename);
 
 // ── Static metadata ─────────────────────────────────────────────────
 
-/** Sectors currently supported by the app. Must match the trade preset
- *  values in the orgs table. The electrical sector is permanently out
- *  per the GTM decision — only these four exist. */
-export const SECTORS = ["it-services", "commercial-cleaning", "web-marketing", "pest-control"] as const;
-export type SectorId = (typeof SECTORS)[number];
+/** Sectors currently supported by the app.
+ *
+ *  Delivery 2.14 Chunk 1 — re-exported from the canonical vocabulary in
+ *  shared/sectors.ts rather than declared here. The list is unchanged;
+ *  what changed is that there is now one definition of it instead of
+ *  three that disagreed. The comment that used to sit here claimed the
+ *  values "must match the trade preset values in the orgs table" — they
+ *  never did, which is precisely the bug this delivery fixes: trade
+ *  presets are underscored ("commercial_cleaning") and these are
+ *  hyphenated folder names ("commercial-cleaning"). The translation
+ *  between the two now lives in one place. */
+export const SECTORS = TEMPLATE_SECTORS;
+export type SectorId = TemplateSectorId;
 
 /** Six design directions per sector. IDs match the folder names Manus
  *  uses inside the library (e.g. "01-split-screen"). */
@@ -73,10 +93,13 @@ export const STYLE_META: Record<StyleId, { name: string; description: string }> 
 };
 
 export const SECTOR_META: Record<SectorId, { name: string }> = {
-  "it-services": { name: "IT Services" },
-  "commercial-cleaning": { name: "Commercial Cleaning" },
-  "web-marketing": { name: "Web & Digital Marketing" },
-  "pest-control": { name: "Pest Control" },
+  // Delivery 2.14 Chunk 1 — names come from the shared vocabulary so the
+  // server and the picker cannot show different labels for the same
+  // sector. The strings themselves are unchanged.
+  "it-services": { name: TEMPLATE_SECTOR_NAMES["it-services"] },
+  "commercial-cleaning": { name: TEMPLATE_SECTOR_NAMES["commercial-cleaning"] },
+  "web-marketing": { name: TEMPLATE_SECTOR_NAMES["web-marketing"] },
+  "pest-control": { name: TEMPLATE_SECTOR_NAMES["pest-control"] },
 };
 
 // ── Library root resolution ─────────────────────────────────────────
@@ -245,25 +268,35 @@ export function validateTemplateId(templateId: string): boolean {
  * this function exists as a single point to extend if naming diverges
  * later.
  */
+/**
+ * Map a trade-preset string (as stored on organizations.tradePreset or
+ * users.defaultTradeSector) to a template sector id. Returns null when
+ * the sector has no designs of its own, so the caller can fall back.
+ *
+ * Delivery 2.14 Chunk 1 — THIS FUNCTION USED TO BE BROKEN. It matched
+ * on hyphenated ids ("commercial-cleaning") while every stored value is
+ * underscored ("commercial_cleaning"), so every one of the 25 trade
+ * presets fell through to the default and three sectors' worth of
+ * finished designs were unreachable from the sector default. It now
+ * delegates to the shared vocabulary, which normalises underscores and
+ * carries the historical aliases — including "website-marketing", the
+ * one that the picker's own copy was also missing.
+ *
+ * Kept as a named export so existing call sites are unchanged.
+ */
 export function tradePresetToSector(tradePreset: string | null | undefined): SectorId | null {
-  if (!tradePreset) return null;
-  switch (tradePreset) {
-    case "it-services":
-    case "it":
-      return "it-services";
-    case "commercial-cleaning":
-    case "cleaning":
-      return "commercial-cleaning";
-    case "web-marketing":
-    case "web":
-    case "digital-marketing":
-      return "web-marketing";
-    case "pest-control":
-    case "pest":
-      return "pest-control";
-    default:
-      return null;
-  }
+  return templateSectorFor(tradePreset);
+}
+
+/**
+ * Same, but never null: applies the default sector when the preset has
+ * no designs of its own. Prefer this at render time, where a proposal
+ * always needs a design.
+ */
+export function tradePresetToSectorOrDefault(
+  tradePreset: string | null | undefined,
+): SectorId {
+  return resolveTemplateSector(tradePreset);
 }
 
 // ── Internals ───────────────────────────────────────────────────────
