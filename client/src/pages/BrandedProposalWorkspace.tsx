@@ -889,10 +889,15 @@ export default function BrandedProposalWorkspace() {
           {/* Delivery 2.8 — the date printed on the title page. Blank
               means today, which is what every render did before. Needed
               because a contract agreed on 22 August was restamped with
-              the render date every time it was produced. */}
+              the render date every time it was produced.
+              Delivery 2.13 — labelled "Document date". As plain "Date"
+              it read as a duplicate of the contract dialog's Start
+              date, which is a different fact entirely: this one is when
+              the document is dated, that one is when the service
+              begins. */}
           <label className="flex items-center gap-1.5 text-xs">
             <Calendar className="w-3.5 h-3.5" style={{ color: brand.navyMuted }} />
-            <span className="text-muted-foreground">Date</span>
+            <span className="text-muted-foreground">Document date</span>
             <input
               type="date"
               value={coverDate}
@@ -901,7 +906,7 @@ export default function BrandedProposalWorkspace() {
                 if (slots) persistSlots(slots, renderOrientation, e.target.value);
               }}
               disabled={isRendering}
-              title="Date printed on the title page — leave blank for today"
+              title="Date printed on the title page — leave blank for today. Not the service start date, which is asked for when you create the contract."
               className="rounded-md border bg-background px-2 py-1 text-xs focus:outline-none"
               style={{ borderColor: brand.border }}
             />

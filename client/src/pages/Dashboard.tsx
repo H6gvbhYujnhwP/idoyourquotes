@@ -72,6 +72,13 @@ interface QuoteData {
   clientName: string | null;
   status: string;
   total: string | null;
+  /**
+   * Delivery 2.13 — the one-off figure EX VAT. `total` is subtotal +
+   * tax and is the only VAT-inclusive number on a list row; everything
+   * else here, and every profit figure, is ex VAT. The Total column
+   * reads this so the list matches the quote workspace's own header.
+   */
+  subtotal?: string | null;
   monthlyTotal?: string | null;
   annualTotal?: string | null;
   description?: string | null;
@@ -599,7 +606,10 @@ export default function Dashboard() {
                 {/* Phase 4B Delivery E.9 — internal-only profit + margin
                     columns. Sourced from the quotes.list aggregating
                     helper which LEFT JOINs line items and SUMs in SQL.
-                    Plain text, no threshold colouring (per spec). */}
+                    Plain text, no threshold colouring (per spec).
+                    Delivery 2.13 — both columns now split by cadence,
+                    matching the Total column beside them and the quote
+                    workspace's own header pill. */}
                 <th
                   className="text-right px-4 py-2.5"
                   style={{
@@ -609,7 +619,7 @@ export default function Dashboard() {
                     textTransform: "uppercase",
                     color: "var(--brand-text-tertiary)",
                   }}
-                  title="Internal — sum of (rate − cost) × qty across all lines"
+                  title="Internal — (rate − buy-in) × qty, split one-off / monthly / annual"
                 >
                   Profit
                 </th>
@@ -622,7 +632,7 @@ export default function Dashboard() {
                     textTransform: "uppercase",
                     color: "var(--brand-text-tertiary)",
                   }}
-                  title="Profit ÷ revenue across all lines"
+                  title="Profit ÷ revenue, calculated separately for each cadence"
                 >
                   Margin
                 </th>
@@ -645,7 +655,22 @@ export default function Dashboard() {
               {filteredQuotes.map(quote => {
                 const sectorKey = quote.tradePreset || "";
                 const sectorName = sectorKey ? sectorLabels[sectorKey] : null;
-                const total = parseFloat(quote.total || "0");
+                // Delivery 2.13 — the one-off figure now reads `subtotal`
+                // (ex VAT) rather than `total` (subtotal + tax).
+                //
+                // WHY: `total` is the only VAT-inclusive number anywhere
+                // on this row. monthlyTotal and annualTotal are ex VAT,
+                // and so is every profit and cost aggregate. Quote 210
+                // therefore printed £837.60 here while its own workspace
+                // header printed "£698.00 + £238.62/mo · Ex VAT" for the
+                // same quote — 837.60 being 698.00 × 1.2 — and the margin
+                // only reconciled if you divided by 1.2 first. The list
+                // and the workspace now agree.
+                //
+                // Nothing stored changes: `total` is untouched and every
+                // other consumer (PDF, Word, email, branded proposal)
+                // still reads whichever field it always did.
+                const total = parseFloat(quote.subtotal || "0");
                 const monthlyTotal = parseFloat(
                   (quote.monthlyTotal as string) || "0"
                 );
@@ -672,6 +697,73 @@ export default function Dashboard() {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
                   });
+
+                // ── Delivery 2.13 — profit and margin, split by cadence ──
+                //
+                // Same shape as the Total column above: a primary line
+                // with smaller lines beneath. A quote with a project fee
+                // and a support contract now reads its one-off profit and
+                // its monthly profit as two figures, because adding a
+                // one-time amount to a recurring one produces a number
+                // that is neither (quote 210's old £873.35).
+                //
+                // A cadence appears when it carries revenue OR profit, so
+                // a loss-making monthly block is not hidden by having no
+                // positive profit to show, and a cadence the quote does
+                // not use stays off the row entirely.
+                //
+                // Blank buy-in counts as zero (owner's decision, 16 Sep
+                // 2026), which is what the SQL aggregate has always done,
+                // so every quote with lines gets a figure. The only dash
+                // case left is a quote with no line items at all.
+                type ProfitLine = {
+                  profit: number;
+                  marginPct: number | null;
+                  suffix: string;
+                };
+                const num = (v: unknown) => parseFloat((v as string) || "0") || 0;
+                const lineCount = ((quote as any).lineCount as number) || 0;
+                const cadences: Array<{
+                  revenue: number;
+                  profit: number;
+                  cost: number;
+                  suffix: string;
+                }> = [
+                  {
+                    revenue: total,
+                    profit: num((quote as any).oneOffProfit),
+                    cost: num((quote as any).oneOffCost),
+                    suffix: "",
+                  },
+                  {
+                    revenue: monthlyTotal,
+                    profit: num((quote as any).monthlyProfit),
+                    cost: num((quote as any).monthlyCost),
+                    suffix: "/mo",
+                  },
+                  {
+                    revenue: annualTotal,
+                    profit: num((quote as any).annualProfit),
+                    cost: num((quote as any).annualCost),
+                    suffix: "/yr",
+                  },
+                ];
+                const profitLines: ProfitLine[] = cadences
+                  .filter(c => c.revenue > 0 || c.profit !== 0)
+                  .map(c => {
+                    // Revenue base is profit + cost rather than the stored
+                    // total, so the percentage is consistent with the
+                    // figure printed beside it. The two differ when a
+                    // quote carries optional lines: those are counted in
+                    // profit and cost but excluded from the stored totals.
+                    const base = c.profit + c.cost;
+                    return {
+                      profit: c.profit,
+                      marginPct: base > 0 ? (c.profit / base) * 100 : null,
+                      suffix: c.suffix,
+                    };
+                  });
+                const hasProfitData = lineCount > 0 && profitLines.length > 0;
 
                 const clientDisplay =
                   quote.clientName || quote.reference || `Quote #${quote.id}`;
@@ -770,65 +862,71 @@ export default function Dashboard() {
                     </td>
 
                     {/* Phase 4B Delivery E.9 — Profit + Margin cells.
-                        Sourced from the totalProfit and totalCost
-                        aggregates the list helper now returns.
-                        Revenue for the margin denominator is the sum
-                        of all line totals (including monthly + annual
-                        + one-off) — same scope as totalProfit so the
-                        % is internally consistent. Shows a muted dash
-                        when no costs are entered.
-                        Phase 4B Delivery E.11 — "any costs entered"
-                        is now decided by linesWithCost, an aggregate
-                        count of lines where cost_price IS NOT NULL.
-                        Previously we used totalCost > 0, which
-                        falsely hid profit/margin on quotes where every
-                        line is genuinely passthrough (cost = 0
-                        explicitly). With linesWithCost, a passthrough-
-                        only quote correctly shows 100% margin. */}
-                    {(() => {
-                      const profit = parseFloat(
-                        ((quote as any).totalProfit as string) || "0",
-                      );
-                      const cost = parseFloat(
-                        ((quote as any).totalCost as string) || "0",
-                      );
-                      const linesWithCost =
-                        ((quote as any).linesWithCost as number) || 0;
-                      const revenue = profit + cost;
-                      const hasCost = linesWithCost > 0;
-                      const marginPct =
-                        hasCost && revenue > 0 ? (profit / revenue) * 100 : null;
-                      return (
+                        Delivery 2.13 — both now split by cadence, built
+                        from the per-cadence aggregates the list helper
+                        returns. Same stacked layout as the Total column
+                        to the left (primary figure, smaller lines
+                        beneath) and the same breakdown the quote
+                        workspace's green header pill already shows, so
+                        the two screens read as one another.
+                        A blank buy-in counts as zero, so a quote with
+                        line items always has a figure; the dash is now
+                        only for a quote with no lines at all. */}
+                    <td className="px-4 py-3 text-right">
+                      {hasProfitData ? (
                         <>
-                          <td className="px-4 py-3 text-right">
-                            {hasCost ? (
-                              <span
-                                style={{
-                                  fontWeight: 500,
-                                  color: "var(--brand-text-primary)",
-                                }}
-                              >
-                                £{formatGBP(profit)}
-                              </span>
-                            ) : (
-                              <span
-                                style={{ color: "var(--brand-text-tertiary)" }}
-                              >
-                                —
-                              </span>
-                            )}
-                          </td>
-                          <td
-                            className="px-4 py-3 text-right text-xs"
-                            style={{ color: "var(--brand-text-secondary)" }}
+                          <div
+                            style={{
+                              fontWeight: 500,
+                              color: "var(--brand-text-primary)",
+                            }}
                           >
-                            {marginPct === null
-                              ? "—"
-                              : `${marginPct.toFixed(1)}%`}
-                          </td>
+                            £{formatGBP(profitLines[0].profit)}
+                            {profitLines[0].suffix}
+                          </div>
+                          {profitLines.slice(1).map((line, idx) => (
+                            <div
+                              key={idx}
+                              className="text-[11px] mt-0.5"
+                              style={{ color: "var(--brand-text-tertiary)" }}
+                            >
+                              + £{formatGBP(line.profit)}{line.suffix}
+                            </div>
+                          ))}
                         </>
-                      );
-                    })()}
+                      ) : (
+                        <span style={{ color: "var(--brand-text-tertiary)" }}>
+                          —
+                        </span>
+                      )}
+                    </td>
+                    <td
+                      className="px-4 py-3 text-right text-xs"
+                      style={{ color: "var(--brand-text-secondary)" }}
+                    >
+                      {hasProfitData ? (
+                        <>
+                          <div>
+                            {profitLines[0].marginPct === null
+                              ? "—"
+                              : `${profitLines[0].marginPct.toFixed(1)}%`}
+                          </div>
+                          {profitLines.slice(1).map((line, idx) => (
+                            <div
+                              key={idx}
+                              className="text-[11px] mt-0.5"
+                              style={{ color: "var(--brand-text-tertiary)" }}
+                            >
+                              {line.marginPct === null
+                                ? "—"
+                                : `${line.marginPct.toFixed(1)}%`}
+                            </div>
+                          ))}
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
 
                     {/* Updated */}
                     <td

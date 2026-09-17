@@ -464,7 +464,58 @@ export type QuoteWithProfit = Quote & {
   // genuinely has zero buy-in) would render a dash because
   // totalCost = 0, and we couldn't distinguish that from a quote
   // where no costs have been entered at all.
+  //
+  // Delivery 2.13 — NO LONGER DRIVES THE DASHBOARD. A blank buy-in is
+  // now treated as zero everywhere (owner's decision, 16 Sep 2026), so
+  // "no cost entered" and "cost entered as zero" produce the same
+  // profit figure and the distinction stopped mattering for display.
+  // Kept on the returned shape because it is cheap, harmless, and
+  // still the honest answer to "how many lines have a real buy-in".
   linesWithCost: number;
+  /**
+   * Delivery 2.13 — per-cadence cost and profit.
+   *
+   * WHY: the Total column has always split one-off from recurring
+   * (£698.00 + £238.62/mo), but Profit was a single SUM across every
+   * line regardless of cadence. On quote 210 that produced £873.35 —
+   * a one-time £698.00 and a recurring £175.35/mo added together into
+   * a number that is neither, with a blended 93.2% margin to match.
+   * The quote workspace has always shown these separately in its
+   * header pill; these aggregates let the list do the same.
+   *
+   * BUCKETING: 'monthly' and 'annual' are matched exactly; EVERYTHING
+   * ELSE falls into one-off, including NULL, the legacy 'standard',
+   * 'one_off', and any value not recognised. That mirrors the quote
+   * workspace's own `else oneOffProfit += profit` and follows the
+   * same safe-direction principle as the Xero plan builder: an
+   * unrecognised cadence is counted once rather than forever.
+   *
+   * OPTIONAL LINES are included, exactly as they always have been in
+   * these aggregates (owner's decision, 16 Sep 2026 — an optional
+   * line can simply be removed from the quote later if it isn't
+   * taken). Note this means profit can include work the stored
+   * totals exclude, since recalculateQuoteTotals drops is_optional
+   * rows. The margin stays internally consistent because its revenue
+   * base (profit + cost) includes them too.
+   *
+   * Strings for money, matching totalCost / totalProfit and every
+   * other decimal column: pg returns numerics as strings and the
+   * dashboard parseFloats throughout.
+   */
+  oneOffCost: string;
+  oneOffProfit: string;
+  monthlyCost: string;
+  monthlyProfit: string;
+  annualCost: string;
+  annualProfit: string;
+  /**
+   * Delivery 2.13 — how many line items the quote actually has.
+   * With blank-as-zero, a quote with lines ALWAYS has a profit figure
+   * worth printing (even if it is £0.00), so the dashboard needs to
+   * distinguish "nothing to show" from "nothing earned". A brand-new
+   * quote with no lines is the only genuine dash case.
+   */
+  lineCount: number;
 };
 
 async function getQuotesWithProfit(
@@ -505,6 +556,31 @@ async function getQuotesWithProfit(
       // not what the supplier charges us.
       totalProfit: sql<string>`COALESCE(SUM((${quoteLineItems.rate} * (1 - COALESCE(${quoteLineItems.discountPercent}, 0) / 100) - COALESCE(${quoteLineItems.costPrice}, 0)) * ${quoteLineItems.quantity}), 0)::text`,
       linesWithCost: sql<number>`COALESCE(SUM(CASE WHEN ${quoteLineItems.costPrice} IS NOT NULL THEN 1 ELSE 0 END), 0)::int`,
+      // ── Delivery 2.13 — the same two sums again, once per cadence ──
+      //
+      // Each is the identical arithmetic to totalCost / totalProfit
+      // above, wrapped in a CASE that selects the bucket. Same COALESCE
+      // on cost_price (blank buy-in reads as zero) and on
+      // discount_percent (null means no discount). ELSE 0 rather than
+      // ELSE NULL so a quote whose lines are all one cadence still sums
+      // to 0.00 in the other buckets instead of NULL.
+      //
+      // `id IS NOT NULL` guards the LEFT JOIN: a quote with no line
+      // items produces one all-NULL joined row, and without the guard
+      // that row would satisfy the one-off condition (NULL IS DISTINCT
+      // FROM 'monthly' is TRUE) and evaluate arithmetic over NULLs.
+      //
+      // IS DISTINCT FROM rather than <> because pricing_type is
+      // nullable and NULL <> 'monthly' is NULL, not TRUE — a plain <>
+      // would silently drop every legacy line that never had a
+      // pricing type set.
+      oneOffCost: sql<string>`COALESCE(SUM(CASE WHEN ${quoteLineItems.id} IS NOT NULL AND ${quoteLineItems.pricingType} IS DISTINCT FROM 'monthly' AND ${quoteLineItems.pricingType} IS DISTINCT FROM 'annual' THEN COALESCE(${quoteLineItems.costPrice}, 0) * ${quoteLineItems.quantity} ELSE 0 END), 0)::text`,
+      oneOffProfit: sql<string>`COALESCE(SUM(CASE WHEN ${quoteLineItems.id} IS NOT NULL AND ${quoteLineItems.pricingType} IS DISTINCT FROM 'monthly' AND ${quoteLineItems.pricingType} IS DISTINCT FROM 'annual' THEN (${quoteLineItems.rate} * (1 - COALESCE(${quoteLineItems.discountPercent}, 0) / 100) - COALESCE(${quoteLineItems.costPrice}, 0)) * ${quoteLineItems.quantity} ELSE 0 END), 0)::text`,
+      monthlyCost: sql<string>`COALESCE(SUM(CASE WHEN ${quoteLineItems.pricingType} = 'monthly' THEN COALESCE(${quoteLineItems.costPrice}, 0) * ${quoteLineItems.quantity} ELSE 0 END), 0)::text`,
+      monthlyProfit: sql<string>`COALESCE(SUM(CASE WHEN ${quoteLineItems.pricingType} = 'monthly' THEN (${quoteLineItems.rate} * (1 - COALESCE(${quoteLineItems.discountPercent}, 0) / 100) - COALESCE(${quoteLineItems.costPrice}, 0)) * ${quoteLineItems.quantity} ELSE 0 END), 0)::text`,
+      annualCost: sql<string>`COALESCE(SUM(CASE WHEN ${quoteLineItems.pricingType} = 'annual' THEN COALESCE(${quoteLineItems.costPrice}, 0) * ${quoteLineItems.quantity} ELSE 0 END), 0)::text`,
+      annualProfit: sql<string>`COALESCE(SUM(CASE WHEN ${quoteLineItems.pricingType} = 'annual' THEN (${quoteLineItems.rate} * (1 - COALESCE(${quoteLineItems.discountPercent}, 0) / 100) - COALESCE(${quoteLineItems.costPrice}, 0)) * ${quoteLineItems.quantity} ELSE 0 END), 0)::text`,
+      lineCount: sql<number>`COUNT(${quoteLineItems.id})::int`,
     })
     .from(quotes)
     .leftJoin(quoteLineItems, eq(quoteLineItems.quoteId, quotes.id))
@@ -517,6 +593,15 @@ async function getQuotesWithProfit(
     totalCost: r.totalCost,
     totalProfit: r.totalProfit,
     linesWithCost: r.linesWithCost,
+    // Delivery 2.13 — per-cadence buckets for the dashboard's split
+    // Profit and Margin columns.
+    oneOffCost: r.oneOffCost,
+    oneOffProfit: r.oneOffProfit,
+    monthlyCost: r.monthlyCost,
+    monthlyProfit: r.monthlyProfit,
+    annualCost: r.annualCost,
+    annualProfit: r.annualProfit,
+    lineCount: r.lineCount,
   }));
 }
 
