@@ -124,10 +124,19 @@ export default function XeroPushDialog({
     <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4"
       style={{ background: "rgba(15,23,42,0.45)" }}
-      onClick={() => !isPushing && onClose()}
+      // Backdrop click deliberately does NOT close this dialog. The
+      // new-customer form below is local state — name, email and the
+      // four address lines, pre-filled from the quote and edited by
+      // hand — and a stray click on the dark area discarded all of it
+      // with no warning and no undo. The X in the header and the
+      // Cancel button at the foot remain the ways out, so there is no
+      // way to get stuck here.
     >
       <div
         className="w-full max-w-3xl my-8 rounded-xl bg-white p-6 space-y-5"
+        // Retained even though the backdrop no longer closes: it keeps
+        // clicks inside the panel from reaching any handler added to
+        // the overlay later.
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">

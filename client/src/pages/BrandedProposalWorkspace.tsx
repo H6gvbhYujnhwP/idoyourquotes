@@ -1084,10 +1084,17 @@ export default function BrandedProposalWorkspace() {
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ background: "rgba(15,23,42,0.45)" }}
-          onClick={() => !isRenderingContract && setContractOpen(false)}
+          // Backdrop click deliberately does NOT close this dialog.
+          // The start date typed here is local state and is the one
+          // thing on the contract that cannot be recovered from the
+          // quote, so a stray click on the dark area threw it away
+          // silently. The Cancel button at the foot remains the way out.
         >
           <div
             className="w-full max-w-md rounded-xl bg-white p-6 space-y-5"
+            // Retained even though the backdrop no longer closes: it
+            // keeps clicks inside the panel from reaching any handler
+            // added to the overlay later.
             onClick={(e) => e.stopPropagation()}
           >
             <div>
