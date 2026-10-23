@@ -1811,6 +1811,11 @@ IMPORTANT: Address the email greeting using the first name only (e.g. "Hi ${gree
         // match the rest of this shape — the underlying column is
         // decimal and the helper accepts strings unchanged.
         costPrice: z.string().optional(),
+        // Supplier-reference delivery — model code, part number or
+        // supplier URL sitting with the buy-in cost. Capped at 500 to
+        // match the column; a longer paste is rejected here rather
+        // than truncated by Postgres, so the user is told.
+        supplierRef: z.string().max(500).optional(),
         pricingType: z.enum(['standard', 'monthly', 'optional', 'annual']).optional(),
         // DISCOUNT_DELIVERY_LINEITEM_ENDPOINTS — per-line negotiated discount as a percentage
         // ("11" = 11% off). String to match the rest of this shape; the
@@ -1848,6 +1853,10 @@ IMPORTANT: Address the email greeting using the first name only (e.g. "Hi ${gree
           // Pass through; null is fine on the DB side (column is
           // nullable) and the workspace shows a dash when empty.
           costPrice: input.costPrice ?? null,
+          // Supplier-reference delivery — same treatment as the cost
+          // beside it. A blank box stores null, not "", so "never set"
+          // and "set then cleared" read the same downstream.
+          supplierRef: input.supplierRef?.trim() ? input.supplierRef.trim() : null,
           pricingType: input.pricingType || "standard",
           // Store null rather than "0" when there is no discount, so
           // "never discounted" and "discounted by zero" stay
@@ -1876,6 +1885,11 @@ IMPORTANT: Address the email greeting using the first name only (e.g. "Hi ${gree
         // to send it. Empty-string normalised to null so a user can
         // clear a previously-set cost.
         costPrice: z.string().optional(),
+        // Supplier-reference delivery — editable from the workspace,
+        // same auto-save path as the cost. Capped at 500 to match the
+        // column; trimmed-empty is normalised to null below so the
+        // box can be cleared.
+        supplierRef: z.string().max(500).optional(),
         // Discount delivery — editable from the workspace. Empty string
         // is normalised to null below so a user can clear a discount
         // they previously applied.
@@ -1896,6 +1910,16 @@ IMPORTANT: Address the email greeting using the first name only (e.g. "Hi ${gree
         // so the helper stays a pure pass-through.
         if (data.costPrice !== undefined && data.costPrice.trim() === "") {
           (data as any).costPrice = null;
+        }
+
+        // Supplier-reference delivery — a cleared box stores null, and
+        // a value is stored trimmed. Done here rather than in the Zod
+        // shape so the helper below stays a pure pass-through, which
+        // is the pattern the two normalisations either side of this
+        // one already follow.
+        if (data.supplierRef !== undefined) {
+          const trimmed = data.supplierRef.trim();
+          (data as any).supplierRef = trimmed === "" ? null : trimmed;
         }
 
         // Discount delivery — same treatment for a cleared discount box.

@@ -581,6 +581,22 @@ export const quoteLineItems = pgTable("quote_line_items", {
   // PROFIT column). shared/schema.ts had drifted; this block restores
   // the dual-schema parity called out in the session handover.
   costPrice: decimal("cost_price", { precision: 12, scale: 2 }),
+  // Supplier-reference delivery — the model code, part number or
+  // supplier URL that the buy-in cost above came from. INTERNAL ONLY:
+  // it is rendered under the buy-in figure in the workspace, on the
+  // internal side of the dashed boundary, and is read by no document
+  // path — not the quote PDF, the Word export, the branded proposal,
+  // the contract or the Xero plan. Free text rather than a structured
+  // {code, url} pair because a line is as likely to carry "Vigor 3912"
+  // as a link, and forcing a shape on it would mean two boxes where
+  // one will do. 500 characters is long enough for a real supplier
+  // URL with query parameters and short enough that the column cannot
+  // be used as a second description.
+  //
+  // NULL on every row created before this delivery, which is what
+  // "appears blank on every existing quote" means in practice — no
+  // backfill is performed and none is intended.
+  supplierRef: varchar("supplier_ref", { length: 500 }),
   // Discount delivery — per-line negotiated discount, expressed as a
   // percentage (e.g. "11.00" = 11% off). Nullable: NULL and 0 both mean
   // "no discount", and every quote created before this delivery reads

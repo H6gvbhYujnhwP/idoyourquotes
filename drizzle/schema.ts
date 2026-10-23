@@ -406,6 +406,11 @@ export const quoteLineItems = pgTable("quote_line_items", {
   category: varchar("category", { length: 100 }),
   pricingType: varchar("pricing_type", { length: 20 }).default("one_off"),
   costPrice: decimal("cost_price", { precision: 12, scale: 2 }),
+  // Supplier-reference delivery — model code, part number or supplier
+  // URL behind the buy-in cost above. Internal only; no document path
+  // reads it. Declared identically in shared/schema.ts per the
+  // dual-schema rule. NULL on every pre-delivery row; no backfill.
+  supplierRef: varchar("supplier_ref", { length: 500 }),
   // Discount delivery — per-line negotiated discount, expressed as a
   // percentage (e.g. "11.00" = 11% off). Nullable: NULL and 0 both mean
   // "no discount", and every quote created before this delivery reads

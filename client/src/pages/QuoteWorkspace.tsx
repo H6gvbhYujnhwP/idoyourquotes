@@ -79,6 +79,7 @@ import {
   Info,
   RefreshCw,
   Lock,
+  ExternalLink,
 } from "lucide-react";
 import DictationButton from "@/components/DictationButton";
 import CatalogPicker, { type CatalogItemRef } from "@/components/CatalogPicker";
@@ -120,6 +121,11 @@ interface LineItem {
   isEstimated?: boolean | null;
   itemName?: string | null;
   costPrice?: string | null;
+  // Supplier-reference delivery — the model code, part number or
+  // supplier URL behind the buy-in cost. Internal only; rendered under
+  // the cost figure and read by no document path. Optional because it
+  // is NULL on every row created before that delivery.
+  supplierRef?: string | null;
 }
 
 interface QuoteInput {
@@ -3318,6 +3324,17 @@ function LineItemRow({
           inputMode="decimal"
           placeholder="—"
         />
+        {/* Supplier-reference delivery — the model code, part number or
+            supplier URL the buy-in figure above came from, sitting in
+            the same cell on the internal side of the dashed boundary.
+            Always an editable box rather than a rendered link, with the
+            open-link control beside it: a cell that turns into a link
+            once it holds a URL is a cell you can no longer correct
+            without deleting it first. */}
+        <SupplierRefCell
+          value={(row as any).supplierRef ?? ""}
+          onSave={(v) => onSave(row.id, { supplierRef: v })}
+        />
       </td>
       {/* Phase 4B Delivery E.9 — PROFIT cell. Derived live from rate,
           cost and quantity. Margin % below the £ amount.
@@ -3441,6 +3458,94 @@ function RowCellInput({
       inputMode={inputMode}
       placeholder={placeholder}
     />
+  );
+}
+
+/**
+ * Supplier-reference delivery — the small second line inside the
+ * BUY-IN COST cell. Holds the model code, part number or supplier URL
+ * that the buy-in figure came from.
+ *
+ * INTERNAL ONLY. It lives on the internal side of the cell's dashed
+ * left border, alongside the cost and profit figures, and no document
+ * path reads it — not the quote PDF, the Word export, the branded
+ * proposal, the contract, or the Xero plan. Nothing a client sees
+ * changes because a row carries one.
+ *
+ * ALWAYS AN INPUT, never a rendered link. The obvious design is to
+ * show a clickable link once the value is a URL, but then correcting
+ * a mistyped link means selecting a thing that navigates away instead
+ * of focusing. The open control is a separate icon that only appears
+ * when there is somewhere to go, so the text stays editable at all
+ * times.
+ *
+ * The 500-character cap mirrors the column and the server's Zod rule,
+ * applied here too so a long paste is stopped at the keyboard rather
+ * than accepted and then rejected by a save the user cannot see.
+ */
+function looksLikeUrl(value: string): boolean {
+  const v = value.trim();
+  // Deliberately narrow. A bare "draytek.com" is more likely to be a
+  // manufacturer name typed as a reference than a link the user wants
+  // opened, so only an explicit scheme or a www. host counts.
+  return /^https?:\/\/\S+$/i.test(v) || /^www\.\S+$/i.test(v);
+}
+
+function SupplierRefCell({
+  value,
+  onSave,
+}: {
+  value: string;
+  onSave: (v: string) => void;
+}) {
+  const [local, setLocal] = useState(value);
+  const ref = useRef<HTMLInputElement | null>(null);
+
+  // Same guard as RowCellInput: a refetch landing mid-type must not
+  // overwrite what is being typed.
+  useEffect(() => {
+    if (document.activeElement !== ref.current) {
+      setLocal(value);
+    }
+  }, [value]);
+
+  const isUrl = looksLikeUrl(local);
+  const href = isUrl
+    ? local.trim().toLowerCase().startsWith("www.")
+      ? `https://${local.trim()}`
+      : local.trim()
+    : null;
+
+  return (
+    <div className="flex items-center justify-end gap-1 mt-0.5">
+      {href && (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          title="Open supplier link in a new tab"
+          className="flex-shrink-0 hover:opacity-70 transition-opacity"
+          style={{ color: brand.navyMuted }}
+        >
+          <ExternalLink className="w-3 h-3" />
+        </a>
+      )}
+      <Input
+        ref={ref}
+        value={local}
+        maxLength={500}
+        onChange={(e) => {
+          setLocal(e.target.value);
+          onSave(e.target.value);
+        }}
+        onClick={(e) => e.stopPropagation()}
+        className="text-[11px] border-0 shadow-none focus-visible:ring-0 px-0 bg-transparent h-auto py-0 w-full text-right"
+        style={{ color: brand.navyMuted }}
+        inputMode="text"
+        placeholder="model / link"
+      />
+    </div>
   );
 }
 
